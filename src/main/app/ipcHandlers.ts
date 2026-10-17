@@ -29,7 +29,7 @@ import { retryWhileStopping } from './retryWhileStopping'
 import { logMainError } from './errorLog'
 import type { UsageRefresher, UsageService } from '../usage'
 import type { LoginItem } from './loginItem'
-import type { WorkerWatcher } from '../workers'
+import type { WorkerHub } from '../workers'
 import { markQuitting } from './quitState'
 import { asSettingsPatch } from './settingsValidation'
 
@@ -43,7 +43,7 @@ export interface IpcHandlersDeps {
   /** Manual usage refresh (IPC.usageRefresh). The token never leaves the main process. */
   readonly usageRefresher: UsageRefresher
   /** OpenCode workers started from inside Claude sessions (read-only). */
-  readonly workers: WorkerWatcher
+  readonly workers: WorkerHub
   readonly window: BrowserWindow
   readonly getActiveSessionId: () => Id | null
   /** Directory of main-errors.log. */

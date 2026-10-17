@@ -70,7 +70,8 @@ export function statusText(worker: Pick<WorkerInfo, 'status' | 'statusDetail'>):
     'over-budget': 'Stopped: over its cost limit',
     blocked: 'Stopped: waiting for a permission it was not given',
     empty: 'Finished without any answer',
-    error: 'Stopped: error'
+    error: 'Stopped: error',
+    lost: 'Stopped: the worker process ended unexpectedly'
   }
   return reasons[worker.statusDetail] ?? `Stopped: ${worker.statusDetail}`
 }

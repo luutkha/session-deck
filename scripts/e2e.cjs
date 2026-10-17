@@ -102,7 +102,12 @@ async function main() {
     const quietPing = (await page.evaluate('window.__rt')).find((r) => r.sessionId === session.id && r.attention === 'idle')
     check('a quiet session is NOT flagged as needing attention (no idle ping)', !quietPing)
     // Dismiss claude's first-run dialogs (default highlighted option) until the prompt box is ready, then send a real prompt.
-    for (let i = 0; i < 3; i += 1) { await page.evaluate(`window.api.ptyWrite(${JSON.stringify(session.id)}, '\\r')`); await sleep(2500) }
+    for (let i = 0; i < 3; i += 1) {
+      // Claude asks to trust a folder it has not seen as a git root; "No, exit" is preselected there, so move to "Yes" first.
+      const screen = await page.evaluate(`window.api.ptyReplay(${JSON.stringify(session.id)}).then((r) => r.data.slice(-4000))`)
+      if (/Yes, I trust this folder/.test(screen) && /No, exit/.test(screen)) { await page.evaluate(`window.api.ptyWrite(${JSON.stringify(session.id)}, '\\x1b[B')`); await sleep(500) }
+      await page.evaluate(`window.api.ptyWrite(${JSON.stringify(session.id)}, '\\r')`); await sleep(2500)
+    }
     await page.evaluate(`window.api.clearAttention(${JSON.stringify(session.id)})`)
     await page.evaluate(`window.__rt.length = 0`)
     await page.evaluate(`window.api.ptyWrite(${JSON.stringify(session.id)}, 'Reply with the single word ok')`)

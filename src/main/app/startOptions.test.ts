@@ -6,7 +6,8 @@ import { buildOpencodeStartOptions, buildStartOptions, YOLO_FLAG } from './start
 const attention = {
   claudeArgs: (): string[] => ['--settings', 'x.json'],
   envFor: (): Record<string, string> => ({ SESSIONDECK_SESSION_ID: 's' }),
-  opencodeEnv: (): Record<string, string> => ({ OPENCODE_CONFIG_CONTENT: '{}' })
+  opencodeEnv: (): Record<string, string> => ({ OPENCODE_CONFIG_CONTENT: '{}' }),
+  workerEnv: (): Record<string, string> => ({ OPENCODE_CONFIG_CONTENT: '{"plugin":["w"]}' })
 } as unknown as AttentionService
 
 const session = (claudeArgs?: string[]): Session =>
@@ -85,7 +86,7 @@ describe('buildStartOptions opencode branch', () => {
     const opts = buildStartOptions(ocSession({ claudeSessionId: '556f1ce0-0000-0000-0000-000000000000' }), false, attention)
     expect(opts.claudeArgs).toEqual(['--dangerously-skip-permissions'])
     expect(opts.internalArgs).toEqual(['--settings', 'x.json', '--session-id', '556f1ce0-0000-0000-0000-000000000000'])
-    expect(opts.env).toEqual({ SESSIONDECK_SESSION_ID: 's' })
+    expect(opts.env).toEqual({ SESSIONDECK_SESSION_ID: 's', OPENCODE_CONFIG_CONTENT: '{"plugin":["w"]}' })
     expect(opts.command).toBeUndefined()
   })
 

@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, Notification, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { storeFilePath, attentionDir } from './app/paths'
@@ -26,7 +26,7 @@ import { wireAttentionNotices } from './notify/attentionWiring'
 import { startQuotaWiring } from './quota/quotaWiring'
 import { quotaMarkersFilePath } from './quota/quotaMarkers'
 import { createSleepScheduler } from './sleep/SleepScheduler'
-import { createWorkerWatcher } from './workers'
+import { createWorkerHub } from './workers'
 import { IPC } from '../shared/ipc'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -175,6 +175,26 @@ if (!gotTheLock) {
       onError
     })
 
+    // OpenCode workers started from Claude terminals report here (through the worker plugin) and show as read-only tabs.
+    const workers = createWorkerHub({
+      now: () => Date.now(),
+      isKnownSession: (id: string) => store.get().sessions.some((s) => s.id === id),
+      onChange: (list) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IPC.evWorkers, list)
+        }
+      }
+    })
+    store.subscribe((data) => {
+      const live = new Set(data.sessions.map((s) => s.id))
+      for (const worker of workers.getWorkers()) {
+        for (const owner of worker.ownerSessionIds) {
+          if (!live.has(owner)) workers.forgetSession(owner)
+        }
+      }
+    })
+    const workerSweep = setInterval(() => workers.sweep(), 5000)
+
     const attention = createAttentionService({
       isKnownSession: (id: string) => store.get().sessions.some((s) => s.id === id),
       isFocused: (id: string) => mainWindow !== null && !mainWindow.isDestroyed() && mainWindow.isFocused() && activeSessionId() === id,
@@ -189,7 +209,8 @@ if (!gotTheLock) {
       onStatusLine: (id, payload) => usage.ingest(id, payload),
       // Activity (working / needs-input / finished) and auto status. The controller is created below; the hook
       // callback only runs once the server is up, so it is never called before the controller exists.
-      onHookEvent: (event) => controller.handleHookEvent(event)
+      onHookEvent: (event) => controller.handleHookEvent(event),
+      onWorkerEvent: (sessionId, payload) => workers.ingest(sessionId, payload)
     })
 
     function activeSessionId(): string | null {
@@ -226,6 +247,10 @@ if (!gotTheLock) {
     controller.initializeRestoredSessions()
 
     await attention.start()
+    // Test seam: lets an end-to-end script reach the hook server of this run. Does nothing unless the variable is set.
+    if (process.env.SESSIONDECK_E2E_ENDPOINT_FILE) {
+      writeFile(process.env.SESSIONDECK_E2E_ENDPOINT_FILE, JSON.stringify(attention.endpoint()), 'utf-8').catch((error: unknown) => onError('e2e endpoint file', error))
+    }
     sleepScheduler.start()
 
     // Desktop notification for permission requests and finished turns (the attention manager raises each once).
@@ -234,18 +259,6 @@ if (!gotTheLock) {
       store,
       runtime,
       notifySession: (id, title, body) => notifier.notifySession(id, title, body)
-    })
-
-    // OpenCode workers that Claude sessions start in the background show up as read-only tabs (see workers/).
-    const workers = createWorkerWatcher({
-      getSessions: () => store.get().sessions.filter((s) => s.closedAt === undefined).map((s) => ({ id: s.id, cwd: s.cwd })),
-      onChange: (list) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(IPC.evWorkers, list)
-        }
-      },
-      onError,
-      now: () => Date.now()
     })
 
     const { window: win } = createMainWindow({
@@ -271,8 +284,6 @@ if (!gotTheLock) {
     })
 
     // Tray icon and menu, close-to-tray (the window is hidden, sessions keep running). Never throws.
-    workers.start()
-
     const trayWiring = attachTrayWiring({
       win,
       store,
@@ -294,7 +305,7 @@ if (!gotTheLock) {
 
     async function shutdown(): Promise<void> {
       sleepScheduler.stop()
-      workers.stop()
+      clearInterval(workerSweep)
       await runShutdownStep('flush store', () => saver.flush())
       await runShutdownStep('kill sessions', () => pty.killAll())
       await runShutdownStep('dispose pty', () => pty.dispose())

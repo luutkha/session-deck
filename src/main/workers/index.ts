@@ -1,1 +1,1 @@
-export { createWorkerWatcher, type WorkerWatcher, type WatchedSession } from './WorkerWatcher'
+export { createWorkerHub, type WorkerHub } from './WorkerHub'

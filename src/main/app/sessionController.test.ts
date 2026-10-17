@@ -210,6 +210,12 @@ function createFakeAttention(): AttentionService {
       if (!started) throw new Error('AttentionService not started')
       return { OPENCODE_CONFIG_CONTENT: '{}' }
     },
+    workerEnv(): Record<string, string> {
+      return { OPENCODE_CONFIG_CONTENT: '{"plugin":[]}' }
+    },
+    endpoint(): { port: number; token: string } {
+      return { port, token }
+    },
     noteOutput(_id: string): void {},
     noteInput(_id: string): void {},
     clear(id: string): void {

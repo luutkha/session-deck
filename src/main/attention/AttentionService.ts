@@ -6,6 +6,7 @@ import { createAttentionManager } from './AttentionManager'
 import { createNotifier } from './Notifier'
 import { writeSettingsFile } from './claudeSettings'
 import { writeOpencodePlugin, opencodePluginEnv } from '../opencode'
+import { writeWorkerPlugin, workerPluginEnv } from '../workers/workerPluginEnv'
 
 export interface AttentionServiceDeps {
   readonly isKnownSession: (id: string) => boolean
@@ -20,6 +21,8 @@ export interface AttentionServiceDeps {
   readonly onStatusLine?: (sessionId: string, payload: unknown) => void
   /** Called for every accepted hook event (Notification, Stop, UserPromptSubmit), after attention is updated. */
   readonly onHookEvent?: (event: HookEvent) => void
+  /** Called with each payload of the OpenCode worker plugin (already authenticated and session-checked). Return false to reject. */
+  readonly onWorkerEvent?: (sessionId: string, payload: unknown) => boolean
 }
 
 export interface AttentionService {
@@ -29,6 +32,10 @@ export interface AttentionService {
   envFor(sessionId: string): Record<string, string>
   /** Env entries for an OpenCode session (its injected plugin, permission bypass). Throws when not started. */
   opencodeEnv(): Record<string, string>
+  /** Env entries for a Claude terminal so OpenCode processes it starts report to the worker tabs. Throws when not started. */
+  workerEnv(): Record<string, string>
+  /** Where the local hook server listens and its token (diagnostics and tests). Throws when not started. */
+  endpoint(): { readonly port: number; readonly token: string }
   noteOutput(id: string): void
   noteInput(id: string): void
   clear(id: string): void
@@ -49,12 +56,14 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
     settingsDir,
     token = randomBytes(24).toString('hex'),
     onStatusLine,
-    onHookEvent
+    onHookEvent,
+    onWorkerEvent
   } = deps
 
   let hookServer: HookServer | null = null
   let settingsFilePath: string | null = null
   let pluginFilePath: string | null = null
+  let workerPluginPath: string | null = null
   let port: number | null = null
   let started = false
 
@@ -87,7 +96,8 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
         token,
         isKnownSession,
         onEvent: handleHook,
-        onStatusLine: (sessionId, payload) => onStatusLine?.(sessionId, payload)
+        onStatusLine: (sessionId, payload) => onStatusLine?.(sessionId, payload),
+        onWorkerEvent
       })
 
       const { port: serverPort } = await hookServer.start()
@@ -95,6 +105,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
 
       settingsFilePath = writeSettingsFile(settingsDir)
       pluginFilePath = writeOpencodePlugin(settingsDir)
+      workerPluginPath = writeWorkerPlugin(settingsDir)
       started = true
     },
 
@@ -111,6 +122,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
       port = null
       settingsFilePath = null
       pluginFilePath = null
+      workerPluginPath = null
       started = false
     },
 
@@ -137,6 +149,20 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
         throw new Error('AttentionService not started')
       }
       return opencodePluginEnv(pluginFilePath)
+    },
+
+    workerEnv(): Record<string, string> {
+      if (!started || workerPluginPath === null) {
+        throw new Error('AttentionService not started')
+      }
+      return workerPluginEnv(workerPluginPath)
+    },
+
+    endpoint(): { readonly port: number; readonly token: string } {
+      if (!started || port === null) {
+        throw new Error('AttentionService not started')
+      }
+      return { port, token }
     },
 
     noteOutput(id: string): void {

@@ -14,6 +14,8 @@ export interface CreateHookServerOptions {
   readonly onEvent: (event: HookEvent) => void
   /** Called with the parsed statusLine JSON object of a known session. */
   readonly onStatusLine?: (sessionId: string, payload: unknown) => void
+  /** Called with the parsed JSON payload of an OpenCode worker plugin event for a known Claude session. Returns false to reject it (HTTP 400). */
+  readonly onWorkerEvent?: (sessionId: string, payload: unknown) => boolean
 }
 
 const MAX_BODY_SIZE = 4096
@@ -22,6 +24,8 @@ const MAX_HOOK_BODY_SIZE = 65536
 const MAX_HOOK_MESSAGE_LENGTH = 300
 const STATUSLINE_PATH_RE = /^\/statusline\/([^/?#]+)$/
 const HOOK_PATH_RE = /^\/hook\/([^/?#]+)\/([^/?#]+)$/
+const WORKER_PATH_RE = /^\/worker\/([^/?#]+)\/event$/
+const MAX_WORKER_BODY_SIZE = 32768
 
 /** Claude Code hook events forwarded to the app (route: POST /hook/<sessionId>/<Event>). */
 export const HOOK_EVENT_NAMES = ['Notification', 'Stop', 'UserPromptSubmit'] as const
@@ -142,7 +146,7 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function createHookServer(options: CreateHookServerOptions): HookServer {
-  const { token, isKnownSession, onEvent, onStatusLine } = options
+  const { token, isKnownSession, onEvent, onStatusLine, onWorkerEvent } = options
   let server: Server | null = null
   const sockets = new Set<import('node:net').Socket>()
 
@@ -184,6 +188,38 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
     }
 
     onStatusLine?.(sessionId, payload)
+    sendResponse(res, 204)
+  }
+
+  /** POST /worker/<claudeSessionId>/event: one event from the OpenCode worker plugin of a process started in that session. */
+  const handleWorkerRoute = async (req: IncomingMessage, res: ServerResponse, rawSessionId: string): Promise<void> => {
+    if (!validateToken(token, req.headers['x-token'] as string | undefined)) {
+      sendResponse(res, 401, JSON.stringify({ error: 'Unauthorized' }))
+      return
+    }
+    let body: string
+    try {
+      body = await parseBody(req, MAX_WORKER_BODY_SIZE)
+    } catch {
+      sendResponse(res, 413, JSON.stringify({ error: 'Payload too large' }))
+      return
+    }
+    const sessionId = decodeSegment(rawSessionId)
+    if (sessionId === null || !isKnownSession(sessionId)) {
+      sendResponse(res, 404, JSON.stringify({ error: 'Unknown session' }))
+      return
+    }
+    let payload: unknown
+    try {
+      payload = JSON.parse(body)
+    } catch {
+      sendResponse(res, 400, JSON.stringify({ error: 'Invalid JSON' }))
+      return
+    }
+    if (onWorkerEvent === undefined || !onWorkerEvent(sessionId, payload)) {
+      sendResponse(res, 400, JSON.stringify({ error: 'Invalid worker event' }))
+      return
+    }
     sendResponse(res, 204)
   }
 
@@ -240,6 +276,12 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
     const statusSessionId = statusLineSessionId(req.url)
     if (statusSessionId !== null) {
       await handleStatusLine(req, res, statusSessionId)
+      return
+    }
+
+    const workerMatch = req.url ? WORKER_PATH_RE.exec(req.url) : null
+    if (workerMatch !== null) {
+      await handleWorkerRoute(req, res, workerMatch[1])
       return
     }
 

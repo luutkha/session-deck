@@ -91,6 +91,8 @@ function createFakeAttention(): AttentionService {
     claudeArgs: () => ['--settings', '/fake/settings.json'],
     envFor: (id: string) => ({ SESSIONDECK_SESSION_ID: id }),
     opencodeEnv: () => ({ OPENCODE_CONFIG_CONTENT: '{}' }),
+    workerEnv: () => ({ OPENCODE_CONFIG_CONTENT: '{"plugin":[]}' }),
+    endpoint: () => ({ port: 1, token: 't' }),
     noteOutput: () => {},
     noteInput: () => {},
     clear: (id: string) => map.delete(id),

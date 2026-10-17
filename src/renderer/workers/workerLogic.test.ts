@@ -51,6 +51,7 @@ describe('formatting', () => {
   it('explains failures in plain words', () => {
     expect(statusText({ status: 'running', statusDetail: 'running' })).toBe('Working…')
     expect(statusText({ status: 'failed', statusDetail: 'rate-limited' })).toContain('usage limit')
+    expect(statusText({ status: 'failed', statusDetail: 'lost' })).toContain('ended unexpectedly')
     expect(statusText({ status: 'failed', statusDetail: 'weird' })).toBe('Stopped: weird')
   })
 })
