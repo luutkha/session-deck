@@ -26,6 +26,7 @@ import { wireAttentionNotices } from './notify/attentionWiring'
 import { startQuotaWiring } from './quota/quotaWiring'
 import { quotaMarkersFilePath } from './quota/quotaMarkers'
 import { createSleepScheduler } from './sleep/SleepScheduler'
+import { createWorkerWatcher } from './workers'
 import { IPC } from '../shared/ipc'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -235,6 +236,18 @@ if (!gotTheLock) {
       notifySession: (id, title, body) => notifier.notifySession(id, title, body)
     })
 
+    // OpenCode workers that Claude sessions start in the background show up as read-only tabs (see workers/).
+    const workers = createWorkerWatcher({
+      getSessions: () => store.get().sessions.filter((s) => s.closedAt === undefined).map((s) => ({ id: s.id, cwd: s.cwd })),
+      onChange: (list) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IPC.evWorkers, list)
+        }
+      },
+      onError,
+      now: () => Date.now()
+    })
+
     const { window: win } = createMainWindow({
       preloadPath: path.join(__dirname, '../preload/index.mjs'),
       iconPath: appIconPath
@@ -250,6 +263,7 @@ if (!gotTheLock) {
       runtime,
       usage,
       usageRefresher,
+      workers,
       window: mainWindow,
       getActiveSessionId: activeSessionId,
       userDataDir: userData,
@@ -257,6 +271,8 @@ if (!gotTheLock) {
     })
 
     // Tray icon and menu, close-to-tray (the window is hidden, sessions keep running). Never throws.
+    workers.start()
+
     const trayWiring = attachTrayWiring({
       win,
       store,
@@ -278,6 +294,7 @@ if (!gotTheLock) {
 
     async function shutdown(): Promise<void> {
       sleepScheduler.stop()
+      workers.stop()
       await runShutdownStep('flush store', () => saver.flush())
       await runShutdownStep('kill sessions', () => pty.killAll())
       await runShutdownStep('dispose pty', () => pty.dispose())

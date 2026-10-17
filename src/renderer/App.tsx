@@ -11,6 +11,8 @@ import { progress } from './notes/checklistLogic'
 import { useUsage } from './usage/useUsage'
 import { QuotaToast } from './usage/QuotaToast'
 import { TerminalWorkspace } from './Terminal/TerminalWorkspace'
+import { useWorkers } from './workers/useWorkers'
+import { WorkerView } from './workers/WorkerView'
 import { useSplitLayout } from './split/useSplitLayout'
 import { Button } from './components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
@@ -68,6 +70,7 @@ export function App(): ReactElement {
   const tabs = useOpenTabs(sessions, actions)
   const { activeId, ids } = tabs
   const split = useSplitLayout(ids, activeId)
+  const workers = useWorkers(activeId)
 
   // New session / Statuses open Orca-style dialogs (they own validation, Browse and error display).
   const [newSession, setNewSession] = useState<{ readonly groupId: Id | null; readonly statusId: Id | null } | null>(null)
@@ -76,7 +79,8 @@ export function App(): ReactElement {
   const setView = useCallback((next: MainView): void => {
     setViewState(next)
     storeView(next)
-  }, [])
+    workers.select(null) // every other target (a session, the Hub) leaves the worker view
+  }, [workers.select])
 
   // Plays the user's configured notification sound when main reports a session needing attention (mount ONCE).
   useAttentionSound()
@@ -217,7 +221,7 @@ export function App(): ReactElement {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TabBar
             tabs={tabModels}
-            activeId={view === 'hub' ? null : activeId}
+            activeId={view === 'hub' || workers.selected !== null ? null : activeId}
             sidebarCollapsed={!sidebarOpen}
             onShowSidebar={(): void => setSidebarOpen(true)}
             onActivate={activateTab}
@@ -230,6 +234,7 @@ export function App(): ReactElement {
             onToggleNotes={activeSession !== null && view === 'terminal' ? toggleNotes : undefined}
             notesOpen={notesOpen}
             notesBadge={notesBadge}
+            workers={{ workers: workers.visible, selectedId: workers.selected?.id ?? null, onSelect: workers.select, onDismiss: workers.dismiss }}
             split={{
               active: split.split,
               canSplit: split.canSplit,
@@ -273,6 +278,11 @@ export function App(): ReactElement {
                   onReopen={reopenSession}
                   sessionUsage={sessionUsage}
                 />
+              </div>
+            ) : null}
+            {loaded && view === 'terminal' && workers.selected !== null ? (
+              <div className="absolute inset-0 z-10 bg-black">
+                <WorkerView key={workers.selected.id} worker={workers.selected} />
               </div>
             ) : null}
             {loaded && ids.length === 0 && view !== 'hub' ? (

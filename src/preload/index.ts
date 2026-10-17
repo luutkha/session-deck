@@ -10,6 +10,7 @@ import type {
   LoginItemState,
   OpenLinkResult,
   ResolvedLink,
+  WorkerInfo,
   QuotaAlert,
   RuntimeState,
   Session,
@@ -68,6 +69,10 @@ const api: Api = {
 
   getUsage(): Promise<UsageState> {
     return ipcRenderer.invoke(IPC.usageGet)
+  },
+
+  getWorkers(): Promise<readonly WorkerInfo[]> {
+    return ipcRenderer.invoke(IPC.workersGet)
   },
 
   refreshUsage(): Promise<UsageRefreshResult> {
@@ -214,6 +219,12 @@ const api: Api = {
     const handler = (_event: Electron.IpcRendererEvent, alert: QuotaAlert) => cb(alert)
     ipcRenderer.on(IPC.evQuota, handler)
     return () => ipcRenderer.off(IPC.evQuota, handler)
+  },
+
+  onWorkers(cb: (workers: readonly WorkerInfo[]) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, workers: readonly WorkerInfo[]) => cb(workers)
+    ipcRenderer.on(IPC.evWorkers, handler)
+    return () => ipcRenderer.off(IPC.evWorkers, handler)
   }
 }
 

@@ -13,6 +13,7 @@ import {
 import type { Id } from '../../shared/types'
 import { Tab } from './Tab'
 import { TitleBarRegion } from './TitleBarRegion'
+import { WorkerTabs, type WorkerTabsProps } from '../workers/WorkerTabs'
 import type { TabModel } from './tabStatus'
 
 export interface TabBarSplit {
@@ -46,6 +47,8 @@ export interface TabBarProps {
   readonly notesBadge?: string | null
   /** Split-view controls (hidden when undefined). */
   readonly split?: TabBarSplit
+  /** Read-only tabs for the OpenCode workers of the active session (hidden when undefined or empty). */
+  readonly workers?: WorkerTabsProps
 }
 
 function findTabElement(strip: HTMLElement | null, id: Id): HTMLElement | null {
@@ -128,6 +131,7 @@ export function TabBar(props: TabBarProps): ReactElement {
             }
           />
         ))}
+        {props.workers !== undefined ? <WorkerTabs {...props.workers} /> : null}
       </div>
       {props.onToggleNotes !== undefined && (
         <div className="app-no-drag flex shrink-0 items-center gap-1 px-1">

@@ -271,3 +271,37 @@ export interface OpenLinkResult {
   /** User-readable reason when ok is false. */
   readonly error?: string
 }
+
+/** A background OpenCode worker started from inside a Claude session (read-only view; never a Session). */
+export type WorkerStatus = 'running' | 'done' | 'failed'
+
+export type WorkerLineKind = 'text' | 'tool' | 'error'
+
+export interface WorkerLine {
+  readonly kind: WorkerLineKind
+  /** Assistant text, the one-line summary of a tool call, or an error message. */
+  readonly text: string
+  /** Tool name for kind 'tool' (bash, read, edit, ...). */
+  readonly tool?: string
+  readonly state?: 'running' | 'done' | 'error'
+}
+
+export interface WorkerInfo {
+  /** Stable per worker run: OpenCode session id + log file name. A resumed worker is a new run. */
+  readonly id: string
+  readonly name: string
+  readonly model: string
+  readonly status: WorkerStatus
+  /** The raw status written by the runner (ok, rate-limited, timeout, ...). Shown when status is 'failed'. */
+  readonly statusDetail: string
+  readonly startedAt: number
+  readonly finishedAt: number | null
+  readonly costUsd: number
+  readonly tokens: number
+  /** Folder whose .opencode-runs registry the worker was found in. */
+  readonly dir: string
+  /** Sessions the worker belongs to (their folder is, or sits just below, `dir`). */
+  readonly ownerSessionIds: readonly Id[]
+  /** Newest lines of the worker's output (capped). */
+  readonly lines: readonly WorkerLine[]
+}

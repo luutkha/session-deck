@@ -1,6 +1,6 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState
+  AppSettings, ChecklistItem, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo
 } from './types'
 
 export const IPC = {
@@ -45,6 +45,7 @@ export const IPC = {
   usageGet: 'usage:get',
   usageRefresh: 'usage:refresh', // manual: ask Anthropic's usage endpoint with the local Claude login token (main process only)
   pickSoundFile: 'dialog:pickSoundFile', // audio file picker for custom notification sounds -> absolute path | null
+  workersGet: 'workers:get', // -> WorkerInfo[] (OpenCode workers started from inside open Claude sessions)
   // events main -> renderer
   evStoreChanged: 'ev:store',
   evRuntime: 'ev:runtime',
@@ -52,7 +53,8 @@ export const IPC = {
   evUsage: 'ev:usage', // main -> renderer: UsageState changed
   evSound: 'ev:sound', // main -> renderer: play the user's sound for (sessionId, event); sessionId is '' for 'quota'
   evFocusSession: 'ev:focusSession', // main -> renderer: select/open this session (tray menu, notification click)
-  evQuota: 'ev:quota' // main -> renderer: QuotaAlert for an in-app toast
+  evQuota: 'ev:quota', // main -> renderer: QuotaAlert for an in-app toast
+  evWorkers: 'ev:workers' // main -> renderer: the full WorkerInfo[] changed
 } as const
 
 /** Buffered output for reattach. `seq` = sequence number of the last chunk included (0 if none).
@@ -83,6 +85,7 @@ export interface Api {
   setKeepAwake(id: Id, keepAwake: boolean): Promise<void>
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): Promise<void>
   getUsage(): Promise<UsageState>
+  getWorkers(): Promise<readonly WorkerInfo[]>
   updateSettings(patch: SettingsPatch): Promise<AppSettings>
   getLoginItem(): Promise<LoginItemState>
   setLoginItem(openAtLogin: boolean): Promise<LoginItemState>
@@ -112,6 +115,7 @@ export interface Api {
   onAttentionSound(cb: (id: Id, event: SoundEvent) => void): () => void
   onFocusSession(cb: (id: Id) => void): () => void
   onQuotaAlert(cb: (alert: QuotaAlert) => void): () => void
+  onWorkers(cb: (workers: readonly WorkerInfo[]) => void): () => void
 }
 
 declare global {

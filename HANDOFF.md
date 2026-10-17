@@ -59,3 +59,10 @@ Use the `opencode-orchestrator` skill (cost-first: deepseek-v4-flash / claude-ha
 - Resume fix: a session started but never prompted has no conversation; resuming fails ("No conversation found", then "already in use"). `shouldRotateSessionId` + `transcriptExists` give it a fresh Claude id (sessions with saved messages keep theirs).
 - E2E scripts: `e2e-remote`, `e2e-keepawake`, `e2e-sleep`, `e2e-links`, `e2e-imagepaste`, `e2e-paste`, `e2e-opencode`. `e2e-notes-usage` restarts through `window.api.quitApp()` (a hard kill loses localStorage writes Chromium has not committed yet).
 - Not rebuilt: the installer is stale (build only when the user asks).
+
+## OpenCode worker tabs (read-only)
+- A Claude session that starts OpenCode workers through the orchestrator skill (`oc-run`, which writes `<folder>/.opencode-runs/sessions/<name>.json` plus a JSONL log) now gets a read-only tab per worker after its own tabs.
+- Main: `src/main/workers/` (`WorkerWatcher` polls the registry of each open session's folder and 2 parents every 1 s; `logParser` turns the JSONL into lines/cost/tokens; `registration` validates the file, the log must sit inside `.opencode-runs`). IPC: `workers:get` and `ev:workers`. Runs that ended before the app started are ignored.
+- Renderer: `src/renderer/workers/` (`useWorkers`, `WorkerTabs`, `WorkerView`, `workerLogic`). Finished tabs close 2 min after ending unless being read; the X only hides the tab (the worker keeps running). Selecting any session or the Hub leaves the worker view.
+- Not built (by choice): a real interactive OpenCode terminal (Phase 2: shared `opencode serve` + `opencode attach`), resume-from-tab.
+- E2E: `scripts/e2e-workers.cjs` (8 checks).

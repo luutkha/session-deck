@@ -2,7 +2,7 @@ import { app, ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { createLinkService, MAX_LINK_TEXTS } from '../links'
-import type { AppSettings, StoreData, RuntimeState, Session, Group, Id, LoginItemState, UsageRefreshResult, UsageState } from '../../shared/types'
+import type { AppSettings, StoreData, RuntimeState, Session, Group, Id, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from './sessionController'
@@ -29,6 +29,7 @@ import { retryWhileStopping } from './retryWhileStopping'
 import { logMainError } from './errorLog'
 import type { UsageRefresher, UsageService } from '../usage'
 import type { LoginItem } from './loginItem'
+import type { WorkerWatcher } from '../workers'
 import { markQuitting } from './quitState'
 import { asSettingsPatch } from './settingsValidation'
 
@@ -41,6 +42,8 @@ export interface IpcHandlersDeps {
   readonly usage: UsageService
   /** Manual usage refresh (IPC.usageRefresh). The token never leaves the main process. */
   readonly usageRefresher: UsageRefresher
+  /** OpenCode workers started from inside Claude sessions (read-only). */
+  readonly workers: WorkerWatcher
   readonly window: BrowserWindow
   readonly getActiveSessionId: () => Id | null
   /** Directory of main-errors.log. */
@@ -64,7 +67,7 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 }
 
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, window, getActiveSessionId, userDataDir, loginItem } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, window, getActiveSessionId, userDataDir, loginItem } = deps
 
   const sendStoreChanged = (data: StoreData): void => {
     window.webContents.send(IPC.evStoreChanged, data)
@@ -244,6 +247,8 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     markQuitting()
     app.quit()
   })
+
+  ipcMain.handle(IPC.workersGet, (): readonly WorkerInfo[] => workers.getWorkers())
 
   ipcMain.handle(IPC.usageGet, async (): Promise<UsageState> => {
     return usage.getState()
