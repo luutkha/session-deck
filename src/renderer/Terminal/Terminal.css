@@ -1,0 +1,143 @@
+/* Scoped to the Terminal module; imported by TerminalWorkspace. */
+
+.terminal-host {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  background: #000000;
+  overflow: hidden;
+}
+
+/* The split container: one cell per visible pane plus thin dividers between. */
+.terminal-workspace {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  background: #000000;
+  overflow: hidden;
+}
+
+.terminal-workspace[data-direction='row'] {
+  flex-direction: row;
+}
+
+.terminal-workspace[data-direction='column'] {
+  flex-direction: column;
+}
+
+.terminal-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Holds the absolute viewport so the pane header can sit above it. */
+.terminal-pane__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Inactive panes stay mounted (scrollback/render state survive switching). */
+.terminal-pane--hidden {
+  display: none;
+}
+
+/* The active pane of a split gets a 1px primary ring drawn inside its bounds. */
+.terminal-pane--active {
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.terminal-pane__viewport {
+  position: absolute;
+  inset: 0;
+}
+
+.terminal-pane__viewport .xterm {
+  height: 100%;
+}
+
+.terminal-pane__overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(30, 30, 30, 0.92);
+  border-top: 1px solid #3c3c3c;
+  color: #cccccc;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.terminal-pane__overlay-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-pane__restart {
+  flex: 0 0 auto;
+  padding: 2px 12px;
+  border: 1px solid #3c3c3c;
+  background: #0e639c;
+  color: #ffffff;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.terminal-pane__restart:hover {
+  background: #1177bb;
+}
+
+.terminal-pane__restart:focus-visible {
+  outline: 1px solid #007acc;
+  outline-offset: 1px;
+}
+
+/* Sleek terminal scrollbar, copied from Orca's `.scrollbar-sleek` (MIT, (c) 2026 Lovecast Inc.): thin, transparent
+   track, muted thumb, no arrow buttons. xterm hard-codes an opaque black viewport background: let the theme show. */
+.xterm:not(.allow-transparency) .xterm-viewport {
+  background-color: transparent;
+}
+
+.xterm .xterm-viewport {
+  overflow-y: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground, #737373) 34%, transparent) transparent;
+}
+
+.xterm .xterm-viewport:hover {
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground, #737373) 48%, transparent) transparent;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 12px;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted-foreground, #737373) 28%, transparent);
+  border: 3px solid transparent;
+  border-radius: 0;
+  background-clip: padding-box;
+  min-height: 28px;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--muted-foreground, #737373) 48%, transparent);
+}

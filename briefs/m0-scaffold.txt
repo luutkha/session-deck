@@ -1,0 +1,12 @@
+GOAL: Scaffold the SessionDeck Electron app described in PLAN.md so that `npm run dev` opens a window and `npm test` runs Vitest.
+CONTEXT: Read PLAN.md first. Windows 11, Node 24, npm. Use electron-vite (react-ts template layout: src/main, src/preload, src/renderer, plus src/shared). Install: electron, electron-vite, vite, react, react-dom, typescript (strict), @vitejs/plugin-react, node-pty, @xterm/xterm, @xterm/addon-fit, @xterm/addon-webgl, @xterm/addon-unicode11, @xterm/addon-web-links, @xterm/addon-serialize, vitest, @types/node, @types/react, @types/react-dom. node-pty is native: make sure it loads inside Electron (use electron-rebuild / @electron/rebuild with a postinstall script, or a prebuilt-compatible version); PROVE it by spawning `cmd.exe /c echo hi` through node-pty from the main process once at startup and logging the output (then remove that probe, keep a tiny test that imports node-pty under plain Node).
+SCOPE: this directory (session-deck/). You may run shell commands, install packages and use the network. Do NOT git push.
+STANDARDS: strict TS, small files, no hardcoded values, immutable style, conventional naming.
+STEPS: 1) create package.json, tsconfig(s), electron.vite.config.ts, vitest.config.ts, .gitignore (node_modules, out, dist, .opencode-runs). 2) src/main/index.ts creates a BrowserWindow (contextIsolation true, nodeIntegration false, sandbox false only if node-pty/preload needs it, dark background #1e1e1e), loads renderer. 3) src/preload/index.ts exposes an empty typed `window.api` stub. 4) src/renderer: index.html + main.tsx + App.tsx rendering "SessionDeck" placeholder. 5) empty folders with a .gitkeep: src/main/{store,pty,attention}, src/renderer/{Sidebar,Terminal,state}, src/shared. 6) scripts: dev, build, test, typecheck, postinstall (rebuild native). 7) Verify: `npm run typecheck`, `npm test`, `npm run build` all pass, and `npm run dev` starts without errors (start it for ~10s then kill it, capture log).
+DONE WHEN: typecheck, test, build pass; dev starts cleanly; node-pty verified under Electron.
+REPORT BACK (end your reply with exactly this):
+- SUMMARY: <=5 lines
+- FILES CHANGED: list
+- COMMANDS RUN + RESULT: pass/fail with last error lines
+- OPEN QUESTIONS / ASSUMPTIONS: list
+- NOT DONE: list

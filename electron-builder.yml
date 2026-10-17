@@ -1,0 +1,38 @@
+appId: dev.sessiondeck.app
+productName: SessionDeck
+copyright: Copyright (c) 2026 SessionDeck contributors
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# node-pty is a native module: its .node binaries and conpty/winpty helpers must be real files on disk.
+asar: true
+asarUnpack:
+  - node_modules/node-pty/**
+# Rebuild node-pty against Electron's Node ABI during packaging.
+npmRebuild: true
+# Loaded at runtime (tray icon, attention icon) from process.resourcesPath/build.
+extraResources:
+  - from: build
+    to: build
+    filter:
+      - icon.png
+      - tray.png
+      - tray-attention.png
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: SessionDeck-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SessionDeck
+  deleteAppDataOnUninstall: false

@@ -1,0 +1,39 @@
+/*
+ * Shell-only rules that Tailwind classes cannot express. Colours, fonts and radii come from
+ * styles/orca-theme.css. The old :root palette was removed: it overrode the Orca tokens.
+ */
+
+/* The shell uses h-full all the way down, so the root chain must fill the window. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Electron window drag regions. Interactive children of a drag region must be no-drag. */
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Keeps the tab bar clear of the native min/max/close buttons (titleBarOverlay in main/app/window.ts). */
+.shell-window-controls-reserve {
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+
+/* Sleek dark scrollbars everywhere (thin, transparent track, muted thumb), copied from Orca's `.scrollbar-sleek`
+   (MIT, (c) 2026 Lovecast Inc.). Keeps native bright scrollbars out of the Hub, dialogs and lists. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground, #737373) 34%, transparent) transparent;
+}
+
+*:hover {
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground, #737373) 48%, transparent) transparent;
+}

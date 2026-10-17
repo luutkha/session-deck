@@ -1,0 +1,1 @@
+﻿{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 1, "tasks": [ { "name": "fix-sidebar", "brief": "briefs/fix-sidebar.txt", "model": "opencode/big-pickle", "fallback": ["opencode/mimo-v2.6-flash-free", "opencode-go/deepseek-v4-flash"], "timeoutSec": 2400, "stallSec": 600 } ] }

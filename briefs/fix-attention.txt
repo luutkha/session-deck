@@ -1,0 +1,16 @@
+GOAL: Make `npx vitest run src/main/attention` fully green and `npx tsc --noEmit -p tsconfig.node.json --composite false` free of errors in src/main/attention. Seven tests fail; the orchestrator already diagnosed them.
+SCOPE (you own only): src/main/attention/** . Do not touch any other folder or the shared contract (src/shared).
+
+DIAGNOSIS (trust it, do not redesign):
+1. AttentionService.test.ts: six tests call `service.raise(id, reason)` but AttentionService has no `raise`. DECISION: add `raise(id: string, reason: AttentionReason): void` to the AttentionService interface and implementation, delegating to the internal AttentionManager.raise (needed so the app can later raise a 'bell' reason from terminal output). Keep everything else as is. Update the interface/JSDoc in AttentionService.ts and index.ts exports if needed.
+2. AttentionManager.test.ts "onChange returns unsubscribe function": the TEST is wrong. It unsubscribes a throwaway `() => {}` listener, while `changes` is filled by a different listener registered elsewhere (beforeEach), so after raise the array has 1 entry. Fix the TEST: register a listener that pushes into a local array, call unsubscribe, raise, and assert that local array stays empty (and, separately, that it received an event BEFORE unsubscribing). Do not change AttentionManager.ts for this one.
+3. Type errors in the test files: remove the unused imports/variables (`vi`, `HookEvent`, `createHookServer` where unused) and any other TS6133/TS6196 errors in src/main/attention; fix TS2339 by item 1.
+After fixing, re-run the whole attention test folder and the node typecheck; show the final counts. If more tests fail for a reason NOT listed above, fix the root cause only if it is clearly a bug in src/main/attention, otherwise report it.
+
+STANDARDS: immutable style, no `any`, no console.log, named constants, small functions. Do not weaken or delete tests to make them pass (the only test edit allowed is item 2 and removing unused imports).
+REPORT BACK (end your reply with exactly this):
+- SUMMARY: <=5 lines
+- FILES CHANGED: list
+- COMMANDS RUN + RESULT: pass/fail counts
+- OPEN QUESTIONS / ASSUMPTIONS: list
+- NOT DONE: list

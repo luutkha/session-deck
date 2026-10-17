@@ -1,0 +1,7 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 2, "maxCost": 0.40,
+  "tasks": [
+    { "name": "j1-opencode-main", "brief": "briefs/j1-opencode-main.txt", "model": "opencode/deepseek-v4.1-flash-free",
+      "fallback": ["opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro"], "timeoutSec": 3300, "stallSec": 700 },
+    { "name": "j1-opencode-ui", "brief": "briefs/j1-opencode-ui.txt", "model": "opencode/deepseek-v4.1-flash-free",
+      "fallback": ["opencode-go/deepseek-v4-flash", "opencode-go/glm-5.3-flash"], "timeoutSec": 2700, "stallSec": 600 }
+  ] }

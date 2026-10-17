@@ -1,0 +1,45 @@
+GOAL: Implement the PURE renderer state logic for the SessionDeck sidebar: selectors, drag-drop target computation, inline-edit validation, and the data hook. No React components in this task.
+SCOPE (you own only): src/renderer/state/** and src/renderer/Sidebar/inlineEditValidation.ts (+ its test). Create folders as needed. Do not touch anything else.
+
+FILES AND EXACT SIGNATURES (import types from '../../shared/types' and '../../shared/ipc'; Id = string):
+
+src/renderer/state/selectors.ts
+- export interface Section { readonly group: Group | null; readonly sessions: readonly Session[] }
+- groupedSessions(data: StoreData): readonly Section[]   // one Section per group in data.groupOrder order (skip ids that do not exist), each group's sessions sorted by `order` ascending; the ungrouped bucket (group null, sessions with groupId null sorted by order) is ALWAYS LAST and is always present, even when empty.
+- filterByStatus(sections: readonly Section[], statusIds: ReadonlySet<Id | null>): readonly Section[]   // empty set = return sections unchanged; otherwise keep only sessions whose statusId is in the set (null in the set matches sessions with no status); groups stay even if they end up empty.
+- statusOf(data: StoreData, session: Session): StatusDef | null
+- flatSessionIds(sections: readonly Section[]): readonly Id[]   // visible order for keyboard navigation: skips sessions inside COLLAPSED groups; ungrouped sessions always visible.
+- countByStatus(data: StoreData): ReadonlyMap<Id | null, number>
+
+src/renderer/state/dropTarget.ts
+- export type DragItem = { readonly kind: 'session' | 'group'; readonly id: Id }
+- export type DropOver = { readonly kind: 'session' | 'group' | 'ungrouped'; readonly id?: Id; readonly position: 'before' | 'after' | 'inside' }
+- export type DropAction = { readonly type: 'moveSession'; readonly sessionId: Id; readonly groupId: Id | null; readonly index: number } | { readonly type: 'reorderGroups'; readonly order: readonly Id[] }
+- computeDrop(drag: DragItem, over: DropOver, data: StoreData): DropAction | null
+  Rules: session dropped on a group header with position 'inside' -> move to END of that group. Session dropped on another session 'before'/'after' -> that session's group, index = target's index (+1 for 'after') measured in the group's sorted list; when the dragged session is currently in the SAME group and its old index is lower than the computed index, subtract 1 (because it is removed first). Session dropped on 'ungrouped' (inside) -> end of the ungrouped list. Group dropped on a group 'before'/'after' -> reorderGroups with the full new order. Group dropped on anything else, session dropped on itself, no-op moves (result identical to current position), unknown ids -> return null.
+
+src/renderer/Sidebar/inlineEditValidation.ts
+- validateName(raw: string): { ok: true; value: string } | { ok: false; error: string }  // trims; empty -> error 'Name required'; longer than 100 chars -> error 'Name too long'.
+
+src/renderer/state/useSessionStore.ts
+- export function useSessionStore(): { data: StoreData | null; runtime: ReadonlyMap<Id, RuntimeState>; lastError: string | null; clearError(): void; actions: SessionActions }
+- SessionActions has one async method per window.api call: createSession(input), renameSession(id,name), setSessionStatus(id,statusId), moveSession(id,groupId,index), removeSession(id), createGroup(name), renameGroup(id,name), removeGroup(id), setGroupCollapsed(id,collapsed), reorderGroups(order), upsertStatus(status), removeStatus(id), pickFolder().
+- Loads once with window.api.getStore() (sets data + initial runtime map), then subscribes with window.api.onStoreChanged and window.api.onRuntime, unsubscribing in the effect cleanup. Every action wraps the api call in try/catch: on failure set lastError to the error message (never throw into render, never swallow silently). Use immutable updates (new Map for runtime).
+- The hook must not import anything from 'electron'.
+
+TESTS (Vitest, node environment, no DOM; write them FIRST): src/renderer/state/selectors.test.ts, dropTarget.test.ts, src/renderer/Sidebar/inlineEditValidation.test.ts. dropTarget needs the most cases: session onto group inside; between sessions in the same group moving down and up; into another group before/after; to ungrouped; group reorder before/after; invalid (group onto session, session onto itself, unknown ids); no-op moves return null. selectors: ordering, ungrouped last and present when empty, collapsed groups skipped in flatSessionIds, filter with None (null), counts. For the hook, test only if you can without a DOM; otherwise state that in the report.
+
+DONE WHEN: `npx vitest run src/renderer/state src/renderer/Sidebar` passes; `npx tsc --noEmit -p tsconfig.web.json --composite false` has zero errors in your files.
+
+CONTEXT (all workers): Read PLAN.md and src/shared/types.ts + src/shared/ipc.ts first. The shared contract is FROZEN and owned by the orchestrator: import from it, never edit or create anything in src/shared, package.json, tsconfig*, vitest.config.ts, electron.vite.config.ts, src/main/index.ts, src/preload, src/renderer/App.tsx or main.tsx. If the contract is wrong or insufficient, do NOT work around it silently: list it under OPEN QUESTIONS. Other modules are being written IN PARALLEL by other workers in other folders and do not exist yet; code only against the contract and your own folder. Windows 11, Node 24, TypeScript strict, Vitest (globals on). No new dependencies unless the brief allows it. You may run shell commands and use the network. Do NOT git push.
+
+STANDARDS: Immutable data (return new objects, never mutate inputs, readonly types). Files <400 lines (max 800), functions <50 lines, no deep nesting. Explicit types on every exported function; no `any` (use `unknown` + narrowing); string-literal unions not enums; no console.log in production code. Explicit error handling with clear messages, never swallow errors or use empty catch. Validate external input at boundaries. No hardcoded magic values (named constants). Tests first (RED, GREEN, refactor), test names state behavior, 80%+ coverage of your logic, cover edge cases and error paths.
+
+VERIFY YOUR WORK: run `npx vitest run <your folder>` and a typecheck limited to what you can: `npx tsc --noEmit -p tsconfig.node.json --composite false` (main) or `-p tsconfig.web.json` (renderer). IGNORE type errors in files you do not own (other workers are mid-edit), but there must be zero in yours.
+
+REPORT BACK (end your reply with exactly this):
+- SUMMARY: <=6 lines
+- FILES CHANGED: list
+- COMMANDS RUN + RESULT: pass/fail with the last error lines
+- OPEN QUESTIONS / ASSUMPTIONS: list (anything the brief did not say; contract problems)
+- NOT DONE: list

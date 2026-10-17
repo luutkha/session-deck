@@ -1,0 +1,22 @@
+GOAL: Fix seven verified bugs in the SessionDeck sidebar UI found by an independent code review. Keep changes minimal and local; do not redesign.
+SCOPE (you own only): src/renderer/Sidebar/** and src/renderer/state/** . Do NOT touch src/renderer/App.tsx, src/renderer/Terminal/**, src/preload/**, src/main/**, src/shared/** (another worker is editing App.tsx/main/preload right now).
+READ FIRST: PLAN.md, src/shared/types.ts, then the files named below.
+
+BUGS (file:line are from the review, re-locate them yourself; each has a concrete trigger):
+1. src/renderer/state/useSessionStore.ts (~lines 100-112): the guard `window.api` is truthy for an empty stub object (`{}`), so `window.api.getStore()` then throws synchronously inside the effect (white screen). Fix: guard with `typeof window.api?.getStore === 'function'`, wrap the initial load in try/catch, set `lastError` to a clear message ('Application bridge not available') instead of throwing.
+2. src/renderer/Sidebar/Sidebar.tsx (~63-65, 290): `selectedStatuses` (status filter) is never pruned when a selected status is deleted, so filterByStatus matches nothing and the list looks empty with no way to un-toggle it. Fix: derive the effective filter by intersecting with the ids that still exist (put this in a small PURE function in src/renderer/state/selectors.ts, e.g. `pruneStatusFilter(selected, statuses)`, with unit tests).
+3. src/renderer/Sidebar/ContextMenu.tsx (~90-171): keydown events inside an open submenu bubble to the parent menu's handler, so ArrowDown in a submenu also moves the parent highlight and steals focus, and ArrowLeft closes the whole menu. Fix: submenu list handles its own keys and calls stopPropagation; ArrowLeft closes only the submenu and returns focus to its parent item; Esc closes the submenu first, then the menu.
+4. src/renderer/Sidebar/Sidebar.tsx (~331-352): the remove-session confirm overlay has no focus management, no Esc handling and no aria-modal. Fix: reuse the existing `Modal` component (Modal.tsx) for the confirm, or give it equivalent behavior (focus first button on open, Tab trap, Esc cancels, restore focus on close, role="alertdialog" + aria-modal).
+5. src/renderer/Sidebar/Sidebar.tsx (~85-88): the window-level Ctrl+N handler fires even while a text input is focused, which blurs and commits a half-typed rename behind the new dialog. Fix: ignore Ctrl+N when the event target is an input, textarea, select or contenteditable element, and also while a modal is open. Put the decision in a PURE function in uiLogic.ts (`shouldHandleGlobalShortcut(target, modalOpen)`) with tests.
+6. src/renderer/Sidebar/InlineEdit.tsx (~49-54, 99): on a validation failure the blur handler re-focuses the input, so an invalid draft can never be dismissed by clicking elsewhere, and a stale rename stays attached to a row that is no longer active. Fix: on blur with an invalid value CANCEL the edit (revert) instead of refocusing; Enter with an invalid value keeps editing and shows the error; Esc cancels.
+7. src/renderer/Sidebar/StatusEditor.tsx (~46-52, 113-134): the color swatch is uncontrolled (defaultValue) while handlers validate against the STORE value, so a picked color can be silently lost. Fix: make color and name controlled local draft state per row; commit the draft (both fields) via upsertStatus after validateStatusDraft on blur/change; show the error on the row if upsert rejects and keep the draft visible.
+ALSO (tiny): GroupSection.tsx ~104 remove `aria-expanded` from the element with role="group" (the caret button already exposes it).
+
+STANDARDS: immutable updates, no `any`, no console.log, explicit types on exports, files < 400 lines (Sidebar.tsx is already large: if your change pushes it over 400 lines, extract the confirm dialog or shortcut logic into its own file), clear error handling. Tests first for every pure function you add or change (Vitest, node env, no DOM). Update src/renderer/Sidebar/MANUAL_TEST.md with a short manual check for bugs 3-7.
+VERIFY: `npx vitest run src/renderer` and `npx tsc --noEmit -p tsconfig.web.json --composite false` must both be clean for your folders (ignore errors in App.tsx if the other worker is mid-edit).
+REPORT BACK (end your reply with exactly this):
+- SUMMARY: <=6 lines
+- FILES CHANGED: list
+- COMMANDS RUN + RESULT: pass/fail counts
+- OPEN QUESTIONS / ASSUMPTIONS: list
+- NOT DONE: list (say which of the 7 bugs, if any, you did not fix and why)

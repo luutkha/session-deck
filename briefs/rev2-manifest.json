@@ -1,0 +1,7 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 2, "maxCost": 0.15,
+  "tasks": [
+    { "name": "rev2-renderer", "brief": "briefs/rev2-renderer.txt", "model": "opencode-go/deepseek-v4-flash", "agent": "plan",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 1500, "stallSec": 400 },
+    { "name": "rev2-main", "brief": "briefs/rev2-main.txt", "model": "opencode-go/deepseek-v4-flash", "agent": "plan",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 1500, "stallSec": 400 }
+  ] }

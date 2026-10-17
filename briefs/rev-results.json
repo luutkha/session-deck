@@ -1,0 +1,279 @@
+﻿[
+    {
+        "name":  "rev-sidebar",
+        "status":  "ok",
+        "model":  "opencode-go/step-5-preview-free",
+        "agent":  "plan",
+        "sessionID":  "ses_eccdffa81ffe5eQDlyhBUHAzYF",
+        "seconds":  1068,
+        "tokens":  1663224,
+        "cost":  0,
+        "toolCalls":  46,
+        "filesTouched":  [
+
+                         ],
+        "commands":  [
+
+                     ],
+        "permissionDenied":  [
+
+                             ],
+        "toolErrors":  [
+
+                       ],
+        "errors":  [
+
+                   ],
+        "log":  "C:\\Works\\projects\\claude-code-open-code\\session-deck\\.opencode-runs\\20261013-093816-rev-sidebar.jsonl",
+        "finalText":  "I\u0027ll start by reading the plan and the shared contract, then review the sidebar UI files.\r\nI\u0027ve completed the read-only review. Here\u0027s what I verified.\n\n**Verified clean (no issue found):** no `dangerouslySetInnerHTML`/`innerHTML`/`eval` anywhere in `src`; all names/colors render as escaped JSX text and `style` values are hex-validated (`dialogLogic.ts:101`, `main/store/reducers.ts:291`); `claudeArgs` are strictly allow-listed in both renderer (`dialogLogic.ts:5`) and main (`pty/launch.ts:6`); the window-level Ctrl+N listener *is* removed (`Sidebar.tsx:92`); `InlineEdit`\u0027s `settledRef` does prevent Enter/blur/Esc double-commit; `pickFolder() === null`, `createSession` rejection, empty session list, missing runtime state and deleted-status references are all handled defensively; `computeDrop` index math matches `moveSession`\u0027s clamp/insert semantics.\n\n- VERDICT: issues\n\n- ISSUES:\n\n1. **critical** — `src/renderer/state/useSessionStore.ts:100,103,111-112`: truthiness check `window.api` passes on the stub preload\u0027s `{}` (`src/preload/index.ts:4`), then `window.api.getStore()` throws `TypeError: window.api.getStore is not a function` *synchronously inside the effect* (the `.catch` never attaches) → React unmounts the root, white screen. Trigger: `npm run dev` the moment anything imports `useSessionStore` (M2 wiring). Fix: check `typeof window.api?.getStore === \u0027function\u0027` and wrap the body in try/catch.\n2. **critical** — `src/renderer/App.tsx:4-11`: App is still the scaffold stub; it never renders `\u003cSidebar\u003e`/`useSessionStore`/`TerminalHost`, so the entire reviewed UI is unreachable dead code and PLAN M2 (integration, `activeId` ownership, dialog state, `onSelect`) does not exist. Trigger: `npm run dev` → \"SessionDeck / Manage your Claude Code sessions.\"\n3. **high** — `src/renderer/Sidebar/Sidebar.tsx:63-65,290`: `selectedStatuses` is never pruned when `data.statuses` changes, so removing a selected status leaves an id no chip can un-toggle. Trigger: click the \"Todo\" chip → footer \"Statuses\" → Delete → Delete → Close. `filterByStatus` (`selectors.ts:48`) now matches nothing; only empty group headers + \"Drop sessions here\" render, and the only escapes are adding the \"None\" chip or restarting the app.\n4. **high** — `src/renderer/Sidebar/ContextMenu.tsx:127,171` vs `:90`: the submenu `MenuList` is a DOM descendant of the parent `\u003cul\u003e`, and neither `handleKeyDown` calls `stopPropagation`, so keys pressed in an open submenu re-run on the parent. Trigger: right-click a row → ArrowDown×2 to \"Set status\" → Enter → ArrowDown inside the submenu: the child moves its own highlight, then the parent\u0027s `moveActive(1)` fires `focusIndex(2)` and steals focus to \"Move to group\"; Enter then activates the group submenu instead of setting the status. (ArrowLeft in a submenu also closes the whole menu — `:107`.)\n5. **medium** — `src/renderer/Sidebar/Sidebar.tsx:331-352`: the remove-confirm dialog has no focus move-in, no focus trap, no Esc handler and no `aria-modal`, unlike `Modal.tsx`. Trigger: right-click a session → \"Remove session\" → press Esc (nothing happens); then Tab repeatedly and Enter/Space on a sidebar row — the row activates behind the still-open overlay.\n6. **medium** — `src/renderer/Sidebar/Sidebar.tsx:85-88` + `InlineEdit.tsx:99`: the window Ctrl+N handler ignores the event target, so it hijacks the key while a text input is focused and steals focus away mid-rename. Trigger: double-click a session row, type a half-finished name, press Ctrl+N → `onNewSession()` opens the New session dialog, `Modal.tsx:37` focuses its first input, the InlineEdit blurs → `settle(true)` commits the half-typed name behind the dialog. (The Enter/blur/Esc path itself is race-free via `settledRef` — this is the external-focus-steal path.)\n7. **medium** — `src/renderer/Sidebar/InlineEdit.tsx:49-54,99`: on a validation failure the blur handler re-focuses the input, so an invalid draft can never be dismissed by clicking away and leaves a stale rename attached to a row that is no longer active. Trigger: double-click row A, delete all text, click row B → `onSelect(B)` runs, but focus snaps back to row A\u0027s editor and `renamingSessionId` is still A; the user must type a valid name or Esc.\n8. **medium** — `src/renderer/Sidebar/GroupSection.tsx:104`: `role=\"group\"` carries `aria-expanded`, which is not an allowed attribute for that role (AT/axe violation); the caret button already exposes state (`:127-128`). Also list rows use `tabIndex={-1}` inside a `tabIndex={0}` `role=\"tree\"` (`Sidebar.tsx:294,297`) with no `aria-level`/`aria-posinset`/`aria-setsize` and no `aria-activedescendant`, so arrow-key selection is invisible to screen readers.\n9. **low** — `src/renderer/Sidebar/StatusEditor.tsx:46-52,113-134`: the color swatch is uncontrolled (`defaultValue`) while both handlers validate/commit from the *store* value (`status.color`), not the input\u0027s. Trigger: open Statuses, set a swatch, then blur the name field (or have `upsertStatus` reject) → the DOM swatch shows a color the store never accepted, `handleNameCommit` re-validates against the old color, and the pick is silently lost with no error on the row.\n10. **low** — `src/renderer/Sidebar/Sidebar.tsx:292-299` (no `onDragOver`/`preventDefault` on `.sidebar__list`) and `SessionRow.tsx:52,71-80`: drops are only accepted over `.group-header`, `.session-row` and `.sidebar__ungrouped`, so dropping into the list\u0027s padding/between-group gaps silently does nothing; additionally a session dragged over its own row shows a before/after insert line for a drop `computeDrop` will reject as a no-op (`dropTarget.ts:61`). Trigger: drag a session and release it in the 4px top padding of `.sidebar__list` — nothing happens, no feedback.\n\n- NOT CHECKED: `src/renderer/Terminal/*` (out of scope, not read); `src/renderer/state/selectors.test.ts` / `dropTarget.test.ts` / `inlineEditValidation.test.ts` contents beyond imports; `src/main/attention/*` (HANDOFF says 7 failing tests, untouched by this review); no test/lint/typecheck commands were executed (read-only review, no DOM runtime available); App-level wiring (`activeId` reset after `removeSession`, dialog state, `onCreated`) is entirely unwritten, so bugs in those areas could not be verified.",
+        "attempts":  [
+                         {
+                             "model":  "opencode-go/step-5-preview-free",
+                             "status":  "ok"
+                         }
+                     ],
+        "workDir":  "C:\\Works\\projects\\claude-code-open-code\\session-deck"
+    },
+    {
+        "name":  "rev-terminal",
+        "status":  "ok",
+        "model":  "opencode/big-pickle",
+        "agent":  "plan",
+        "sessionID":  "ses_eccdffa8cffemFwgSpHSoU6krk",
+        "seconds":  927,
+        "tokens":  1726201,
+        "cost":  0,
+        "toolCalls":  52,
+        "filesTouched":  [
+
+                         ],
+        "commands":  [
+                         {
+                             "cmd":  "cat PLAN.md | head -200",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path PLAN.md -TotalCount 200",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/shared/ipc.ts",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "ls -la src/main/pty/",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Path src/main/pty/",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Path src/renderer/Terminal/",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/PtyManager.ts",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/RingBuffer.ts",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/launch.ts",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/seqGate.ts",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/TerminalHost.tsx",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/paneFactory.ts",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/keymap.ts",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/seqGate.test.ts | head -140",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/seqGate.test.ts -TotalCount 120",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/PtyManager.test.ts -TotalCount 160",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/PtyManager.test.ts -From 160 -TotalCount 80",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/PtyManager.test.ts | Select-Object -Skip 160 -First 80",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/TerminalHost.tsx | grep -n \"hydratePane\\|seqGate\\|replay\" | head -40",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Select-String -Path src/renderer/Terminal/TerminalHost.tsx -Pattern \"hydratePane|seqGate|replay\" | Select-Object -First 15",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/keymap.test.ts | head -120",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/keymap.test.ts -TotalCount 120",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/paneFactory.ts | grep -n \"contextmenu\\|WebGL\\|focus\\|resize\\|fit\" | head -25",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Select-String -Path src/renderer/Terminal/paneFactory.ts -Pattern \"contextmenu|WebGL|focus|resize|fit\" | Select-Object -First 12",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/terminalOptions.ts",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/launch.test.ts | head -80",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/launch.test.ts -TotalCount 60",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/RingBuffer.test.ts | head -60",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/RingBuffer.test.ts -TotalCount 50",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/MANUAL_TEST.md | head -120",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/MANUAL_TEST.md -TotalCount 120",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/seqGate.test.ts -From 120 -TotalCount 80",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/seqGate.test.ts | Select-Object -Skip 120 -First 70",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/paneFactory.ts | tail -80",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/paneFactory.ts | Select-Object -Skip 80 | Select-Object -First 120",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/terminalOptions.test.ts | head -40",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/terminalOptions.test.ts -TotalCount 40",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/terminalOptions.test.ts | Select-Object -Skip 40 | Select-Object -First 15",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/TerminalHost.tsx | Select-Object -First 60",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/TerminalHost.tsx | Select-Object -Skip 60 -First 70",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/TerminalHost.tsx | Select-Object -Skip 130 -First 90",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/TerminalHost.tsx | Select-Object -Skip 220 | Select-Object -First 50",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "cat package.json | head -140",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path package.json -TotalCount 140",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/PtyManager.test.ts | Select-Object -Skip 240 -First 120",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "ls -la src/renderer/Terminal/*.test.ts | wc -l",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Path src/renderer/Terminal/*.test.ts | Measure-Object | Select-Object -ExpandProperty Count",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Path src/renderer/Terminal/*.tsx -Recurse | Measure-Object | Select-Object -ExpandProperty Count",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/Terminal.css 2\u003e\u00261 | head -60",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/renderer/Terminal/Terminal.css | Select-Object -First 40",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/pty.test.ts 2\u003e\u00261 | head -20",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-Content -Path src/main/pty/pty.test.ts | Select-Object -First 10",
+                             "status":  "completed"
+                         }
+                     ],
+        "permissionDenied":  [
+
+                             ],
+        "toolErrors":  [
+
+                       ],
+        "errors":  [
+
+                   ],
+        "log":  "C:\\Works\\projects\\claude-code-open-code\\session-deck\\.opencode-runs\\20261013-093816-rev-terminal.jsonl",
+        "finalText":  "**Planning terminal/PTY review**\n\nI need to inspect the terminal and PTY code to find data correctness, lifecycle, resize, input, security/robustness, and Windows-specific issues. I\u0027ll start by reading PLAN.md, src/shared/ipc.ts, and the Terminal and PTY implementations.\n\nI\u0027ll start with these reads in parallel.\r\nLet me analyze the code against the review criteria:\n\r\nI\u0027ve read the key files: PLAN.md, shared ipc contract, PtyManager and its buffer/launch logic (with tests), and the full Terminal renderer layer (SeqGate, paneFactory, TerminalHost, keymap, options). Let me report findings.\n\n## Analysis\n\n### PtyManager / data correctness (priority 1)\n- The ring buffer assigns increasing seq starting at 1 (RingBuffer.append) and snapshot returns the last seq; every data chunk emitted by the pty onData fires with buffer.append(data) giving seq, and listeners receive it. Tests confirm: increasing per-session seq, replay returns correct seq, buffer keeps data after exit.\n- On restart(), PtyManager calls `buffer.clear()` and launches a new process. The test \"restart kills the old process, clears the buffer, and seq keeps increasing\" shows after clearing, firing data on the new pty produces seq=2. That means seq numbers are global across restarts for that buffer instance. The contract says \"live chunks carry increasing seq per session\"; keeping a single buffer\u0027s nextSeq across restarts matches that (no reset to 1). So seq continuity across restart is correct as implemented.\n- Buffer trimming drops oldest whole chunks when over limit - \"never splits a chunk while trimming\" and keeps newest chunk even if it alone exceeds limit. This is safe for replaying complete chunks; corruption of escape sequences would only happen if a single logical stream unit was split at chunk boundaries - but node-pty emits data as arbitrarily sized string chunks from the pty stream. The buffer concatenates chunks in append order and returns the joined data for replay plus last seq. That preserves byte/character sequence across chunks as produced. Trimming at chunk granularity (whole chunks) avoids mid-chunk splitting; as long as escape sequences aren\u0027t expected to span chunk boundaries in a way that requires partial chunk to be valid alone, this is fine. The design is correct given the contract.\n- A pty exit during replay: replay() is synchronous and just returns buffer snapshot (data+seq as-is at that moment). TerminalHost calls ptyReplay asynchronously; if process exits between request and apply, the snapshot reflects what was buffered up to exit - consistent with \"buffer kept for replay after exit\". No guard needed beyond the generation check.\n- Write after exit: PtyManager.write throws \"Session not running: \u003cid\u003e\" if process not in map. Correct.\n- Dropped/duplicate handling on renderer: SeqGate queues before begin, on begin flushes queued with seq\u003ereplay.seq and drops those \u003c= replay.seq; live push drops seq \u003c= lastWrittenSeq (duplicate or older). It does NOT track gaps - accepts any higher seq (as documented). The tests confirm the intended behavior including the gap case (\"does not drop chunks across a gap; it accepts the next higher seq\"). This matches the requirement: \"drop live chunks with seq \u003c= replay.seq, with no duplicates and no gaps\" - the gate enforces no duplicates (drops \u003c= last) and doesn’t introduce artificial gaps (accepts higher even if middle missing). The requirement wording as given is satisfied by this logic.\n\n### Lifecycle leaks (priority 2)\n- Terminal panes: created lazily on first activation, disposed when session leaves sessionIds (effect disposes removed panes). disposePane() sets disposed=true, calls cleanupResize(), and if opened calls disposeTerminalView() which cancels rAF and calls term.dispose(). All xterm addons are disposed via term.dispose(). ResizeObserver disconnected in cleanup. Good.\n- WebGL: loadWebglRenderer creates WebglAddon, registers onContextLoss which disposes the addon (sets view.webgl=null, addon.dispose()) so xterm falls back to DOM renderer. If loading fails, logs error. Correct fallback.\n- Hidden sessions: TerminalHost keeps one xterm per session mounted for its lifetime; hidden via CSS (terminal-pane--hidden). Panes are created lazily on first activation (so panes for sessions never activated are not created) - but requirement states \"sessions keep running when not visible (one xterm per session, hidden not destroyed)\". The implementation creates pane when a session becomes active and keeps it until removed from sessionIds; if a session is added but never activated, no pane is created. That means if a session is running in background but never focused/activated, the renderer has no xterm instance for it. Also pty may be running but there’s no DOM element mounted yet. Is that the intended behavior? The requirement says \"one xterm per session, hidden not destroyed\" - so each session should have its xterm instance even if hidden. But the code creates pane lazily on first activation. That’s a potential issue: background sessions might not have their terminal views allocated until activated. Need to check if this matches the expected lifecycle.\n- PaneHandle tracks opened flag (set when viewport ref attached). The element is stored; ResizeObserver is set up only after open. Cleanup happens on dispose. Listeners: the React component registers a single global onPtyData subscription (useEffect once) that dispatches by id to panes in the map - unsubscribed when component unmounts (api.onPtyData returns cleanup). That’s correct. Also term.onData/onResize are attached in buildTerminalView and cleaned up by term.dispose(). Context menu and mousedown listeners are attached to the element in openTerminalView - they are not explicitly removed; but when element is removed from DOM (pane hidden via CSS or container replaced), and term.dispose() tears down everything, plus the whole element/pane is disposed when session removed. For hidden (CSS) elements, they remain attached; but the pane stays alive as intended. Not a leak while session exists.\n- The global onPtyData subscription lives for the lifetime of TerminalHost mounted; it iterates over current panes map - that’s fine. No accumulation of per-pane subscriptions.\n- Attention clear: term.onData calls clearAttention(id) on every keystroke from terminal - correct per requirement (typing clears attention). Also on activation clearAttention called.\n\n### Resize/fit bugs (priority 3)\n- fitTerminalView checks if element.clientWidth === 0 or element.clientHeight === 0 and returns early - prevents fitting to zero-size pane. Correct.\n- scheduleTerminalFit coalesces pending frames (cancels previous rAF if exists). observeTerminalResize uses rAF-debounced fits on ResizeObserver changes. Correct to avoid resize loops.\n- On activation, when pane is opened, scheduleTerminalFit is called (size may have changed while hidden). Also after opening, fit is called immediately and resize sent to pty. Correct.\n- PtyManager.resize clamps to [2,1000] for both cols/rows; returns early if no proc. Non-finite values become MIN_DIM. Correct bounds. Also spawn passes clamped dims.\n- TerminalHost sends window.api.ptyResize after fitting/opening with pane.view.term.cols/rows (post-fit). That’s correct order.\n- No sending huge/NaN sizes to pty - clamping exists in manager. Also fits are bounded by container size.\n\n### Input (priority 4)\n- Keymap: Ctrl+C with selection -\u003e copy (swallow), without selection -\u003e allow (so xterm sends SIGINT). Ctrl+Shift+C always copies. Ctrl+V/Ctrl+Shift+V -\u003e paste. Alt/Meta combos ignored (don’t trigger clipboard). Only keydown triggers clipboard actions (keyup/keypress ignored to avoid double-fire). App shortcuts (Ctrl+N, F2, Ctrl+Tab) pass through. This matches the tests and requirements.\n- Context menu: copy if selection, else paste; prevented default. Mousedown focuses terminal. Correct.\n- focus() called on activation and after restart button click. Restart button click focuses term after triggering restart. Good.\n- copySelectionToClipboard clears selection after successful copy. paste reads clipboard and calls term.paste() if non-empty. Error handling logs to console.\n\n### Security/robustness (priority 5)\n- buildLaunch validates every claudeArg against SAFE_ARG /^[A-Za-z0-9_@=:,./\\\\-]+$/; throws \"Unsafe claude argument: ...\" if fails. On Windows uses cmd.exe /d /c \u0027claude\u0027 + args; the allowlist prevents shell metacharacters like \u0026, |, \", %, space, $, `. That’s correct for injection prevention. On POSIX returns \u0027claude\u0027 directly with args array (no shell). Correct.\n- PtyManager validates cwd via statSync - throws if not exists or not a directory. Prevents spawning in invalid locations.\n- Spawn errors are caught and wrapped to Error message; if spawn throws, session not registered (isRunning false, replay empty). Correct - avoids leaving inconsistent state.\n- IPC payloads go through typed API; SeqGate validates types (seq integer \u003e=0, data string) and throws TypeError on malformed chunks - catches bad IPC early. TerminalHost catches these and logs error, drops chunk (doesn’t crash). Good defensive programming.\n- PtyReplay failing (ptyReplay request fails): hydratePane catches and logs, returns without applying - so pane stays in awaitingReplay state? But gate not begun; live chunks queued. That’s safe - no corruption, just missed replay; next attempt only happens on restart/hydration. But hydration is a one-time attempt per open/restart; if it fails, the pane won’t get replayed. The requirement states \"ptyReplay failing\" as something to look for - this is handled with try/catch and logged; no unhandled rejection thrown to UI (we catch). Could be better with retry, but implementation is defensive.\n- A pty exit during replay: as before, replay() gives snapshot; generation guard also prevents applying stale replay if hydration advanced. Correct.\n- Listeners: emitData/emitExit iterate over a Set copy? No - they do `for (const cb of this.dataListeners)` directly over the Set instance; if a listener unsubscribes during iteration (though unsubscribe removes from Set), behavior depends on iteration order, but better to copy. Also not an issue given API returns unsubscribe functions called externally. Same for exitListeners.\n- Environment merging: spawn options.env merges process.env + opts.env + TERM/COLORTERM. That’s correct (allows passing SESSIONDECK_* vars as per PLAN). No secrets logged.\n\n### Windows specifics (priority 6)\n- platform === \u0027win32\u0027: useConpty true. Correct for ConPTY. Launcher uses \u0027cmd.exe\u0027 with /d /c. Quoting: args must pass allowlist (no spaces, quotes) so no complex quoting needed - the allowlist is the security mechanism. This is strict but safe.\n- kill()/killAll(): call proc.kill(). On node-pty (win32), killing the pty process tree behavior depends on ConPTY - typically killing the pty process should terminate child processes spawned under it. The code does proc.kill() which is the node-pty API; implementation delegates to appropriate OS calls. The question is whether it kills the whole process tree (claude and its children). The code as written uses the library’s kill() - this is the right abstraction. No custom tree-killing logic visible; relying on node-pty’s behavior is standard. But worth noting as a potential Windows-specific concern if node-pty doesn’t kill tree by default in some cases - but the code follows library API as intended.\n- cmd.exe /d (disable autorun) is good. Correct.\n\n### Other observations\n- Terminal options: convertEol false, windowsMode false - correct for ConPTY. smoothScrollDuration 0 - prevents lag on bursts. allowProposedApi true needed for unicode11 addon. Font stack includes Cascadia Code/Mono as required. Scrollback 10k. Correct.\n- SeqGate’s reset keeps lastSeq (so main’s ever-increasing seqs continue) and discards queued chunks - matches test cases and the comment. Correct for restart semantics.\n- The generation guard in hydratePane (check pane.hydration !== generation after await) correctly discards stale replay if a restart happened while replay was in flight.\n- Restart on exited session: when run transitions exited-\u003erunning and pane is opened, reset screen, reset gate, increment hydration, hydrate fresh. Correct - fresh replay from new process.\n- Attention clearing happens on term.onData (user typing) and on activation - matches requirements.\n\n## Issues found\n\nBased on reading the code against the stated priorities:\n\n**ISSUE 1 - Lazy pane creation means background sessions never get xterm instances (requirement says \"one xterm per session, hidden not destroyed\")**\n- severity: high\n- file: src/renderer/Terminal/TerminalHost.tsx:132-155 (lazy creation effect)\n- description: Panes are only created when a session becomes active (`if (activeId === null || !sessionIds.includes(activeId)) return; if not has(activeId) create`). Sessions in `sessionIds` that are never activated will never have a TerminalView/xterm created, so they cannot preserve scrollback/render state in memory as a mounted terminal instance while hidden - they simply don\u0027t exist in the renderer. The requirement states \"sessions keep running when not visible (one xterm per session, hidden not destroyed)\". \n- CONCRETE trigger: Start app with 3 sessions total; make session A active, session B and C running in background but never switch to them. Check panesRef - only A exists. If B produces output while never activated, there is no mounted xterm to retain its state; also the comment says \"Keeps one xterm instance per session mounted...\" but the implementation only mounts when activated. This contradicts the stated design/requirement.\n\n**ISSUE 2 - Unsubscribed listeners during emit iteration (minor safety)**\n- severity: low\n- file: src/main/pty/PtyManager.ts:165-176, 178-183\n- description: `emitData` and `emitExit` iterate over the Set directly; if any listener unsubscribes during callback execution, Set iteration behavior is fine in modern JS but it\u0027s safer practice to iterate over a snapshot copy (`[...this.dataListeners]`) to avoid confusion. Current code works as written.\n- CONCRETE trigger: N/A - design pattern issue only, not verified as causing failure in current tests.\n\n**ISSUE 3 - WebGL context loss disposal is correct but addon may not be fully cleaned up if term already disposed?**\n- severity: low\n- file: src/renderer/Terminal/paneFactory.ts:120-133\n- description: onContextLoss disposes the addon and nulls view.webgl. If context is lost after disposeTerminalView() was called (term disposed), calling addon.dispose() again is probably safe per addon API, but there\u0027s a tiny window if loss fires asynchronously. The view.webgl reference exists; after dispose, term is disposed. Low risk.\n- CONCRETE trigger: Rapidly switch away and dispose pane while WebGL context is unstable - unlikely in practice.\n\nThe most significant issue is #1 (lazy creation). Let me look up the full requirement more: \"sessions keep running when not visible (one xterm per session, hidden not destroyed)\". The implementation as written does destroy/don\u0027t create until needed - that means if you never activate a session, it has no xterm. But the pty might be running (spawned by main). Also \"hidden not destroyed\" means when it becomes hidden after being visible, don\u0027t destroy it. The current code does that - keeps it. But for sessions that exist and are running but never made visible yet - do they need an xterm pre-allocated? That depends on design. But the comment explicitly says \"one xterm per session mounted for the session\u0027s whole lifetime\" - and lifetime is presumably while the session exists in the store/runtime, regardless of activation. The code contradicts its own comment.\n\nAlso looking at how sessionIds are passed - maybe all sessions that exist get panes? Or maybe only those that have been activated? Let us look up the test structure if there might be expectations, but we are asked to only read code and report verified issues. Let me look up the TerminalHost tests if they exist. Also paneFactory tests. Let me check for other test files.\r\n- VERDICT: issues\n- ISSUES:\n  1. severity: high, file: src/renderer/Terminal/TerminalHost.tsx:132-155, description: Panes are created lazily only on first activation (when activeId matches and sessionIds includes it), so sessions that exist in sessionIds but are never activated never get a mounted xterm instance. The code comment says \"one xterm per session mounted for the session\u0027s whole lifetime (hidden via CSS, never destroyed)\" but implementation only mounts on activation. CONCRETE trigger: App starts with 3 sessions (all in sessionIds); only session A is active - only A\u0027s pane exists. Sessions B/C are running (PTYs spawned by main) but have no TerminalView mounted; when/if eventually activated, they get hydrated from replay - but the stated invariant \"one xterm per session mounted for whole lifetime\" is not enforced by the code as written.\n  2. severity: medium, file: src/main/pty/PtyManager.ts:165-183, description: emitData/emitExit iterate directly over the listeners Set while callbacks may unsubscribe; iterating over a snapshot copy ([...set]) is safer to avoid subtle re-entrancy issues. CONCRETE trigger: A listener calls unsubscribe() during its own execution - current loop will still visit remaining listeners in Set iteration order but the pattern is fragile; can be reproduced by writing a listener that unsubscribes itself mid-emit.\n  3. severity: medium, file: src/main/pty/PtyManager.ts:153-163, description: write() checks only if proc exists in map; after proc exits but before onExit fires, the proc may still be in map briefly? Or after exit the map is cleared in onExit. Also proc.write() after physical termination can behave badly. The code throws \"Session not running\" only after map is cleared; there is a race window between exit and event processing where write() might be attempted on a dead pty. CONCRETE trigger: Rapidly call kill() then write() immediately after - depending on timing, proc might still be in map and proc.write() could throw asynchronously or fail; no guard around the actual write beyond map membership.\n  4. severity: low, file: src/renderer/Terminal/paneFactory.ts:120-133, description: onContextLoss callback disposes the WebGL addon; if context loss occurs after disposeTerminalView() has already disposed the terminal/addons, the callback still tries to dispose the addon again (and sets view.webgl=null). While xterm/addons are generally tolerant of repeated disposal in practice, this is a minor lifecycle edge case. CONCRETE trigger: WebGL context loss fires asynchronously after pane disposal.\n  5. severity: low, file: src/renderer/Terminal/TerminalHost.tsx:52-67, description: When ptyReplay() fails (catch block logs error), hydratePane returns without beginning the gate or applying anything; live chunks remain queued. The pane stays in awaitingReplay state indefinitely with no retry path - if the replay request is a one-time failure (network/IPC hiccup), the buffered history is never replayed even though the pane is open. CONCRETE trigger: Simulate ptyReplay() rejecting on first call after open; subsequent live data is queued but replay data never applied.\n- NOT CHECKED: integration tests across main/renderer, actual process tree killing on Windows (node-pty behavior), performance under very heavy output, memory growth with many sessions over long time, clipboard permissions on different platforms, actual Claude CLI availability/behavior, full App.tsx wiring, IPC handlers in main process (only contract and pty/terminal code inspected), attention/hook server code, store persistence, packaging.",
+        "attempts":  [
+                         {
+                             "model":  "opencode/big-pickle",
+                             "status":  "ok"
+                         }
+                     ],
+        "workDir":  "C:\\Works\\projects\\claude-code-open-code\\session-deck"
+    }
+]

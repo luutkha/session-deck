@@ -1,0 +1,13 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 5, "maxCost": 0.30,
+  "tasks": [
+    { "name": "g1-backend-core", "brief": "briefs/g1-backend-core.txt", "model": "opencode-go/claude-haiku-5-5",
+      "fallback": ["opencode-go/deepseek-v4-flash"], "timeoutSec": 3000, "stallSec": 450 },
+    { "name": "g1-split", "brief": "briefs/g1-split.txt", "model": "opencode-go/claude-haiku-5-5",
+      "fallback": ["opencode-go/deepseek-v4-flash"], "timeoutSec": 3000, "stallSec": 450 },
+    { "name": "g1-settings-ui", "brief": "briefs/g1-settings-ui.txt", "model": "opencode-go/deepseek-v4-flash",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 3000, "stallSec": 450 },
+    { "name": "g1-cards-quota-ui", "brief": "briefs/g1-cards-quota-ui.txt", "model": "opencode-go/deepseek-v4-flash",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 3000, "stallSec": 450 },
+    { "name": "g1-packaging", "brief": "briefs/g1-packaging.txt", "model": "opencode-go/claude-haiku-5-5",
+      "fallback": ["opencode-go/deepseek-v4-flash"], "timeoutSec": 3000, "stallSec": 600 }
+  ] }

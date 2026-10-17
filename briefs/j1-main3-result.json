@@ -1,0 +1,28 @@
+﻿{
+    "name":  "j1-opencode-main3",
+    "status":  "error",
+    "model":  "opencode-go/deepseek-v4-flash",
+    "agent":  "",
+    "sessionID":  "ses_eb8139096ffeWy0EBHjZOdYaaK",
+    "seconds":  3,
+    "tokens":  0,
+    "cost":  0,
+    "toolCalls":  0,
+    "filesTouched":  [
+
+                     ],
+    "commands":  [
+
+                 ],
+    "permissionDenied":  [
+
+                         ],
+    "toolErrors":  [
+
+                   ],
+    "errors":  [
+                   "Unexpected server error. Check server logs for details."
+               ],
+    "log":  "C:\\Works\\projects\\claude-code-open-code\\session-deck\\.opencode-runs\\20261017-103357-j1-opencode-main3.jsonl",
+    "finalText":  ""
+}

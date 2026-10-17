@@ -1,0 +1,19 @@
+GOAL: Implement the PTY layer in src/main/pty/: spawn and manage one `claude` process per session, with output replay and per-session sequence numbers.
+SCOPE (you own only): src/main/pty/** (keep the existing pty.test.ts passing; you may add files).
+
+SPEC:
+launch.ts: pure `buildLaunch(platform: NodeJS.Platform, claudeArgs: readonly string[]): {file:string; args:string[]}`.
+- Validate every arg against /^[A-Za-z0-9_@=:,.\/\\-]+$/ ; otherwise throw Error(`Unsafe claude argument: <arg>`) (prevents shell injection; args come from user input).
+- win32 -> file 'cmd.exe', args ['/d','/c','claude', ...claudeArgs] (claude is a .cmd shim on Windows). Other platforms -> file 'claude', args claudeArgs.
+
+RingBuffer.ts: stores chunks {seq:number,data:string} up to `limitChars` (default 1_000_000). append(data) assigns increasing seq (starting at 1) and returns it; when over the limit, drop the oldest WHOLE chunks (never split a chunk; always keep the newest chunk even if it alone exceeds the limit). snapshot(): {data: string (concatenated), seq: number (last seq, 0 if none)}. clear() keeps the seq counter monotonic.
+
+PtyManager.ts: class PtyManager(deps?: {spawn?: typeof import('node-pty').spawn, platform?: NodeJS.Platform, bufferLimit?: number}).
+- start(opts:{sessionId,cwd,claudeArgs,env:Record<string,string>,cols:number,rows:number}): spawn via node-pty with name 'xterm-256color', cwd, env = {...process.env, ...opts.env, TERM:'xterm-256color', COLORTERM:'truecolor'}, useConpty true on win32. Throws if that session is already running. Validates cwd exists and is a directory (fs.statSync) else Error(`Directory not found: <cwd>`). cols/rows clamped to 2..1000.
+- Events: onData(cb:(id,data,seq)=>void) and onExit(cb:(id,code:number|null)=>void); each returns an unsubscribe fn. Every pty data chunk is appended to that session's RingBuffer (seq assigned there) and then emitted with that seq. On exit: emit exit once, mark not running, KEEP the buffer for replay.
+- write(id,data) (throws Error(`Session not running: <id>`) if not running); resize(id,cols,rows) (clamped; ignored if exited); kill(id); killAll(); restart(opts) (kills if running, clears the buffer, starts again); replay(id): {data,seq} (returns {data:'',seq:0} for an unknown id); isRunning(id); dispose().
+- An error thrown by spawn must surface as an Error with the original message; never leave a half-registered session behind.
+
+Tests with an injected fake spawn: ordering/seq, buffer trimming at the limit, replay seq vs live seq consistency, exit keeps the buffer, restart clears the buffer but seq keeps increasing, write after exit throws, clamping, unsafe args rejected (`&`, `|`, `"`, `%`, space, `$`, backtick), listeners unsubscribe, killAll, spawn throwing leaves no session. Plus ONE real integration test (skipped unless process.platform==='win32'): spawn via node-pty `cmd.exe /c echo hello-sessiondeck` directly (not claude), assert the output contains the string and exit code is 0.
+
+DONE WHEN: `npx vitest run src/main/pty` passes; zero type errors in src/main/pty.

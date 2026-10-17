@@ -1,0 +1,1 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 1, "tasks": [ { "name": "feat-resume", "brief": "briefs/feat-resume.full.txt", "model": "opencode/nemotron-3-ultra-free", "fallback": ["opencode-go/deepseek-v4-flash", "opencode/big-pickle"], "timeoutSec": 3000, "stallSec": 600 } ] }

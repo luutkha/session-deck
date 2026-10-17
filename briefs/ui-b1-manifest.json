@@ -1,0 +1,1 @@
+﻿{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 1, "tasks": [ { "name": "ui-b1-close", "brief": "briefs/ui-b1-close.txt", "model": "opencode-go/claude-haiku-5-5", "fallback": ["opencode-go/minimax-m3", "opencode-go/deepseek-v4-flash"], "timeoutSec": 2400, "stallSec": 500 } ] }

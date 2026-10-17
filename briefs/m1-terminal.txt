@@ -1,0 +1,24 @@
+GOAL: Implement the terminal view in src/renderer/Terminal/: one xterm.js terminal per session, rendered as close to a native terminal as possible (fast, crisp, correct keyboard/clipboard/resize behaviour).
+SCOPE (you own only): src/renderer/Terminal/**  (React + TypeScript; xterm packages are already installed: @xterm/xterm, addon-fit, addon-webgl, addon-unicode11, addon-web-links, addon-serialize). You may NOT edit App.tsx; integration will mount your component.
+
+PUBLIC COMPONENT: `TerminalHost` (src/renderer/Terminal/TerminalHost.tsx)
+props: { sessionIds: readonly Id[]; activeId: Id | null; runtime: ReadonlyMap<Id, RuntimeState> }
+- Keeps one xterm instance per session id MOUNTED for the whole lifetime of that session (hidden with CSS visibility/display, not destroyed) so scrollback and rendering state survive switching. Create the terminal lazily the first time a session becomes active. Dispose it when its id leaves sessionIds.
+- Uses only `window.api` (typed by src/shared/ipc.ts): ptyReplay, onPtyData, ptyWrite, ptyResize, ptyRestart, clearAttention.
+
+DATA FLOW (correctness matters most here):
+- ONE onPtyData subscription in the host, dispatching to panes by id (not one listener per pane).
+- On pane creation: start queuing live chunks for that id, `await ptyReplay(id)` -> {data, seq}, write data, then flush queued chunks with seq > replay.seq in order, then switch to direct writes. Live chunks carry increasing `seq` per session; drop any with seq <= last written seq (no duplicates, no gaps). Put this logic in a PURE, unit-tested class `SeqGate` (file seqGate.ts): methods begin(replay), push(seq,data) -> string[] chunks to write, with a queue before replay is applied.
+- When runtime for an id goes exited -> running (restart), call term.reset() and reset its SeqGate to accept new sequence numbers coming from main (seq keeps increasing in main, so just keep the gate's last seq; do NOT assume it restarts at 1).
+
+TERMINAL OPTIONS (in terminalOptions.ts, a pure exported constant/func, tested): fontFamily "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace", fontSize 14, lineHeight 1.0, cursorBlink true, cursorStyle 'block', scrollback 10000, allowProposedApi true, convertEol false, windowsMode false (ConPTY handles it), smoothScrollDuration 0, theme dark (background '#1e1e1e', foreground '#cccccc', plus the 16 ANSI colors from the VS Code dark theme).
+ADDONS: FitAddon; WebglAddon (create AFTER term.open; on onContextLoss dispose the addon and continue with the DOM renderer; wrap creation in try/catch and fall back, logging nothing to console.log); Unicode11Addon (term.unicode.activeVersion='11'); WebLinksAddon (open via window.open(url), the main process will route it).
+SIZING: ResizeObserver on the pane container -> requestAnimationFrame-debounced fitAddon.fit(); term.onResize -> window.api.ptyResize(id, cols, rows); fit and send the initial size right after open and whenever the pane becomes visible. Never fit a pane with zero width/height.
+INPUT: term.onData -> window.api.ptyWrite(id, data) AND window.api.clearAttention(id). Focus the terminal whenever its pane becomes active (and on click). When a session becomes active also call clearAttention(id).
+CLIPBOARD / KEYS via attachCustomKeyEventHandler with a PURE, tested decision function in keymap.ts: Ctrl+C copies when there is a selection (and clears it) else passes through as ^C; Ctrl+V and Ctrl+Shift+V paste (term.paste with text from navigator.clipboard.readText(), errors handled); Ctrl+Shift+C copies; right-click: copy if selection else paste; Ctrl+Backspace and Shift+Enter pass through unchanged; ignore keyup/keypress for these. App-level shortcuts Ctrl+N and F2 must NOT be swallowed (return true so they bubble) and Ctrl+Tab passes through.
+EXITED STATE: when runtime[id].run === 'exited' show a small overlay at the bottom of that pane: "Process exited (code N)" and a "Restart" button calling window.api.ptyRestart(id). Terminal stays readable/scrollable.
+STYLE: Terminal.css next to the component (no global side effects; the host fills its parent 100% with 8px padding, background '#1e1e1e').
+
+TESTS (Vitest node environment; no DOM): SeqGate (queue before replay, dedup, gaps not dropped, out-of-order older seq dropped, restart continuity), keymap decision function (all key combos above incl. selection / no selection), terminalOptions sanity. Also write src/renderer/Terminal/MANUAL_TEST.md: a checklist someone can follow in the running app (rapid output `cat` of a large file stays smooth, resize window, switch sessions keeps scrollback, paste multi-line, copy selection, emoji/CJK width, WebGL context loss fallback, restart after exit).
+
+DONE WHEN: `npx vitest run src/renderer/Terminal` passes; `npx tsc --noEmit -p tsconfig.web.json --composite false` shows zero errors in src/renderer/Terminal.

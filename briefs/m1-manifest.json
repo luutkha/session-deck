@@ -1,0 +1,11 @@
+{
+  "dir": "C:/Works/projects/claude-code-open-code/session-deck",
+  "maxParallel": 5,
+  "tasks": [
+    { "name": "m1-store",     "brief": "briefs/m1-store.full.txt",     "model": "opencode-go/kimi-k2.7-code", "timeoutSec": 2400, "stallSec": 600 },
+    { "name": "m1-pty",       "brief": "briefs/m1-pty.full.txt",       "model": "opencode-go/deepseek-v4-pro", "timeoutSec": 2400, "stallSec": 600 },
+    { "name": "m1-attention", "brief": "briefs/m1-attention.full.txt", "model": "opencode-go/glm-5.3",         "timeoutSec": 2400, "stallSec": 600 },
+    { "name": "m1-terminal",  "brief": "briefs/m1-terminal.full.txt",  "model": "opencode-go/kimi-k3",         "timeoutSec": 2400, "stallSec": 600 },
+    { "name": "m1-sidebar",   "brief": "briefs/m1-sidebar.full.txt",   "model": "opencode-go/qwen3.8-max",     "timeoutSec": 2400, "stallSec": 600 }
+  ]
+}

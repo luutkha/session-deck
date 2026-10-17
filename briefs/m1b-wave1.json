@@ -1,0 +1,10 @@
+{
+  "dir": "C:/Works/projects/claude-code-open-code/session-deck",
+  "maxParallel": 2,
+  "tasks": [
+    { "name": "w1-attention", "brief": "briefs/m1-attention.full.txt", "model": "opencode/big-pickle",
+      "fallback": ["opencode/mimo-v2.6-flash-free", "opencode/nemotron-3-ultra-free"], "timeoutSec": 2400, "stallSec": 600 },
+    { "name": "w1-sbstate", "brief": "briefs/m1b-sbstate.full.txt", "model": "opencode/nemotron-3-ultra-free",
+      "fallback": ["opencode/big-pickle", "opencode/mimo-v2.6-flash-free"], "timeoutSec": 2400, "stallSec": 600 }
+  ]
+}

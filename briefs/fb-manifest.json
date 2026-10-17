@@ -1,0 +1,11 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 4, "maxCost": 0.25,
+  "tasks": [
+    { "name": "fb-t1-backend", "brief": "briefs/fb-t1-backend.txt", "model": "opencode-go/claude-haiku-5-5",
+      "fallback": ["opencode-go/deepseek-v4-flash"], "timeoutSec": 2400, "stallSec": 400 },
+    { "name": "fb-t2-sound", "brief": "briefs/fb-t2-sound.txt", "model": "opencode-go/claude-haiku-5-5",
+      "fallback": ["opencode-go/deepseek-v4-flash"], "timeoutSec": 2400, "stallSec": 400 },
+    { "name": "fb-t3-hub", "brief": "briefs/fb-t3-hub.txt", "model": "opencode-go/deepseek-v4-flash",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 2400, "stallSec": 400 },
+    { "name": "fb-t4-settings", "brief": "briefs/fb-t4-settings.txt", "model": "opencode-go/deepseek-v4-flash",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 2400, "stallSec": 400 }
+  ] }

@@ -1,0 +1,7 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 2, "maxCost": 0.25,
+  "tasks": [
+    { "name": "f3-refresh-backend", "brief": "briefs/f3-refresh-backend.txt", "model": "opencode-go/claude-haiku-5-5",
+      "fallback": ["opencode-go/deepseek-v4-flash"], "timeoutSec": 2400, "stallSec": 400 },
+    { "name": "f3-refresh-ui", "brief": "briefs/f3-refresh-ui.txt", "model": "opencode-go/deepseek-v4-flash",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 2400, "stallSec": 400 }
+  ] }

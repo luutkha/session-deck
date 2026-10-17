@@ -1,0 +1,13 @@
+You were stopped mid-task by the orchestrator (budget). Your files are on disk in src/renderer/Sidebar/** and src/renderer/state/**. FINISH the sidebar brief now, with minimal, targeted edits. Do NOT rewrite files that already work; re-read the current files first.
+REMAINING CHECKLIST:
+1. `npm run typecheck` currently reports in src/renderer/Sidebar/Sidebar.tsx: line ~125 `'lastChange' is declared but its value is never read` and line ~220 `Cannot find name 'runtimeLastChange'`. You were wiring the per-session "last runtime change" time (used for the relative time on cards). Fix it properly: useSessionStore must expose the Map<Id, number> (last runtime change time per session, initial = session.createdAt) and Sidebar must pass it to the cards.
+2. Sidebar.tsx is 610 lines; the limit is 400. Split it into focused files (for example SessionList.tsx, SidebarSearch.tsx, useSidebarKeyboard.ts, sidebarPrefs.ts) without changing behavior.
+3. Make sure every item of the original brief exists: nav rows (New session, Search), "Sessions" header with filter menu (Group by Groups|Status + status filter) / new group / new session icon buttons, sections for both groupings with counts and collapse, session cards (status/attention indicator, title, inline rename, badges, folder, activity line + relative time, hover Close button), the collapsed "Closed" section with Resume and Delete, context menus (card, group), footer Statuses button, lastError banner, keyboard (Up/Down/Enter/F2/Delete/Ctrl+N), roles (tree, group, treeitem). Fix anything missing.
+4. Pure logic tests exist and pass for: groupByStatus, splitClosed, groupedSessions/flatSessionIds/countByStatus excluding closed, filterBySearch, relativeTime, activityLabel. Add what is missing.
+5. Run: `npx vitest run src/renderer/state src/renderer/Sidebar`, `npm run typecheck` (must be ZERO errors overall), `npm run build`. Fix failures.
+Do not touch App.tsx, src/renderer/shell/**, Terminal/**, components/ui/**, src/main/**, src/shared/**, scripts/**. Do not reply until the checklist is done and all three commands pass. Do not stop after reading: edit, test, fix, then report.
+REPORT BACK (end with exactly this):
+- SUMMARY: <=5 lines
+- FILES CHANGED: list
+- COMMANDS RUN + RESULT: pass/fail counts
+- NOT DONE: list

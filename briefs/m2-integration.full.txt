@@ -1,0 +1,47 @@
+GOAL: Wire all finished SessionDeck modules into a working Electron app: main-process composition + IPC handlers, the preload bridge, and the renderer App. After this, `npm run dev` must show the full app and a user can create a Claude Code session, see it in the sidebar, interact with it in the terminal, rename/group/status it, and get a sound + taskbar flash when a session needs attention.
+SCOPE (you own): src/main/index.ts, src/main/app/** (new), src/preload/index.ts, src/renderer/App.tsx, src/renderer/main.tsx, src/renderer/styles.css, and a SMALL edit to src/main/pty/launch.ts + src/main/pty/PtyManager.ts (+ their tests) described below. Do not edit the other module folders (store, attention, Terminal, Sidebar, state); if one of them has a bug, list it under OPEN QUESTIONS with file:line and the failing input.
+
+FINISHED MODULES (read their index/exports first; do not re-implement them):
+- src/main/store: SessionStore (get/subscribe + one method per mutation), loadStoreFile(path) -> {data, warning?}, createDebouncedSaver(path, delayMs) -> {schedule, flush}.
+- src/main/pty: PtyManager (start/restart/write/resize/kill/killAll/replay/isRunning/onData/onExit/dispose). Its onData callback is (id, data, seq).
+- src/main/attention: createAttentionService({isKnownSession,isFocused,beep,flash,isWindowFocused,settingsDir}) -> {start,stop,claudeArgs(),envFor(id),noteOutput,noteInput,clear,get,onChange,setSoundEnabled,forget}.
+- src/renderer: Sidebar (Sidebar.tsx, NewSessionDialog.tsx, StatusEditor.tsx, index.ts), state/useSessionStore.ts, Terminal/TerminalHost.tsx, theme.css.
+- src/shared/types.ts and src/shared/ipc.ts: the FROZEN contract (IPC channel names + Api interface). Implement exactly these channels and semantics. NOTE ipc.ts documents `PtyReplay {data, seq}` and `setActiveSession`.
+
+SMALL PTY CHANGE (needed because the attention settings path may contain spaces and user args are strictly validated): add `internalArgs?: readonly string[]` to PtyManager StartOptions and to `buildLaunch(platform, claudeArgs, internalArgs = [])`. Internal args are TRUSTED (not validated against the unsafe-char regex) and are placed BEFORE the user claudeArgs: win32 -> ['/d','/c','claude', ...internalArgs, ...claudeArgs]. Keep the array form (node-pty quotes args containing spaces). Add tests, keep all existing pty tests passing.
+
+MAIN PROCESS (src/main/app/, each file < 200 lines, logic pure where possible):
+- paths.ts: storeFilePath(userData), attentionDir(userData).
+- runtimeRegistry.ts (PURE, tested): immutable registry of RuntimeState per session: markRunning(id), markExited(id, code), setAttention(id, reason|null), forget(id), snapshot(); emits change events with the new RuntimeState; creating a state for a session that was never started yields run 'exited', exitCode null, attention null.
+- ipcValidation.ts (PURE, tested): small type guards/assert helpers for IPC payloads (isId, isNonEmptyString with max length, isFiniteInt in range, asCreateSessionInput that strips unknown keys). Every ipcMain handler must validate its payload with these and throw a clear Error on bad input (never trust the renderer).
+- sessionController.ts: ties store + pty + attention + runtime together. startSession(session): cwd must exist (else mark exited and surface the error to the caller), env = attention.envFor(id), internalArgs = attention.claudeArgs(), claudeArgs = session.claudeArgs, initial size 120x30 until the renderer's first resize. On pty data: attention.noteOutput(id) and forward {id,data,seq} to the renderer window (webContents.send(IPC.evPtyData, id, data, seq)). On pty exit: runtime.markExited. createSession => store.createSession then startSession; removeSession => pty.kill, attention.forget, runtime.forget, store.removeSession; ptyRestart => pty.restart. ptyWrite => attention.noteInput(id) then pty.write. At app start: do NOT auto-start restored sessions; they appear as exited with a Restart button (the terminal overlay already offers it).
+- ipcHandlers.ts: register every IPC.* channel from src/shared/ipc.ts: invoke channels via ipcMain.handle, fire-and-forget ones (ptyWrite, ptyResize, attentionClear, sessionSetActive) via ipcMain.on. pickFolder uses dialog.showOpenDialog(window, {properties:['openDirectory']}) and returns the path or null. settingsSetSound -> attention.setSoundEnabled. Subscribe store changes -> send IPC.evStoreChanged; runtime changes -> send IPC.evRuntime (attention onChange also feeds runtime.setAttention).
+- window.ts: createMainWindow(): BrowserWindow 1280x800, min 900x600, backgroundColor '#1e1e1e', contextIsolation true, nodeIntegration false, sandbox true if the preload still works with it (otherwise false and say why), `webContents.setWindowOpenHandler` => open only http(s) URLs with shell.openExternal and always deny the window; block `will-navigate` away from the app origin. Track focus (isWindowFocused). Keep the existing dev/prod URL loading from the current index.ts.
+- Attention wiring: isKnownSession = store has it; isFocused(id) = main window focused && activeSessionId === id (activeSessionId set by IPC.sessionSetActive); beep = shell.beep; flash = (on) => win.flashFrame(on); isWindowFocused from window.ts; settingsDir = attentionDir(app.getPath('userData')). Start the attention service before creating the window; stop it on quit. Stop the taskbar flash when the window gains focus.
+- index.ts (thin): single-instance lock, load store file (log the warning via console.error is acceptable ONLY for this startup warning; prefer showing it through dialog.showErrorBox if the store file was corrupt), create SessionStore + debounced saver (400 ms), create everything, `before-quit`: flush the saver, pty.killAll(), attention.stop(). On window-all-closed quit (except macOS).
+
+PRELOAD (src/preload/index.ts): implement the full `Api` from src/shared/ipc.ts with ipcRenderer.invoke/send/on using the IPC constants; event subscriptions return an unsubscribe function that removes exactly that listener. Expose ONLY this object via contextBridge.exposeInMainWorld('api', api). Never expose ipcRenderer itself.
+
+RENDERER (src/renderer/App.tsx, main.tsx, styles.css):
+- Import theme.css and ./styles.css. Layout: sidebar (fixed 280px, Sidebar) | main area (TerminalHost filling it) with a thin bottom status bar: shows the active session's cwd and run state, and a sound toggle (calls api.setSoundEnabled; persist the choice in localStorage inside try/catch, default on; apply it on startup).
+- Uses useSessionStore(); activeId state; selecting a session calls api.clearAttention(id) and api.setActiveSession(id); also call setActiveSession(null) on window blur is NOT needed (main already checks window focus). When the active session is removed select the nearest remaining one (or null). Newly created sessions become active.
+- Dialogs: NewSessionDialog and StatusEditor opened from the Sidebar callbacks (onNewSession(groupId), onEditStatuses). Ctrl+N is handled by Sidebar already.
+- Empty state in the main area when there are no sessions: short text + a "New session" button.
+- Pass TerminalHost { sessionIds: all session ids, activeId, runtime }.
+- Loading state while data is null.
+
+TESTS FIRST (Vitest node env): runtimeRegistry, ipcValidation, buildLaunch/PtyManager internalArgs; plus any other pure logic you extract. No tests for Electron-bound files; instead write src/main/app/MANUAL_TEST.md with a checklist covering the six product requirements: create session, rename, assign status, attention sound/flash when a session finishes or asks permission while another session is active, groups (create/rename/move/delete), terminal quality (resize, scrollback, paste), plus quit-and-relaunch restores the list.
+
+DONE WHEN: `npm run typecheck` passes with ZERO errors, `npm test` passes (all existing + new tests), `npm run build` succeeds, and `npx electron-vite preview` (or `npm run dev`) starts for ~15 seconds without errors on stderr other than known Chromium network-service noise (capture and report the output). Report exactly what you ran.
+
+
+STANDARDS: Immutable data (return new objects, never mutate inputs, readonly types). Files <400 lines (max 800), functions <50 lines, no deep nesting. Explicit types on every exported function; no `any` (use `unknown` + narrowing); string-literal unions not enums; no console.log in production code. Explicit error handling with clear messages, never swallow errors or use empty catch. Validate external input at boundaries. No hardcoded magic values (named constants). Tests first (RED, GREEN, refactor), test names state behavior, 80%+ coverage of your logic, cover edge cases and error paths.
+
+VERIFY YOUR WORK: run `npx vitest run <your folder>` and a typecheck limited to what you can: `npx tsc --noEmit -p tsconfig.node.json --composite false` (main) or `-p tsconfig.web.json` (renderer). IGNORE type errors in files you do not own (other workers are mid-edit), but there must be zero in yours.
+
+REPORT BACK (end your reply with exactly this):
+- SUMMARY: <=6 lines
+- FILES CHANGED: list
+- COMMANDS RUN + RESULT: pass/fail with the last error lines
+- OPEN QUESTIONS / ASSUMPTIONS: list (anything the brief did not say; contract problems)
+- NOT DONE: list

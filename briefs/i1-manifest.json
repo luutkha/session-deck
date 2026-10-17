@@ -1,0 +1,7 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 2, "maxCost": 0.20,
+  "tasks": [
+    { "name": "i1-sleep-main", "brief": "briefs/i1-sleep-main.txt", "model": "opencode/deepseek-v4.1-flash-free",
+      "fallback": ["opencode-go/deepseek-v4-flash", "opencode-go/glm-5.3-flash"], "timeoutSec": 2700, "stallSec": 600 },
+    { "name": "i1-sleep-ui", "brief": "briefs/i1-sleep-ui.txt", "model": "opencode/deepseek-v4.1-flash-free",
+      "fallback": ["opencode-go/deepseek-v4-flash", "opencode-go/glm-5.3-flash"], "timeoutSec": 2700, "stallSec": 600 }
+  ] }

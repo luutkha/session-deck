@@ -1,0 +1,28 @@
+GOAL: Make SessionDeck sessions survive closing and reopening the app: each SessionDeck session keeps its own Claude Code conversation, and after a relaunch selecting the session (or pressing Restart) brings that SAME conversation back with `claude --resume`.
+SCOPE (you own): src/main/store/** (small additions), src/main/app/** (controller + new pure helper + tests), src/main/pty/PtyManager.ts + launch.ts only for the env change below. Do NOT touch src/renderer/**, src/preload/**, src/shared/** (the contract change is already done by the orchestrator: `Session.claudeSessionId?: string` exists in src/shared/types.ts, read its comment), or src/main/attention/**.
+
+VERIFIED FACTS: `claude --session-id <uuid>` starts a conversation with that id; `claude --resume <uuid>` reopens it. Resuming a conversation that was never saved (the user closed before sending any message) fails: claude prints a "No conversation found" style message and exits non-zero within a few seconds. Claude args are passed as `internalArgs` (trusted, before user claudeArgs).
+
+PART 1, store: every NEW session gets `claudeSessionId` = a fresh UUID (crypto.randomUUID via the existing newId dep) stored in the session and persisted. parseStoreData must accept sessions with or without the field (old saved files have none) and validate it as a non-empty string when present. Add a reducer and SessionStore method `setClaudeSessionId(id: Id, claudeSessionId: string): void` (validates the session exists and the value is a non-empty string; unknown id throws `Unknown session: <id>`). Tests for all of it including loading an old-format file.
+
+PART 2, pure launch decision (src/main/app/claudeLaunch.ts, with tests): `chooseClaudeLaunch(input: { claudeSessionId: string; everStarted: boolean }): { args: readonly string[]; mode: 'new' | 'resume' }` -> new: ['--session-id', id]; resume: ['--resume', id]. `shouldFallbackToNew(input: { mode: 'new'|'resume'; runMs: number; exitCode: number | null; outputTail: string }): boolean` -> true only when mode is 'resume', runMs < 8000, exitCode is a non-zero number, and outputTail matches /no conversation found|could not find|not found/i.
+
+PART 3, controller (src/main/app/sessionController.ts):
+- Track per session whether a conversation was started: use a persisted-safe rule: a session counts as `everStarted` if it is restored from disk (loaded at app start) OR was started earlier in this app run. New sessions created in this run start with mode 'new' (--session-id). Restored sessions (and Restart presses) use 'resume'.
+- For restored sessions saved without claudeSessionId: generate one (crypto.randomUUID), persist it with store.setClaudeSessionId, and since no conversation is known for it, start it with mode 'new'.
+- Build internalArgs as [...attention.claudeArgs(), ...chosen.args].
+- Fallback: when a 'resume' start exits quickly and shouldFallbackToNew(...) is true (use pty.replay(id).data tail, last 2000 chars, escapes may be present, that is fine), automatically start the session again with mode 'new' (--session-id same id), clear the terminal buffer via the existing restart path, and do not surface an error. Do this at most once per start attempt (no loops).
+- LAZY AUTO-RESUME: when the renderer reports a session active (the existing setActiveSession handling), if that session is not running and has not been started in this app run, start it (resume rules above) so selecting a restored session just works. Never auto-start on app launch; never start a session whose cwd no longer exists (mark it exited and report the error the same way existing code does).
+- ptyRestart (Restart button) for a session whose conversation exists uses 'resume'.
+- Keep every function small; put decision logic in the pure helper and unit-test the controller with the existing test style (fake pty/store/attention) for: new session uses --session-id, restored session resumes on first activation, restored session without id gets one and starts new, fallback after a fast failed resume, no fallback for a slow or successful run, Restart resumes, never auto-starts at launch, removed session cleanup.
+
+PART 4, child env hygiene (src/main/pty/PtyManager.ts): the env passed to node-pty must NOT inherit the parent's Claude Code markers. Before spawning, delete every variable whose name is CLAUDECODE or starts with CLAUDE_CODE_ or CLAUDE_AGENT_ from the merged env (but keep any explicit ones in opts.env, e.g. none of ours start with those prefixes). Implement as a small pure exported function `sanitizeChildEnv(env)` with tests. Reason: when SessionDeck is launched from inside Claude Code, children printed "Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker".
+
+STANDARDS (all): immutable updates, no `any`, explicit types on exports, no console.log, named constants (the 8000 ms and 2000 char numbers), errors never swallowed, files < 400 lines (sessionController.ts: if it grows past 300 lines, extract helpers into a new file), tests first.
+DONE WHEN: `npx vitest run` is fully green, `npm run typecheck` shows zero errors, `npm run build` succeeds. Report the real counts.
+REPORT BACK (end your reply with exactly this):
+- SUMMARY: <=6 lines
+- FILES CHANGED: list
+- COMMANDS RUN + RESULT: pass/fail counts
+- OPEN QUESTIONS / ASSUMPTIONS: list
+- NOT DONE: list

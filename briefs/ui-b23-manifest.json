@@ -1,0 +1,7 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 2,
+  "tasks": [
+    { "name": "ui-b2-shell", "brief": "briefs/ui-b2-shell.full.txt", "model": "opencode-go/claude-haiku-5-5",
+      "fallback": ["opencode-go/minimax-m3", "opencode-go/deepseek-v4-pro"], "timeoutSec": 3000, "stallSec": 500 },
+    { "name": "ui-b3-sidebar", "brief": "briefs/ui-b3-sidebar.full.txt", "model": "opencode-go/minimax-m3",
+      "fallback": ["opencode-go/deepseek-v4-pro", "opencode-go/claude-haiku-5-5"], "timeoutSec": 3000, "stallSec": 500 }
+  ] }

@@ -1,0 +1,9 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 3, "maxCost": 0.25,
+  "tasks": [
+    { "name": "f2-backend", "brief": "briefs/f2-backend.txt", "model": "opencode-go/claude-haiku-5-5",
+      "fallback": ["opencode-go/deepseek-v4-flash"], "timeoutSec": 2700, "stallSec": 400 },
+    { "name": "f2-usage-ui", "brief": "briefs/f2-usage-ui.txt", "model": "opencode-go/deepseek-v4-flash",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 2400, "stallSec": 400 },
+    { "name": "f2-notes-ui", "brief": "briefs/f2-notes-ui.txt", "model": "opencode-go/deepseek-v4-flash",
+      "fallback": ["opencode-go/claude-haiku-5-5"], "timeoutSec": 2400, "stallSec": 400 }
+  ] }

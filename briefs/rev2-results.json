@@ -1,0 +1,83 @@
+﻿[
+    {
+        "name":  "rev2-renderer",
+        "status":  "empty",
+        "model":  "opencode-go/deepseek-v4-flash",
+        "agent":  "plan",
+        "sessionID":  "",
+        "seconds":  1,
+        "tokens":  0,
+        "cost":  0,
+        "toolCalls":  0,
+        "filesTouched":  [
+
+                         ],
+        "commands":  [
+
+                     ],
+        "permissionDenied":  [
+
+                             ],
+        "toolErrors":  [
+
+                       ],
+        "errors":  [
+
+                   ],
+        "log":  "C:\\Works\\projects\\claude-code-open-code\\session-deck\\.opencode-runs\\20261013-125233-rev2-renderer.jsonl",
+        "finalText":  "",
+        "attempts":  [
+                         {
+                             "model":  "opencode-go/deepseek-v4-flash",
+                             "status":  "empty"
+                         }
+                     ],
+        "workDir":  "C:\\Works\\projects\\claude-code-open-code\\session-deck"
+    },
+    {
+        "name":  "rev2-main",
+        "status":  "ok",
+        "model":  "opencode-go/deepseek-v4-flash",
+        "agent":  "plan",
+        "sessionID":  "ses_ecc2e180fffehrZ659UC86FXaU",
+        "seconds":  320,
+        "tokens":  518188,
+        "cost":  0.030735132000000002,
+        "toolCalls":  31,
+        "filesTouched":  [
+
+                         ],
+        "commands":  [
+                         {
+                             "cmd":  "Get-ChildItem -Recurse -File -Path \"src\\main\",\"src\\preload\",\"src\\shared\" | Select-Object FullName, Length | Format-Table -AutoSize",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "rg -n \"initializeRestoredSessions|asCreateSessionInput|assertGroup|assertStatusDef|assertId|assertNonEmptyString|assertFiniteInt\" src --glob \"*.ts\"",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "rg -n \"isRunning|killAll|dispose|flush|before-quit|will-quit\" src/main --glob \"*.ts\"",
+                             "status":  "completed"
+                         }
+                     ],
+        "permissionDenied":  [
+
+                             ],
+        "toolErrors":  [
+
+                       ],
+        "errors":  [
+
+                   ],
+        "log":  "C:\\Works\\projects\\claude-code-open-code\\session-deck\\.opencode-runs\\20261013-125233-rev2-main.jsonl",
+        "finalText":  "I\u0027ll start by exploring the structure and reading the relevant files.\r\nLet me skim the sessionController tests and attention manager to confirm intended behaviors vs. implementation.\r\n## Code review — SessionDeck main-process changes (read-only)\n\nVerified by reading: `sessionController.ts`, `claudeLaunch.ts`, `ipcHandlers.ts`, `ipcValidation.ts`, `retryWhileStopping.ts`, `window.ts`, `windowDiagnostics.ts`, `runtimeRegistry.ts`, `startOptions.ts`, `paths.ts`, `store/*` (reducers, SessionStore, persistence), `PtyManager.ts`, `launch.ts`, `RingBuffer.ts`, `attention/*`, `preload/index.ts`, `main/index.ts`, `DESIGN.md`, frozen contract.\n\nRanked findings:\n\n1. **high — `src/main/app/ipcHandlers.ts:100-102` (also `:120-122`)** — `ptyWrite`/`sessionSetActive` registered via `ipcMain.on`; `controller.writeToPty` → `pty.write` (`PtyManager.ts:102-108`) throws `Session not running` for any id without a live process, and `setActiveSession` → `tryAutoStartSession` → `startSession` (`sessionController.ts:182`) can throw on spawn. A throw inside an `ipcMain.on` listener is an uncaught main-process exception, not a rejected promise. Trigger: renderer sends a keystroke right after the process exited/closed, or sends any `ptyWrite` with a non-running/removed id — kills the whole app.\n\n2. **high — `src/main/app/ipcHandlers.ts:41-44`** — `sessionCreate` casts `raw as CreateSessionInput` with no validation; `asCreateSessionInput` (and `assertGroup`/`assertStatusDef`) are defined+tested (`src/main/app/ipcValidation.ts:51`) but only `assertId` is wired (close/reopen). Shell injection is blocked by the allow-list (`launch.ts:6`), but arbitrary payloads flow in: `claudeArgs` as a string spreads char-by-char into the cmd line; untyped `name`/`cwd`/`claudeArgs` break downstream. The \"every handler validates\" contract is unmet.\n\n3. **medium — `src/main/index.ts:112-115`** — `before-quit` handler is `async` but never `event.preventDefault()`s, so Electron does not wait for `await saver.flush()`. Data loss for the last debounce window: close a session (or rename/create) and quit within ~400ms → `closedAt`/`claudeSessionId` silently not persisted.\n\n4. **medium — `src/main/app/sessionController.ts:101-116` → `:72`** — `handleExitWithFallback` calls `pty.restart(...)` with no try/catch inside the node-pty `onExit` event. If the session folder was deleted while running, or the spawn fails, `PtyManager.launch`\u0027s `validateCwd`/spawn error (`PtyManager.ts:204-214,178-183`) propagates out of the exit listener → unhandled → main crash. Trigger: delete a session\u0027s cwd, then cause a fast failed resume.\n\n5. **medium — `src/main/app/sessionController.ts:151-162`, never called** — `initializeRestoredSessions()` is exported but never invoked from `main/index.ts` (only from tests). In production `restoredWithoutClaudeSessionId` stays empty, so a restored old session (no `claudeSessionId`) is lazily started with `--resume \u003cfresh uuid\u003e` (`:180-182`) and depends on the fallback-to-new (issue 7) to create a conversation; if the resume error text doesn\u0027t match, first start of a migrated session silently fails.\n\n6. **low/medium — `src/main/app/sessionController.ts:101-105`** — after `removeSession` kills a process, the late `onExit` finds `findSession(id)?.closedAt !== undefined` → `undefined !== undefined` → false, so it proceeds to `runtime.markExited(id, code)` which re-creates the just-forgotten runtime entry (`runtimeRegistry.ts:51`) and emits a spurious `ev:runtime` for a removed session. Phantom state leak on every remove-of-a-running-session.\n\n7. **low — `src/main/app/sessionController.ts:66` + `claudeLaunch.ts:3,29-40`** — fallback hardcodes `mode:\u0027resume\u0027` regardless of how the exiting process actually launched, and the matcher `/not found/i` is broad. A *new* session (started `--session-id`) that exits \u003c8s non-zero with \"not found\" in the tail gets needlessly restarted fresh; a healthy resume whose last output contains \"not found\" is also restarted as new, losing the conversation.\n\n8. **low — `src/main/app/sessionController.ts:225-244`** — `reopenSession` refuses only the running–and–not–closed case; on an *open, exited* session it proceeds to start with resume (and for migrated sessions, forever uses the `restoredWithoutClaudeSessionId` → `\u0027new\u0027` mode). Inconsistent guard; if the dead-code fix for #5 is applied, reopen of an already-started migrated session sends `--session-id` again.\n\n9. **low — `src/main/app/sessionController.ts:246-266` + `PtyManager.ts:81-86`** — `restartSession` sets a fresh `everStartedThisRun` state *before* `pty.restart`; if `restart` throws after killing (spawn failure), the old proc stays in the `processes` map (kill doesn\u0027t delete) so `isRunning` and `startState` keep blocking later starts until the killed proc\u0027s exit arrives.\n\nNOT CHECKED:\n- node-pty\u0027s actual Windows cmd-line quoting of internal args containing spaces (the `--settings` userData path); code passes arrays to `spawn` (`PtyManager.ts:180`) so I could not verify quoting behavior from this repo.\n- `process.tree` kill semantics on Windows (`proc.kill()` in `PtyManager.ts:119,124`) — whether conpty kills grandchildren.\n- Old-file migration: pre-feature store format/`version` value (store is not a git repo here); a mismatched `version` is treated as corrupt and the file is renamed (`persistence.ts:124,189`).\n- `window.webContents.send` from `store.subscribe` (`ipcHandlers.ts:34`) and the 4s show-deadline timer after destroy were checked and are guarded (`window.ts:93`, `main/index.ts:88`) — no leak found.\n- Whether `AttentionService.claudeArgs()` (`--settings`) can throw at start of the fallback path if attention is not started (in prod `attention.start()` precedes controller use).\n- Renderer-side re-subscribe / `onStoreChanged` duplicate-subscribe behavior.\n\n- VERDICT: issues\n- ISSUES:\n  - high, src/main/app/ipcHandlers.ts:100-102, `ipcMain.on` handler throws synchronously (`pty.write` on a non-running id) → uncaught exception in main, crashes app; trigger: ptyWrite right after process exit/close or for unknown id.\n  - high, src/main/app/ipcHandlers.ts:41-44, `sessionCreate` casts raw payload with zero validation (`asCreateSessionInput` unused); arbitrary claudeArgs/cwd/name flow in, contract unmet.\n  - medium, src/main/index.ts:112-115, async `before-quit` without preventDefault → `saver.flush()` not awaited → last ~400ms of closedAt/claudeSessionId changes lost on quit.\n  - medium, src/main/app/sessionController.ts:72, fallback `pty.restart` throws inside node-pty exit event (cwd deleted / spawn fail) with no catch → uncaught main crash.\n  - medium, src/main/app/sessionController.ts:151-162, `initializeRestoredSessions()` never wired in main/index.ts → migrated sessions first-start with `--resume \u003cfresh uuid\u003e` instead of `--session-id`, relying on unreliable fallback.\n  - low, src/main/app/sessionController.ts:101-105, late exit of a removed session re-creates its runtime state via `runtime.markExited` → phantom RuntimeState + spurious ev:runtime.\n  - low, src/main/app/sessionController.ts:66 + src/main/app/claudeLaunch.ts:3, fallback assumes mode \u0027resume\u0027 and matcher `not found` is too broad → healthy/fresh sessions can be silently restarted as new.\n  - low, src/main/app/sessionController.ts:225-244, reopenSession starts open-but-exited sessions and, if #5 is fixed, always reuses \u0027new\u0027 mode for migrated sessions (re-sends `--session-id`).\n  - low, src/main/app/sessionController.ts:246-266 + src/main/pty/PtyManager.ts:81-86, restartSession sets startState before pty.restart; a throwing restart leaves a stale everStarted state + dead proc in the map, blocking later starts.\n- NOT CHECKED: node-pty Windows arg quoting (spaces in --settings path); conpty process-tree kill semantics; old store-file version/migration format (no git history); renderer IPC re-subscribe behavior.",
+        "attempts":  [
+                         {
+                             "model":  "opencode-go/deepseek-v4-flash",
+                             "status":  "ok"
+                         }
+                     ],
+        "workDir":  "C:\\Works\\projects\\claude-code-open-code\\session-deck"
+    }
+]

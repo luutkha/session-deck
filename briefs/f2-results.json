@@ -1,0 +1,269 @@
+﻿[
+    {
+        "name":  "f2-backend",
+        "status":  "ok",
+        "model":  "opencode-go/claude-haiku-5-5",
+        "agent":  "",
+        "sessionID":  "ses_ecb0dbbf5ffeaezIFefWdJKmJ1",
+        "seconds":  327,
+        "tokens":  3846394,
+        "cost":  0.08534217,
+        "toolCalls":  81,
+        "filesTouched":  [
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\store\\reducers.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\store\\sessionNotes.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\store\\SessionStore.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\store\\index.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\store\\persistence.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\store\\sessionNotes.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\store\\persistence.notes.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\store\\SessionStore.notes.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\app\\ipcValidation.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\app\\ipcHandlers.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\preload\\index.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\app\\ipcValidation.notes.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\attention\\claudeSettings.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\attention\\HookServer.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\attention\\AttentionService.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\attention\\index.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\attention\\HookServer.statusLine.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\attention\\claudeSettings.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\attention\\statusLineBash.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\usage\\statusLineParser.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\usage\\UsageService.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\usage\\statusLineParser.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\usage\\UsageService.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\usage\\index.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\main\\index.ts"
+                         ],
+        "commands":  [
+                         {
+                             "cmd":  "npm run typecheck 2\u003e\u00261 | Select-Object -Last 30; npx vitest run 2\u003e\u00261 | Select-Object -Last 8",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npx vitest run src/main/store src/main/app/ipcValidation 2\u003e\u00261 | Select-Object -Last 25",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npm run typecheck 2\u003e\u00261 | Select-Object -Last 30; npx vitest run 2\u003e\u00261 | Select-String -Pattern \"FAIL|✗|×|AssertionError|Error:|Test Files|Tests \" | Select-Object -First 60",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "bash -c \"echo ok\"; echo \"exit=$LASTEXITCODE\"; bash -c \"command -v curl\"; echo \"exit=$LASTEXITCODE\"; where.exe bash; where.exe curl",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Test-Path -LiteralPath \"C:\\Program Files\\Git\\bin\\bash.exe\"; Test-Path -LiteralPath \"C:\\Program Files (x86)\\Git\\bin\\bash.exe\"; Get-Command git -ErrorAction SilentlyContinue | ForEach-Object { $_.Source }",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "\u0026 \"C:\\Program Files\\Git\\bin\\bash.exe\" -c \"command -v curl; echo ok; echo TMP=\\${TMPDIR:-unset}\"",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "\u0026 \"C:\\Program Files\\Git\\bin\\bash.exe\" -c \u0027command -v curl; echo ok; echo TMP=${TMPDIR:-unset}\u0027",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npx vitest run src/main/attention/statusLineBash.test.ts src/main/attention/HookServer.statusLine.test.ts src/main/attention/claudeSettings.test.ts 2\u003e\u00261 | Select-Object -Last 80",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npx vitest run 2\u003e\u00261 | Select-String -Pattern \"FAIL|×|Test Files|Tests \" | Select-Object -First 40; npm run typecheck 2\u003e\u00261 | Select-String -Pattern \"error\" | Select-Object -First 20; npm run build 2\u003e\u00261 | Select-Object -Last 25",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npm run build 2\u003e\u00261 | Select-String -Pattern \"warn|never|error|built in\" | Select-Object -First 20; npm run typecheck:node 2\u003e\u00261 | Select-Object -Last 5; npx vitest run 2\u003e\u00261 | Select-String -Pattern \"Test Files|Tests \"",
+                             "status":  "completed"
+                         }
+                     ],
+        "permissionDenied":  [
+
+                             ],
+        "toolErrors":  [
+                           "edit: Could not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings."
+                       ],
+        "errors":  [
+
+                   ],
+        "log":  "C:\\Works\\projects\\claude-code-open-code\\session-deck\\.opencode-runs\\20261013-180732-f2-backend.jsonl",
+        "finalText":  "I\u0027ll start by reading the frozen contract and the files I\u0027m extending.\r\nNow the attention module, which is where the statusLine work goes.\r\nI have the attention and store code. Next I\u0027ll check the baseline typecheck and test state, and look at the existing store tests for style.\r\nBaseline: typecheck fails only on the preload `Api` gap, and vitest is 851/851 green. Part A first: a `sessionNotes.ts` module for validators and reducers. `reducers.ts` is already 375 lines, so a separate module keeps the files under the 400-line limit.\r\nNext: the store methods, barrel exports, and persistence parsing.\r\nNow the Part A tests: reducers and validators, persistence, and the store methods.\r\nNow the IPC validators, handlers, and the preload wrappers for notes and checklist.\r\nPart A passes (209 tests). Part B starts with the statusLine command in `claudeSettings.ts`.\r\nNext, the HookServer `/statusline/\u003csessionId\u003e` route, which keeps `/hook` unchanged.\r\nI left a stray `\u003c` at the end of the path regex. Fixing that now.\r\nThe regex is fine; the grep shows no stray character. Next, threading `onStatusLine` through AttentionService.\r\nNow the HookServer statusLine tests, in a new file so `HookServer.test.ts` stays unchanged.\r\nNext, the existing claudeSettings tests get statusLine coverage.\r\nNow the bash/curl integration test against a real HookServer, including the throttle check.\r\nPart B\u0027s pure logic is next: the statusLine parser, then the UsageService on top of it.\r\nNow the tests for the parser and the service.\r\nNow the usage barrel, plus the `usageGet` handler and the `usage` dependency in ipcHandlers.\r\nNow the main-process wiring in `index.ts`.\r\nWiring is in. Running typecheck and the test suite to see where things stand.\r\nTwo things to look at. The typecheck:web error is in `src/renderer/**`, which is outside my scope. The bigger problem is that the bash integration suite was skipped, so I need to see why `bash`/`curl` aren\u0027t detected.\r\nThe `bash` on PATH is the WSL launcher, and no distro is installed, so the suite skips correctly. The existing AttentionService bash test is effectively a no-op on this machine for the same reason. I\u0027ll look for Git Bash so I can actually exercise the command.\r\nGit for Windows is installed at `C:\\Program Files\\Git\\bin\\bash.exe`. I\u0027ll confirm it has curl before pointing the test helper at it.\r\nGit Bash has curl. I\u0027ll make the test helper prefer Git for Windows\u0027 bash when it exists, falling back to `bash` on PATH.\r\nBash integration now runs for real on Git Bash (4 tests, including the throttle case). Running the full suite, typecheck, and build.\r\nVitest is 989/989 and the build passes. Typecheck:node is clean now, and the only remaining error is the unused `ChecklistChip` in `src/renderer/hub/HubCard.tsx`, which is outside my scope. The build also warns about `node:http` type imports in HookServer.ts, which I\u0027ll fix since I own that file.\r\nEverything in my scope is green. I\u0027ll close out the task list.\r\nSUMMARY:\n- Part A is done: notes and checklist reducers, store methods, persistence (invalid values dropped, file kept), IPC handlers with `asNotes`/`asChecklist`, and preload wrappers.\n- Part B is done: a statusLine command (10 s per-session throttle, silent, always exit 0) in the generated settings, a `/statusline/\u003cid\u003e` route in HookServer, a pure `parseStatusLine`, `UsageService`, and main-process wiring (`evUsage`, `usageGet`, forget on removal).\n- The bash integration test runs for real through Git for Windows\u0027 bash (the PATH `bash` is a WSL launcher with no distro). It covers POST, throttling, unknown session, and a dead port.\n- `npx vitest run`: 52 files, 989 passed, 0 failed.\n- `npm run build` passes. `typecheck:node` is clean, and the preload `Api` error is gone.\n- `npm run typecheck` still fails on one error outside my scope: `src/renderer/hub/HubCard.tsx(11,1)`, an unused `ChecklistChip` import.\n\nFILES CHANGED:\n- src/main/store/sessionNotes.ts (new), sessionNotes.test.ts (new), persistence.notes.test.ts (new), SessionStore.notes.test.ts (new)\n- src/main/store/reducers.ts (exports `findSessionIndex`), SessionStore.ts, index.ts, persistence.ts\n- src/main/app/ipcValidation.ts, ipcValidation.notes.test.ts (new), ipcHandlers.ts\n- src/preload/index.ts\n- src/main/attention/claudeSettings.ts, claudeSettings.test.ts, HookServer.ts, HookServer.statusLine.test.ts (new), statusLineBash.test.ts (new), AttentionService.ts, index.ts\n- src/main/usage/statusLineParser.ts (new), statusLineParser.test.ts (new), UsageService.ts (new), UsageService.test.ts (new), index.ts (new)\n- src/main/index.ts\n\nCOMMANDS RUN + RESULT:\n- `npx vitest run`: 52 files passed, 989 tests passed, 0 failed (before: 851)\n- `npm run typecheck:node`: pass, 0 errors\n- `npm run typecheck`: fails, 1 error in `src/renderer/hub/HubCard.tsx` (out of scope)\n- `npm run build`: pass (main, preload, renderer)\n\nNOT DONE:\n- `npm run typecheck` is not zero: the `ChecklistChip` error in `src/renderer/hub/HubCard.tsx` needs fixing by whoever owns the renderer.\n- The existing `AttentionService.test.ts` bash test still uses plain `bash` and returns early when it is missing, so it silently passes on this machine. The new `statusLineBash.test.ts` prefers Git Bash and runs for real.\n- Not verified against a live Claude Code session: the statusLine command has only been run under bash with a simulated payload.",
+        "attempts":  [
+                         {
+                             "model":  "opencode-go/claude-haiku-5-5",
+                             "status":  "ok"
+                         }
+                     ],
+        "workDir":  "C:\\Works\\projects\\claude-code-open-code\\session-deck"
+    },
+    {
+        "name":  "f2-usage-ui",
+        "status":  "ok",
+        "model":  "opencode-go/deepseek-v4-flash",
+        "agent":  "",
+        "sessionID":  "ses_ecb0dabffffeE8qimkV2hkM5Jw",
+        "seconds":  185,
+        "tokens":  1044479,
+        "cost":  0.023281170000000004,
+        "toolCalls":  35,
+        "filesTouched":  [
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\usage\\usageLogic.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\usage\\usageCache.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\usage\\useUsage.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\usage\\UsageChips.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\shell\\StatusBar.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\usage\\usageLogic.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\usage\\usageCache.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\usage\\MANUAL_TEST.md"
+                         ],
+        "commands":  [
+                         {
+                             "cmd":  "Get-ChildItem -Path \"C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\components\\ui\" -Name; Write-Output \"---usage---\"; Get-ChildItem -Path \"C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\" -Directory -Name; Write-Output \"---tests---\"; Get-ChildItem -Path \"C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\" -Recurse -Filter \"*.test.ts*\" -Name",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Path \"C:\\Works\\projects\\claude-code-open-code\\session-deck\" -Filter \"vitest*\" -Name; Write-Output \"---\"; Get-ChildItem -Path \"C:\\Works\\projects\\claude-code-open-code\\session-deck\" -Filter \"tsconfig*.json\" -Name; Write-Output \"---electron.vite---\"; Get-ChildItem -Path \"C:\\Works\\projects\\claude-code-open-code\\session-deck\" -Filter \"*vite*\" -Name",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Path \"C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\styles\" -Name; Write-Output \"---status-warning grep---\"; Select-String -Path \"C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\styles\\*\" -Pattern \"status-warning|status-success|--destructive\" | Select-Object -First 30",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npx vitest run src/renderer/usage src/renderer/shell 2\u003e\u00261",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npx vitest run src/renderer/usage src/renderer/shell 2\u003e\u00261",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npm run typecheck 2\u003e\u00261",
+                             "status":  "completed"
+                         }
+                     ],
+        "permissionDenied":  [
+
+                             ],
+        "toolErrors":  [
+
+                       ],
+        "errors":  [
+
+                   ],
+        "log":  "C:\\Works\\projects\\claude-code-open-code\\session-deck\\.opencode-runs\\20261013-180736-f2-usage-ui.jsonl",
+        "finalText":  "- SUMMARY: Added Orca-style Claude usage chips to the status bar: pure formatters/graders for plan windows, session model/context/cost, a defensive localStorage cache, and a `useUsage` hook over `window.api.getUsage`/`onUsage`. StatusBar gained optional `usage`/`activeSessionId` props and renders `\u003cUsageChips/\u003e` before the attention count; all existing behavior is unchanged when `usage` is undefined. Hook also returns `now` (needed by the chips) in addition to the specified `state`/`stale`.\n- FILES CHANGED:\n  - src/renderer/usage/usageLogic.ts (new)\n  - src/renderer/usage/usageCache.ts (new)\n  - src/renderer/usage/useUsage.ts (new)\n  - src/renderer/usage/UsageChips.tsx (new)\n  - src/renderer/usage/usageLogic.test.ts (new)\n  - src/renderer/usage/usageCache.test.ts (new)\n  - src/renderer/usage/MANUAL_TEST.md (new)\n  - src/renderer/shell/StatusBar.tsx (edited)\n- COMMANDS RUN + RESULT:\n  - `npx vitest run src/renderer/usage src/renderer/shell` -\u003e 5 files, 100 tests passed, 0 failed\n  - `npm run typecheck` -\u003e passed, zero errors (node + web)\n- NOT DONE: none",
+        "attempts":  [
+                         {
+                             "model":  "opencode-go/deepseek-v4-flash",
+                             "status":  "ok"
+                         }
+                     ],
+        "workDir":  "C:\\Works\\projects\\claude-code-open-code\\session-deck"
+    },
+    {
+        "name":  "f2-notes-ui",
+        "status":  "ok",
+        "model":  "opencode-go/deepseek-v4-flash",
+        "agent":  "",
+        "sessionID":  "ses_ecb0d9c12ffeA3pv60QahTCwFs",
+        "seconds":  418,
+        "tokens":  2721209,
+        "cost":  0.059293230000000009,
+        "toolCalls":  62,
+        "filesTouched":  [
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\checklistLogic.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\debounce.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\state\\useSessionStore.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\useSessionNotes.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\ChecklistRow.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\ChecklistSection.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\NotesSection.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\NotesPanel.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\ChecklistChip.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\index.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\Sidebar\\SessionCard.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\hub\\HubCard.tsx",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\checklistLogic.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\debounce.test.ts",
+                             "C:\\Works\\projects\\claude-code-open-code\\session-deck\\src\\renderer\\notes\\MANUAL_TEST.md"
+                         ],
+        "commands":  [
+                         {
+                             "cmd":  "Get-ChildItem -Recurse -File src\\renderer\\components\\ui | Select-Object -ExpandProperty FullName",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Recurse -File reference\\orca\\src\\components\\right-sidebar | Select-Object -ExpandProperty FullName",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Recurse -File src\\renderer\\notes -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName; Write-Output \"---\"; Test-Path src\\renderer\\notes",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Recurse -File -Include *.test.ts,*.test.tsx,vitest.config.*,vite.config.*,package.json,tsconfig*.json | Select-Object -ExpandProperty FullName",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Directory reference\\orca\\src\\components -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name; Write-Output \"===\"; Test-Path reference\\orca",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Recurse -File reference\\orca\\src\\components\\sidebar, reference\\orca\\src\\components\\status-bar | Select-Object -ExpandProperty FullName",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "Get-ChildItem -Recurse -File src\\renderer | Where-Object { $_.Name -notlike \u0027*.test.*\u0027 } | Select-Object -ExpandProperty FullName",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "rg -n \"border-l|w-\\[320px\\]|right-sidebar|RightSidebar|panel header|flex h-full flex-col\" reference\\orca\\src\\components\\sidebar\\WorktreeCard.tsx reference\\orca\\src\\components\\sidebar\\worktree-card-meta-row.tsx reference\\orca\\src\\components\\sidebar\\worktree-card-surface.tsx reference\\orca\\src\\components\\sidebar\\worktree-card-presentation.tsx 2\u003e$null",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "rg -ln \"bg-status-success|h-1 .*rounded-full|progress\" reference\\orca\\src\\components\\sidebar src\\renderer 2\u003e$null | Select-Object -First 30",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "rg -n \"status-success|--attn|--surface|--sidebar|bg-card|border-l\" src\\renderer\\styles\\orca-theme.css | Select-Object -First 60",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npx vitest run src/renderer 2\u003e\u00261",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "npm run typecheck 2\u003e\u00261",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "rg -n \"color-card:|--card\" src\\renderer\\styles\\orca-theme.css | Select-Object -First 5",
+                             "status":  "completed"
+                         },
+                         {
+                             "cmd":  "$files = Get-ChildItem src\\renderer\\notes -Recurse -File; foreach ($f in $files) { $n = (Get-Content $f.FullName).Count; Write-Output \"$n`t$($f.FullName | Split-Path -Leaf)\" }; Write-Output \"--- forbidden check ---\"; rg -n \"console\\.log|\\bany\\b|window\\.confirm\" src\\renderer\\notes -g \"*.ts\" -g \"*.tsx\"",
+                             "status":  "completed"
+                         }
+                     ],
+        "permissionDenied":  [
+
+                             ],
+        "toolErrors":  [
+                           "write: The write tool was called with invalid arguments: SchemaError(Missing key\n  at [\"filePath\"]).\nPlease rewrite the input so it satisfies the expected schema."
+                       ],
+        "errors":  [
+
+                   ],
+        "log":  "C:\\Works\\projects\\claude-code-open-code\\session-deck\\.opencode-runs\\20261013-180740-f2-notes-ui.jsonl",
+        "finalText":  "I\u0027ll start by reading the required files in parallel.\r\nLet me explore the UI primitives, tests/config, and Orca references in parallel.\r\nLet me examine the Orca sidebar reference, existing hook patterns, and a test example.\r\nI have enough context. Let me create the notes module files.\r\n\n\n\r\nNow the card edits:\n\n\r\nNow the tests:\r\nNow run tests and typecheck:\r\n\n\n\r\nBoth green. Let me verify the `bg-card` token exists in the theme:\r\nAll files under 400 lines, no `any`/`console.log`/`window.confirm` (the one grep hit is the word \"and\" in a comment). Done.\n\n---\n\n- SUMMARY: Added a per-session Notes + checklist right panel (`src/renderer/notes/**`), progress chips on the sidebar and Hub cards, and `setSessionNotes`/`setSessionChecklist` wrappers on the store\u0027s `SessionActions`. Pure `checklistLogic` + an injectable-timer debounced-saver are fully unit tested; notes autosave debounced (600ms) and flush on blur/switch/unmount; checklist mutations save immediately; failures keep local state and surface `role=\"alert\"`.\n- FILES CHANGED:\n  - `src/renderer/notes/checklistLogic.ts` (new)\n  - `src/renderer/notes/checklistLogic.test.ts` (new)\n  - `src/renderer/notes/debounce.ts` (new)\n  - `src/renderer/notes/debounce.test.ts` (new)\n  - `src/renderer/notes/useSessionNotes.ts` (new)\n  - `src/renderer/notes/NotesPanel.tsx` (new)\n  - `src/renderer/notes/NotesSection.tsx` (new)\n  - `src/renderer/notes/ChecklistSection.tsx` (new)\n  - `src/renderer/notes/ChecklistRow.tsx` (new)\n  - `src/renderer/notes/ChecklistChip.tsx` (new)\n  - `src/renderer/notes/index.ts` (new)\n  - `src/renderer/notes/MANUAL_TEST.md` (new)\n  - `src/renderer/state/useSessionStore.ts` (added 2 action methods)\n  - `src/renderer/Sidebar/SessionCard.tsx` (chip in row 2)\n  - `src/renderer/hub/HubCard.tsx` (chip in row 2)\n- COMMANDS RUN + RESULT: `npx vitest run src/renderer` → 25 files / 551 tests passed (incl. 40 new); `npm run typecheck` → 0 errors.\n- NOT DONE: Panel is not wired into App/UI (out of scope; orchestrator mounts it); no visual/manual browser verification run.",
+        "attempts":  [
+                         {
+                             "model":  "opencode-go/deepseek-v4-flash",
+                             "status":  "ok"
+                         }
+                     ],
+        "workDir":  "C:\\Works\\projects\\claude-code-open-code\\session-deck"
+    }
+]

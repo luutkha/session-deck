@@ -1,0 +1,76 @@
+{"loaded":true,"directory":"C:\\Works\\projects\\claude-code-open-code\\session-deck","tag":"abc"}
+{"type":"session.created","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"ses_eb80e3cb1ffeZOZTkobox9kKRj","slug":"kind-river","version":"1.19.0","projectID":"global","directory":"C:\\Works\\projects\\claude-code-open-code\\session-deck","path":"Works/projects/claude-code-open-code/session-deck","title":"New session - 2026-10-17T03:39:48.942Z","permission":[{"permission":"question","pattern":"*","action":"deny"},{"permission":"plan_enter","pattern":"*","action":"deny"},{"permission":"plan_exit","pattern":"*","action":"deny"}],"cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"time":{"created":1792208388942,"updated":1792208388942}}}}
+{"type":"session.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"ses_eb80e3cb1ffeZOZTkobox9kKRj","slug":"kind-river","projectID":"global","directory":"C:\\Works\\projects\\claude-code-open-code\\session-deck","path":"Works/projects/claude-code-open-code/session-deck","title":"New session - 2026-10-17T03:39:48.942Z","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"version":"1.19.0","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"permission":[{"permission":"question","pattern":"*","action":"deny"},{"permission":"plan_enter","pattern":"*","action":"deny"},{"permission":"plan_exit","pattern":"*","action":"deny"}],"time":{"created":1792208388942,"updated":1792208389005}}}}
+{"type":"message.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"msg_147f1c38d001WmAeJMqajvkgxw","role":"user","sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","time":{"created":1792208389005},"agent":"build","model":{"providerID":"opencode","modelID":"deepseek-v4.1-flash-free"}}}}
+{"type":"message.part.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","part":{"type":"text","text":"reply with the single word: ok","messageID":"msg_147f1c38d001WmAeJMqajvkgxw","sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","id":"prt_147f1c394001thbf4Ec5Dk8PR0"},"time":1792208389440}}
+{"type":"session.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"ses_eb80e3cb1ffeZOZTkobox9kKRj","slug":"kind-river","projectID":"global","directory":"C:\\Works\\projects\\claude-code-open-code\\session-deck","path":"Works/projects/claude-code-open-code/session-deck","title":"New session - 2026-10-17T03:39:48.942Z","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"version":"1.19.0","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"permission":[{"permission":"question","pattern":"*","action":"deny"},{"permission":"plan_enter","pattern":"*","action":"deny"},{"permission":"plan_exit","pattern":"*","action":"deny"}],"time":{"created":1792208388942,"updated":1792208389443}}}}
+{"type":"session.status","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","status":{"type":"busy"}}}
+{"type":"message.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"msg_147f1c54c001V5pG7uO1mxRUS6","parentID":"msg_147f1c38d001WmAeJMqajvkgxw","role":"assistant","mode":"build","agent":"build","path":{"cwd":"C:\\Works\\projects\\claude-code-open-code\\session-deck","root":"/"},"cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"modelID":"deepseek-v4.1-flash-free","providerID":"opencode","time":{"created":1792208389452},"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj"}}}
+{"type":"session.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"ses_eb80e3cb1ffeZOZTkobox9kKRj","slug":"kind-river","projectID":"global","directory":"C:\\Works\\projects\\claude-code-open-code\\session-deck","path":"Works/projects/claude-code-open-code/session-deck","title":"New session - 2026-10-17T03:39:48.942Z","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"version":"1.19.0","summary":{"additions":0,"deletions":0,"files":0},"cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"permission":[{"permission":"question","pattern":"*","action":"deny"},{"permission":"plan_enter","pattern":"*","action":"deny"},{"permission":"plan_exit","pattern":"*","action":"deny"}],"time":{"created":1792208388942,"updated":1792208389525}}}}
+{"type":"session.diff","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","diff":[]}}
+{"type":"message.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"role":"user","time":{"created":1792208389005},"agent":"build","model":{"providerID":"opencode","modelID":"deepseek-v4.1-flash-free"},"id":"msg_147f1c38d001WmAeJMqajvkgxw","sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","summary":{"diffs":[]}}}}
+{"type":"plugin.added","props":{"id":"core/config-reference"}}
+{"type":"plugin.added","props":{"id":"agent"}}
+{"type":"plugin.added","props":{"id":"command"}}
+{"type":"plugin.added","props":{"id":"skill"}}
+{"type":"plugin.added","props":{"id":"models-dev"}}
+{"type":"plugin.added","props":{"id":"config-agent"}}
+{"type":"plugin.added","props":{"id":"config-command"}}
+{"type":"plugin.added","props":{"id":"config-skill"}}
+{"type":"plugin.added","props":{"id":"alibaba"}}
+{"type":"plugin.added","props":{"id":"amazon-bedrock"}}
+{"type":"plugin.added","props":{"id":"anthropic"}}
+{"type":"plugin.added","props":{"id":"azure-cognitive-services"}}
+{"type":"plugin.added","props":{"id":"azure"}}
+{"type":"plugin.added","props":{"id":"cerebras"}}
+{"type":"plugin.added","props":{"id":"cloudflare-ai-gateway"}}
+{"type":"plugin.added","props":{"id":"cloudflare-workers-ai"}}
+{"type":"plugin.added","props":{"id":"cohere"}}
+{"type":"plugin.added","props":{"id":"deepinfra"}}
+{"type":"plugin.added","props":{"id":"gateway"}}
+{"type":"plugin.added","props":{"id":"github-copilot"}}
+{"type":"plugin.added","props":{"id":"gitlab"}}
+{"type":"plugin.added","props":{"id":"google"}}
+{"type":"plugin.added","props":{"id":"google-vertex-anthropic"}}
+{"type":"plugin.added","props":{"id":"google-vertex"}}
+{"type":"plugin.added","props":{"id":"groq"}}
+{"type":"plugin.added","props":{"id":"kilo"}}
+{"type":"plugin.added","props":{"id":"llmgateway"}}
+{"type":"plugin.added","props":{"id":"mistral"}}
+{"type":"plugin.added","props":{"id":"nvidia"}}
+{"type":"plugin.added","props":{"id":"opencode"}}
+{"type":"plugin.added","props":{"id":"snowflake-cortex"}}
+{"type":"plugin.added","props":{"id":"openai-compatible"}}
+{"type":"plugin.added","props":{"id":"openai"}}
+{"type":"plugin.added","props":{"id":"openrouter"}}
+{"type":"plugin.added","props":{"id":"perplexity"}}
+{"type":"plugin.added","props":{"id":"sap-ai-core"}}
+{"type":"plugin.added","props":{"id":"togetherai"}}
+{"type":"catalog.updated","props":{}}
+{"type":"plugin.added","props":{"id":"vercel"}}
+{"type":"plugin.added","props":{"id":"venice"}}
+{"type":"plugin.added","props":{"id":"xai"}}
+{"type":"plugin.added","props":{"id":"zenmux"}}
+{"type":"plugin.added","props":{"id":"dynamic-provider"}}
+{"type":"plugin.added","props":{"id":"config-plugin"}}
+{"type":"plugin.added","props":{"id":"config-provider"}}
+{"type":"plugin.added","props":{"id":"variant"}}
+{"type":"reference.updated","props":{}}
+{"type":"plugin.added","props":{"id":"orca-opencode-status"}}
+{"type":"integration.updated","props":{}}
+{"type":"catalog.updated","props":{}}
+{"type":"session.status","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","status":{"type":"busy"}}}
+{"type":"session.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"ses_eb80e3cb1ffeZOZTkobox9kKRj","slug":"kind-river","projectID":"global","directory":"C:\\Works\\projects\\claude-code-open-code\\session-deck","path":"Works/projects/claude-code-open-code/session-deck","title":"OK response title","agent":"build","model":{"id":"deepseek-v4.1-flash-free","providerID":"opencode","variant":"default"},"version":"1.19.0","summary":{"additions":0,"deletions":0,"files":0},"cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"permission":[{"permission":"question","pattern":"*","action":"deny"},{"permission":"plan_enter","pattern":"*","action":"deny"},{"permission":"plan_exit","pattern":"*","action":"deny"}],"time":{"created":1792208388942,"updated":1792208389525}}}}
+{"type":"message.part.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","part":{"id":"prt_147f1d1660014HAcwhq2gRBYFh","messageID":"msg_147f1c54c001V5pG7uO1mxRUS6","sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","type":"step-start"},"time":1792208392550}}
+{"type":"message.part.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","part":{"id":"prt_147f1d1690014751y0CyMJIEws","messageID":"msg_147f1c54c001V5pG7uO1mxRUS6","sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","type":"text","text":"","time":{"start":1792208392553}},"time":1792208392553}}
+{"type":"message.part.delta","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","messageID":"msg_147f1c54c001V5pG7uO1mxRUS6","partID":"prt_147f1d1690014751y0CyMJIEws","field":"text","delta":"ok"}}
+{"type":"message.part.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","part":{"id":"prt_147f1d1690014751y0CyMJIEws","messageID":"msg_147f1c54c001V5pG7uO1mxRUS6","sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","type":"text","text":"ok","time":{"start":1792208392553,"end":1792208392556}},"time":1792208392556}}
+{"type":"message.part.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","part":{"id":"prt_147f1d16f001bsIhqX2hc4Q0OR","reason":"stop","messageID":"msg_147f1c54c001V5pG7uO1mxRUS6","sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","type":"step-finish","tokens":{"total":17604,"input":1218,"output":2,"reasoning":0,"cache":{"write":0,"read":16384}},"cost":0},"time":1792208392559}}
+{"type":"message.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"msg_147f1c54c001V5pG7uO1mxRUS6","parentID":"msg_147f1c38d001WmAeJMqajvkgxw","role":"assistant","mode":"build","agent":"build","path":{"cwd":"C:\\Works\\projects\\claude-code-open-code\\session-deck","root":"/"},"cost":0,"tokens":{"total":17604,"input":1218,"output":2,"reasoning":0,"cache":{"write":0,"read":16384}},"modelID":"deepseek-v4.1-flash-free","providerID":"opencode","time":{"created":1792208389452},"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","finish":"stop"}}}
+{"type":"message.updated","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","info":{"id":"msg_147f1c54c001V5pG7uO1mxRUS6","parentID":"msg_147f1c38d001WmAeJMqajvkgxw","role":"assistant","mode":"build","agent":"build","path":{"cwd":"C:\\Works\\projects\\claude-code-open-code\\session-deck","root":"/"},"cost":0,"tokens":{"total":17604,"input":1218,"output":2,"reasoning":0,"cache":{"write":0,"read":16384}},"modelID":"deepseek-v4.1-flash-free","providerID":"opencode","time":{"created":1792208389452,"completed":1792208392564},"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","finish":"stop"}}}
+{"type":"session.status","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","status":{"type":"busy"}}}
+{"type":"session.status","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj","status":{"type":"idle"}}}
+{"type":"session.idle","props":{"sessionID":"ses_eb80e3cb1ffeZOZTkobox9kKRj"}}
+{"type":"catalog.updated","props":{}}
+{"type":"integration.updated","props":{}}
+{"type":"reference.updated","props":{}}

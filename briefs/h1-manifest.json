@@ -1,0 +1,7 @@
+{ "dir": "C:/Works/projects/claude-code-open-code/session-deck", "maxParallel": 2, "maxCost": 0.20,
+  "tasks": [
+    { "name": "h1-links-main", "brief": "briefs/h1-links-main.txt", "model": "opencode/glm-5.3-flash-free",
+      "fallback": ["opencode/deepseek-v4.1-flash-free", "opencode-go/deepseek-v4-flash"], "timeoutSec": 2400, "stallSec": 450 },
+    { "name": "h1-links-renderer", "brief": "briefs/h1-links-renderer.txt", "model": "opencode/deepseek-v4.1-flash-free",
+      "fallback": ["opencode/glm-5.3-flash-free", "opencode-go/deepseek-v4-flash"], "timeoutSec": 2400, "stallSec": 450 }
+  ] }

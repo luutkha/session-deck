@@ -1,0 +1,38 @@
+GOAL: Implement the session/group/status data layer in src/main/store/ (pure reducers + persistence + a small stateful wrapper).
+SCOPE (you own only): src/main/store/**
+
+SPEC:
+reducers.ts (pure, no IO; no Date.now/randomUUID inside: ids and timestamps are passed in):
+- emptyStore(): StoreData with version 1, no sessions/groups, statuses = DEFAULT_STATUSES, groupOrder [].
+- createSession(data, input: CreateSessionInput, meta:{id,now}) -> {data, session}. name defaults to the last path segment of cwd (handle both \ and /, trailing slashes; fallback 'session'). order = (max order in target group)+1 or 0. Validate: cwd non-empty after trim; groupId/statusId, when given, must exist; claudeArgs default [].
+- renameSession(data,id,name); setSessionStatus(data,id,statusId|null; statusId must exist); moveSession(data,id,groupId|null,index): removes from source group and inserts into target at index (clamped to 0..len), then renormalizes `order` to 0..n-1 in BOTH affected groups; moving within the same group works; removeSession(data,id).
+- createGroup(data,name,id) -> {data, group} (appends to groupOrder, collapsed false); renameGroup; removeGroup (its sessions become ungrouped, appended after existing ungrouped sessions keeping their relative order; group removed from groupOrder); setGroupCollapsed; reorderGroups(data, order) (order must be an exact permutation of existing group ids, else throw).
+- upsertStatus(data, status) (color must match /^#[0-9a-fA-F]{6}$/, name non-empty); removeStatus(data,id) (sessions with it get statusId null).
+- Names: trimmed, 1..100 chars, else throw Error('Name required') / Error('Name too long'). Unknown ids throw Error(`Unknown session: <id>`) / `Unknown group: <id>` / `Unknown status: <id>`. Duplicate group names are allowed.
+
+persistence.ts:
+- parseStoreData(raw: unknown): StoreData  strict structural validation of every field (version===1, arrays, field types). Dangling groupId/statusId references are repaired to null; duplicate ids throw. Throws Error('Invalid store: <reason>').
+- loadStoreFile(path): returns {data, warning?}. Missing file -> emptyStore(). Unreadable/corrupt JSON or invalid shape -> rename the file to `<path>.corrupt-<timestamp>` and return {data: emptyStore(), warning: <string>}.
+- saveStoreFile(path, data): atomic (write `<path>.tmp` then rename), creates parent dir, pretty JSON with 2 spaces.
+- createDebouncedSaver(path, delayMs, deps?) -> {schedule(data), flush(): Promise<void>} coalescing writes; flush writes any pending data immediately; injectable timer for tests.
+
+SessionStore.ts: class SessionStore(initial: StoreData, saver: {schedule(d: StoreData): void}, deps:{newId:()=>string, now:()=>number}):
+- get(): StoreData; subscribe(cb: (d:StoreData)=>void): ()=>void; one method per reducer (createSession, renameSession, setSessionStatus, moveSession, removeSession, createGroup, renameGroup, removeGroup, setGroupCollapsed, reorderGroups, upsertStatus, removeStatus). Each applies the reducer, replaces the held state, calls saver.schedule and notifies subscribers ONLY on success; if the reducer throws, state is unchanged and the error propagates.
+index.ts: re-export the public API.
+
+EDGE CASES TO TEST: empty cwd; cwd `C:\Work\proj\` and `/home/u/proj/`; moving to index beyond length / negative; moving within the same group; removing a group that has sessions; reorderGroups with missing/extra/duplicate ids; removing a status that is in use; corrupt JSON file; valid JSON of the wrong shape; version 2; duplicate session ids; atomic save leaves no .tmp file; debounce coalescing; flush with nothing pending; subscriber not called when a reducer throws; unsubscribing; performance sanity (a move among 1000 sessions in <100ms).
+
+DONE WHEN: `npx vitest run src/main/store` passes; zero type errors in src/main/store. Report test count and what you could verify about coverage (use `--coverage` only if @vitest/coverage-v8 is already installed; do not add dependencies).
+
+CONTEXT (all workers): Read PLAN.md and src/shared/types.ts + src/shared/ipc.ts first. The shared contract is FROZEN and owned by the orchestrator: import from it, never edit or create anything in src/shared, package.json, tsconfig*, vitest.config.ts, electron.vite.config.ts, src/main/index.ts, src/preload, src/renderer/App.tsx or main.tsx. If the contract is wrong or insufficient, do NOT work around it silently: list it under OPEN QUESTIONS. Other modules are being written IN PARALLEL by other workers in other folders and do not exist yet; code only against the contract and your own folder. Windows 11, Node 24, TypeScript strict, Vitest (globals on). No new dependencies unless the brief allows it. You may run shell commands and use the network. Do NOT git push.
+
+STANDARDS: Immutable data (return new objects, never mutate inputs, readonly types). Files <400 lines (max 800), functions <50 lines, no deep nesting. Explicit types on every exported function; no `any` (use `unknown` + narrowing); string-literal unions not enums; no console.log in production code. Explicit error handling with clear messages, never swallow errors or use empty catch. Validate external input at boundaries. No hardcoded magic values (named constants). Tests first (RED, GREEN, refactor), test names state behavior, 80%+ coverage of your logic, cover edge cases and error paths.
+
+VERIFY YOUR WORK: run `npx vitest run <your folder>` and a typecheck limited to what you can: `npx tsc --noEmit -p tsconfig.node.json --composite false` (main) or `-p tsconfig.web.json` (renderer). IGNORE type errors in files you do not own (other workers are mid-edit), but there must be zero in yours.
+
+REPORT BACK (end your reply with exactly this):
+- SUMMARY: <=6 lines
+- FILES CHANGED: list
+- COMMANDS RUN + RESULT: pass/fail with the last error lines
+- OPEN QUESTIONS / ASSUMPTIONS: list (anything the brief did not say; contract problems)
+- NOT DONE: list

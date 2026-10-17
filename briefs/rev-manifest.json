@@ -1,0 +1,10 @@
+{
+  "dir": "C:/Works/projects/claude-code-open-code/session-deck",
+  "maxParallel": 2,
+  "tasks": [
+    { "name": "rev-sidebar",  "brief": "briefs/rev-sidebar.txt",  "model": "opencode-go/step-5-preview-free", "agent": "plan",
+      "fallback": ["opencode/big-pickle", "opencode/mimo-v2.6-flash-free"], "timeoutSec": 1500, "stallSec": 400 },
+    { "name": "rev-terminal", "brief": "briefs/rev-terminal.txt", "model": "opencode/big-pickle", "agent": "plan",
+      "fallback": ["opencode/mimo-v2.6-flash-free", "opencode-go/step-5-preview-free"], "timeoutSec": 1500, "stallSec": 400 }
+  ]
+}
