@@ -62,7 +62,7 @@ Use the `opencode-orchestrator` skill (cost-first: deepseek-v4-flash / claude-ha
 
 ## OpenCode worker tabs (read-only)
 - A Claude session that starts OpenCode workers through the orchestrator skill (`oc-run`, which writes `<folder>/.opencode-runs/sessions/<name>.json` plus a JSONL log) now gets a read-only tab per worker after its own tabs.
-- Main: `src/main/workers/` (`WorkerWatcher` polls the registry of each open session's folder and 2 parents every 1 s; `logParser` turns the JSONL into lines/cost/tokens; `registration` validates the file, the log must sit inside `.opencode-runs`). IPC: `workers:get` and `ev:workers`. Runs that ended before the app started are ignored.
+- Main: `src/main/workers/` (`WorkerWatcher` polls the registry of each open session's folder, its 2 parents and its immediate subfolders every 1 s; `logParser` turns the JSONL into lines/cost/tokens; `registration` validates the file, the log must sit inside `.opencode-runs`). IPC: `workers:get` and `ev:workers`. Runs that ended before the app started are ignored.
 - Renderer: `src/renderer/workers/` (`useWorkers`, `WorkerTabs`, `WorkerView`, `workerLogic`). Finished tabs close 2 min after ending unless being read; the X only hides the tab (the worker keeps running). Selecting any session or the Hub leaves the worker view.
 - Not built (by choice): a real interactive OpenCode terminal (Phase 2: shared `opencode serve` + `opencode attach`), resume-from-tab.
 - E2E: `scripts/e2e-workers.cjs` (8 checks).

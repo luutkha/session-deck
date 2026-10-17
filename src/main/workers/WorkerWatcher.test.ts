@@ -77,6 +77,16 @@ describe('WorkerWatcher', () => {
     expect(seen.at(-1)?.[0]?.name).toBe('up')
   })
 
+  it('finds a registry in a subfolder of the session cwd (a batch run inside todo-prototypes)', async () => {
+    const proj = path.join(root, 'proj')
+    const child = path.join(proj, 'todo-prototypes')
+    mkdirSync(child, { recursive: true })
+    const { poll, seen } = make([{ id: 's1', cwd: proj }])
+    register(child, 'todo-1', 'running')
+    await poll()
+    expect(seen.at(-1)?.[0]).toMatchObject({ name: 'todo-1', ownerSessionIds: ['s1'] })
+  })
+
   it('does not report a worker no session looks at, and survives an unreadable registry', async () => {
     const dir = path.join(root, 'proj')
     const other = path.join(root, 'elsewhere')

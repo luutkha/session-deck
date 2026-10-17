@@ -43,7 +43,7 @@ function dirKey(dir: string): string {
 }
 
 /** Folder -> ids of the sessions that look at it. */
-export function ownersByDir(sessions: readonly WatchedSession[]): ReadonlyMap<string, { readonly dir: string; readonly owners: readonly Id[] }> {
+export function ownersByDir(sessions: readonly WatchedSession[]): Map<string, { dir: string; owners: Id[] }> {
   const map = new Map<string, { dir: string; owners: Id[] }>()
   for (const session of sessions) {
     for (const dir of candidateDirs(session.cwd)) {
@@ -54,6 +54,32 @@ export function ownersByDir(sessions: readonly WatchedSession[]): ReadonlyMap<st
     }
   }
   return map
+}
+
+/** Folders never worth looking into for a registry. */
+const SKIP_CHILD = new Set(['node_modules', '.git', 'out', 'dist', 'build', 'release', 'reference'])
+
+/** Adds each session's immediate subfolders: a batch is often started in a project folder but runs inside a subfolder. */
+async function addChildDirs(
+  map: Map<string, { dir: string; owners: Id[] }>,
+  sessions: readonly WatchedSession[]
+): Promise<void> {
+  for (const session of sessions) {
+    let entries
+    try {
+      entries = await readdir(session.cwd, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || SKIP_CHILD.has(entry.name)) continue
+      const dir = path.join(session.cwd, entry.name)
+      const key = dirKey(dir)
+      const found = map.get(key)
+      if (found === undefined) map.set(key, { dir, owners: [session.id] })
+      else if (!found.owners.includes(session.id)) found.owners.push(session.id)
+    }
+  }
 }
 
 async function readNew(logPath: string, offset: number, size: number): Promise<{ text: string; next: number }> {
@@ -182,7 +208,10 @@ export function createWorkerWatcher(deps: WorkerWatcherDeps): WorkerWatcher {
     polling = true
     try {
       const seen = new Set<string>()
-      for (const { dir, owners } of ownersByDir(deps.getSessions()).values()) {
+      const sessions = deps.getSessions()
+      const folders = ownersByDir(sessions)
+      await addChildDirs(folders, sessions)
+      for (const { dir, owners } of folders.values()) {
         await scanDir(dir, owners, seen)
       }
       const now = deps.now()
