@@ -10,6 +10,8 @@ export const RELATIVE_TIME_INTERVAL_MS = 30 * 1000
 const GROUP_BY_STORAGE_KEY = 'sessiondeck-sidebar-groupby'
 const CLOSED_COLLAPSED_STORAGE_KEY = 'sessiondeck-sidebar-closed-collapsed'
 const STATUS_COLLAPSED_STORAGE_KEY = 'sessiondeck-sidebar-status-collapsed'
+const SHOW_WORKSPACES_STORAGE_KEY = 'sessiondeck-sidebar-show-workspaces'
+const WORKSPACE_COLLAPSED_STORAGE_KEY = 'sessiondeck-sidebar-workspace-collapsed'
 
 function readStorageString(key: string): string | null {
   try {
@@ -43,8 +45,32 @@ export function writeClosedCollapsed(collapsed: boolean): void {
   writeStorageString(CLOSED_COLLAPSED_STORAGE_KEY, collapsed ? 'true' : 'false')
 }
 
+export function readShowWorkspaces(): boolean {
+  return readStorageString(SHOW_WORKSPACES_STORAGE_KEY) !== 'false'
+}
+
+export function writeShowWorkspaces(show: boolean): void {
+  writeStorageString(SHOW_WORKSPACES_STORAGE_KEY, show ? 'true' : 'false')
+}
+
+export function readWorkspaceCollapsed(): StatusCollapsedMap {
+  return readBooleanMap(WORKSPACE_COLLAPSED_STORAGE_KEY)
+}
+
+export function writeWorkspaceCollapsed(value: StatusCollapsedMap): void {
+  writeBooleanMap(WORKSPACE_COLLAPSED_STORAGE_KEY, value)
+}
+
 export function readStatusCollapsed(): StatusCollapsedMap {
-  const raw = readStorageString(STATUS_COLLAPSED_STORAGE_KEY)
+  return readBooleanMap(STATUS_COLLAPSED_STORAGE_KEY)
+}
+
+export function writeStatusCollapsed(value: StatusCollapsedMap): void {
+  writeBooleanMap(STATUS_COLLAPSED_STORAGE_KEY, value)
+}
+
+function readBooleanMap(storageKey: string): StatusCollapsedMap {
+  const raw = readStorageString(storageKey)
   if (raw === null) return new Map()
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -59,10 +85,10 @@ export function readStatusCollapsed(): StatusCollapsedMap {
   }
 }
 
-export function writeStatusCollapsed(value: StatusCollapsedMap): void {
+function writeBooleanMap(storageKey: string, value: StatusCollapsedMap): void {
   const obj: Record<string, boolean> = {}
-  for (const [key, collapsed] of value.entries()) {
-    obj[key] = collapsed
+  for (const [key, flag] of value.entries()) {
+    obj[key] = flag
   }
-  writeStorageString(STATUS_COLLAPSED_STORAGE_KEY, JSON.stringify(obj))
+  writeStorageString(storageKey, JSON.stringify(obj))
 }

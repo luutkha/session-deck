@@ -1,4 +1,5 @@
 import type { StoreData, Group, Id, Session, StatusDef } from '../../shared/types'
+import { folderKey } from '../shell/projectTabs'
 
 export interface Section {
   readonly group: Group | null
@@ -182,15 +183,72 @@ export function statusOf(data: StoreData, session: Session): StatusDef | null {
   return data.statuses.find(s => s.id === session.statusId) ?? null
 }
 
-export function flatSessionIds(sections: readonly Section[]): readonly Id[] {
+/**
+ * Ids in sidebar order for keyboard navigation. Sessions of collapsed groups, and (when workspaces are shown)
+ * of collapsed workspaces, are skipped because they are not on screen.
+ */
+export function flatSessionIds(
+  sections: readonly Section[],
+  workspaceCollapsed: ReadonlyMap<string, boolean> = new Map(),
+  showWorkspaces = true
+): readonly Id[] {
   const result: Id[] = []
   for (const section of sections) {
     if (section.group?.collapsed) continue
+    const groupId = section.group?.id ?? null
     for (const session of section.sessions) {
-      result.push(session.id)
+      const hidden =
+        showWorkspaces &&
+        workspaceCollapsed.get(workspaceCollapseKey(groupId, folderKey(session.cwd))) === true
+      if (!hidden) result.push(session.id)
     }
   }
   return result
+}
+
+export interface WorkspaceBucket {
+  /** `folderKey` of the root folder: stable identity of the workspace. */
+  readonly key: string
+  readonly label: string
+  /** The folder as the first session spelled it (trailing separators removed). */
+  readonly path: string
+  readonly sessions: readonly Session[]
+}
+
+/** Collapse state is per group, so the same folder can be open in one group and collapsed in another. */
+export function workspaceCollapseKey(groupId: Id | null, workspaceKey: string): string {
+  return `${groupId ?? 'ungrouped'}|${workspaceKey}`
+}
+
+/**
+ * Splits one group's sessions into workspaces by the folder each session was opened in. Buckets appear in the
+ * order of their first session; sessions keep their incoming order. Two workspaces with the same folder name are
+ * labelled `parent/name` so they can be told apart.
+ */
+export function workspaceBuckets(sessions: readonly Session[]): readonly WorkspaceBucket[] {
+  const byKey = new Map<string, { path: string; sessions: Session[] }>()
+  for (const session of sessions) {
+    const key = folderKey(session.cwd)
+    const bucket = byKey.get(key) ?? { path: session.cwd.replace(TRAILING_SEPARATORS, '') || session.cwd, sessions: [] }
+    bucket.sessions.push(session)
+    byKey.set(key, bucket)
+  }
+  const entries = [...byKey.entries()]
+  const nameCount = new Map<string, number>()
+  for (const [, bucket] of entries) {
+    const name = lastPathSegment(bucket.path).toLowerCase()
+    nameCount.set(name, (nameCount.get(name) ?? 0) + 1)
+  }
+  return entries.map(([key, bucket]): WorkspaceBucket => {
+    const name = lastPathSegment(bucket.path)
+    const duplicate = (nameCount.get(name.toLowerCase()) ?? 0) > 1
+    return { key, label: duplicate ? withParent(bucket.path, name) : name, path: bucket.path, sessions: bucket.sessions }
+  })
+}
+
+function withParent(path: string, name: string): string {
+  const parts = path.split(PATH_SEPARATORS).filter((part) => part.length > 0)
+  return parts.length >= 2 ? `${parts[parts.length - 2]}/${name}` : name
 }
 
 export function countByStatus(data: StoreData): ReadonlyMap<Id | null, number> {

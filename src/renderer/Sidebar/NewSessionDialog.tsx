@@ -22,6 +22,8 @@ import { NEW_GROUP_CHOICE, NO_VALUE_CHOICE, NewSessionFields } from './NewSessio
 export interface NewSessionDialogProps {
   readonly data: StoreData
   readonly defaultGroupId?: Id | null
+  /** Prefilled folder, e.g. when started from a workspace header. */
+  readonly defaultFolder?: string
   /** Preselected agent; the caller should pass AppSettings.agents.defaultAgent. Falls back to 'claude'. */
   readonly defaultAgent?: AgentKind
   /** Prefilled OpenCode model; the caller should pass AppSettings.agents.opencodeModel. */
@@ -51,6 +53,7 @@ function orderedGroups(data: StoreData): readonly Group[] {
 export function NewSessionDialog({
   data,
   defaultGroupId,
+  defaultFolder,
   defaultAgent,
   defaultOpenCodeModel,
   actions,
@@ -58,7 +61,7 @@ export function NewSessionDialog({
   onCreated
 }: NewSessionDialogProps): ReactElement {
   const [agent, setAgent] = useState<AgentKind>(defaultAgent ?? 'claude')
-  const [folder, setFolder] = useState('')
+  const [folder, setFolder] = useState(defaultFolder ?? '')
   const [name, setName] = useState('')
   const [groupChoice, setGroupChoice] = useState<string>(defaultGroupId ?? NO_VALUE_CHOICE)
   const [statusChoice, setStatusChoice] = useState<string>(NO_VALUE_CHOICE)

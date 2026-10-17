@@ -73,7 +73,7 @@ export function App(): ReactElement {
   const workers = useWorkers(activeId)
 
   // New session / Statuses open Orca-style dialogs (they own validation, Browse and error display).
-  const [newSession, setNewSession] = useState<{ readonly groupId: Id | null; readonly statusId: Id | null } | null>(null)
+  const [newSession, setNewSession] = useState<{ readonly groupId: Id | null; readonly statusId: Id | null; readonly folder?: string } | null>(null)
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null)
   const [view, setViewState] = useState<MainView>(readStoredView)
   const setView = useCallback((next: MainView): void => {
@@ -89,8 +89,8 @@ export function App(): ReactElement {
   const toggleNotes = useCallback((): void => setNotesOpenState(!notesOpen), [notesOpen, setNotesOpenState])
   const lastChange = useLastRuntimeChange(runtime)
 
-  const handleNewSession = useCallback((groupId?: Id | null): void => {
-    setNewSession({ groupId: groupId ?? null, statusId: null })
+  const handleNewSession = useCallback((groupId?: Id | null, folder?: string): void => {
+    setNewSession({ groupId: groupId ?? null, statusId: null, folder })
   }, [])
 
   const handleNewInStatus = useCallback((statusId: Id | null): void => {
@@ -326,6 +326,7 @@ export function App(): ReactElement {
         <NewSessionDialog
           data={data}
           defaultGroupId={newSession.groupId}
+          defaultFolder={newSession.folder}
           actions={actions}
           onClose={closeNewSession}
           onCreated={handleCreated}

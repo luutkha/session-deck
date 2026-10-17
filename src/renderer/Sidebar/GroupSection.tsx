@@ -7,6 +7,8 @@ import { GroupContextMenu } from './GroupContextMenu'
 import { SessionCard } from './SessionCard'
 import { SessionContextMenu } from './SessionContextMenu'
 import { InlineEdit } from './InlineEdit'
+import { WorkspaceSection } from './WorkspaceSection'
+import { workspaceBuckets, workspaceCollapseKey } from '../state/selectors'
 
 export interface GroupSectionProps {
   readonly group: Group | null
@@ -23,6 +25,10 @@ export interface GroupSectionProps {
   readonly groupBy: 'groups' | 'status'
   readonly draggableSessions: boolean
   readonly draggableGroupHeader: boolean
+  readonly showWorkspaces: boolean
+  readonly workspaceCollapsed: ReadonlyMap<string, boolean>
+  readonly onToggleWorkspace: (collapseKey: string, collapsed: boolean) => void
+  readonly onNewSessionInFolder: (groupId: Id | null, folder: string) => void
   readonly onToggleCollapsed: (groupId: Id) => void
   readonly onSelect: (id: Id) => void
   readonly onStartRenameSession: (id: Id) => void
@@ -50,6 +56,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     group, sessions, data, runtime, lastChange, now, activeId,
     renamingGroupId, renamingSessionId, drag, dropOver,
     groupBy, draggableSessions, draggableGroupHeader,
+    showWorkspaces, workspaceCollapsed, onToggleWorkspace, onNewSessionInFolder,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
     onStartRenameGroup, onRenameGroup, onCloseSession, onSetSessionStatus,
     onMoveSession, onCreateGroupAndMove, onRequestRemoveSession, onRemoveGroup,
@@ -184,6 +191,91 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     )
   }
 
+  function renderSession(session: Session): ReactElement {
+    const state = runtime.get(session.id)
+    const attention = state?.attention ?? null
+    const groupBadge = group === null ? null : group.name
+    const showGroupBadge = groupBy === 'status' && groupBadge !== null
+    const dropOverForSession =
+      drag !== null && drag.kind === 'session' && dropOver !== null &&
+      dropOver.kind === 'session' && dropOver.id === session.id &&
+      (dropOver.position === 'before' || dropOver.position === 'after')
+        ? dropOver.position
+        : null
+
+    const card = (
+      <SessionCard
+        session={session}
+        status={data.statuses.find((s) => s.id === session.statusId) ?? null}
+        active={activeId === session.id}
+        runtime={state}
+        lastChange={lastChange.get(session.id) ?? session.createdAt}
+        now={now}
+        renaming={renamingSessionId === session.id}
+        groupBadge={groupBadge}
+        showGroupBadge={showGroupBadge}
+        attention={attention}
+        showIndicator={true}
+        indicatorAriaLabel={
+          state === undefined
+            ? 'No runtime data'
+            : state.run === 'running'
+              ? 'Running'
+              : 'Exited'
+        }
+        indicatorClass={
+          state !== undefined && state.attention !== null
+            ? attentionBgClass(state.attention)
+            : state === undefined
+              ? 'bg-muted-foreground/40'
+              : state.run === 'running'
+                ? 'bg-status-success'
+                : 'bg-destructive'
+        }
+        indicatorPulse={attention !== null}
+        draggable={draggableSessions}
+        dragOver={dropOverForSession}
+        onSelect={onSelect}
+        onStartRename={onStartRenameSession}
+        onCommitRename={onRenameSession}
+        onCancelRename={onCancelRename}
+        onClose={onCloseSession}
+        onDragStart={onDragStartSession}
+        onDragOverItem={(_id, position): void => {
+          onDragOverSession({ kind: 'session', id: session.id, position })
+        }}
+        onDropItem={onDropItem}
+        onDragEnd={onDragEnd}
+      />
+    )
+
+    return (
+      <SessionContextMenu
+        key={session.id}
+        statuses={data.statuses}
+        groups={data.groups}
+        sleeping={state?.sleeping === true}
+        canSleep={state !== undefined && state.run === 'running' && state.sleeping !== true}
+        keepAwake={session.keepAwake === true}
+        onToggleKeepAwake={(): void => {
+          void window.api.setKeepAwake(session.id, session.keepAwake !== true).catch((): void => undefined)
+        }}
+        onSleep={(): void => {
+          void window.api.sleepSession(session.id).catch((): void => undefined)
+        }}
+        onWake={(): void => onSelect(session.id)}
+        onRename={(): void => onStartRenameSession(session.id)}
+        onSetStatus={(statusId): void => onSetSessionStatus(session.id, statusId)}
+        onMoveToGroup={(groupId): void => onMoveSession(session.id, groupId)}
+        onNewGroupAndMove={(): void => onCreateGroupAndMove(session.id)}
+        onCloseSession={(): void => onCloseSession(session.id)}
+        onRemoveSession={(): void => onRequestRemoveSession(session.id)}
+      >
+        {card}
+      </SessionContextMenu>
+    )
+  }
+
   return (
     <div
       role="group"
@@ -193,90 +285,24 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
       {headerNode}
       {!collapsed && (
         <div className="flex flex-col gap-0.5 pl-2">
-          {sessions.map((session) => {
-            const state = runtime.get(session.id)
-            const attention = state?.attention ?? null
-            const groupBadge = group === null ? null : group.name
-            const showGroupBadge = groupBy === 'status' && groupBadge !== null
-            const dropOverForSession =
-              drag !== null && drag.kind === 'session' && dropOver !== null &&
-              dropOver.kind === 'session' && dropOver.id === session.id &&
-              (dropOver.position === 'before' || dropOver.position === 'after')
-                ? dropOver.position
-                : null
-
-            const card = (
-              <SessionCard
-                session={session}
-                status={data.statuses.find((s) => s.id === session.statusId) ?? null}
-                active={activeId === session.id}
-                runtime={state}
-                lastChange={lastChange.get(session.id) ?? session.createdAt}
-                now={now}
-                renaming={renamingSessionId === session.id}
-                groupBadge={groupBadge}
-                showGroupBadge={showGroupBadge}
-                attention={attention}
-                showIndicator={true}
-                indicatorAriaLabel={
-                  state === undefined
-                    ? 'No runtime data'
-                    : state.run === 'running'
-                      ? 'Running'
-                      : 'Exited'
-                }
-                indicatorClass={
-                  state !== undefined && state.attention !== null
-                    ? attentionBgClass(state.attention)
-                    : state === undefined
-                      ? 'bg-muted-foreground/40'
-                      : state.run === 'running'
-                        ? 'bg-status-success'
-                        : 'bg-destructive'
-                }
-                indicatorPulse={attention !== null}
-                draggable={draggableSessions}
-                dragOver={dropOverForSession}
-                onSelect={onSelect}
-                onStartRename={onStartRenameSession}
-                onCommitRename={onRenameSession}
-                onCancelRename={onCancelRename}
-                onClose={onCloseSession}
-                onDragStart={onDragStartSession}
-                onDragOverItem={(_id, position): void => {
-                  onDragOverSession({ kind: 'session', id: session.id, position })
-                }}
-                onDropItem={onDropItem}
-                onDragEnd={onDragEnd}
-              />
-            )
-
-            return (
-              <SessionContextMenu
-                key={session.id}
-                statuses={data.statuses}
-                groups={data.groups}
-                sleeping={state?.sleeping === true}
-                canSleep={state !== undefined && state.run === 'running' && state.sleeping !== true}
-                keepAwake={session.keepAwake === true}
-                onToggleKeepAwake={(): void => {
-                  void window.api.setKeepAwake(session.id, session.keepAwake !== true).catch((): void => undefined)
-                }}
-                onSleep={(): void => {
-                  void window.api.sleepSession(session.id).catch((): void => undefined)
-                }}
-                onWake={(): void => onSelect(session.id)}
-                onRename={(): void => onStartRenameSession(session.id)}
-                onSetStatus={(statusId): void => onSetSessionStatus(session.id, statusId)}
-                onMoveToGroup={(groupId): void => onMoveSession(session.id, groupId)}
-                onNewGroupAndMove={(): void => onCreateGroupAndMove(session.id)}
-                onCloseSession={(): void => onCloseSession(session.id)}
-                onRemoveSession={(): void => onRequestRemoveSession(session.id)}
-              >
-                {card}
-              </SessionContextMenu>
-            )
-          })}
+          {showWorkspaces ? (
+            workspaceBuckets(sessions).map((bucket): ReactElement => {
+              const collapseKey = workspaceCollapseKey(group?.id ?? null, bucket.key)
+              return (
+                <WorkspaceSection
+                  key={bucket.key}
+                  sectionId={`workspace-${sectionId}-${bucket.key}`}
+                  bucket={bucket}
+                  collapsed={workspaceCollapsed.get(collapseKey) ?? false}
+                  onToggle={(): void => onToggleWorkspace(collapseKey, !(workspaceCollapsed.get(collapseKey) ?? false))}
+                  onNewSession={(folder): void => onNewSessionInFolder(group?.id ?? null, folder)}
+                  renderSession={renderSession}
+                />
+              )
+            })
+          ) : (
+            sessions.map(renderSession)
+          )}
           {sessions.length === 0 && <DropHereHint />}
         </div>
       )}

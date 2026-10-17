@@ -18,6 +18,10 @@ export interface SessionListProps {
   readonly drag: DragItem | null
   readonly dropOver: DropOver | null
   readonly statusCollapsed: StatusCollapsedMap
+  readonly showWorkspaces: boolean
+  readonly workspaceCollapsed: StatusCollapsedMap
+  readonly onToggleWorkspace: (collapseKey: string, collapsed: boolean) => void
+  readonly onNewSessionInFolder: (groupId: Id | null, folder: string) => void
   readonly groupSections: readonly Section[]
   readonly statusSections: readonly StatusSectionData[]
   readonly onListKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void
@@ -71,6 +75,10 @@ export function SessionList(props: SessionListProps): ReactElement {
               groupBy={props.groupBy}
               draggableSessions={true}
               draggableGroupHeader={section.group !== null}
+              showWorkspaces={props.showWorkspaces}
+              workspaceCollapsed={props.workspaceCollapsed}
+              onToggleWorkspace={props.onToggleWorkspace}
+              onNewSessionInFolder={props.onNewSessionInFolder}
               onToggleCollapsed={props.onToggleGroupCollapsed}
               onSelect={props.onSelect}
               onStartRenameSession={props.onStartRenameSession}

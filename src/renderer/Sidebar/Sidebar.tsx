@@ -34,10 +34,14 @@ import {
   RELATIVE_TIME_INTERVAL_MS,
   readClosedCollapsed,
   readGroupBy,
+  readShowWorkspaces,
   readStatusCollapsed,
+  readWorkspaceCollapsed,
   writeClosedCollapsed,
   writeGroupBy,
+  writeShowWorkspaces,
   writeStatusCollapsed,
+  writeWorkspaceCollapsed,
   type GroupBy,
   type StatusCollapsedMap
 } from './sidebarPrefs'
@@ -51,7 +55,7 @@ export interface SidebarProps {
   readonly onSelect: (id: Id) => void
   readonly onReopen: (id: Id) => void
   readonly actions: SessionActions
-  readonly onNewSession: (groupId?: Id | null) => void
+  readonly onNewSession: (groupId?: Id | null, folder?: string) => void
   readonly onEditStatuses: () => void
   readonly onOpenHub?: () => void
   readonly hubActive?: boolean
@@ -87,6 +91,8 @@ export function Sidebar(props: SidebarProps): ReactElement {
   const [pendingRemove, setPendingRemove] = useState<PendingRemove | null>(null)
   const [closedCollapsed, setClosedCollapsed] = useState<boolean>(readClosedCollapsed)
   const [statusCollapsed, setStatusCollapsed] = useState<StatusCollapsedMap>(readStatusCollapsed)
+  const [showWorkspaces, setShowWorkspaces] = useState<boolean>(readShowWorkspaces)
+  const [workspaceCollapsed, setWorkspaceCollapsed] = useState<StatusCollapsedMap>(readWorkspaceCollapsed)
   const [now, setNow] = useState<number>(Date.now)
 
   useEffect((): (() => void) => {
@@ -97,6 +103,8 @@ export function Sidebar(props: SidebarProps): ReactElement {
   useEffect((): void => writeGroupBy(groupBy), [groupBy])
   useEffect((): void => writeClosedCollapsed(closedCollapsed), [closedCollapsed])
   useEffect((): void => writeStatusCollapsed(statusCollapsed), [statusCollapsed])
+  useEffect((): void => writeShowWorkspaces(showWorkspaces), [showWorkspaces])
+  useEffect((): void => writeWorkspaceCollapsed(workspaceCollapsed), [workspaceCollapsed])
 
   useGlobalNewSessionShortcut(useCallback((): void => onNewSession(), [onNewSession]), pendingRemove !== null)
 
@@ -127,14 +135,14 @@ export function Sidebar(props: SidebarProps): ReactElement {
   const counts = useMemo(() => countByStatus(data), [data])
   const { open: openSessions, closed: closedSessions } = useMemo(() => splitClosed(data), [data])
   const flatIds = useMemo((): readonly Id[] => {
-    if (groupBy === 'groups') return flatSessionIds(groupSections)
+    if (groupBy === 'groups') return flatSessionIds(groupSections, workspaceCollapsed, showWorkspaces)
     const ids: Id[] = []
     for (const section of statusSections) {
       if (statusCollapsed.get(section.key) ?? false) continue
       for (const session of section.sessions) ids.push(session.id)
     }
     return ids
-  }, [groupBy, groupSections, statusSections, statusCollapsed])
+  }, [groupBy, groupSections, statusSections, statusCollapsed, workspaceCollapsed, showWorkspaces])
 
   const renameSession = useCallback((id: Id, name: string): void => {
     setRenamingSessionId(null)
@@ -262,6 +270,18 @@ export function Sidebar(props: SidebarProps): ReactElement {
     })
   }, [])
 
+  const toggleWorkspaceCollapsed = useCallback((collapseKey: string, collapsed: boolean): void => {
+    setWorkspaceCollapsed((previous): StatusCollapsedMap => {
+      const next = new Map(previous)
+      next.set(collapseKey, collapsed)
+      return next
+    })
+  }, [])
+
+  const newSessionInFolder = useCallback((groupId: Id | null, folder: string): void => {
+    onNewSession(groupId, folder)
+  }, [onNewSession])
+
   const showEmpty = openSessions.length === 0
 
   return (
@@ -284,6 +304,8 @@ export function Sidebar(props: SidebarProps): ReactElement {
       />
       <SessionsHeader
         groupBy={groupBy}
+        showWorkspaces={showWorkspaces}
+        onShowWorkspacesChange={setShowWorkspaces}
         statuses={data.statuses}
         selectedStatuses={effectiveStatuses}
         counts={counts}
@@ -306,6 +328,10 @@ export function Sidebar(props: SidebarProps): ReactElement {
           drag={drag}
           dropOver={dropOver}
           statusCollapsed={statusCollapsed}
+          showWorkspaces={showWorkspaces}
+          workspaceCollapsed={workspaceCollapsed}
+          onToggleWorkspace={toggleWorkspaceCollapsed}
+          onNewSessionInFolder={newSessionInFolder}
           groupSections={groupSections}
           statusSections={statusSections}
           onListKeyDown={handleListKeyDown}

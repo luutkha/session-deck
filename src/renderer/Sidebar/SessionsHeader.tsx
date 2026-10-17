@@ -20,6 +20,8 @@ export type { GroupBy }
 
 export interface SessionsHeaderProps {
   readonly groupBy: GroupBy
+  readonly showWorkspaces: boolean
+  readonly onShowWorkspacesChange: (show: boolean) => void
   readonly statuses: readonly StatusDef[]
   readonly selectedStatuses: ReadonlySet<Id | null>
   readonly counts: ReadonlyMap<Id | null, number>
@@ -71,6 +73,15 @@ export function SessionsHeader(props: SessionsHeaderProps): ReactElement {
               <DropdownMenuRadioItem value="groups">Groups</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="status">Status</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
+            {props.groupBy === 'groups' && (
+              <DropdownMenuCheckboxItem
+                checked={props.showWorkspaces}
+                onCheckedChange={props.onShowWorkspacesChange}
+                onSelect={(event): void => event.preventDefault()}
+              >
+                Show workspaces
+              </DropdownMenuCheckboxItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="flex items-center justify-between">
               <span>Filter by status</span>

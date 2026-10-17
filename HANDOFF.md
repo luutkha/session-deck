@@ -69,3 +69,11 @@ Any `opencode` process started from a Claude terminal (by my orchestrator skill,
 - Not built (by choice): a real interactive OpenCode terminal (Phase 2: shared `opencode serve` + `opencode attach`), resume-from-tab.
 - Tests: unit (`src/main/workers/*.test.ts`, `HookServer.worker.test.ts`), `scripts/e2e-workers.cjs` (11 checks; real plugin file -> real app), `scripts/smoke-workers-real.cjs` (manual: a real `opencode run` on a free model, 4 checks). `SESSIONDECK_E2E_ENDPOINT_FILE` makes the app write its hook port/token to that file (test seam only).
 - Note: after `git init` in session-deck, Claude asks once to trust the folder (new git root); `scripts/e2e.cjs` now answers that prompt.
+
+## Workspaces in the sidebar
+Inside each group (Groups view only) sessions are bucketed by the folder they were opened in (`session.cwd`, compared with `folderKey`, so slash style, trailing slash and case don't matter). Renderer only; no IPC or main-process change.
+- Logic: `workspaceBuckets`, `workspaceCollapseKey` and the workspace-aware `flatSessionIds` in `src/renderer/state/selectors.ts` (tests: `workspaces.test.ts`). Duplicate folder names are labelled `parent/name`.
+- UI: `Sidebar/WorkspaceSection.tsx` (sub-header with folder icon, count, full path as tooltip, context menu "New session in this workspace" which opens the dialog with the folder prefilled via `defaultFolder`). `GroupSection` renders buckets through a `renderSession` function.
+- Prefs (localStorage, `sidebarPrefs.ts`): `sessiondeck-sidebar-show-workspaces` (default on; checkbox "Show workspaces" in the Filter/Group-by menu) and `sessiondeck-sidebar-workspace-collapsed` (keyed per group + folder).
+- Not done by choice: workspace = the opened folder, not the git root; Status view is unchanged.
+- E2E: `scripts/e2e-workspaces.cjs` (9 checks).
