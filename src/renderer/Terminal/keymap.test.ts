@@ -1,5 +1,6 @@
 import {
   decideContextMenuAction,
+  isRightButton,
   decideKeyAction,
   type KeyInfo
 } from './keymap'
@@ -127,5 +128,13 @@ describe('decideKeyAction: new-session shortcut', () => {
 
   it('still passes plain Ctrl+N to the program (readline next history)', () => {
     expect(decideKeyAction(key({ key: 'n', ctrlKey: true }), false)).toBe('allow')
+  })
+})
+
+describe('isRightButton', () => {
+  it('is true only for the right mouse button', () => {
+    expect(isRightButton(2)).toBe(true)
+    expect(isRightButton(0)).toBe(false)
+    expect(isRightButton(1)).toBe(false)
   })
 })

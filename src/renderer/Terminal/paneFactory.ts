@@ -8,6 +8,7 @@ import { registerLinkProvider } from './links/linkProvider'
 import { attachFileDrop, clipboardHasImageOnly, pasteImageKeysFor } from './inputExtras'
 import {
   decideContextMenuAction,
+  isRightButton,
   decideKeyAction,
   type KeyInfo
 } from './keymap'
@@ -161,6 +162,21 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
     const text = event.clipboardData?.getData('text/plain') ?? ''
     pasteOnce(view.term, text)
   }, true)
+
+  // When the app turns on mouse reporting (Claude's fullscreen UI does), xterm would forward the right button to it and
+  // Claude pastes on a reported right-click by itself, on top of our paste below. The right button belongs to
+  // SessionDeck (copy/paste), so it never reaches xterm; the contextmenu event still fires.
+  const swallowRightButton = (event: MouseEvent): void => {
+    if (!isRightButton(event.button)) {
+      return
+    }
+    event.stopPropagation()
+    if (event.type === 'mousedown') {
+      view.term.focus()
+    }
+  }
+  element.addEventListener('mousedown', swallowRightButton, true)
+  element.addEventListener('mouseup', swallowRightButton, true)
 
   element.addEventListener('contextmenu', (event: MouseEvent): void => {
     event.preventDefault()

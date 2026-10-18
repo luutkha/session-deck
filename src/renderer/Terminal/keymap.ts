@@ -64,6 +64,13 @@ export function decideKeyAction(event: KeyInfo, hasSelection: boolean): KeyDecis
   return 'allow'
 }
 
+const RIGHT_MOUSE_BUTTON = 2
+
+/** The right button is SessionDeck's (copy/paste); it is never reported to the app running in the pane. */
+export function isRightButton(button: number): boolean {
+  return button === RIGHT_MOUSE_BUTTON
+}
+
 /** Right-click inside a pane: copy the selection when there is one, else paste. */
 export function decideContextMenuAction(hasSelection: boolean): ContextMenuDecision {
   return hasSelection ? 'copy' : 'paste'

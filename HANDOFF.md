@@ -51,7 +51,7 @@ Use the `opencode-orchestrator` skill (cost-first: deepseek-v4-flash / claude-ha
 
 ## Batch 3 + 4 (2026-10-17): links, images, sleep, OpenCode, Remote Control
 - Links: URLs, file and folder paths in the terminal are underlined when the target exists; click opens (Shift+click reveals). Executables/scripts are only revealed, UNC paths rejected (`src/main/links`).
-- Input: image paste (Claude Alt+V, OpenCode Ctrl+V), dropped files paste their paths, double-paste guard (`pasteOnce`).
+- Input: image paste (Claude Alt+V, OpenCode Ctrl+V), dropped files paste their paths, double-paste guard (`pasteOnce`). The right mouse button is never reported to the app in the pane (`isRightButton` in `Terminal/keymap.ts`): Claude's fullscreen UI turns on mouse reporting and pastes a reported right-click by itself, which doubled our paste. `scripts/e2e-paste.cjs` covers both UIs (fullscreen via a temp `--settings` file; never `/tui fullscreen`, which writes the user's real settings.json).
 - Sound/attention: only Stop and Notification hooks ping; the idle-output detector is a no-op. Claude sessions always run yolo.
 - Sleep: idle timer (Settings) plus manual Sleep/Wake; wake resumes the conversation. Per-session **Keep awake** flag (`Session.keepAwake`, right-click menu) exempts a session from the timer.
 - OpenCode is a second agent (`Session.agent`): plugin injected through `OPENCODE_CONFIG_CONTENT` reports busy/idle/permission/cost; resume with `opencode -s <id>`; default agent and model in Settings, Agent dropdown in New Session.
