@@ -1,0 +1,123 @@
+# SessionDeck decisions
+
+The record of what the user decided, and why, so nobody re-asks or quietly undoes it. Newest entries at the bottom of each section.
+
+**Rules for this file**
+- Add an entry whenever the user makes a choice: a feature yes/no, a design option, a scope cut, a working rule.
+- Quote the user's words when they decided it. Say what was rejected or deferred too, since that is what gets forgotten.
+- Never delete an entry. If a decision changes, mark the old one `Superseded by Dnn` and add the new one.
+- Statuses: **active** (in force), **superseded**, **deferred** (maybe later, only if the user asks), **rejected** (do not build).
+
+Current state of the code lives in `HANDOFF.md`; gotchas learned the hard way live in `docs/LESSONS.md`.
+
+---
+
+## Product decisions
+
+**D01 · 2026-10-12 · A narrow Orca, six features only** · active
+"similar apps but more narrow, only these feature: 1/ able to create session easy with claude code 2/ easy to changes name of session 3/ can monitor by status that we assign 4/ can sound when need attention 5/ can easy grouped, changes group of a session, changes name of group 6/ smooth ui console view - as close as native as possible". Everything after that was added one request at a time (below). Original spec: `PLAN.md`.
+
+**D02 · 2026-10-13 · UI looks exactly like Orca** · active
+"i want the same UI like orca, exactly". Spec and measured tokens: `DESIGN.md`. Orca's source is in `reference/` (git-ignored, third-party).
+
+**D03 · 2026-10-13 · Sessions survive an app restart (conversation resume)** · active
+User: Orca keeps sessions after close/reopen, SessionDeck should too. Each session has its own Claude conversation id; selecting it after a restart runs `claude --resume`. Nothing starts at launch.
+Rejected for now: a background service that keeps `claude` processes alive while the app is closed (offered, not taken).
+
+**D04 · 2026-10-13 · Closing a tab kills the session, but it can be resumed** · active
+"close a tab should close the session, but i want still can resume it later". Close kills the whole process tree and moves the session to the Closed section; resume restores the same conversation. Remove (with confirmation) deletes for good.
+
+**D05 · 2026-10-13 · Custom sounds, a Hub by status, a place to configure statuses** · active
+From the first hands-on test. Settings > Sound, the Hub board, Settings > Statuses.
+
+**D06 · 2026-10-13 · Usage in the status bar, per-session notes and checklist** · active
+"Usage in the status bar, Per-session notes and a work-in-progress checklist".
+
+**D07 · 2026-10-13 · Usage bars get a manual reload, the Orca way** · active
+"should have a button for mannually reload when i want => follow orca approach". Uses the Anthropic OAuth usage endpoint with the local Claude login token, read in main only, manual only (never polled), one-time consent.
+
+**D08 · 2026-10-13 · Batch 2: auto status, quota guard, split panes, installer, tray** · active
+"do for 1, and 3, 4, 5 and tray icon" (from my list: 1 auto status, 2 worktrees, 3 quota guard, 4 split panes, 5 installer).
+
+**D09 · 2026-10-13 · No git worktrees** · rejected
+Option 2 of that list was skipped on purpose and the user has repeated they do not want it. Do not propose or build worktree-per-session.
+
+**D10 · 2026-10-17 · Claude sessions always run in yolo mode** · active
+"when create session, i want it always on yolo mode". `--dangerously-skip-permissions` unless the user already passed a permission flag. OpenCode sessions get `permission: {"*": "allow"}`.
+
+**D11 · 2026-10-17 · Ping only when a session stops or needs the user** · active
+"i want only ping user when session done the task user assign and stop or need ask user, not when it still working". Only the Stop and Notification hooks ping; the idle-output detector is off.
+
+**D12 · 2026-10-17 · Clickable links in the terminal** · active
+URLs, file paths and folder paths open on click (depending on the target).
+
+**D13 · 2026-10-17 · Image paste and file drop** · active
+Pasting a clipboard image attaches it; dropping a file pastes its path.
+
+**D14 · 2026-10-17 · Sleep, like Orca's hibernation** · active
+Idle timer plus manual Sleep/Wake; waking resumes the conversation.
+
+**D15 · 2026-10-17 · OpenCode as a second agent** · active
+"default session should can config on setting. for the select model, i want to do the textbox first"; "should have a dropdownn on create session modal for me can choose the claude or opencode". Default agent in Settings, model is a text box (no model dropdown yet), Agent dropdown in New Session.
+
+**D16 · 2026-10-17 · Remote Control works, sessions can be kept awake** · active
+Remote Control sessions keep working; per-session **Keep awake** flag ("it should be a flag or something similar"); a session with Remote Control active is marked Keep awake automatically.
+
+**D17 · 2026-10-17 · Notes panel: Save button, Add button, checkbox insert; checklist draft survives a session switch** · active
+"i want a button for 'save' to easy control. and checklist should have the checkbox insert format". Checkboxes in the notes text stay plain text (clickable ones were offered, not requested).
+
+**D18 · 2026-10-17 · The tab bar shows only sessions from the active session's folder** · active
+"i only want session that open or fork from the same folder root show toghether, if not have anyother, they show stand alone".
+
+**D19 · 2026-10-17 · OpenCode worker tabs: read-only, auto-close, must work anywhere** · active
+"first, readl only for now. 2/ closed 3. ... make sure it follow UI, easy for user to see and use". Then: "i want a reliable solutions, not the solutions that only working on 1 PC". So detection is a plugin injected into every opencode process started from a Claude terminal, not folder scanning.
+Deferred: a real interactive OpenCode terminal (shared `opencode serve` + `opencode attach`) and resume-from-tab.
+
+**D20 · 2026-10-17 · Workspaces inside sidebar groups** · active
+"in grouping, we show the workspace also, base on the root folder that open the session". User accepted all three recommendations: workspace = the folder the session was opened in (`cwd`, not the git root), Groups view only (Status view unchanged), headers shown even for a single workspace, with a "Show workspaces" toggle.
+
+**D21 · 2026-10-18 · The right mouse button belongs to SessionDeck** · active
+"the issue of double paste when right click on claude on this apps still not fixed". Right-click copies a selection or pastes once; it is never forwarded to the program in the pane (Claude's fullscreen UI would paste a second time).
+
+### Suggested but not chosen (offer again only if relevant)
+Prompt queue ("send when finished"), session presets, copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
+
+---
+
+## How we work (standing rules)
+
+**W01 · Cheap models first** · active
+"next time i dont want to use expensive model, it make the quota burn too fast". Free, then flash, then `deepseek-v4-pro`. Expensive models only after a cheaper one failed twice, and say so. Never paid Zen `opencode/*` models without explicit approval.
+
+**W02 · Claude orchestrates OpenCode workers** · active
+Claude decides models, worker count and report format, with no approval needed before delegating; workers may do everything inside the project; every brief carries the user's coding standards. Small fixes Claude may just do itself.
+
+**W03 · Plan first when the user asks for analysis** · active
+"analyze for that feature first, and show me plan, dont changes any code yet". When asked for a plan, show it and wait for "go".
+
+**W04 · Test it yourself, in the real app, before reporting** · active
+"did u test the feature u just code?" Unit tests are not enough: run an e2e against the built app, and a real Claude/OpenCode run when the feature depends on one.
+
+**W05 · Never skip a failing test** · active
+"e2e-notes-usage fix this, why u skip it?" Find the root cause and fix it.
+
+**W06 · Fix root causes, not guesses** · active
+The first double-paste "fix" was a guess and the bug came back (D21). Reproduce first, then fix, then show the test going from failing to passing.
+
+**W07 · Must work on any PC and any folder** · active
+"or install this app in another pc, will the feature worK?" No machine-specific paths, no reliance on the user's own scripts or skills being present.
+
+**W08 · Restart the app after a change** · active
+"next time u can close and open yourself"; "restart the apps to make sure it use latest code". Relaunch SessionDeck so the user tests the latest build.
+
+**W09 · Build the installer only when asked** · active
+"only build the release when i ask for it". If it is stale, say so in one line.
+
+**W10 · Commit after each finished feature** · active
+"create git project and commit for me, for easy rollback". Conventional commits on `main`; the tag `baseline-2026-10-17` marks the first commit.
+
+**W11 · Tests must not touch the user's real setup** · active
+2026-10-18: a probe ran `/tui fullscreen` in a test Claude session and wrote the user's real `~/.claude/settings.json` (reverted). Test Claude sessions share the real config: never send state-changing slash commands into them; use a temp `--settings` file instead.
+
+**W12 · Keep this knowledge base current** · active
+"build knownledge for this project, to avoid forget what we decided". Every decision goes into this file in the same turn it is made; gotchas go into `docs/LESSONS.md`; state goes into `HANDOFF.md`.

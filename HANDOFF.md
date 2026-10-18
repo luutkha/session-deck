@@ -1,6 +1,6 @@
-# SessionDeck handoff (updated 2026-10-13, end of the "all phases" round)
+# SessionDeck handoff (updated 2026-10-18)
 
-Read README.md (run/test), DESIGN.md (the Orca-style UI spec + decisions) and PLAN.md (original architecture). This file = current state.
+This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
 
 ## State: v1 feature-complete, Orca-style UI done, awaiting the user's first hands-on test round
 
