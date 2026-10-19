@@ -1,4 +1,4 @@
-import type { HookEvent, Id, Session, CreateSessionInput } from '../../shared/types'
+import type { AttentionReason, HookEvent, Id, Session, CreateSessionInput } from '../../shared/types'
 import { SessionStore } from '../store'
 import { PtyManager, type StartOptions } from '../pty/PtyManager'
 import type { AttentionService } from '../attention'
@@ -191,7 +191,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   })
 
   attention.onChange((id: Id, reason: string | null) => {
-    runtime.setAttention(id, reason as 'permission' | 'idle' | 'done' | 'bell' | null)
+    runtime.setAttention(id, reason as AttentionReason | null)
   })
 
   function ensureClaudeSessionId(session: Session): Session {

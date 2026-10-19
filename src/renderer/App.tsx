@@ -29,7 +29,9 @@ import { useOpenTabs } from './shell/useOpenTabs'
 import { useSoundEnabled } from './shell/useSoundEnabled'
 import { useTabShortcuts } from './shell/useTabShortcuts'
 import { usePersistedBoolean } from './shell/usePersistedBoolean'
-import { buildTabModels, countAttention } from './shell/tabStatus'
+import { buildTabModels } from './shell/tabStatus'
+import { needsYouItems } from './attention/needsYou'
+import { NeedsYouButton } from './attention/NeedsYouButton'
 import './styles.css'
 
 const SIDEBAR_WIDTH_CLASS = 'w-[300px]'
@@ -153,16 +155,7 @@ export function App(): ReactElement {
     barIds.filter((id: Id): boolean => id !== keepId).forEach(tabs.close)
   }, [barIds, tabs.close])
   const closeBarTabs = useCallback((): void => { barIds.forEach(tabs.close) }, [barIds, tabs.close])
-  const liveIds = useMemo(
-    () =>
-      new Set(
-        (sessions ?? [])
-          .filter((session: Session): boolean => session.closedAt === undefined)
-          .map((session: Session): Id => session.id)
-      ),
-    [sessions]
-  )
-  const attentionCount = countAttention(runtime, liveIds)
+  const needsYou = useMemo(() => needsYouItems(sessions ?? [], runtime), [sessions, runtime])
   const activeSession = sessions?.find((session: Session): boolean => session.id === activeId) ?? null
   const activeState = activeRuntime(runtime, activeId)
   const checklistProgress = progress(activeSession?.checklist ?? [])
@@ -180,6 +173,8 @@ export function App(): ReactElement {
           <div className={cn('flex h-full min-h-0 flex-col', SIDEBAR_WIDTH_CLASS)}>
             <TitleBarRegion className="flex h-9 shrink-0 items-center justify-between border-b border-sidebar-border pl-3 pr-1.5">
               <span className="text-[13px] font-medium text-muted-foreground">SessionDeck</span>
+              <div className="flex items-center gap-0.5">
+              <NeedsYouButton items={needsYou} onOpenSession={selectSession} className="app-no-drag" />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -196,6 +191,7 @@ export function App(): ReactElement {
                   Hide sidebar
                 </TooltipContent>
               </Tooltip>
+              </div>
             </TitleBarRegion>
             <div className="flex min-h-0 flex-1 flex-col">
               <Sidebar
@@ -304,7 +300,8 @@ export function App(): ReactElement {
             cwd={activeSession?.cwd ?? null}
             run={activeState?.run ?? null}
             exitCode={activeState?.exitCode ?? null}
-            attentionCount={attentionCount}
+            needsYou={needsYou}
+            onOpenSession={selectSession}
             soundEnabled={soundEnabled}
             onToggleSound={setSoundEnabled}
             usage={{

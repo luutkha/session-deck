@@ -133,4 +133,13 @@ describe('Notifier', () => {
     expect(flashCalls).toEqual([true])
     expect(beepCalls).toBe(0)
   })
+
+  it('stays silent for the user flag (unread): no beep, no flash', () => {
+    notifier.notify('session-1', 'unread')
+    expect(beepCalls).toBe(0)
+    expect(flashCalls).toEqual([])
+    // and does not use up the debounce window
+    notifier.notify('session-1', 'done')
+    expect(beepCalls).toBe(1)
+  })
 })

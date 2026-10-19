@@ -163,6 +163,10 @@ const api: Api = {
     ipcRenderer.send(IPC.attentionClear, id)
   },
 
+  markUnread(id: Id): void {
+    ipcRenderer.send(IPC.attentionMarkUnread, id)
+  },
+
   setActiveSession(id: Id | null): void {
     ipcRenderer.send(IPC.sessionSetActive, id)
   },

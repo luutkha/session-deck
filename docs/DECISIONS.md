@@ -79,6 +79,13 @@ Deferred: a real interactive OpenCode terminal (shared `opencode serve` + `openc
 **D21 · 2026-10-18 · The right mouse button belongs to SessionDeck** · active
 "the issue of double paste when right click on claude on this apps still not fixed". Right-click copies a selection or pastes once; it is never forwarded to the program in the pane (Claude's fullscreen UI would paste a second time).
 
+**D22 · 2026-10-19 · Orca-style attention bell** · active
+"currently, the app only show the status, but not show when a session need a attention from me, Orca have a "bell" icon that show it? can we do the same?" Then "1. yes 2. yes, list 3. okie, include it":
+1. A filled amber bell **replaces** the status dot (card, tab, Hub) while a session needs the user.
+2. The sidebar-header bell (with count) opens a **list** of sessions that need the user; click a row to open it. The status-bar count opens the same list.
+3. Manual **Mark as read / Mark as unread** (bell click and context menu) is included.
+What raises the bell is unchanged (D11: finished / needs-you only).
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

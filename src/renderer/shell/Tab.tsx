@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import type { Id } from '../../shared/types'
 import { AgentBadge } from '../components/AgentBadge'
 import { tabIndicatorFor, type TabModel } from './tabStatus'
+import { AttentionBell } from '../attention/AttentionBell'
 
 export interface TabSplitInfo {
   /** This session is currently visible in a split pane. */
@@ -98,7 +99,9 @@ export function Tab({
               className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[2px] bg-foreground"
             />
           ) : null}
-          {tab.sleeping === true ? (
+          {tab.attention !== null ? (
+            <AttentionBell reason={tab.attention} />
+          ) : tab.sleeping === true ? (
             <span
               role="img"
               aria-label="Sleeping"

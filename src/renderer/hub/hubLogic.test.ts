@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Id, RuntimeState, Session, SessionUsage, StatusDef, StoreData } from '../../shared/types'
 import {
-  attentionIndicatorClass,
-  attentionIndicatorLabel,
   buildColumns,
   closedSessions,
   computeStatusDrop,
@@ -283,17 +281,6 @@ describe('hubColumnKey', () => {
 })
 
 describe('indicator helpers', () => {
-  it('maps attention reasons to tokens', () => {
-    expect(attentionIndicatorClass('permission')).toBe('bg-[var(--attn-permission)]')
-    expect(attentionIndicatorClass('done')).toBe('bg-[var(--attn-done)]')
-    expect(attentionIndicatorClass('idle')).toBe('bg-[var(--attn-idle)]')
-    expect(attentionIndicatorClass('bell')).toBe('bg-[var(--attn-idle)]')
-  })
-
-  it('builds an attention aria label', () => {
-    expect(attentionIndicatorLabel('permission')).toBe('Needs attention: permission')
-  })
-
   it('maps run state to tokens and labels', () => {
     expect(runIndicatorClass('running')).toBe('bg-status-success')
     expect(runIndicatorClass('exited')).toBe('bg-destructive')

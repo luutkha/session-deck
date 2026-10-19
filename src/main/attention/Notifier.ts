@@ -23,6 +23,8 @@ export function createNotifier(deps: NotifierDeps): Notifier {
 
   return {
     notify(id: string, reason: AttentionReason): void {
+      // The user's own flag is silent: no sound, no taskbar flash.
+      if (reason === 'unread') return
       const currentTime = now()
 
       if (soundEnabled && currentTime - lastBeepTime >= minGapMs) {

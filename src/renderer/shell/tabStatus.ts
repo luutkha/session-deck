@@ -25,7 +25,8 @@ const ATTENTION_INDICATORS: Readonly<Record<AttentionReason, TabIndicator>> = {
   permission: { colorClass: 'bg-[var(--attn-permission)]', pulse: true, label: 'Needs permission' },
   done: { colorClass: 'bg-[var(--attn-done)]', pulse: true, label: 'Finished' },
   idle: { colorClass: 'bg-[var(--attn-idle)]', pulse: true, label: 'Waiting for input' },
-  bell: { colorClass: 'bg-[var(--attn-idle)]', pulse: true, label: 'Bell' }
+  bell: { colorClass: 'bg-[var(--attn-idle)]', pulse: true, label: 'Bell' },
+  unread: { colorClass: 'bg-[var(--attn-idle)]', pulse: false, label: 'Marked unread' }
 }
 
 const RUN_INDICATORS: Readonly<Record<SessionRun, TabIndicator>> = {
@@ -48,20 +49,6 @@ export function tabIndicatorFor(
     return ATTENTION_INDICATORS[attention]
   }
   return run === null ? UNKNOWN_INDICATOR : RUN_INDICATORS[run]
-}
-
-/** Number of live sessions that currently need attention (used by the status bar). */
-export function countAttention(
-  states: ReadonlyMap<Id, RuntimeState>,
-  liveIds: ReadonlySet<Id>
-): number {
-  let count = 0
-  for (const [id, state] of states) {
-    if (liveIds.has(id) && state.attention !== null) {
-      count += 1
-    }
-  }
-  return count
 }
 
 /** The open tabs in their order, joined with the session name and runtime state. Unknown ids are skipped. */

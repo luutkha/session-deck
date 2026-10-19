@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 import { InlineEdit } from './InlineEdit'
 import { lastPathSegment } from './uiLogic'
 import { ChecklistChip } from '../notes/ChecklistChip'
+import { AttentionBell } from '../attention/AttentionBell'
 
 function activityDotClass(activity: SessionActivity): string {
   switch (activity) {
@@ -46,7 +47,6 @@ export interface SessionCardOwnProps {
   readonly showIndicator: boolean
   readonly indicatorAriaLabel: string
   readonly indicatorClass: string
-  readonly indicatorPulse: boolean
   readonly draggable: boolean
   readonly dragOver: 'before' | 'after' | 'inside' | null
   readonly onSelect: (id: Id) => void
@@ -76,7 +76,7 @@ export function SessionCard(props: SessionCardProps): ReactElement {
   const {
     session, status, active, runtime, lastChange, now, renaming,
     groupBadge, showGroupBadge, attention,
-    showIndicator, indicatorAriaLabel, indicatorClass, indicatorPulse,
+    showIndicator, indicatorAriaLabel, indicatorClass,
     draggable, dragOver,
     onSelect, onStartRename, onCommitRename, onCancelRename, onClose, onContextMenu,
     onDragStart, onDragOverItem, onDropItem, onDragEnd, contextMenuTrigger,
@@ -154,7 +154,10 @@ export function SessionCard(props: SessionCardProps): ReactElement {
     >
       <div className="flex min-w-0 items-center gap-2">
         {showIndicator ? (
-          sleeping ? (
+          attention !== null ? (
+            // D22: the bell wins over sleep and status; clicking it marks the session read.
+            <AttentionBell reason={attention} onMarkRead={(): void => window.api.clearAttention(session.id)} />
+          ) : sleeping ? (
             <span
               role="img"
               aria-label="Sleeping"
@@ -166,11 +169,6 @@ export function SessionCard(props: SessionCardProps): ReactElement {
             <span
               aria-label={activityDotLabel(activity)}
               className={`inline-block size-2 shrink-0 rounded-full ${activityDotClass(activity)} ${activity === 'working' ? 'motion-safe:animate-pulse' : ''}`}
-            />
-          ) : attention !== null ? (
-            <span
-              aria-label={`Needs attention: ${attention}`}
-              className={`inline-block size-2 shrink-0 rounded-full ${indicatorClass} ${indicatorPulse ? 'motion-safe:animate-pulse' : ''}`}
             />
           ) : runtime !== undefined ? (
             <span

@@ -7,6 +7,8 @@ export interface AttentionManagerDeps {
 export interface AttentionManager {
   raise(id: string, reason: AttentionReason): void
   clear(id: string): void
+  /** The user's own flag (Mark as unread): raised even on the focused session, never above a real reason. */
+  markUnread(id: string): void
   get(id: string): AttentionReason | null
   handleHook(event: HookEvent): void
   forget(id: string): void
@@ -17,7 +19,8 @@ const PRIORITY: Record<AttentionReason, number> = {
   permission: 4,
   done: 3,
   idle: 2,
-  bell: 1
+  bell: 1,
+  unread: 0
 }
 
 export function createAttentionManager(deps: AttentionManagerDeps): AttentionManager {
@@ -45,6 +48,12 @@ export function createAttentionManager(deps: AttentionManagerDeps): AttentionMan
         attention.set(id, reason)
         notify(id, reason)
       }
+    },
+
+    markUnread(id: string): void {
+      if ((attention.get(id) ?? null) !== null) return
+      attention.set(id, 'unread')
+      notify(id, 'unread')
     },
 
     clear(id: string): void {

@@ -12,11 +12,10 @@ import { Badge } from '../components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import { cn } from '../lib/utils'
 import { ChecklistChip } from '../notes/ChecklistChip'
+import { AttentionBell } from '../attention/AttentionBell'
 import { lastPathSegment } from '../Sidebar/uiLogic'
 import { formatContext, formatCost, usageLevel, type UsageLevel } from '../usage/usageLogic'
 import {
-  attentionIndicatorClass,
-  attentionIndicatorLabel,
   describeCardUsage,
   runIndicatorClass,
   runIndicatorLabel
@@ -169,7 +168,9 @@ export function HubCard(props: HubCardProps): ReactElement {
       className={classes}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {sleeping ? (
+        {attention !== null ? (
+          <AttentionBell reason={attention} onMarkRead={(): void => window.api.clearAttention(session.id)} />
+        ) : sleeping ? (
           <span
             role="img"
             aria-label="Sleeping"
@@ -184,14 +185,6 @@ export function HubCard(props: HubCardProps): ReactElement {
               'inline-block size-2 shrink-0 rounded-full',
               activityDotClass(activity),
               activity === 'working' && 'motion-safe:animate-pulse'
-            )}
-          />
-        ) : attention !== null ? (
-          <span
-            aria-label={attentionIndicatorLabel(attention)}
-            className={cn(
-              'inline-block size-2 shrink-0 rounded-full motion-safe:animate-pulse',
-              attentionIndicatorClass(attention)
             )}
           />
         ) : runtime !== undefined ? (

@@ -193,6 +193,10 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     attention.clear(assertId(rawId, 'session id'))
   })
 
+  onFireAndForget(IPC.attentionMarkUnread, userDataDir, (rawId) => {
+    attention.markUnread(assertId(rawId, 'session id'))
+  })
+
   onFireAndForget(IPC.sessionSetActive, userDataDir, (rawId) => {
     controller.setActiveSession(assertNullableId(rawId, 'session id'))
   })

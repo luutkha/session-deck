@@ -96,6 +96,7 @@ function createFakeAttention(): AttentionService {
     noteOutput: () => {},
     noteInput: () => {},
     clear: (id: string) => map.delete(id),
+    markUnread: (_id: string) => undefined,
     get: (id: string) => map.get(id) ?? null,
     onChange: () => () => {},
     setSoundEnabled: () => {},

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RuntimeState, Session } from '../../shared/types'
-import { buildTabModels, countAttention, folderName, tabIndicatorFor } from './tabStatus'
+import { buildTabModels, folderName, tabIndicatorFor } from './tabStatus'
 
 function runtime(sessionId: string, attention: RuntimeState['attention']): RuntimeState {
   return { sessionId, run: 'running', exitCode: null, attention }
@@ -98,22 +98,3 @@ describe('tabIndicatorFor', () => {
   })
 })
 
-describe('countAttention', () => {
-  it('counts runtime entries with attention for live sessions', () => {
-    const states = new Map<string, RuntimeState>([
-      ['a', runtime('a', 'done')],
-      ['b', runtime('b', null)],
-      ['c', runtime('c', 'permission')]
-    ])
-    expect(countAttention(states, new Set(['a', 'b', 'c']))).toBe(2)
-  })
-
-  it('ignores attention on sessions that are not live (closed or removed)', () => {
-    const states = new Map<string, RuntimeState>([['a', runtime('a', 'done')]])
-    expect(countAttention(states, new Set<string>())).toBe(0)
-  })
-
-  it('returns zero for an empty runtime map', () => {
-    expect(countAttention(new Map(), new Set(['a']))).toBe(0)
-  })
-})

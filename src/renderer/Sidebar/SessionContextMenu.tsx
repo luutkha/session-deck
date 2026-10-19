@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode } from 'react'
-import { Coffee, Moon, Sun } from 'lucide-react'
+import { Bell, BellOff, Coffee, Moon, Sun } from 'lucide-react'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -10,7 +10,8 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger
 } from '../components/ui/context-menu'
-import type { Group, Id, StatusDef } from '../../shared/types'
+import type { AttentionReason, Group, Id, StatusDef } from '../../shared/types'
+import { readToggleLabel } from '../attention/needsYou'
 
 export interface SessionContextMenuProps {
   readonly children: ReactNode
@@ -31,6 +32,9 @@ export interface SessionContextMenuProps {
   /** True = automatic sleep is off for this session. */
   readonly keepAwake?: boolean
   readonly onToggleKeepAwake?: () => void
+  /** The session's current bell (null = none): drives the Mark as read / Mark as unread item. */
+  readonly attention?: AttentionReason | null
+  readonly onToggleRead?: () => void
 }
 
 export function SessionContextMenu(props: SessionContextMenuProps): ReactElement {
@@ -39,13 +43,20 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
     onRename, onSetStatus, onMoveToGroup, onNewGroupAndMove,
     onCloseSession, onRemoveSession,
     sleeping = false, canSleep = false, onSleep, onWake,
-    keepAwake = false, onToggleKeepAwake
+    keepAwake = false, onToggleKeepAwake,
+    attention = null, onToggleRead
   } = props
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="min-w-[12rem]">
         <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
+        {onToggleRead !== undefined ? (
+          <ContextMenuItem onSelect={onToggleRead}>
+            {attention === null ? <Bell aria-hidden="true" /> : <BellOff aria-hidden="true" />}
+            {readToggleLabel(attention)}
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuSub>
           <ContextMenuSubTrigger>Set status</ContextMenuSubTrigger>
           <ContextMenuSubContent>

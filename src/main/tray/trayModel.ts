@@ -33,7 +33,8 @@ const REASON_SUFFIX: Readonly<Record<AttentionReason, string>> = {
   permission: 'permission',
   done: 'finished',
   idle: 'idle',
-  bell: 'bell'
+  bell: 'bell',
+  unread: 'unread'
 }
 
 type NeedingSession = TraySessionInput & { readonly attention: AttentionReason }

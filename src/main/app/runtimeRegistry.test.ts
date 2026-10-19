@@ -145,4 +145,18 @@ describe('runtimeRegistry', () => {
     expect(r2.length).toBe(2)
     unsub2()
   })
+
+  it('stamps attentionAt when attention is raised and drops it when cleared', () => {
+    let clock = 500
+    const timed = createRuntimeRegistry(() => clock)
+    timed.markRunning('s1')
+    timed.setAttention('s1', 'done')
+    expect(timed.get('s1')?.attentionAt).toBe(500)
+    clock = 900
+    timed.setAttention('s1', 'permission')
+    expect(timed.get('s1')?.attentionAt).toBe(900)
+    timed.setAttention('s1', null)
+    expect(timed.get('s1')?.attention).toBeNull()
+    expect(timed.get('s1')).not.toHaveProperty('attentionAt')
+  })
 })

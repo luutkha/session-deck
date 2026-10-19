@@ -105,5 +105,7 @@ function attentionActivityLabel(reason: AttentionReason): string {
       return 'Waiting for you'
     case 'bell':
       return 'Needs attention'
+    case 'unread':
+      return 'Marked unread'
   }
 }

@@ -221,6 +221,9 @@ function createFakeAttention(): AttentionService {
     clear(id: string): void {
       attentionMap.delete(id)
     },
+    markUnread(id: string): void {
+      if (!attentionMap.has(id)) attentionMap.set(id, 'unread')
+    },
     get(id: string): AttentionReason | null {
       return attentionMap.get(id) ?? null
     },

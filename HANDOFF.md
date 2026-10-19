@@ -77,3 +77,10 @@ Inside each group (Groups view only) sessions are bucketed by the folder they we
 - Prefs (localStorage, `sidebarPrefs.ts`): `sessiondeck-sidebar-show-workspaces` (default on; checkbox "Show workspaces" in the Filter/Group-by menu) and `sessiondeck-sidebar-workspace-collapsed` (keyed per group + folder).
 - Not done by choice: workspace = the opened folder, not the git root; Status view is unchanged.
 - E2E: `scripts/e2e-workspaces.cjs` (9 checks).
+
+## Attention bell (Orca style, D22)
+A session that needs the user (Stop hook = finished, Notification hook = permission/question, terminal bell, or the user's own "Mark as unread") shows a filled amber bell instead of its status dot on the sidebar card, the tab and the Hub card. What raises it is unchanged (D11).
+- Main: new reason `unread` (`AttentionManager.markUnread`: allowed on the focused session, never replaces a real reason; `Notifier` stays silent for it, no sound/flash/desktop notice). `RuntimeState.attentionAt` stamps when the bell was raised. IPC `attention:markUnread` (`window.api.markUnread`). `SoundEvent` excludes `unread`.
+- Renderer: `src/renderer/attention/` (`needsYou.ts` pure list/labels/toggle + tests, `FilledBellIcon` from Orca, `AttentionBell`, `NeedsYouPopover`, `NeedsYouButton`). The bell on a card is a button: click = mark read without opening. Context menu: Mark as read / Mark as unread. Sidebar-header bell with count opens the "Needs you" list (newest first, click opens, "Mark all as read"); the status-bar "N needs you" opens the same list.
+- Clearing is unchanged: opening the session or typing into it.
+- E2E: `scripts/e2e-bell.cjs` (16 checks, including a real Claude turn finishing in a background session). `E2E_SHOT_DIR=<dir>` saves screenshots.

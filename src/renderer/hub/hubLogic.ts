@@ -1,5 +1,4 @@
 import type {
-  AttentionReason,
   Id,
   RuntimeState,
   Session,
@@ -184,23 +183,6 @@ export function describeCardUsage(usage: SessionUsage): string {
 export function effectiveStatusIdOf(session: Session, data: StoreData): Id | null {
   const statusIds = new Set<Id>(data.statuses.map((status) => status.id))
   return effectiveStatusId(session, statusIds)
-}
-
-/** Background class for a card's attention dot, sourced from the shared attention tokens. */
-export function attentionIndicatorClass(reason: AttentionReason): string {
-  switch (reason) {
-    case 'permission':
-      return 'bg-[var(--attn-permission)]'
-    case 'done':
-      return 'bg-[var(--attn-done)]'
-    case 'idle':
-    case 'bell':
-      return 'bg-[var(--attn-idle)]'
-  }
-}
-
-export function attentionIndicatorLabel(reason: AttentionReason): string {
-  return `Needs attention: ${reason}`
 }
 
 /** Background class for a running/exited card dot. */

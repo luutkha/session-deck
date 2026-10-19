@@ -63,13 +63,16 @@ export interface StoreData {
   readonly settings?: AppSettings
 }
 
-export type AttentionReason = 'permission' | 'idle' | 'done' | 'bell'
+/** unread = the user flagged the session themselves (Mark as unread): silent, never a sound or notification. */
+export type AttentionReason = 'permission' | 'idle' | 'done' | 'bell' | 'unread'
 
 export interface RuntimeState {
   readonly sessionId: Id
   readonly run: SessionRun
   readonly exitCode: number | null
   readonly attention: AttentionReason | null // cleared on focus or user input
+  /** Epoch ms when the current attention was raised; absent while attention is null. */
+  readonly attentionAt?: number
   /** What Claude is doing right now (from Claude Code hooks). Absent/null = unknown (no hook seen yet). */
   readonly activity?: SessionActivity | null
   /** Text of the last permission/notification request (hook payload message, max 300 chars) while needs-input. */
@@ -163,7 +166,7 @@ export type UsageRefreshResult =
 // ---- App settings ----
 
 /** Sounds can also be played for quota warnings, which are not tied to a session. */
-export type SoundEvent = AttentionReason | 'quota'
+export type SoundEvent = Exclude<AttentionReason, 'unread'> | 'quota'
 
 /** Moves a session between statuses by itself when Claude's activity changes. null = leave the status alone. */
 export interface AutoStatusSettings {

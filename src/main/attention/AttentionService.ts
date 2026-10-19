@@ -39,6 +39,7 @@ export interface AttentionService {
   noteOutput(id: string): void
   noteInput(id: string): void
   clear(id: string): void
+  markUnread(id: string): void
   get(id: string): AttentionReason | null
   onChange(callback: (id: string, reason: AttentionReason | null) => void): () => void
   setSoundEnabled(enabled: boolean): void
@@ -176,6 +177,12 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
 
     clear(id: string): void {
       attentionManager.clear(id)
+    },
+
+    markUnread(id: string): void {
+      if (isKnownSession(id)) {
+        attentionManager.markUnread(id)
+      }
     },
 
     get(id: string): AttentionReason | null {

@@ -32,6 +32,7 @@ export const IPC = {
   ptyReplay: 'pty:replay', // invoke -> PtyReplay (buffered output for reattach)
   // attention
   attentionClear: 'attention:clear',
+  attentionMarkUnread: 'attention:markUnread', // the user flags a session (silent bell)
   settingsSetSound: 'settings:setSound',
   // dialogs
   pickFolder: 'dialog:pickFolder',
@@ -104,6 +105,7 @@ export interface Api {
   ptyRestart(id: Id): Promise<void>
   ptyReplay(id: Id): Promise<PtyReplay>
   clearAttention(id: Id): void
+  markUnread(id: Id): void
   setActiveSession(id: Id | null): void
   setSoundEnabled(enabled: boolean): Promise<void>
   pickFolder(): Promise<string | null>

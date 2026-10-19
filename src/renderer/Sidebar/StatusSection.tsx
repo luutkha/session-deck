@@ -4,6 +4,8 @@ import type { DragItem, DropOver } from '../state/dropTarget'
 import { DropHereHint, SectionHeader } from './SectionHeader'
 import { SessionCard } from './SessionCard'
 import { SessionContextMenu } from './SessionContextMenu'
+import { toggleRead } from '../attention/needsYou'
+import { attentionClass } from './uiLogic'
 
 export interface StatusSectionProps {
   readonly sectionKey: string
@@ -107,14 +109,13 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
                 }
                 indicatorClass={
                   state !== undefined && state.attention !== null
-                    ? attentionBgClass(state.attention)
+                    ? attentionClass(state.attention)
                     : state === undefined
                       ? 'bg-muted-foreground/40'
                       : state.run === 'running'
                         ? 'bg-status-success'
                         : 'bg-destructive'
                 }
-                indicatorPulse={attention !== null}
                 draggable={draggableSessions}
                 dragOver={dropOverForSession}
                 onSelect={onSelect}
@@ -139,6 +140,8 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
                 sleeping={state?.sleeping === true}
                 canSleep={state !== undefined && state.run === 'running' && state.sleeping !== true}
                 keepAwake={session.keepAwake === true}
+                attention={state?.attention ?? null}
+                onToggleRead={(): void => toggleRead(session.id, state?.attention ?? null)}
                 onToggleKeepAwake={(): void => {
                   void window.api.setKeepAwake(session.id, session.keepAwake !== true).catch((): void => undefined)
                 }}
@@ -168,16 +171,4 @@ function groupNameFor(groupId: Id | null, data: StoreData): string | null {
   if (groupId === null) return 'Ungrouped'
   const group = data.groups.find((g) => g.id === groupId)
   return group?.name ?? null
-}
-
-function attentionBgClass(reason: 'permission' | 'idle' | 'done' | 'bell'): string {
-  switch (reason) {
-    case 'permission':
-      return 'bg-status-warning'
-    case 'done':
-      return 'bg-status-success'
-    case 'idle':
-    case 'bell':
-      return 'bg-blue-500'
-  }
 }

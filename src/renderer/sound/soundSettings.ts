@@ -24,7 +24,7 @@ export interface SoundSettingsPatch {
 }
 
 export const SOUND_SETTINGS_STORAGE_KEY = 'sessiondeck.sound.v1'
-export const ATTENTION_REASONS: readonly AttentionReason[] = ['permission', 'done', 'idle', 'bell']
+export const ATTENTION_REASONS: readonly Exclude<AttentionReason, 'unread'>[] = ['permission', 'done', 'idle', 'bell']
 /** Every event a sound can be configured for. */
 export const SOUND_EVENTS: readonly SoundEvent[] = [...ATTENTION_REASONS, 'quota']
 export const BUILTIN_SOUND_IDS: readonly BuiltinSoundId[] = ['chime', 'ping', 'pop', 'bell', 'marimba', 'soft']

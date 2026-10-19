@@ -1,11 +1,12 @@
 import { type DragEvent as ReactDragEvent, type ReactElement } from 'react'
 import type { Group, Id, RuntimeState, Session, StoreData } from '../../shared/types'
 import type { DragItem, DropOver } from '../state/dropTarget'
-import { resolveDropPosition } from './uiLogic'
+import { attentionClass, resolveDropPosition } from './uiLogic'
 import { DropHereHint, SectionHeader } from './SectionHeader'
 import { GroupContextMenu } from './GroupContextMenu'
 import { SessionCard } from './SessionCard'
 import { SessionContextMenu } from './SessionContextMenu'
+import { toggleRead } from '../attention/needsYou'
 import { InlineEdit } from './InlineEdit'
 import { WorkspaceSection } from './WorkspaceSection'
 import { workspaceBuckets, workspaceCollapseKey } from '../state/selectors'
@@ -225,14 +226,13 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         }
         indicatorClass={
           state !== undefined && state.attention !== null
-            ? attentionBgClass(state.attention)
+            ? attentionClass(state.attention)
             : state === undefined
               ? 'bg-muted-foreground/40'
               : state.run === 'running'
                 ? 'bg-status-success'
                 : 'bg-destructive'
         }
-        indicatorPulse={attention !== null}
         draggable={draggableSessions}
         dragOver={dropOverForSession}
         onSelect={onSelect}
@@ -257,6 +257,8 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         sleeping={state?.sleeping === true}
         canSleep={state !== undefined && state.run === 'running' && state.sleeping !== true}
         keepAwake={session.keepAwake === true}
+        attention={state?.attention ?? null}
+        onToggleRead={(): void => toggleRead(session.id, state?.attention ?? null)}
         onToggleKeepAwake={(): void => {
           void window.api.setKeepAwake(session.id, session.keepAwake !== true).catch((): void => undefined)
         }}
@@ -308,16 +310,4 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
       )}
     </div>
   )
-}
-
-function attentionBgClass(reason: 'permission' | 'idle' | 'done' | 'bell'): string {
-  switch (reason) {
-    case 'permission':
-      return 'bg-status-warning'
-    case 'done':
-      return 'bg-status-success'
-    case 'idle':
-    case 'bell':
-      return 'bg-blue-500'
-  }
 }

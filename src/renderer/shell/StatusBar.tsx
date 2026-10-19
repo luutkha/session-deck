@@ -1,9 +1,12 @@
 import type { ReactElement } from 'react'
-import { Bell, Volume2, VolumeX } from 'lucide-react'
+import { Volume2, VolumeX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Id, SessionRun, UsageState } from '../../shared/types'
 import { UsageChips } from '../usage/UsageChips'
+import { FilledBellIcon } from '../attention/FilledBellIcon'
+import { NeedsYouPopover } from '../attention/NeedsYouPopover'
+import type { NeedsYouItem } from '../attention/needsYou'
 import { folderName, tabIndicatorFor } from './tabStatus'
 
 export interface StatusBarProps {
@@ -11,7 +14,9 @@ export interface StatusBarProps {
   readonly cwd: string | null
   readonly run: SessionRun | null
   readonly exitCode: number | null
-  readonly attentionCount: number
+  /** Sessions that need the user (D22); the count opens the Needs you list. */
+  readonly needsYou: readonly NeedsYouItem[]
+  readonly onOpenSession: (id: Id) => void
   readonly soundEnabled: boolean
   readonly onToggleSound: (next: boolean) => void
   /** Claude usage snapshot + clock + optional manual-refresh plumbing. When absent, no usage chips render. */
@@ -39,7 +44,7 @@ function runLabel(run: SessionRun | null, exitCode: number | null): string {
 }
 
 export function StatusBar(props: StatusBarProps): ReactElement {
-  const { cwd, run, exitCode, attentionCount, soundEnabled, onToggleSound, usage, activeSessionId } =
+  const { cwd, run, exitCode, needsYou, onOpenSession, soundEnabled, onToggleSound, usage, activeSessionId } =
     props
   const indicator = tabIndicatorFor(run, null)
 
@@ -78,11 +83,19 @@ export function StatusBar(props: StatusBarProps): ReactElement {
             pace={usage.pace}
           />
         ) : null}
-        {attentionCount > 0 ? (
-          <span role="status" aria-live="polite" className="flex items-center gap-1 text-[var(--attn-permission)]">
-            <Bell size={14} aria-hidden="true" />
-            {`${String(attentionCount)} need attention`}
-          </span>
+        {needsYou.length > 0 ? (
+          <NeedsYouPopover items={needsYou} onOpenSession={onOpenSession} side="top" align="end">
+            <button
+              type="button"
+              role="status"
+              aria-live="polite"
+              data-needs-you-status=""
+              className="flex items-center gap-1 rounded px-1 text-amber-500 hover:bg-accent/70"
+            >
+              <FilledBellIcon className="size-3" />
+              {`${String(needsYou.length)} need${needsYou.length === 1 ? 's' : ''} you`}
+            </button>
+          </NeedsYouPopover>
         ) : null}
         <Button
           variant="ghost"

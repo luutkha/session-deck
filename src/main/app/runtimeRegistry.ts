@@ -45,7 +45,7 @@ export interface RuntimeRegistry {
   subscribe(listener: Listener): () => void
 }
 
-export function createRuntimeRegistry(): RuntimeRegistry {
+export function createRuntimeRegistry(now: () => number = Date.now): RuntimeRegistry {
   const states = new Map<Id, RuntimeState>()
   const listeners = new Set<Listener>()
 
@@ -98,7 +98,10 @@ export function createRuntimeRegistry(): RuntimeRegistry {
       if (state.attention === reason) {
         return
       }
-      const next: RuntimeState = { ...state, attention: reason }
+      const { attentionAt: _attentionAt, ...rest } = state
+      const next: RuntimeState = reason === null
+        ? { ...rest, attention: null }
+        : { ...rest, attention: reason, attentionAt: now() }
       states.set(id, next)
       emit(next)
     },

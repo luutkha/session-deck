@@ -118,6 +118,8 @@ export function attentionLabel(reason: AttentionReason): string {
       return 'Needs attention: idle'
     case 'bell':
       return 'Needs attention: bell'
+    case 'unread':
+      return 'Marked unread'
   }
 }
 
@@ -130,6 +132,7 @@ export function attentionClass(reason: AttentionReason): string {
     case 'idle':
       return 'bg-blue-500'
     case 'bell':
+    case 'unread':
       return 'bg-blue-500'
   }
 }
@@ -144,6 +147,8 @@ export function attentionAriaLabel(reason: AttentionReason): string {
       return 'Needs attention: idle'
     case 'bell':
       return 'Needs attention: bell'
+    case 'unread':
+      return 'Marked unread'
   }
 }
 

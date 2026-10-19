@@ -167,4 +167,27 @@ describe('AttentionManager', () => {
     manager.raise('session-1', 'idle')
     expect(manager.get('session-1')).toBe('idle')
   })
+
+  it('markUnread flags a session even while it is focused', () => {
+    focusMap.set('session-1', true)
+    manager.markUnread('session-1')
+    expect(manager.get('session-1')).toBe('unread')
+    expect(changes).toEqual([{ id: 'session-1', reason: 'unread' }])
+  })
+
+  it('markUnread never replaces a real reason', () => {
+    manager.raise('session-1', 'done')
+    manager.markUnread('session-1')
+    expect(manager.get('session-1')).toBe('done')
+  })
+
+  it('a real reason replaces the unread flag, and clear removes it', () => {
+    manager.markUnread('session-1')
+    manager.raise('session-1', 'bell')
+    expect(manager.get('session-1')).toBe('bell')
+    manager.clear('session-1')
+    manager.markUnread('session-2')
+    manager.clear('session-2')
+    expect(manager.get('session-2')).toBeNull()
+  })
 })
