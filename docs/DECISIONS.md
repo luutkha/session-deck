@@ -93,6 +93,9 @@ What raises the bell is unchanged (D11: finished / needs-you only).
 **D24 · 2026-10-19 · Opening the Hub scrolls to the busiest status** · active
 "when i click to button that will redirect me to the hub, can we auto scroll to the status that have most ticket?! make it a option on setting". Settings > General "Open the Hub at the busiest status", on by default (`AppSettings.hub.scrollToBusiest`). Leftmost column wins a tie; a busiest column already in view does not move the board; it runs each time the Hub opens, never while working in it.
 
+**D25 · 2026-10-19 · Auto-update over the internet** · deferred
+User asked how to push updates that other machines install over the internet, then "any free options?", then "skip for now". Researched answer, for when it comes back: `electron-updater` + electron-builder `publish`; free hosting = GitHub Releases on a public repo (a separate public releases repo if the source stays private; a private repo would need a token in every install) or Cloudflare R2 free tier; no free code signing for a private app (unsigned works, SmartScreen warns once per machine; SignPath Foundation is free only for open source). Existing 0.0.1 installs need one manual install of the first updater build.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 
