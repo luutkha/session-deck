@@ -9,7 +9,7 @@ import type {
 import { resolveSettings, MAX_SLEEP_MINUTES, MIN_SLEEP_MINUTES } from '../../shared/types'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
 
-export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents'] as const
+export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub'] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 const AUTO_STATUS_KEYS = ['working', 'needsInput', 'finished'] as const
@@ -54,6 +54,9 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
   agents: {
     defaultAgent: isAgentKind,
     opencodeModel: isOpencodeModelString
+  },
+  hub: {
+    scrollToBusiest: isBoolean
   }
 }
 
@@ -126,6 +129,8 @@ export function settingsProblem(settings: AppSettings): string | null {
     return `agents.opencodeModel must be a model id of at most ${MAX_OPENCODE_MODEL_LENGTH} characters (letters, digits, ._:/@+-), or empty`
   }
 
+  if (typeof settings.hub.scrollToBusiest !== 'boolean') return 'hub.scrollToBusiest must be a boolean'
+
   return null
 }
 
@@ -155,14 +160,18 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
   const quota = pickSectionFields('quota', raw.quota)
   const sleep = pickSectionFields('sleep', raw.sleep)
   const agents = pickSectionFields('agents', raw.agents)
-  if (autoStatus === null || tray === null || quota === null || sleep === null || agents === null) return undefined
+  const hub = pickSectionFields('hub', raw.hub)
+  if (autoStatus === null || tray === null || quota === null || sleep === null || agents === null || hub === null) {
+    return undefined
+  }
 
   const merged = resolveSettings({
     autoStatus: autoStatus as Partial<AutoStatusSettings>,
     tray: tray as Partial<AppSettings['tray']>,
     quota: quota as Partial<AppSettings['quota']>,
     sleep: sleep as Partial<AppSettings['sleep']>,
-    agents: agents as Partial<AppSettings['agents']>
+    agents: agents as Partial<AppSettings['agents']>,
+    hub: hub as Partial<AppSettings['hub']>
   })
   if (settingsProblem(merged) !== null) return undefined
 
@@ -192,7 +201,8 @@ export function updateSettings(data: StoreData, patch: SettingsPatch): StoreData
     tray: { ...current.tray, ...definedFields(patch.tray) },
     quota: { ...current.quota, ...definedFields(patch.quota) },
     sleep: { ...current.sleep, ...definedFields(patch.sleep) },
-    agents: { ...current.agents, ...definedFields(patch.agents) }
+    agents: { ...current.agents, ...definedFields(patch.agents) },
+    hub: { ...current.hub, ...definedFields(patch.hub) }
   }
 
   const problem = settingsProblem(next)

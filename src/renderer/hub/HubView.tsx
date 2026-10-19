@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Plus, Search, Tag } from 'lucide-react'
 import type { Id, RuntimeState, SessionUsage, StoreData } from '../../shared/types'
 import { Button } from '../components/ui/button'
@@ -8,6 +8,7 @@ import { formatCost } from '../usage/usageLogic'
 import { HubColumn } from './HubColumn'
 import {
   buildColumns,
+  busiestColumnIndex,
   closedSessions,
   computeStatusDrop,
   hubColumnKey,
@@ -27,6 +28,8 @@ export interface HubViewProps {
   readonly onNewSession: (statusId: Id | null) => void
   readonly onEditStatuses: () => void
   readonly onReopen: (id: Id) => void
+  /** Settings > Hub: when the Hub opens, scroll the board to the status column with the most sessions. */
+  readonly scrollToBusiest?: boolean
 }
 
 interface DropTarget {
@@ -35,6 +38,15 @@ interface DropTarget {
 
 const NOW_REFRESH_MS = 30_000
 const EMPTY_USAGE: ReadonlyMap<Id, SessionUsage> = new Map()
+
+/** Scrolls the board so `column` is in view, left-aligned; a column that is already fully visible stays put. */
+function scrollColumnIntoView(board: HTMLElement, column: HTMLElement): void {
+  const boardRect = board.getBoundingClientRect()
+  const columnRect = column.getBoundingClientRect()
+  if (columnRect.left >= boardRect.left && columnRect.right <= boardRect.right) return
+  const padding = Number.parseFloat(getComputedStyle(board).paddingLeft) || 0
+  board.scrollLeft += columnRect.left - boardRect.left - padding
+}
 
 export function HubView(props: HubViewProps): ReactElement {
   const {
@@ -47,7 +59,8 @@ export function HubView(props: HubViewProps): ReactElement {
     onSetStatus,
     onNewSession,
     onEditStatuses,
-    onReopen
+    onReopen,
+    scrollToBusiest = false
   } = props
 
   const [query, setQuery] = useState('')
@@ -64,6 +77,17 @@ export function HubView(props: HubViewProps): ReactElement {
     (): ReturnType<typeof buildColumns> => buildColumns(data, query, lastChange),
     [data, query, lastChange]
   )
+  const boardRef = useRef<HTMLDivElement | null>(null)
+  // Only when the Hub opens (this view mounts each time), never while the user works in it.
+  const openColumnsRef = useRef(columns)
+  const scrollOnOpenRef = useRef(scrollToBusiest)
+  useEffect((): void => {
+    const board = boardRef.current
+    if (!scrollOnOpenRef.current || board === null) return
+    const index = busiestColumnIndex(openColumnsRef.current)
+    const column = index === null ? undefined : board.children.item(index)
+    if (column instanceof HTMLElement) scrollColumnIntoView(board, column)
+  }, [])
   const totals = useMemo(() => hubTotals(data, runtime), [data, runtime])
   const closed = useMemo(() => closedSessions(data), [data])
   const usage = sessionUsage ?? EMPTY_USAGE
@@ -148,7 +172,7 @@ export function HubView(props: HubViewProps): ReactElement {
           </Button>
         </header>
 
-        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3">
+        <div ref={boardRef} data-hub-board="" className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3">
           {columns.map((column) => {
             const statusId = column.status?.id ?? null
             return (

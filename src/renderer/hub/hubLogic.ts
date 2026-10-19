@@ -193,3 +193,13 @@ export function runIndicatorClass(run: SessionRun): string {
 export function runIndicatorLabel(run: SessionRun): string {
   return run === 'running' ? 'Running' : 'Exited'
 }
+
+/** Index of the column holding the most sessions (leftmost on a tie), or null when every column is empty. */
+export function busiestColumnIndex(columns: readonly { readonly sessions: readonly Session[] }[]): number | null {
+  let best: number | null = null
+  columns.forEach((column, index): void => {
+    if (column.sessions.length === 0) return
+    if (best === null || column.sessions.length > columns[best].sessions.length) best = index
+  })
+  return best
+}

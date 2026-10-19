@@ -34,10 +34,21 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       tray: { closeToTray: false, desktopNotifications: false, notifyOnlyWhenUnfocused: false },
       quota: { enabled: false, warnAtPercent: 50, criticalAtPercent: 60, notifyOnReset: false },
       sleep: { enabled: true, afterMinutes: 15 },
-      agents: { defaultAgent: 'claude' as const, opencodeModel: '' }
+      agents: { defaultAgent: 'claude' as const, opencodeModel: '' },
+      hub: { scrollToBusiest: false }
     }
     const data = parseStoreData(storeWith(settings))
     expect(data.settings).toEqual(settings)
+  })
+
+  it('settings saved before the hub section existed get scrollToBusiest on', () => {
+    const data = parseStoreData(storeWith({ sleep: { enabled: true, afterMinutes: 15 } }))
+    expect(data.settings?.hub).toEqual({ scrollToBusiest: true })
+  })
+
+  it('a hub section with a wrong type is dropped', () => {
+    const data = parseStoreData(storeWith({ hub: { scrollToBusiest: 'yes' } }))
+    expect(data.settings).toBeUndefined()
   })
 
   it('missing fields take their defaults', () => {

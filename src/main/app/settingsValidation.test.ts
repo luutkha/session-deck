@@ -17,6 +17,11 @@ describe('asSettingsPatch', () => {
     expect(patch.quota).toEqual({ enabled: false, warnAtPercent: 70, criticalAtPercent: 90, notifyOnReset: true })
   })
 
+  it('accepts the hub section and rejects a wrong type in it', () => {
+    expect(asSettingsPatch({ hub: { scrollToBusiest: false } })).toEqual({ hub: { scrollToBusiest: false } })
+    expect(() => asSettingsPatch({ hub: { scrollToBusiest: 1 } })).toThrow(/Invalid settings/)
+  })
+
   it('rejects a non-object payload', () => {
     expect(() => asSettingsPatch(null)).toThrow('patch must be an object')
     expect(() => asSettingsPatch('x')).toThrow('patch must be an object')

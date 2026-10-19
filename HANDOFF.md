@@ -88,3 +88,6 @@ A session that needs the user (Stop hook = finished, Notification hook = permiss
 
 ## New Session remembers the last folder (D23)
 `initialFolder` in `Sidebar/dialogLogic.ts` (tests in `dialogLogic.test.ts`): the caller's folder, else the cwd of the newest session by `createdAt`, else empty. Used as the initial state of the folder field in `NewSessionDialog`. E2E: `scripts/e2e-lastfolder.cjs` (5 checks, real dialog + restart).
+
+## Hub opens at the busiest status (D24)
+New settings section `hub` (`AppSettings.hub.scrollToBusiest`, default true; validated in `main/store/settings.ts` and `main/app/settingsValidation.ts`). `busiestColumnIndex` in `hub/hubLogic.ts` (tests); `HubView` scrolls its board (`data-hub-board`) once on mount, left-aligning that column unless it is already fully visible. Switch: Settings > General. E2E: `scripts/e2e-hubscroll.cjs` (7 checks).

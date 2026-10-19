@@ -148,6 +148,24 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
 
       <Separator />
 
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="general-hub-scroll" className="text-[13px] font-medium text-foreground">
+            Open the Hub at the busiest status
+          </Label>
+          <Switch
+            id="general-hub-scroll"
+            checked={settings.hub.scrollToBusiest}
+            onCheckedChange={(checked: boolean): void => void applyPatch({ hub: { scrollToBusiest: checked } })}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Scrolls the board to the status column with the most sessions.
+        </p>
+      </div>
+
+      <Separator />
+
       <div className="flex flex-col gap-2">
         <Button
           type="button"

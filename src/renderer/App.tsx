@@ -273,6 +273,7 @@ export function App(): ReactElement {
                   onEditStatuses={handleEditStatuses}
                   onReopen={reopenSession}
                   sessionUsage={sessionUsage}
+                  scrollToBusiest={settings.hub.scrollToBusiest}
                 />
               </div>
             ) : null}

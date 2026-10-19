@@ -183,6 +183,12 @@ export interface SleepSettings {
   readonly afterMinutes: number
 }
 
+/** Hub board behaviour. */
+export interface HubSettings {
+  /** Opening the Hub scrolls the board to the status column with the most sessions. */
+  readonly scrollToBusiest: boolean
+}
+
 /** Which agent new sessions use by default, and the default OpenCode model (empty = OpenCode's own default). */
 export interface AgentSettings {
   readonly defaultAgent: AgentKind
@@ -211,6 +217,7 @@ export interface AppSettings {
   readonly quota: QuotaSettings
   readonly sleep: SleepSettings
   readonly agents: AgentSettings
+  readonly hub: HubSettings
 }
 
 export interface SettingsPatch {
@@ -219,6 +226,7 @@ export interface SettingsPatch {
   readonly quota?: Partial<QuotaSettings>
   readonly sleep?: Partial<SleepSettings>
   readonly agents?: Partial<AgentSettings>
+  readonly hub?: Partial<HubSettings>
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -226,7 +234,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   tray: { closeToTray: true, desktopNotifications: true, notifyOnlyWhenUnfocused: true },
   quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true },
   sleep: { enabled: false, afterMinutes: 30 },
-  agents: { defaultAgent: 'claude', opencodeModel: '' }
+  agents: { defaultAgent: 'claude', opencodeModel: '' },
+  hub: { scrollToBusiest: true }
 }
 
 export const MIN_SLEEP_MINUTES = 1
@@ -239,7 +248,8 @@ export function resolveSettings(stored: Partial<{ [K in keyof AppSettings]: Part
     tray: { ...DEFAULT_APP_SETTINGS.tray, ...(stored?.tray ?? {}) },
     quota: { ...DEFAULT_APP_SETTINGS.quota, ...(stored?.quota ?? {}) },
     sleep: { ...DEFAULT_APP_SETTINGS.sleep, ...(stored?.sleep ?? {}) },
-    agents: { ...DEFAULT_APP_SETTINGS.agents, ...(stored?.agents ?? {}) }
+    agents: { ...DEFAULT_APP_SETTINGS.agents, ...(stored?.agents ?? {}) },
+    hub: { ...DEFAULT_APP_SETTINGS.hub, ...(stored?.hub ?? {}) }
   }
 }
 

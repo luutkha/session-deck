@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { Id, RuntimeState, Session, SessionUsage, StatusDef, StoreData } from '../../shared/types'
 import {
   buildColumns,
+  busiestColumnIndex,
   closedSessions,
   computeStatusDrop,
   describeCardUsage,
@@ -343,5 +344,24 @@ describe('describeCardUsage', () => {
       updatedAt: 0
     }
     expect(describeCardUsage(record)).toBe('Cost: $1.00')
+  })
+})
+
+describe('busiestColumnIndex', () => {
+  const column = (count: number): { readonly sessions: readonly Session[] } => ({
+    sessions: Array.from({ length: count }, (_, i) => makeSession({ id: `s${String(count)}-${String(i)}` }))
+  })
+
+  it('is the column with the most sessions', () => {
+    expect(busiestColumnIndex([column(1), column(4), column(2)])).toBe(1)
+  })
+
+  it('picks the leftmost column on a tie', () => {
+    expect(busiestColumnIndex([column(0), column(3), column(3)])).toBe(1)
+  })
+
+  it('is null when every column is empty or there are none', () => {
+    expect(busiestColumnIndex([column(0), column(0)])).toBeNull()
+    expect(busiestColumnIndex([])).toBeNull()
   })
 })
