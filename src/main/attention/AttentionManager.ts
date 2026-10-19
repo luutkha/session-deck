@@ -1,13 +1,9 @@
 import type { AttentionReason, HookEvent } from '../../shared/types'
 
-export interface AttentionManagerDeps {
-  readonly isFocused: (id: string) => boolean
-}
-
 export interface AttentionManager {
   raise(id: string, reason: AttentionReason): void
   clear(id: string): void
-  /** The user's own flag (Mark as unread): raised even on the focused session, never above a real reason. */
+  /** The user's own flag (Mark as unread): never above a real reason. */
   markUnread(id: string): void
   get(id: string): AttentionReason | null
   handleHook(event: HookEvent): void
@@ -23,8 +19,11 @@ const PRIORITY: Record<AttentionReason, number> = {
   unread: 0
 }
 
-export function createAttentionManager(deps: AttentionManagerDeps): AttentionManager {
-  const { isFocused } = deps
+/**
+ * Which sessions need the user, and why. Raised for every session, including the one on screen (D22: the bell means
+ * "waiting for you"); whether a raise also pings (sound, flash, desktop notice) is decided by the caller.
+ */
+export function createAttentionManager(): AttentionManager {
   const attention = new Map<string, AttentionReason | null>()
   const listeners = new Set<(id: string, reason: AttentionReason | null) => void>()
 
@@ -41,8 +40,6 @@ export function createAttentionManager(deps: AttentionManagerDeps): AttentionMan
 
   return {
     raise(id: string, reason: AttentionReason): void {
-      if (isFocused(id)) return
-
       const current = attention.get(id) ?? null
       if (shouldRaise(current, reason)) {
         attention.set(id, reason)

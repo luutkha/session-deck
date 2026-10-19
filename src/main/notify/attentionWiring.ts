@@ -8,6 +8,8 @@ export interface AttentionWiringDeps {
   readonly store: { get(): StoreData }
   readonly runtime: { get(id: string): RuntimeState | undefined }
   readonly notifySession: (id: string, title: string, body: string) => boolean
+  /** True when the session is on screen in the focused window: no desktop notice for it. */
+  readonly isFocused?: (id: string) => boolean
 }
 
 /**
@@ -16,7 +18,7 @@ export interface AttentionWiringDeps {
  */
 export function wireAttentionNotices(deps: AttentionWiringDeps): () => void {
   return deps.attention.onChange((id, reason) => {
-    if (reason === null) return
+    if (reason === null || deps.isFocused?.(id) === true) return
     const session = deps.store.get().sessions.find((s) => s.id === id)
     if (session === undefined) return
     const notice = attentionNotice({

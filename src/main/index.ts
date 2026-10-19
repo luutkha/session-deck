@@ -197,7 +197,7 @@ if (!gotTheLock) {
 
     const attention = createAttentionService({
       isKnownSession: (id: string) => store.get().sessions.some((s) => s.id === id),
-      isFocused: (id: string) => mainWindow !== null && !mainWindow.isDestroyed() && mainWindow.isFocused() && activeSessionId() === id,
+      isFocused: isSessionOnScreen,
       beep: (id, reason) => relaySound(id, reason),
       flash: (on: boolean) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -215,6 +215,11 @@ if (!gotTheLock) {
 
     function activeSessionId(): string | null {
       return controller.getActiveSessionId()
+    }
+
+    /** The session the user is looking at right now: its bell still shows, but it never pings. */
+    function isSessionOnScreen(id: string): boolean {
+      return isMainWindowFocused() && activeSessionId() === id
     }
 
     // Idle sessions are put to sleep (Claude process stopped, conversation kept) when Settings > Sleep is on.
@@ -258,7 +263,8 @@ if (!gotTheLock) {
       attention,
       store,
       runtime,
-      notifySession: (id, title, body) => notifier.notifySession(id, title, body)
+      notifySession: (id, title, body) => notifier.notifySession(id, title, body),
+      isFocused: isSessionOnScreen
     })
 
     const { window: win } = createMainWindow({

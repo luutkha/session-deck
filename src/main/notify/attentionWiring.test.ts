@@ -89,4 +89,11 @@ describe('wireAttentionNotices', () => {
     h.fire('s1', 'done')
     expect(h.notified).toEqual([])
   })
+
+  it('sends no desktop notice for the session on screen', () => {
+    const h = harness()
+    wireAttentionNotices({ ...h.deps, isFocused: (id) => id === 's1' })
+    h.fire('s1', 'done')
+    expect(h.notified).toEqual([])
+  })
 })

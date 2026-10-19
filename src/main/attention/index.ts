@@ -20,8 +20,7 @@ export {
 
 export {
   createAttentionManager,
-  type AttentionManager,
-  type AttentionManagerDeps
+  type AttentionManager
 } from './AttentionManager'
 
 export {

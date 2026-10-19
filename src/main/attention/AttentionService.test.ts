@@ -141,13 +141,15 @@ describe('AttentionService', () => {
     expect(service.get('session-1')).toBeNull()
   })
 
-  it('focused session ignores raise', () => {
+  it('the session on screen gets attention but no sound and no flash', () => {
     focusedSession = 'session-1'
     service.raise('session-1', 'permission')
-    expect(service.get('session-1')).toBeNull()
-    focusedSession = null
-    service.raise('session-1', 'permission')
     expect(service.get('session-1')).toBe('permission')
+    expect(beepCalls).toBe(0)
+    expect(flashCalls).toEqual([])
+    focusedSession = null
+    service.raise('session-2', 'done')
+    expect(beepCalls).toBe(1)
   })
 
   it('priority upgrade works through service', () => {

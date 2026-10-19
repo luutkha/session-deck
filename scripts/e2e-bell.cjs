@@ -79,6 +79,18 @@ async function main() {
     const statusText = await app.evaluate(`document.querySelector('[data-needs-you-status]')?.innerText.trim() ?? null`)
     t.check('the status bar says "1 needs you"', statusText === '1 needs you', String(statusText))
 
+    // 1b. The session ON SCREEN asks a question: it still gets the bell (it is waiting for the user), but no sound.
+    const soundsOnScreen = (await app.evaluate('window.__sounds')).length
+    await postHook(a.id, 'Notification')
+    const onScreen = await waitFor(async () => (await cardBell('bell-a')) === 'permission', 4000, 200)
+    t.check('the session on screen that asks a question also shows the bell', !!onScreen, String(await cardBell('bell-a')))
+    await sleep(600)
+    t.check('...without a sound (the user is already looking at it)', (await app.evaluate('window.__sounds')).length === soundsOnScreen, JSON.stringify(await app.evaluate('window.__sounds')))
+    await app.evaluate(`window.api.ptyWrite(${js(a.id)}, ' ')`)
+    const typed = await waitFor(async () => (await cardBell('bell-a')) === null, 4000, 200)
+    t.check('typing into it clears the bell', !!typed)
+    await app.evaluate(`window.api.ptyWrite(${js(a.id)}, '')`)
+
     // 2. The header bell opens the list; clicking the row opens that session and clears its bell.
     await app.evaluate(`document.querySelector('[data-needs-you-button]').click()`)
     const row = await waitFor(() => app.evaluate(`document.querySelector('[data-needs-you-item=${js(b.id)}]')?.innerText ?? null`), 3000, 200)

@@ -10,6 +10,8 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 - **A session never prompted has no conversation.** Resuming it fails; it gets a fresh Claude id instead (`shouldRotateSessionId`).
 - `CLAUDE_CODE_*` / `CLAUDECODE` env from a parent Claude must not leak into sessions; strip them when launching the app from a Claude terminal.
 
+- **Attention used to be dropped for the session on screen.** Fine for pings, wrong for the bell: users watch a session ask its question, switch away, and expect the bell to still be there. Focus now only decides pinging (`AttentionService`, `wireAttentionNotices`), never whether attention is recorded. In CDP e2e runs the window counts as focused, so on-screen behaviour is testable.
+
 ## OpenCode
 - **Go plan cap is plan-wide** and in `--format json` mode OpenCode goes silent on it; only stderr logs show it.
 - `opencode/<model>` (Zen) bills real money. Free: `opencode/big-pickle` and the `*-free` models.

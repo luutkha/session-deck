@@ -4,16 +4,12 @@ import type { AttentionReason, HookEvent } from '../../shared/types'
 
 describe('AttentionManager', () => {
   let manager: AttentionManager
-  let focusMap: Map<string, boolean>
   let changes: Array<{ id: string; reason: AttentionReason | null }> = []
 
   beforeEach(() => {
-    focusMap = new Map()
     changes = []
 
-    manager = createAttentionManager({
-      isFocused: (id) => focusMap.get(id) ?? false
-    })
+    manager = createAttentionManager()
 
     manager.onChange((id, reason) => {
       changes.push({ id, reason })
@@ -21,19 +17,16 @@ describe('AttentionManager', () => {
   })
 
   it('raises attention for unfocused session', () => {
-    focusMap.set('session-1', false)
     manager.raise('session-1', 'permission')
     expect(manager.get('session-1')).toBe('permission')
   })
 
-  it('ignores raise for focused session', () => {
-    focusMap.set('session-1', true)
+  it('raises for the session on screen too (focus only decides pinging, in the service)', () => {
     manager.raise('session-1', 'permission')
-    expect(manager.get('session-1')).toBeNull()
+    expect(manager.get('session-1')).toBe('permission')
   })
 
   it('priority: permission > done > idle > bell', () => {
-    focusMap.set('session-1', false)
 
     manager.raise('session-1', 'bell')
     expect(manager.get('session-1')).toBe('bell')
@@ -49,7 +42,6 @@ describe('AttentionManager', () => {
   })
 
   it('does not downgrade priority', () => {
-    focusMap.set('session-1', false)
 
     manager.raise('session-1', 'permission')
     manager.raise('session-1', 'idle')
@@ -63,7 +55,6 @@ describe('AttentionManager', () => {
   })
 
   it('clear removes attention', () => {
-    focusMap.set('session-1', false)
     manager.raise('session-1', 'permission')
     expect(manager.get('session-1')).toBe('permission')
 
@@ -87,21 +78,18 @@ describe('AttentionManager', () => {
   })
 
   it('handleHook Notification raises permission', () => {
-    focusMap.set('session-1', false)
     const event: HookEvent = { sessionId: 'session-1', event: 'Notification' }
     manager.handleHook(event)
     expect(manager.get('session-1')).toBe('permission')
   })
 
   it('handleHook Stop raises done', () => {
-    focusMap.set('session-1', false)
     const event: HookEvent = { sessionId: 'session-1', event: 'Stop' }
     manager.handleHook(event)
     expect(manager.get('session-1')).toBe('done')
   })
 
   it('forget removes session entirely', () => {
-    focusMap.set('session-1', false)
     manager.raise('session-1', 'permission')
     expect(manager.get('session-1')).toBe('permission')
 
@@ -110,7 +98,6 @@ describe('AttentionManager', () => {
   })
 
   it('forget clears attention and notifies', () => {
-    focusMap.set('session-1', false)
     manager.raise('session-1', 'permission')
     expect(changes).toContainEqual({ id: 'session-1', reason: 'permission' })
 
@@ -119,13 +106,11 @@ describe('AttentionManager', () => {
   })
 
   it('onChange notifies on raise', () => {
-    focusMap.set('session-1', false)
     manager.raise('session-1', 'idle')
     expect(changes).toContainEqual({ id: 'session-1', reason: 'idle' })
   })
 
   it('onChange notifies on clear', () => {
-    focusMap.set('session-1', false)
     manager.raise('session-1', 'idle')
     changes = []
     manager.clear('session-1')
@@ -139,7 +124,6 @@ describe('AttentionManager', () => {
     })
     expect(typeof unsubscribe).toBe('function')
 
-    focusMap.set('session-1', false)
     manager.raise('session-1', 'idle')
     expect(localChanges).toHaveLength(1)
     expect(localChanges[0]).toEqual({ id: 'session-1', reason: 'idle' })
@@ -150,26 +134,14 @@ describe('AttentionManager', () => {
     expect(localChanges).toHaveLength(0)
   })
 
-  it('focused session ignored even if higher priority', () => {
-    focusMap.set('session-1', true)
-    manager.raise('session-1', 'permission')
-    expect(manager.get('session-1')).toBeNull()
-
-    focusMap.set('session-1', false)
-    manager.raise('session-1', 'permission')
-    expect(manager.get('session-1')).toBe('permission')
-  })
-
   it('clear then raise works', () => {
-    focusMap.set('session-1', false)
     manager.raise('session-1', 'permission')
     manager.clear('session-1')
     manager.raise('session-1', 'idle')
     expect(manager.get('session-1')).toBe('idle')
   })
 
-  it('markUnread flags a session even while it is focused', () => {
-    focusMap.set('session-1', true)
+  it('markUnread flags a session', () => {
     manager.markUnread('session-1')
     expect(manager.get('session-1')).toBe('unread')
     expect(changes).toEqual([{ id: 'session-1', reason: 'unread' }])

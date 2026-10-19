@@ -10,6 +10,7 @@ import { writeWorkerPlugin, workerPluginEnv } from '../workers/workerPluginEnv'
 
 export interface AttentionServiceDeps {
   readonly isKnownSession: (id: string) => boolean
+  /** True when the session is on screen in the focused window: its attention is shown but never pings. */
   readonly isFocused: (id: string) => boolean
   /** Called with the session id and sound event when a sound should play (sound enabled and debounce elapsed). */
   readonly beep: (id: string, event: SoundEvent) => void
@@ -68,7 +69,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
   let port: number | null = null
   let started = false
 
-  const attentionManager = createAttentionManager({ isFocused })
+  const attentionManager = createAttentionManager()
   const notifier = createNotifier({ beep, flash, isWindowFocused })
   // Output pauses are NOT a reason to ping: Claude goes quiet while thinking or running tools. Only the Stop hook
   // (turn finished) and the Notification hook (permission / question) raise attention.
@@ -78,7 +79,8 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
 
   const unsubscribeManager = attentionManager.onChange((id, reason) => {
     if (reason !== null) {
-      notifier.notify(id, reason)
+      // The session on screen still gets the bell, but no sound or flash: the user is already looking at it.
+      if (!isFocused(id)) notifier.notify(id, reason)
     } else {
       notifier.stopFlash()
     }
