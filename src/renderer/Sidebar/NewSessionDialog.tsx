@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { buildCreateInput, validateOpenCodeModel } from './dialogLogic'
+import { buildCreateInput, initialFolder, validateOpenCodeModel } from './dialogLogic'
 import { NEW_GROUP_CHOICE, NO_VALUE_CHOICE, NewSessionFields } from './NewSessionFields'
 
 export interface NewSessionDialogProps {
@@ -61,7 +61,7 @@ export function NewSessionDialog({
   onCreated
 }: NewSessionDialogProps): ReactElement {
   const [agent, setAgent] = useState<AgentKind>(defaultAgent ?? 'claude')
-  const [folder, setFolder] = useState(defaultFolder ?? '')
+  const [folder, setFolder] = useState((): string => initialFolder(defaultFolder, data.sessions))
   const [name, setName] = useState('')
   const [groupChoice, setGroupChoice] = useState<string>(defaultGroupId ?? NO_VALUE_CHOICE)
   const [statusChoice, setStatusChoice] = useState<string>(NO_VALUE_CHOICE)

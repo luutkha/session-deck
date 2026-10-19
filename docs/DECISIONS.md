@@ -87,6 +87,9 @@ Deferred: a real interactive OpenCode terminal (shared `opencode serve` + `openc
 What raises the bell is unchanged (D11: finished / needs-you only).
 2026-10-19 follow-up: "i ask them to ask me some question, but still no "bell" icon displayed". The session on screen gets the bell too (it means "waiting for you"); it just never pings (no sound, flash or desktop notice) because the user is looking at it. Typing into it or opening it clears the bell.
 
+**D23 · 2026-10-19 · New Session remembers the last folder** · active
+"on model of create new session, the default value of the root folder is the last folder we choose (except the very first time)". The folder field opens with the folder of the most recently created session (derived from the store, so it survives restarts with no extra setting); empty when there are no sessions. A folder passed by the caller (workspace header, D20) still wins.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

@@ -6,8 +6,10 @@ import {
   buildCreateInput,
   validateOpenCodeModel,
   validateStatusDraft,
+  initialFolder,
   type CreateSessionForm
 } from './dialogLogic'
+import type { Session } from '../../shared/types'
 
 function form(overrides: Partial<CreateSessionForm> = {}): CreateSessionForm {
   return {
@@ -391,5 +393,26 @@ describe('buildCreateInput (remote control)', () => {
   it('is ignored for OpenCode sessions', () => {
     const result = buildCreateInput(form({ agent: 'opencode', remoteControl: true }))
     expect(result.ok && 'claudeArgs' in result.input).toBe(false)
+  })
+})
+
+describe('initialFolder', () => {
+  const at = (cwd: string, createdAt: number): Pick<Session, 'cwd' | 'createdAt'> => ({ cwd, createdAt })
+
+  it('is empty the very first time (no sessions yet)', () => {
+    expect(initialFolder(undefined, [])).toBe('')
+  })
+
+  it('defaults to the folder of the most recently created session', () => {
+    const sessions = [at('C:/a', 10), at('C:/newest', 30), at('C:/b', 20)]
+    expect(initialFolder(undefined, sessions)).toBe('C:/newest')
+  })
+
+  it('prefers a folder passed by the caller (workspace header)', () => {
+    expect(initialFolder('D:/workspace', [at('C:/newest', 30)])).toBe('D:/workspace')
+  })
+
+  it('ignores blank folders', () => {
+    expect(initialFolder('  ', [at('  ', 50), at('C:/real', 10)])).toBe('C:/real')
   })
 })

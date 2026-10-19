@@ -1,4 +1,4 @@
-import type { AgentKind, CreateSessionInput, Id } from '../../shared/types'
+import type { AgentKind, CreateSessionInput, Id, Session } from '../../shared/types'
 import { validateName } from './inlineEditValidation'
 
 /** One CLI token for `claude <args>`: letters, digits and a fixed set of punctuation. */
@@ -169,4 +169,23 @@ export function validateStatusDraft(draft: StatusDraft): ValidateStatusDraftResu
     return { ok: false, error: `Invalid color: ${draft.color} (expected #rrggbb)` }
   }
   return { ok: true }
+}
+
+/**
+ * The folder the New Session dialog opens with: the caller's folder (e.g. a workspace header) when given, otherwise
+ * the folder of the most recently created session, otherwise empty (the very first session).
+ */
+export function initialFolder(
+  requested: string | undefined,
+  sessions: readonly Pick<Session, 'cwd' | 'createdAt'>[]
+): string {
+  if (requested !== undefined && requested.trim().length > 0) {
+    return requested
+  }
+  let latest: Pick<Session, 'cwd' | 'createdAt'> | null = null
+  for (const session of sessions) {
+    if (session.cwd.trim().length === 0) continue
+    if (latest === null || session.createdAt > latest.createdAt) latest = session
+  }
+  return latest?.cwd ?? ''
 }

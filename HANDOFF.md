@@ -85,3 +85,6 @@ A session that needs the user (Stop hook = finished, Notification hook = permiss
 - Clearing is unchanged: opening the session or typing into it.
 - The session on screen gets the bell too, but never pings: `AttentionManager` records every raise; `AttentionService` (sound/flash) and `wireAttentionNotices` (desktop notice) skip the session on screen (`isSessionOnScreen` in `main/index.ts`).
 - E2E: `scripts/e2e-bell.cjs` (19 checks, including a real Claude turn finishing in a background session). `E2E_SHOT_DIR=<dir>` saves screenshots.
+
+## New Session remembers the last folder (D23)
+`initialFolder` in `Sidebar/dialogLogic.ts` (tests in `dialogLogic.test.ts`): the caller's folder, else the cwd of the newest session by `createdAt`, else empty. Used as the initial state of the folder field in `NewSessionDialog`. E2E: `scripts/e2e-lastfolder.cjs` (5 checks, real dialog + restart).
