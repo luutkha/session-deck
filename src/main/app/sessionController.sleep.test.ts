@@ -100,6 +100,7 @@ function createFakeAttention(): AttentionService {
     get: (id: string) => map.get(id) ?? null,
     onChange: () => () => {},
     setSoundEnabled: () => {},
+    suspend: (_id: string) => {},
     forget: (id: string) => map.delete(id),
     raise: (id: string, reason: AttentionReason) => map.set(id, reason)
   }
@@ -135,18 +136,20 @@ function stateOf(runtime: RuntimeRegistry, id: Id): RuntimeState | undefined {
 }
 
 describe('sessionController.sleepSession', () => {
-  it('kills the process, forgets attention and marks the runtime sleeping', () => {
+  it('kills the process, suspends (not forgets) attention and marks the runtime sleeping', () => {
     const session = makeSession({ id: 's1' })
     const { controller, pty, runtime, attention } = setup([session])
     controller.initializeRestoredSessions()
     controller.setActiveSession('s1')
+    const suspendSpy = vi.spyOn(attention, 'suspend')
     const forgetSpy = vi.spyOn(attention, 'forget')
 
     controller.sleepSession('s1')
 
     expect(pty.killCount('s1')).toBe(1)
     expect(pty.isRunning('s1')).toBe(false)
-    expect(forgetSpy).toHaveBeenCalledWith('s1')
+    expect(suspendSpy).toHaveBeenCalledWith('s1')
+    expect(forgetSpy).not.toHaveBeenCalled()
     const state = stateOf(runtime, 's1')!
     expect(state.run).toBe('exited')
     expect(state.exitCode).toBeNull()

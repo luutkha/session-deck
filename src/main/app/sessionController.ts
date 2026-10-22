@@ -395,7 +395,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       // The kill is intentional: drop the start state so the next activation auto-resumes with --resume, and mark
       // the runtime asleep BEFORE killing so the pty exit handler ignores the exit instead of treating it as a crash.
       startState.delete(id)
-      attention.forget(id)
+      // Sleep keeps the bell (reason and time) so the user sees what finished or needs them on return.
+      attention.suspend(id)
       runtime.markSleeping(id)
       if (pty.isRunning(id)) {
         pty.kill(id)

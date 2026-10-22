@@ -32,7 +32,7 @@ function withoutRemoteControl(state: RuntimeState): RuntimeState {
 export interface RuntimeRegistry {
   markRunning(id: Id): void
   markExited(id: Id, code: number | null): void
-  /** Stops the session without a crash: run becomes 'exited' (null code), sleeping true, attention cleared. */
+  /** Stops the session without a crash: run becomes 'exited' (null code), sleeping true, attention kept. */
   markSleeping(id: Id): void
   setAttention(id: Id, reason: AttentionReason | null): void
   /** Marks whether the running process has Remote Control active; a no-op when unchanged. */
@@ -86,7 +86,6 @@ export function createRuntimeRegistry(now: () => number = Date.now): RuntimeRegi
         ...withoutRemoteControl(withoutActivity(state)),
         run: 'exited',
         exitCode: null,
-        attention: null,
         sleeping: true
       }
       states.set(id, next)

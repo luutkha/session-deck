@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createAttentionService } from './AttentionService'
 import type { AttentionReason, HookEvent, SoundEvent } from '../../shared/types'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -139,6 +139,40 @@ describe('AttentionService', () => {
     expect(service.get('session-1')).toBe('permission')
     service.forget('session-1')
     expect(service.get('session-1')).toBeNull()
+  })
+
+  it('suspend keeps the bell and its reason', () => {
+    focusedSession = null
+    service.raise('session-1', 'done')
+    service.suspend('session-1')
+    expect(service.get('session-1')).toBe('done')
+  })
+
+  it('suspend sends no attention change to subscribers', () => {
+    focusedSession = null
+    service.raise('session-1', 'done')
+    changes = []
+    service.suspend('session-1')
+    expect(changes).toEqual([])
+  })
+
+  it('suspend drops the idle timer of the session', () => {
+    vi.useFakeTimers()
+    try {
+      service.noteOutput('session-1')
+      const pending = vi.getTimerCount()
+      service.suspend('session-1')
+      expect(vi.getTimerCount()).toBe(pending - 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('suspend leaves other sessions untouched', () => {
+    focusedSession = null
+    service.raise('session-2', 'permission')
+    service.suspend('session-1')
+    expect(service.get('session-2')).toBe('permission')
   })
 
   it('the session on screen gets attention but no sound and no flash', () => {

@@ -160,6 +160,7 @@ function createFakeAttention(): AttentionService {
       return () => {}
     },
     setSoundEnabled(): void {},
+    suspend(_id: string): void {},
     forget(id: string): void {
       attentionMap.delete(id)
     },

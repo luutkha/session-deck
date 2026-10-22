@@ -44,6 +44,8 @@ export interface AttentionService {
   get(id: string): AttentionReason | null
   onChange(callback: (id: string, reason: AttentionReason | null) => void): () => void
   setSoundEnabled(enabled: boolean): void
+  /** The session's process stops but the session stays (sleep): drop idle timers, keep the bell. */
+  suspend(id: string): void
   forget(id: string): void
   raise(id: string, reason: AttentionReason): void
 }
@@ -197,6 +199,10 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
 
     setSoundEnabled(enabled: boolean): void {
       notifier.setSoundEnabled(enabled)
+    },
+
+    suspend(id: string): void {
+      idleDetector.forget(id)
     },
 
     forget(id: string): void {
