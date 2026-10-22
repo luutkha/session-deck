@@ -108,3 +108,17 @@ E2E: `scripts/e2e-palette.cjs` (16 checks, real key presses).
 
 ## Installer 0.0.3 (2026-10-22)
 `release/SessionDeck-Setup-0.0.3.exe` built at the commit after `5e05505` (version bumped 0.0.1 -> 0.0.3; the old `SessionDeck-Setup-0.0.2.exe` in `release/` was a renamed 0.0.1 build from 2026-10-18). Contains sleep-all, bell kept on sleep, command palette. `e2e-packaged` 12/12; the unpacked exe also has the new API, settings and palette. Unsigned (SmartScreen warns once).
+
+## Timeline + "While you were away" (D29)
+- Main: `timeline/timelineService.ts` records one turn per prompt from the hooks (UserPromptSubmit starts, Notification sets neededYou, Stop ends 'finished'; sleep/close/exit/limit end it too, wired in `app/featureWiring.ts` from runtime transitions). The prompt comes from the UserPromptSubmit body (`HookServer` reads `prompt`, max 200 chars; OpenCode sends none -> ''). Turn cost = session cost delta, still settling for 2 min after Stop. Persisted in `<userData>/sessiondeck-timeline.json` (200 turns/session, 30 days, a turn open at quit comes back 'exited').
+- Away: `app/userPresence.ts` sees the user come back (same input signal as sleep-all: key/click/wheel IPC + pty writes) after `away.afterMinutes` (default 15, Settings > General); `timeline/awaySummary.ts` builds the summary; sent as `ev:awaySummary` only when something happened; `away:getLast` keeps the last one.
+- Renderer: side panel tabs Notes | Activity (`timeline/ActivityList`), `AwayDialog` (rows open the session), palette action 'Show "While you were away"'.
+- E2E: `scripts/e2e-away.cjs` (12 checks, ~2 min: real hook/statusLine requests, real 1-minute absence with key presses, restart keeps the timeline).
+
+## Quota autopilot (D30)
+- At the critical 5-hour level the guard alert passes `autopilot.onAlert`: Settings > Quota "At the critical level" = ask (toast button "Sleep N idle sessions") / sleep automatically / nothing. Idle = open, running, not working or needs-input, not Keep awake, not Remote Control; busy turns are never interrupted.
+- Held sessions (slept for quota, or a Claude turn cut off by the usage-limit message) are stored in `<userData>/quota-autopilot.json` with the reset time. The autopilot has its OWN timer at resets_at + 5 s (no usage update arrives while everything sleeps); a later guard reset alert for the same reset is dropped (30 min dedup). "When the 5-hour window resets" = ask (toast "Wake N sessions" + "Type continue" checkbox) / wake automatically. Waking resumes in the background (`controller.wakeSession`), the screen stays put. "continue" is typed only into limit-stopped sessions, after their output has been quiet for 3 s.
+- Limit detection: `outputSignals.ts` USAGE_LIMIT_PATTERNS, Claude only, armed only by a prompt submitted in the running process (a resumed session redrawing an old message is ignored). Not seen for real yet: the wording list may need additions.
+- Status bar chip "N waiting for reset · HH:MM" wakes them on click.
+- E2E: `scripts/e2e-autopilot.cjs` (17 checks, ~3 min, fake usage through the statusLine endpoint, idle OpenCode sessions so no real usage interferes).
+- Review (deepseek-v4-pro, read-only) findings fixed: "continue" never reached a limit-stopped session that kept running (now its quiet timer starts at once); quota IPC waits for the state file to load. Known, not fixed: a Stop arriving after the next prompt would end the new turn; cost arriving after the next prompt counts toward the new turn; the away summary does not know about sleeps from before a restart.

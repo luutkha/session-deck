@@ -29,6 +29,11 @@ export interface SessionControllerDeps {
   readonly sendPtyData: (id: Id, data: string, seq: number) => void
   /** Directory of main-errors.log (see errorLog.ts). */
   readonly userDataDir: string
+  /**
+   * Called once per turn when a Claude session's screen shows Claude's usage-limit message. Only armed by a
+   * UserPromptSubmit hook event in the running process, so a resumed session that redraws an old message is ignored.
+   */
+  readonly onUsageLimit?: (id: Id) => void
 }
 
 export interface SessionController {
@@ -45,6 +50,12 @@ export interface SessionController {
   resizePty(id: Id, cols: number, rows: number): void
   /** Puts a running session to sleep: stops its process, keeps the card and conversation. No-op otherwise. */
   sleepSession(id: Id): void
+  /**
+   * Starts a sleeping session again the way activation does (same `--resume` path). Does not change the active session.
+   * Returns true when the wake was started; false for an unknown, closed or non-sleeping session, or when the process
+   * could not start (the error is logged).
+   */
+  wakeSession(id: Id): boolean
   setActiveSession(id: Id | null): void
   getActiveSessionId(): Id | null
   initializeRestoredSessions(): void
@@ -109,6 +120,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   const startState = new Map<Id, SessionStartState>()
   let initialized = false
   const restoredWithoutClaudeSessionId = new Set<Id>()
+  // Sessions with a turn submitted in the running process that has not reported the usage limit yet (edge trigger).
+  const limitArmed = new Set<Id>()
   const applyAutoStatus = createAutoStatusApplier({
     store,
     onError: (where, error) => logMainError(userDataDir, where, error)
@@ -128,6 +141,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   function readScreenSignals(id: Id, data: string): void {
     if (findSession(id)?.agent === 'opencode') return
     const signals = detectOutputSignals(data)
+    if (signals.usageLimit) reportUsageLimit(id)
     if (signals.remoteControl && runtime.get(id)?.remoteControl !== true) {
       runtime.setRemoteControl(id, true)
       // Remote Control is only useful while the process lives, so pin the session awake. Only on the moment it turns
@@ -138,6 +152,17 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       attention.clear(id)
       runtime.setActivity(id, 'working', null, Date.now())
       applyAutoStatus(id, 'working')
+    }
+  }
+
+  // Once per turn: the limit message stays on screen while the turn is cut off, so later chunks must not repeat it.
+  function reportUsageLimit(id: Id): void {
+    if (!limitArmed.has(id)) return
+    limitArmed.delete(id)
+    try {
+      deps.onUsageLimit?.(id)
+    } catch (error) {
+      logMainError(userDataDir, 'usage limit report', error)
     }
   }
 
@@ -152,6 +177,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   })
 
   pty.onExit((id: Id, code: number | null) => {
+    // The next process has no turn of its own until a prompt is submitted.
+    limitArmed.delete(id)
     // A session removed from the store must not get a runtime entry or event back.
     if (!findSession(id)) {
       startState.delete(id)
@@ -216,6 +243,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
 
   function startSession(session: Session, mode: 'new' | 'resume'): void {
     const sessionWithId = ensureClaudeSessionId(session)
+    limitArmed.delete(sessionWithId.id)
     try {
       validateCwd(sessionWithId.cwd)
       const state: SessionStartState = {
@@ -351,6 +379,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       validateCwd(session.cwd)
 
       const sessionWithId = ensureClaudeSessionId(session)
+      limitArmed.delete(id)
       const previousState = startState.get(id)
       const state: SessionStartState = {
         everStartedThisRun: true,
@@ -403,6 +432,20 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       }
     },
 
+    wakeSession(id: Id): boolean {
+      const session = findSession(id)
+      if (!session || isClosed(id)) return false
+      if (runtime.get(id)?.sleeping !== true) return false
+      try {
+        // Same path as activation, but the active session is left alone.
+        tryAutoStartSession(id)
+      } catch (error) {
+        logMainError(userDataDir, `wake session ${id}`, error)
+        return false
+      }
+      return true
+    },
+
     setActiveSession(id: Id | null): void {
       // A closed session is never activated or auto-started; it must be reopened explicitly.
       if (id !== null && isClosed(id)) return
@@ -429,7 +472,11 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
           message: current?.activityMessage ?? null
         }
         // A prompt means someone is at the keyboard (here or via Remote Control): drop any pending ping.
-        if (event.event === 'UserPromptSubmit') attention.clear(event.sessionId)
+        if (event.event === 'UserPromptSubmit') {
+          attention.clear(event.sessionId)
+          // Only a turn submitted in this process can be cut off by the limit: arm the edge trigger.
+          limitArmed.add(event.sessionId)
+        }
         const next = activityFromHook(event, previous)
         runtime.setActivity(event.sessionId, next.activity, next.message, Date.now())
         // Auto status follows activity CHANGES only, so repeated events never move a session the user placed.

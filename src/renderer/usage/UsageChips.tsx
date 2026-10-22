@@ -14,6 +14,9 @@ import {
 } from './usageLogic'
 import { PACE_WONT_HIT } from './usagePace'
 import { UsageRefreshButton } from './UsageRefreshButton'
+import { QuotaHeldChip } from './QuotaHeldChip'
+import { isHeldVisible } from './quotaHeldLogic'
+import { useQuotaAutopilot } from './useQuotaAutopilot'
 
 export interface UsageChipsProps {
   readonly state: UsageState
@@ -181,6 +184,7 @@ export function UsageChips(props: UsageChipsProps): ReactElement {
   const hasAccountData =
     account !== null && (account.fiveHour !== null || account.sevenDay !== null)
   const session = sessionUsageFor(state, activeSessionId)
+  const autopilot = useQuotaAutopilot()
 
   return (
     <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
@@ -215,6 +219,7 @@ export function UsageChips(props: UsageChipsProps): ReactElement {
         <WaitingChip />
       )}
       {session !== null ? <SessionChip session={session} now={now} /> : null}
+      {isHeldVisible(autopilot) ? <QuotaHeldChip state={autopilot} /> : null}
       {onRefresh !== undefined ? (
         <UsageRefreshButton
           onRefresh={onRefresh}

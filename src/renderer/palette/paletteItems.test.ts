@@ -150,7 +150,12 @@ describe('buildPaletteItems: sessions group', () => {
   })
 
   it('still offers the actions when there are no sessions at all', () => {
-    expect(labels(buildPaletteItems(input()))).toEqual(['New session', 'Open Hub', 'Open Settings'])
+    expect(labels(buildPaletteItems(input()))).toEqual([
+      'New session',
+      'Open Hub',
+      'Open Settings',
+      'Show "While you were away"'
+    ])
   })
 })
 
@@ -162,10 +167,19 @@ describe('buildPaletteItems: actions group', () => {
     expect(items.map((item: PaletteItem): string => item.label)).toEqual([
       'New session',
       'Open Hub',
-      'Open Settings'
+      'Open Settings',
+      'Show "While you were away"'
     ])
     expect(byId(items, 'action:new-session').run).toEqual({ kind: 'new-session' })
     expect(byId(items, 'action:open-settings').run).toEqual({ kind: 'open-settings' })
+  })
+
+  it('offers the away summary with its detail and search keywords', () => {
+    const item = byId(buildPaletteItems(input()), 'action:show-away-summary')
+    expect(item.group).toBe('Actions')
+    expect(item.detail).toBe('What happened since you left')
+    expect(item.keywords).toBe('away summary timeline activity')
+    expect(item.run).toEqual({ kind: 'show-away-summary' })
   })
 
   it('omits Open Hub while the Hub is already the view', () => {

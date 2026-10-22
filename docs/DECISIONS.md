@@ -105,8 +105,14 @@ Asked for recommendations, user replied "do 1 and 3". Item 1: a session put to s
 **D28 · 2026-10-22 · Command palette** · active
 Item 3 of the same reply. Ctrl+K (outside the terminal, which keeps Ctrl+K for Claude's delete-to-end-of-line) or Ctrl+Shift+K (anywhere) opens an Orca-style palette: jump to any session (open, sleeping, closed), New session / Hub / Settings, and actions on the session on screen (sleep, keep awake, read/unread, set status).
 
+**D29 · 2026-10-22 · "While you were away" timeline** · active
+Asked "any big feature u recommend?", replied "do 2,3". Item 2: per-session log of turns (prompt, start/end, duration, cost, needed you) plus a summary across all sessions when the user returns. Plan shown, user said "go". Defaults (not asked, chosen by Claude, user may change): away after 15 minutes, can be turned off in Settings > General.
+
+**D30 · 2026-10-22 · Quota-aware autopilot** · active
+Item 3 of the same reply: at the critical quota level offer to sleep idle sessions; when the 5-hour window resets, notify and wake them with one click (optional "continue"). Plan shown, user said "go". Defaults: both actions ask (automatic is a setting), "continue" off. Busy, Keep-awake and Remote Control sessions are never slept.
+
 ### Suggested but not chosen (offer again only if relevant)
-Prompt queue ("send when finished"), session presets, copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
+Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 
 ---
 

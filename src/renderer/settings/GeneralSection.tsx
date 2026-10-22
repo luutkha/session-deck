@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { AwaySettingsBlock } from '../timeline/AwaySettingsBlock'
 
 export interface GeneralSectionProps {
   readonly settings: AppSettings
@@ -163,6 +164,10 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
           Scrolls the board to the status column with the most sessions.
         </p>
       </div>
+
+      <Separator />
+
+      <AwaySettingsBlock settings={settings.away} onPatch={applyPatch} />
 
       <Separator />
 

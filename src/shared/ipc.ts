@@ -1,6 +1,6 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo
+  AppSettings, ChecklistItem, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState
 } from './types'
 
 export const IPC = {
@@ -48,6 +48,11 @@ export const IPC = {
   usageRefresh: 'usage:refresh', // manual: ask Anthropic's usage endpoint with the local Claude login token (main process only)
   pickSoundFile: 'dialog:pickSoundFile', // audio file picker for custom notification sounds -> absolute path | null
   workersGet: 'workers:get', // -> WorkerInfo[] (OpenCode workers started from inside open Claude sessions)
+  timelineGet: 'timeline:get', // (sessionId) -> TimelineTurn[] newest first (D29)
+  awayGetLast: 'away:getLast', // -> AwaySummary | null: the last non-empty summary of this app run
+  quotaAutopilotGet: 'quota:autopilotGet', // -> QuotaAutopilotState (D30)
+  quotaSleepIdle: 'quota:sleepIdle', // -> Id[] slept: open, running, not-working sessions except Keep awake / Remote Control
+  quotaWake: 'quota:wake', // ({ sendContinue: boolean }) -> Id[] woken: the sessions held by the autopilot, in the background
   // events main -> renderer
   evStoreChanged: 'ev:store',
   evRuntime: 'ev:runtime',
@@ -56,7 +61,10 @@ export const IPC = {
   evSound: 'ev:sound', // main -> renderer: play the user's sound for (sessionId, event); sessionId is '' for 'quota'
   evFocusSession: 'ev:focusSession', // main -> renderer: select/open this session (tray menu, notification click)
   evQuota: 'ev:quota', // main -> renderer: QuotaAlert for an in-app toast
-  evWorkers: 'ev:workers' // main -> renderer: the full WorkerInfo[] changed
+  evWorkers: 'ev:workers', // main -> renderer: the full WorkerInfo[] changed
+  evTimeline: 'ev:timeline', // main -> renderer: (sessionId) that session's timeline changed; refetch with timelineGet
+  evAwaySummary: 'ev:awaySummary', // main -> renderer: AwaySummary (non-empty) when the user comes back
+  evQuotaAutopilot: 'ev:quotaAutopilot' // main -> renderer: QuotaAutopilotState changed
 } as const
 
 /** Buffered output for reattach. `seq` = sequence number of the last chunk included (0 if none).
@@ -88,6 +96,13 @@ export interface Api {
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): Promise<void>
   getUsage(): Promise<UsageState>
   getWorkers(): Promise<readonly WorkerInfo[]>
+  getTimeline(sessionId: Id): Promise<readonly TimelineTurn[]>
+  getLastAwaySummary(): Promise<AwaySummary | null>
+  getQuotaAutopilot(): Promise<QuotaAutopilotState>
+  /** Sleeps idle sessions now for the quota (critical toast button). Resolves with the ids slept. */
+  quotaSleepIdle(): Promise<readonly Id[]>
+  /** Wakes the sessions held by the autopilot without opening them. Resolves with the ids woken. */
+  quotaWake(options: { readonly sendContinue: boolean }): Promise<readonly Id[]>
   updateSettings(patch: SettingsPatch): Promise<AppSettings>
   getLoginItem(): Promise<LoginItemState>
   setLoginItem(openAtLogin: boolean): Promise<LoginItemState>
@@ -121,6 +136,9 @@ export interface Api {
   onFocusSession(cb: (id: Id) => void): () => void
   onQuotaAlert(cb: (alert: QuotaAlert) => void): () => void
   onWorkers(cb: (workers: readonly WorkerInfo[]) => void): () => void
+  onTimeline(cb: (sessionId: Id) => void): () => void
+  onAwaySummary(cb: (summary: AwaySummary) => void): () => void
+  onQuotaAutopilot(cb: (state: QuotaAutopilotState) => void): () => void
 }
 
 declare global {

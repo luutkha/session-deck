@@ -37,6 +37,8 @@ import { CommandPalette } from './palette/CommandPalette'
 import { buildPaletteItems, type PaletteCommand } from './palette/paletteItems'
 import { runPaletteCommand } from './palette/runCommand'
 import { usePaletteShortcut } from './palette/usePaletteShortcut'
+import { AwayDialog } from './timeline/AwayDialog'
+import { useAwaySummary } from './timeline/useAwaySummary'
 import './styles.css'
 
 const SIDEBAR_WIDTH_CLASS = 'w-[300px]'
@@ -145,6 +147,7 @@ export function App(): ReactElement {
 
   useTabShortcuts({ closeActive: tabs.closeActive, cycle: tabs.cycle })
 
+  const away = useAwaySummary()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const openPalette = useCallback((): void => setPaletteOpen(true), [])
   usePaletteShortcut(openPalette)
@@ -166,9 +169,10 @@ export function App(): ReactElement {
       newSession: handleNewTab,
       openHub: (): void => setView('hub'),
       openSettings: handleOpenSettings,
+      showAwaySummary: away.showLast,
       setStatus: (id, statusId): void | Promise<void> => actions.setSessionStatus(id, statusId)
     })
-  }, [selectSession, reopenSession, handleNewTab, setView, handleOpenSettings, actions])
+  }, [selectSession, reopenSession, handleNewTab, setView, handleOpenSettings, away.showLast, actions])
 
   const paneNames = useMemo(
     (): ReadonlyMap<Id, string> => new Map((sessions ?? []).map((s: Session): [Id, string] => [s.id, s.name])),
@@ -372,6 +376,7 @@ export function App(): ReactElement {
         />
       )}
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} items={paletteItems} onRun={runPalette} />
+      <AwayDialog summary={away.summary} onOpenSession={selectSession} onClose={away.close} />
       <QuotaToast />
     </TooltipProvider>
   )

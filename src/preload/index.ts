@@ -11,6 +11,9 @@ import type {
   OpenLinkResult,
   ResolvedLink,
   WorkerInfo,
+  TimelineTurn,
+  AwaySummary,
+  QuotaAutopilotState,
   QuotaAlert,
   RuntimeState,
   Session,
@@ -73,6 +76,26 @@ const api: Api = {
 
   getWorkers(): Promise<readonly WorkerInfo[]> {
     return ipcRenderer.invoke(IPC.workersGet)
+  },
+
+  getTimeline(sessionId: Id): Promise<readonly TimelineTurn[]> {
+    return ipcRenderer.invoke(IPC.timelineGet, sessionId)
+  },
+
+  getLastAwaySummary(): Promise<AwaySummary | null> {
+    return ipcRenderer.invoke(IPC.awayGetLast)
+  },
+
+  getQuotaAutopilot(): Promise<QuotaAutopilotState> {
+    return ipcRenderer.invoke(IPC.quotaAutopilotGet)
+  },
+
+  quotaSleepIdle(): Promise<readonly Id[]> {
+    return ipcRenderer.invoke(IPC.quotaSleepIdle)
+  },
+
+  quotaWake(options: { readonly sendContinue: boolean }): Promise<readonly Id[]> {
+    return ipcRenderer.invoke(IPC.quotaWake, options)
   },
 
   refreshUsage(): Promise<UsageRefreshResult> {
@@ -233,6 +256,24 @@ const api: Api = {
     const handler = (_event: Electron.IpcRendererEvent, workers: readonly WorkerInfo[]) => cb(workers)
     ipcRenderer.on(IPC.evWorkers, handler)
     return () => ipcRenderer.off(IPC.evWorkers, handler)
+  },
+
+  onTimeline(cb: (sessionId: Id) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId: Id) => cb(sessionId)
+    ipcRenderer.on(IPC.evTimeline, handler)
+    return () => ipcRenderer.off(IPC.evTimeline, handler)
+  },
+
+  onAwaySummary(cb: (summary: AwaySummary) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, summary: AwaySummary) => cb(summary)
+    ipcRenderer.on(IPC.evAwaySummary, handler)
+    return () => ipcRenderer.off(IPC.evAwaySummary, handler)
+  },
+
+  onQuotaAutopilot(cb: (state: QuotaAutopilotState) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, state: QuotaAutopilotState) => cb(state)
+    ipcRenderer.on(IPC.evQuotaAutopilot, handler)
+    return () => ipcRenderer.off(IPC.evQuotaAutopilot, handler)
   }
 }
 

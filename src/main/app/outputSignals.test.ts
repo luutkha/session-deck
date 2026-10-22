@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectOutputSignals, stripAnsi } from './outputSignals'
+import { detectOutputSignals, stripAnsi, USAGE_LIMIT_PATTERNS } from './outputSignals'
 
 describe('stripAnsi', () => {
   it('removes colour, cursor and OSC sequences', () => {
@@ -25,6 +25,36 @@ describe('detectOutputSignals', () => {
   })
 
   it('does not call a quiet prompt working', () => {
-    expect(detectOutputSignals('❯ Try "how do I log an error?"').working).toBe(false)
+    expect(detectOutputSignals('�?_ Try "how do I log an error?"').working).toBe(false)
+  })
+
+  it('sees the usage-limit message of a turn cut off by the plan limit', () => {
+    expect(detectOutputSignals('5-hour limit reached ∙ resets 3pm').usageLimit).toBe(true)
+    expect(detectOutputSignals('Claude usage limit reached. Your limit will reset at 5pm (Europe/Berlin).').usageLimit).toBe(true)
+    expect(detectOutputSignals("You've hit your limit · resets 7pm").usageLimit).toBe(true)
+    expect(detectOutputSignals('You have hit your usage limit').usageLimit).toBe(true)
+    expect(detectOutputSignals('You’ve hit your limit').usageLimit).toBe(true)
+  })
+
+  it('tolerates cursor-moved spaces and case in the usage-limit message', () => {
+    expect(detectOutputSignals('\x1b[1CUSAGE\x1b[1CLIMIT\x1b[1CREACHED').usageLimit).toBe(true)
+    expect(detectOutputSignals('limit reached\x1b[2C· resets 3pm').usageLimit).toBe(true)
+  })
+
+  it('does not call user code about rate limits a usage limit', () => {
+    expect(detectOutputSignals('const rateLimit = 5; // rate limit handling').usageLimit).toBe(false)
+    expect(detectOutputSignals('retry after the rate limit').usageLimit).toBe(false)
+  })
+
+  it('does not treat "limit reached" without a reset nearby as the usage limit', () => {
+    expect(detectOutputSignals('the retry limit reached after three attempts').usageLimit).toBe(false)
+    expect(detectOutputSignals('limit reached' + ' '.repeat(60) + 'reset the cache').usageLimit).toBe(false)
+  })
+
+  it('exports the usage-limit patterns as a constant that can be extended', () => {
+    expect(USAGE_LIMIT_PATTERNS.length).toBeGreaterThanOrEqual(3)
+    for (const pattern of USAGE_LIMIT_PATTERNS) {
+      expect(pattern).toBeInstanceOf(RegExp)
+    }
   })
 })

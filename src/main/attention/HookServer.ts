@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
 import type { HookEvent } from '../../shared/types'
+import { TIMELINE_PROMPT_MAX } from '../../shared/types'
 import { isOpencodeSessionId } from '../opencode/values'
 
 export interface HookServer {
@@ -75,6 +76,27 @@ function messageFromHookBody(body: string): string | undefined {
   if (!isJsonObject(parsed) || typeof parsed.message !== 'string') return undefined
   const trimmed = parsed.message.trim()
   return trimmed.length === 0 ? undefined : trimmed.slice(0, MAX_HOOK_MESSAGE_LENGTH)
+}
+
+const WHITESPACE_RUN_RE = /\s+/g
+
+/**
+ * Prompt of a UserPromptSubmit body (the stdin JSON Claude Code sends, field `prompt`). Whitespace runs collapse to
+ * one space, the text is trimmed and cut to TIMELINE_PROMPT_MAX characters (code points, so an emoji is never split).
+ * Returns undefined for an empty body, invalid JSON, a missing or non-string field, or an empty result.
+ */
+export function promptFromHookBody(body: string): string | undefined {
+  if (body.trim().length === 0) return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return undefined
+  }
+  if (!isJsonObject(parsed) || typeof parsed.prompt !== 'string') return undefined
+  const collapsed = parsed.prompt.replace(WHITESPACE_RUN_RE, ' ').trim()
+  if (collapsed.length === 0) return undefined
+  return Array.from(collapsed).slice(0, TIMELINE_PROMPT_MAX).join('')
 }
 
 /**
@@ -263,7 +285,13 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
       )
       return
     }
-    onEvent({ sessionId, event, ...(message !== undefined ? { message } : {}) })
+    const prompt = event === 'UserPromptSubmit' ? promptFromHookBody(body) : undefined
+    onEvent({
+      sessionId,
+      event,
+      ...(message !== undefined ? { message } : {}),
+      ...(prompt !== undefined ? { prompt } : {})
+    })
     sendResponse(res, 204)
   }
 

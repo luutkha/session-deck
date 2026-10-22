@@ -1,7 +1,9 @@
 import type {
   AppSettings,
   AutoStatusSettings,
+  AwaySettings,
   Id,
+  QuotaSettings,
   SettingsPatch,
   StatusDef,
   StoreData
@@ -9,7 +11,7 @@ import type {
 import { resolveSettings, MAX_SLEEP_MINUTES, MIN_SLEEP_MINUTES } from '../../shared/types'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
 
-export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub'] as const
+export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'away'] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 const AUTO_STATUS_KEYS = ['working', 'needsInput', 'finished'] as const
@@ -25,6 +27,10 @@ const isInteger: FieldCheck = (value) => typeof value === 'number' && Number.isI
 /** A status id (non-empty string) or null = no mapping. */
 const isIdOrNull: FieldCheck = (value) => value === null || (typeof value === 'string' && value.length > 0)
 const isAgentKind: FieldCheck = (value) => value === 'claude' || value === 'opencode'
+const CRITICAL_ACTIONS: readonly unknown[] = ['ask', 'sleep', 'nothing']
+const RESET_ACTIONS: readonly unknown[] = ['ask', 'wake']
+const isCriticalAction: FieldCheck = (value) => CRITICAL_ACTIONS.includes(value)
+const isResetAction: FieldCheck = (value) => RESET_ACTIONS.includes(value)
 /** The OpenCode model may be empty (OpenCode's own default). */
 const isOpencodeModelString: FieldCheck = (value) =>
   typeof value === 'string' && value.length <= MAX_OPENCODE_MODEL_LENGTH && OPENCODE_MODEL_RE.test(value)
@@ -45,7 +51,10 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
     enabled: isBoolean,
     warnAtPercent: isInteger,
     criticalAtPercent: isInteger,
-    notifyOnReset: isBoolean
+    notifyOnReset: isBoolean,
+    criticalAction: isCriticalAction,
+    resetAction: isResetAction,
+    continueOnWake: isBoolean
   },
   sleep: {
     enabled: isBoolean,
@@ -59,6 +68,10 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
   },
   hub: {
     scrollToBusiest: isBoolean
+  },
+  away: {
+    enabled: isBoolean,
+    afterMinutes: isInteger
   }
 }
 
@@ -92,20 +105,8 @@ function isSleepMinutes(value: number): boolean {
   return Number.isInteger(value) && value >= MIN_SLEEP_MINUTES && value <= MAX_SLEEP_MINUTES
 }
 
-/** Returns the first problem with a complete settings object (types, ranges, warn < critical), or null when valid. */
-export function settingsProblem(settings: AppSettings): string | null {
-  const auto = settings.autoStatus
-  if (typeof auto.enabled !== 'boolean') return 'autoStatus.enabled must be a boolean'
-  for (const key of AUTO_STATUS_KEYS) {
-    if (!isIdOrNull(auto[key])) return `autoStatus.${key} must be a status id or null`
-  }
-
-  const tray = settings.tray
-  if (typeof tray.closeToTray !== 'boolean') return 'tray.closeToTray must be a boolean'
-  if (typeof tray.desktopNotifications !== 'boolean') return 'tray.desktopNotifications must be a boolean'
-  if (typeof tray.notifyOnlyWhenUnfocused !== 'boolean') return 'tray.notifyOnlyWhenUnfocused must be a boolean'
-
-  const quota = settings.quota
+/** First problem in the quota section (thresholds, autopilot actions), or null. */
+function quotaProblem(quota: QuotaSettings): string | null {
   if (typeof quota.enabled !== 'boolean') return 'quota.enabled must be a boolean'
   if (!Number.isInteger(quota.warnAtPercent) || quota.warnAtPercent < 1 || quota.warnAtPercent > 99) {
     return 'quota.warnAtPercent must be an integer from 1 to 99'
@@ -117,6 +118,38 @@ export function settingsProblem(settings: AppSettings): string | null {
     return 'quota.criticalAtPercent must be greater than quota.warnAtPercent'
   }
   if (typeof quota.notifyOnReset !== 'boolean') return 'quota.notifyOnReset must be a boolean'
+  if (!isCriticalAction(quota.criticalAction)) return 'quota.criticalAction must be "ask", "sleep" or "nothing"'
+  if (!isResetAction(quota.resetAction)) return 'quota.resetAction must be "ask" or "wake"'
+  if (typeof quota.continueOnWake !== 'boolean') return 'quota.continueOnWake must be a boolean'
+  return null
+}
+
+/** First problem in the away section, or null. */
+function awayProblem(away: AwaySettings): string | null {
+  if (typeof away.enabled !== 'boolean') return 'away.enabled must be a boolean'
+  if (!isSleepMinutes(away.afterMinutes)) {
+    return `away.afterMinutes must be an integer from ${MIN_SLEEP_MINUTES} to ${MAX_SLEEP_MINUTES}`
+  }
+  return null
+}
+
+/** Returns the first problem with a complete settings object (types, ranges, warn < critical), or null when valid. */
+export function settingsProblem(settings: AppSettings): string | null {
+  const quotaIssue = quotaProblem(settings.quota)
+  if (quotaIssue !== null) return quotaIssue
+  const awayIssue = awayProblem(settings.away)
+  if (awayIssue !== null) return awayIssue
+
+  const auto = settings.autoStatus
+  if (typeof auto.enabled !== 'boolean') return 'autoStatus.enabled must be a boolean'
+  for (const key of AUTO_STATUS_KEYS) {
+    if (!isIdOrNull(auto[key])) return `autoStatus.${key} must be a status id or null`
+  }
+
+  const tray = settings.tray
+  if (typeof tray.closeToTray !== 'boolean') return 'tray.closeToTray must be a boolean'
+  if (typeof tray.desktopNotifications !== 'boolean') return 'tray.desktopNotifications must be a boolean'
+  if (typeof tray.notifyOnlyWhenUnfocused !== 'boolean') return 'tray.notifyOnlyWhenUnfocused must be a boolean'
 
   const sleep = settings.sleep
   if (typeof sleep.enabled !== 'boolean') return 'sleep.enabled must be a boolean'
@@ -172,17 +205,27 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
   const sleep = pickSectionFields('sleep', raw.sleep)
   const agents = pickSectionFields('agents', raw.agents)
   const hub = pickSectionFields('hub', raw.hub)
-  if (autoStatus === null || tray === null || quota === null || sleep === null || agents === null || hub === null) {
+  const away = pickSectionFields('away', raw.away)
+  if (
+    autoStatus === null ||
+    tray === null ||
+    quota === null ||
+    sleep === null ||
+    agents === null ||
+    hub === null ||
+    away === null
+  ) {
     return undefined
   }
 
   const merged = resolveSettings({
     autoStatus: autoStatus as Partial<AutoStatusSettings>,
     tray: tray as Partial<AppSettings['tray']>,
-    quota: quota as Partial<AppSettings['quota']>,
+    quota: quota as Partial<QuotaSettings>,
     sleep: sleep as Partial<AppSettings['sleep']>,
     agents: agents as Partial<AppSettings['agents']>,
-    hub: hub as Partial<AppSettings['hub']>
+    hub: hub as Partial<AppSettings['hub']>,
+    away: away as Partial<AwaySettings>
   })
   if (settingsProblem(merged) !== null) return undefined
 
@@ -213,7 +256,8 @@ export function updateSettings(data: StoreData, patch: SettingsPatch): StoreData
     quota: { ...current.quota, ...definedFields(patch.quota) },
     sleep: { ...current.sleep, ...definedFields(patch.sleep) },
     agents: { ...current.agents, ...definedFields(patch.agents) },
-    hub: { ...current.hub, ...definedFields(patch.hub) }
+    hub: { ...current.hub, ...definedFields(patch.hub) },
+    away: { ...current.away, ...definedFields(patch.away) }
   }
 
   const problem = settingsProblem(next)

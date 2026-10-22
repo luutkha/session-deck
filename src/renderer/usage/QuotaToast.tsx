@@ -1,64 +1,54 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { AlertTriangle, Gauge, X } from 'lucide-react'
 import type { QuotaAlert } from '../../shared/types'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { describeQuotaAlert, type QuotaToastTone } from './quotaAlertLogic'
+import { quotaToastAction, type QuotaToastAction } from './quotaAlertLogic'
+import { readContinueOnWake, sleepIdleSessions, wakeSessions, type QuotaActionApi, type QuotaActionResult } from './quotaActions'
+import { QuotaToastCard } from './QuotaToastCard'
+import { capQuotaToasts, sleptAlert, wokeAlert, type QuotaToastItem } from './quotaToastLogic'
 
 export { describeQuotaAlert } from './quotaAlertLogic'
 export type { QuotaToastDescription, QuotaToastTone } from './quotaAlertLogic'
 
-/** Newest toasts beyond this many are dropped. */
+/** Newest toasts beyond this many are dropped (action toasts are kept over plain ones). */
 export const MAX_QUOTA_TOASTS = 3
 /** How long each toast stays on screen before dismissing itself. */
 export const QUOTA_TOAST_TIMEOUT_MS = 8000
 
-interface ToastItem {
-  readonly id: number
-  readonly alert: QuotaAlert
-  readonly nowMs: number
-}
+type ActionOutcome = { readonly ok: true; readonly alert: QuotaAlert } | { readonly ok: false; readonly message: string }
 
-function toneBorder(tone: QuotaToastTone): string {
-  if (tone === 'critical') return 'border-l-[var(--destructive)]'
-  if (tone === 'warn') return 'border-l-[var(--status-warning)]'
-  return 'border-l-[var(--status-success)]'
-}
-
-function toneText(tone: QuotaToastTone): string {
-  if (tone === 'critical') return 'text-[var(--destructive)]'
-  if (tone === 'warn') return 'text-[var(--status-warning)]'
-  return 'text-[var(--status-success)]'
-}
-
-function ToastIcon({ tone }: { readonly tone: QuotaToastTone }): ReactElement {
-  const className = cn('mt-0.5 size-3.5 shrink-0', toneText(tone))
-  if (tone === 'critical') return <AlertTriangle className={className} aria-hidden="true" />
-  return <Gauge className={className} aria-hidden="true" />
+/** Runs a toast's action and turns the IPC result into the alert the toast shows next. */
+async function performAction(
+  api: QuotaActionApi,
+  item: QuotaToastItem,
+  action: QuotaToastAction,
+  continueDefault: boolean
+): Promise<ActionOutcome> {
+  if (action.kind === 'sleep') {
+    const result: QuotaActionResult = await sleepIdleSessions(api)
+    return result.ok ? { ok: true, alert: sleptAlert(item.alert, result.ids) } : result
+  }
+  const sendContinue = item.sendContinue ?? continueDefault
+  const result: QuotaActionResult = await wakeSessions(api, sendContinue)
+  return result.ok ? { ok: true, alert: wokeAlert(item.alert, result.ids) } : result
 }
 
 /**
- * In-app quota alerts. Subscribes to `window.api.onQuotaAlert` and stacks up to
- * three toasts at the top-right, each auto-dismissing after 8 s. Mounts once;
- * safe when the API is absent.
+ * In-app quota alerts. Subscribes to `window.api.onQuotaAlert` and stacks up to three toasts at the
+ * top-right. Plain toasts auto-dismiss after 8 s; a toast with a session action stays until the user acts,
+ * then turns into an info toast and auto-dismisses. Mounts once; safe when the API is absent.
  */
 export function QuotaToast(): ReactElement | null {
-  const [items, setItems] = useState<readonly ToastItem[]>([])
+  const [items, setItems] = useState<readonly QuotaToastItem[]>([])
+  const [continueDefault, setContinueDefault] = useState<boolean>(false)
   const idRef = useRef(0)
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  const inFlightRef = useRef<Set<number>>(new Set())
 
   const dismiss = useCallback((id: number): void => {
     setItems((previous) => previous.filter((item) => item.id !== id))
   }, [])
 
-  const push = useCallback(
-    (alert: QuotaAlert): void => {
-      const id = idRef.current
-      idRef.current += 1
-      setItems((previous) => {
-        const next = [...previous, { id, alert, nowMs: Date.now() }]
-        return next.length > MAX_QUOTA_TOASTS ? next.slice(next.length - MAX_QUOTA_TOASTS) : next
-      })
+  const scheduleDismiss = useCallback(
+    (id: number): void => {
       const timer = setTimeout((): void => {
         timersRef.current.delete(timer)
         dismiss(id)
@@ -68,14 +58,49 @@ export function QuotaToast(): ReactElement | null {
     [dismiss]
   )
 
+  const updateItem = useCallback((id: number, patch: Partial<QuotaToastItem>): void => {
+    setItems((previous) => previous.map((item) => (item.id === id ? { ...item, ...patch } : item)))
+  }, [])
+
+  const push = useCallback(
+    (alert: QuotaAlert): void => {
+      const id = idRef.current
+      idRef.current += 1
+      const item: QuotaToastItem = { id, alert, nowMs: Date.now(), busy: false, error: null }
+      setItems((previous) => capQuotaToasts([...previous, item], MAX_QUOTA_TOASTS))
+      if (quotaToastAction(alert) === null) scheduleDismiss(id)
+    },
+    [scheduleDismiss]
+  )
+
+  const runAction = useCallback(
+    async (item: QuotaToastItem, action: QuotaToastAction): Promise<void> => {
+      if (inFlightRef.current.has(item.id)) return
+      inFlightRef.current.add(item.id)
+      updateItem(item.id, { busy: true, error: null })
+      try {
+        const outcome = await performAction(window.api, item, action, continueDefault)
+        if (!outcome.ok) {
+          updateItem(item.id, { busy: false, error: outcome.message })
+          return
+        }
+        updateItem(item.id, { busy: false, error: null, alert: outcome.alert })
+        scheduleDismiss(item.id)
+      } finally {
+        inFlightRef.current.delete(item.id)
+      }
+    },
+    [continueDefault, scheduleDismiss, updateItem]
+  )
+
   useEffect((): (() => void) | undefined => {
     const api = typeof window !== 'undefined' ? window.api : undefined
     if (api === undefined || typeof api.onQuotaAlert !== 'function') return undefined
     let unsubscribe: (() => void) | undefined
     try {
       unsubscribe = api.onQuotaAlert(push)
-    } catch {
-      unsubscribe = undefined
+    } catch (error: unknown) {
+      console.error('Quota toasts: could not subscribe to quota alerts', error)
     }
     return (): void => {
       if (unsubscribe !== undefined) unsubscribe()
@@ -84,6 +109,18 @@ export function QuotaToast(): ReactElement | null {
     }
   }, [push])
 
+  useEffect((): (() => void) | undefined => {
+    const api = typeof window !== 'undefined' ? window.api : undefined
+    if (api === undefined) return undefined
+    let active = true
+    void readContinueOnWake(api).then((value: boolean): void => {
+      if (active) setContinueDefault(value)
+    })
+    return (): void => {
+      active = false
+    }
+  }, [])
+
   if (items.length === 0) return null
 
   return (
@@ -91,38 +128,18 @@ export function QuotaToast(): ReactElement | null {
       className="pointer-events-none fixed right-3 top-11 z-40 flex w-80 max-w-[calc(100vw-1.5rem)] flex-col gap-2"
       aria-label="Quota alerts"
     >
-      {items.map((item) => {
-        const description = describeQuotaAlert(item.alert, item.nowMs)
-        return (
-          <div
-            key={item.id}
-            role="status"
-            aria-live="polite"
-            className={cn(
-              'pointer-events-auto flex items-start gap-2 rounded-md border border-border border-l-2 bg-card px-3 py-2 text-xs text-foreground shadow-floating',
-              toneBorder(description.tone)
-            )}
-          >
-            <ToastIcon tone={description.tone} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{description.title}</p>
-              {description.detail !== '' ? (
-                <p className="truncate text-muted-foreground">{description.detail}</p>
-              ) : null}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Dismiss"
-              className="size-5 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground"
-              onClick={(): void => dismiss(item.id)}
-            >
-              <X className="size-3" aria-hidden="true" />
-            </Button>
-          </div>
-        )
-      })}
+      {items.map((item) => (
+        <QuotaToastCard
+          key={item.id}
+          item={item}
+          continueDefault={continueDefault}
+          onDismiss={(): void => dismiss(item.id)}
+          onRun={(action: QuotaToastAction): void => {
+            void runAction(item, action)
+          }}
+          onSendContinue={(value: boolean): void => updateItem(item.id, { sendContinue: value })}
+        />
+      ))}
     </div>
   )
 }

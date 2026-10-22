@@ -12,6 +12,7 @@ export type PaletteCommand =
   | { readonly kind: 'new-session' }
   | { readonly kind: 'open-hub' }
   | { readonly kind: 'open-settings' }
+  | { readonly kind: 'show-away-summary' }
   | { readonly kind: 'sleep'; readonly id: Id }
   | { readonly kind: 'set-keep-awake'; readonly id: Id; readonly keepAwake: boolean }
   | { readonly kind: 'set-status'; readonly id: Id; readonly statusId: Id }
@@ -253,6 +254,14 @@ function actionItems(view: PaletteView): readonly PaletteItem[] {
     detail: 'Sound, statuses, agents and more',
     keywords: 'preferences options config',
     run: { kind: 'open-settings' }
+  })
+  items.push({
+    id: 'action:show-away-summary',
+    group: 'Actions',
+    label: 'Show "While you were away"',
+    detail: 'What happened since you left',
+    keywords: 'away summary timeline activity',
+    run: { kind: 'show-away-summary' }
   })
   return items
 }

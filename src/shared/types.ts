@@ -105,6 +105,8 @@ export interface HookEvent {
   readonly event: 'Notification' | 'Stop' | 'UserPromptSubmit' | 'AgentSession'
   /** Notification text; for 'AgentSession' it is the OpenCode session id the plugin reports. */
   readonly message?: string
+  /** UserPromptSubmit only: the start of the user's prompt (trimmed, max TIMELINE_PROMPT_MAX chars). Absent = unknown. */
+  readonly prompt?: string
 }
 
 export const DEFAULT_STATUSES: readonly StatusDef[] = [
@@ -217,6 +219,24 @@ export interface QuotaSettings {
   readonly warnAtPercent: number // 1..99, e.g. 80
   readonly criticalAtPercent: number // 2..100, greater than warnAtPercent, e.g. 95
   readonly notifyOnReset: boolean
+  /** What to do when the 5-hour window reaches criticalAtPercent (D30). */
+  readonly criticalAction: QuotaCriticalAction
+  /** What to do when the 5-hour window resets while sessions wait (slept for quota or stopped at the limit). */
+  readonly resetAction: QuotaResetAction
+  /** On wake after a reset, type "continue" into sessions whose turn was cut off by the usage limit. */
+  readonly continueOnWake: boolean
+}
+
+/** ask = the critical toast offers "Sleep idle sessions"; sleep = do it automatically; nothing = only warn. */
+export type QuotaCriticalAction = 'ask' | 'sleep' | 'nothing'
+/** ask = the reset toast offers "Wake N sessions"; wake = wake them automatically. */
+export type QuotaResetAction = 'ask' | 'wake'
+
+/** "While you were away" summary (D29). */
+export interface AwaySettings {
+  readonly enabled: boolean
+  /** Minutes without key/click/wheel in SessionDeck before the user counts as away (MIN_SLEEP_MINUTES..MAX_SLEEP_MINUTES). */
+  readonly afterMinutes: number
 }
 
 export interface AppSettings {
@@ -226,6 +246,7 @@ export interface AppSettings {
   readonly sleep: SleepSettings
   readonly agents: AgentSettings
   readonly hub: HubSettings
+  readonly away: AwaySettings
 }
 
 export interface SettingsPatch {
@@ -235,15 +256,17 @@ export interface SettingsPatch {
   readonly sleep?: Partial<SleepSettings>
   readonly agents?: Partial<AgentSettings>
   readonly hub?: Partial<HubSettings>
+  readonly away?: Partial<AwaySettings>
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoStatus: { enabled: true, working: 'working', needsInput: 'waiting', finished: 'review' },
   tray: { closeToTray: true, desktopNotifications: true, notifyOnlyWhenUnfocused: true },
-  quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true },
+  quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'ask', resetAction: 'ask', continueOnWake: false },
   sleep: { enabled: false, afterMinutes: 30, allEnabled: false, allAfterMinutes: 60 },
   agents: { defaultAgent: 'claude', opencodeModel: '' },
-  hub: { scrollToBusiest: true }
+  hub: { scrollToBusiest: true },
+  away: { enabled: true, afterMinutes: 15 }
 }
 
 export const MIN_SLEEP_MINUTES = 1
@@ -257,7 +280,8 @@ export function resolveSettings(stored: Partial<{ [K in keyof AppSettings]: Part
     quota: { ...DEFAULT_APP_SETTINGS.quota, ...(stored?.quota ?? {}) },
     sleep: { ...DEFAULT_APP_SETTINGS.sleep, ...(stored?.sleep ?? {}) },
     agents: { ...DEFAULT_APP_SETTINGS.agents, ...(stored?.agents ?? {}) },
-    hub: { ...DEFAULT_APP_SETTINGS.hub, ...(stored?.hub ?? {}) }
+    hub: { ...DEFAULT_APP_SETTINGS.hub, ...(stored?.hub ?? {}) },
+    away: { ...DEFAULT_APP_SETTINGS.away, ...(stored?.away ?? {}) }
   }
 }
 
@@ -267,6 +291,80 @@ export interface QuotaAlert {
   readonly kind: 'warn' | 'critical' | 'reset'
   readonly percent: number
   readonly resetsAt: number | null // epoch seconds
+  /** Autopilot (D30): what SessionDeck did by itself for this alert. Absent = nothing. */
+  readonly autoAction?: 'slept' | 'woke'
+  /**
+   * Autopilot (D30): on 'critical', the idle sessions that could be slept (autoAction absent) or that were slept
+   * (autoAction 'slept'); on 'reset', the sessions waiting to be woken (autoAction absent) or that were woken
+   * (autoAction 'woke'). Absent or empty = no session action to offer.
+   */
+  readonly sessionIds?: readonly Id[]
+}
+
+/** Sessions the quota autopilot holds for the next 5-hour reset (persisted in <userData>/quota-autopilot.json). */
+export interface QuotaAutopilotState {
+  /** Slept at the critical level by the autopilot (button or automatic). */
+  readonly sleptForQuota: readonly Id[]
+  /** Their turn was cut off by Claude's usage-limit message. */
+  readonly stoppedAtLimit: readonly Id[]
+  /** Epoch SECONDS of the 5-hour reset being waited for; null = unknown (no usage data yet). */
+  readonly resetsAt: number | null
+}
+
+// ---- Timeline + away summary (D29) ----
+
+export const TIMELINE_PROMPT_MAX = 200
+export const TIMELINE_MAX_TURNS_PER_SESSION = 200
+export const TIMELINE_MAX_AGE_DAYS = 30
+
+/** How a turn ended. A permission request is not an end: it sets neededYou and the turn goes on. */
+export type TurnEnd = 'finished' | 'limit' | 'slept' | 'closed' | 'exited'
+
+export interface TimelineTurn {
+  /** Unique within the session. */
+  readonly id: string
+  readonly sessionId: Id
+  /** Start of the prompt (max TIMELINE_PROMPT_MAX chars); '' when unknown (OpenCode does not report it). */
+  readonly prompt: string
+  readonly startedAt: number // epoch ms
+  readonly endedAt: number | null // null = still running
+  readonly end: TurnEnd | null // null while running
+  /** Cost of this turn in USD (session cost delta); null = unknown. Never negative. */
+  readonly costUsd: number | null
+  /** A permission request or question happened during this turn. */
+  readonly neededYou: boolean
+}
+
+export interface AwaySessionSummary {
+  readonly sessionId: Id
+  readonly name: string
+  /** Turns that ended 'finished' inside the away window. */
+  readonly finished: number
+  /** Pending 'permission' attention right now, or a turn inside the window needed the user. */
+  readonly needsYou: boolean
+  readonly hitLimit: boolean
+  /** It was put to sleep inside the window (a turn ended 'slept', or it is asleep now and was not before). */
+  readonly slept: boolean
+  /** Sum of known turn costs inside the window; null = none known. */
+  readonly costUsd: number | null
+  /** Prompt of the newest turn inside the window ('' when unknown). */
+  readonly lastPrompt: string
+  /** Epoch ms of the newest event inside the window (sorting, newest first). */
+  readonly lastAt: number
+}
+
+export interface AwaySummary {
+  readonly since: number // epoch ms: the last user input before going away
+  readonly until: number // epoch ms: the input that ended the away time
+  /** Only sessions with something to report, newest lastAt first. Empty = nothing happened (no panel). */
+  readonly sessions: readonly AwaySessionSummary[]
+  readonly totals: {
+    readonly finished: number
+    readonly needsYou: number
+    readonly slept: number
+    readonly hitLimit: number
+    readonly costUsd: number // sum of known costs, 0 when none
+  }
 }
 
 export interface LoginItemState {

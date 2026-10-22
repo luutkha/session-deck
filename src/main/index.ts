@@ -23,7 +23,8 @@ import { resolveIconPath } from './app/iconPaths'
 import { attachTrayWiring } from './app/trayWiring'
 import { createDesktopNotifier } from './notify/desktopNotifier'
 import { wireAttentionNotices } from './notify/attentionWiring'
-import { startQuotaWiring } from './quota/quotaWiring'
+import { deliverQuotaAlert, startQuotaWiring, type QuotaDeliveryDeps } from './quota/quotaWiring'
+import { createFeatureWiring } from './app/featureWiring'
 import { quotaMarkersFilePath } from './quota/quotaMarkers'
 import { createSleepScheduler } from './sleep/SleepScheduler'
 import { createWorkerHub } from './workers'
@@ -115,6 +116,12 @@ if (!gotTheLock) {
 
     const pty = new PtyManager()
 
+    function sendToWindow(channel: string, ...args: unknown[]): void {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(channel, ...args)
+      }
+    }
+
     const runtime = createRuntimeRegistry()
 
     // Plan usage and per-session model/context/cost, fed by Claude Code's statusLine (see attention/claudeSettings).
@@ -157,23 +164,15 @@ if (!gotTheLock) {
       onError: (where, error) => logMainError(userData, where, error)
     })
 
-    // Quota thresholds and reset notices (see quota/quotaGuard.ts). Markers survive restarts.
-    startQuotaWiring({
-      usage,
-      getSettings: () => store.getSettings().quota,
-      markersFile: quotaMarkersFilePath(userData),
-      now: () => Date.now(),
-      sendAlert: (alert) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(IPC.evQuota, alert)
-        }
-      },
+    // How a quota alert reaches the user: toast, sound and desktop notice (the guard and the autopilot share it).
+    const quotaDelivery: QuotaDeliveryDeps = {
+      sendAlert: (alert) => sendToWindow(IPC.evQuota, alert),
       playSound: () => relaySound('', 'quota'),
       notifyApp: (title, body) => {
         notifier.notifyApp(title, body)
       },
       onError
-    })
+    }
 
     // OpenCode workers started from Claude terminals report here (through the worker plugin) and show as read-only tabs.
     const workers = createWorkerHub({
@@ -209,7 +208,10 @@ if (!gotTheLock) {
       onStatusLine: (id, payload) => usage.ingest(id, payload),
       // Activity (working / needs-input / finished) and auto status. The controller is created below; the hook
       // callback only runs once the server is up, so it is never called before the controller exists.
-      onHookEvent: (event) => controller.handleHookEvent(event),
+      onHookEvent: (event) => {
+        controller.handleHookEvent(event)
+        features.onHookEvent(event)
+      },
       onWorkerEvent: (sessionId, payload) => workers.ingest(sessionId, payload)
     })
 
@@ -245,12 +247,38 @@ if (!gotTheLock) {
           mainWindow.webContents.send(IPC.evPtyData, id, data, seq)
         }
       },
-      userDataDir: userData
+      userDataDir: userData,
+      onUsageLimit: (id) => features.onUsageLimit(id)
+    })
+
+    // Timeline + "While you were away" (D29) and the quota autopilot (D30).
+    const features = createFeatureWiring({
+      userDataDir: userData,
+      store,
+      runtime,
+      usage,
+      pty,
+      controller,
+      send: sendToWindow,
+      deliverAlert: (alert) => deliverQuotaAlert(quotaDelivery, alert),
+      onError
+    })
+
+    // Quota thresholds and reset notices (see quota/quotaGuard.ts). Markers survive restarts. Every guard alert goes
+    // through the autopilot first (it adds the sleep/wake offer or acts by itself).
+    startQuotaWiring({
+      ...quotaDelivery,
+      usage,
+      getSettings: () => store.getSettings().quota,
+      markersFile: quotaMarkersFilePath(userData),
+      now: () => Date.now(),
+      autopilot: features.autopilot
     })
 
     // Sessions saved without a Claude conversation id get one now, so they start fresh instead of resuming a random id.
     controller.initializeRestoredSessions()
 
+    await features.loadTimeline()
     await attention.start()
     // Test seam: lets an end-to-end script reach the hook server of this run. Does nothing unless the variable is set.
     if (process.env.SESSIONDECK_E2E_ENDPOINT_FILE) {
@@ -287,8 +315,15 @@ if (!gotTheLock) {
       getActiveSessionId: activeSessionId,
       userDataDir: userData,
       loginItem: createLoginItem(app),
-      onUserActivity: () => sleepScheduler.noteUserInput()
+      onUserActivity: () => {
+        sleepScheduler.noteUserInput()
+        features.onUserActivity()
+      }
     })
+    // Start loading first so the quota handlers can wait for it; they are registered before the renderer asks.
+    const autopilotLoaded = features.startAutopilot()
+    features.registerIpc()
+    await autopilotLoaded
 
     // Tray icon and menu, close-to-tray (the window is hidden, sessions keep running). Never throws.
     const trayWiring = attachTrayWiring({
@@ -313,6 +348,7 @@ if (!gotTheLock) {
     async function shutdown(): Promise<void> {
       sleepScheduler.stop()
       clearInterval(workerSweep)
+      await runShutdownStep('timeline + autopilot', () => features.shutdown())
       await runShutdownStep('flush store', () => saver.flush())
       await runShutdownStep('kill sessions', () => pty.killAll())
       await runShutdownStep('dispose pty', () => pty.dispose())

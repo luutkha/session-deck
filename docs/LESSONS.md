@@ -34,3 +34,7 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 
 - **2026-10-22 · Palette e2e "failed" twice; the app was right.** The palette (Radix dialog) fades out, so "closed" must be awaited, not read right after Enter. Closing also returns focus to the element focused before (usually the terminal), where plain Ctrl+K is deliberately ignored: blurring right after Enter loses that race. Use Ctrl+Shift+K in tests after an action.
 - **2026-10-22 · `deepseek-v4-flash` returned "Unexpected server error" for every call** (even a one-word probe), so the batch fell back to `claude-haiku-5-5`. Probe with a one-word `oc-run` before blaming a brief.
+- **2026-10-22 · A quota reset is invisible while everything sleeps.** The quota guard only evaluates when a statusLine arrives, and a sleeping session sends none. The autopilot therefore runs its own timer at resets_at.
+- **2026-10-22 · Resumed Claude sessions redraw old screen text.** A usage-limit message from an earlier turn can reappear after `--resume`; screen signals that start actions must be armed by a prompt submitted in the running process.
+- **2026-10-22 · The sidebar is an `<aside>` too.** `document.querySelector('aside')` in an e2e found the sidebar, not the notes panel; select by aria-label or data attributes.
+- **2026-10-22 · E2E with fake plan usage needs sessions that report no usage.** Real Claude sessions send real rate limits through the statusLine and overwrite fake numbers; idle OpenCode sessions do not.

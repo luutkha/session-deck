@@ -1,8 +1,15 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import type { AppSettings, SettingsPatch } from '../../shared/types'
+import type {
+  AppSettings,
+  QuotaCriticalAction,
+  QuotaResetAction,
+  QuotaSettings,
+  SettingsPatch
+} from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
@@ -19,8 +26,104 @@ export interface QuotaSectionProps {
   readonly actions: Pick<SessionActions, 'updateSettings'>
 }
 
+const CRITICAL_OPTIONS: readonly { readonly value: QuotaCriticalAction; readonly label: string }[] = [
+  { value: 'ask', label: 'Ask me' },
+  { value: 'sleep', label: 'Sleep idle sessions automatically' },
+  { value: 'nothing', label: 'Do nothing' }
+]
+
+const RESET_OPTIONS: readonly { readonly value: QuotaResetAction; readonly label: string }[] = [
+  { value: 'ask', label: 'Ask me' },
+  { value: 'wake', label: 'Wake them automatically' }
+]
+
+const AUTOPILOT_HELP =
+  'Sleeping frees no quota by itself, it only stops idle sessions from starting new turns. Sessions marked Keep awake and Remote Control sessions are never slept. Busy sessions are never interrupted.'
+
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isCriticalAction(value: string): value is QuotaCriticalAction {
+  return CRITICAL_OPTIONS.some((option) => option.value === value)
+}
+
+function isResetAction(value: string): value is QuotaResetAction {
+  return RESET_OPTIONS.some((option) => option.value === value)
+}
+
+interface QuotaAutopilotFieldsProps {
+  readonly quota: QuotaSettings
+  readonly onPatch: (patch: SettingsPatch) => void
+}
+
+/** Quota autopilot (D30): what to do at the critical level and at the reset, and the continue-on-wake switch. */
+function QuotaAutopilotFields({ quota, onPatch }: QuotaAutopilotFieldsProps): ReactElement {
+  return (
+    <div className={cn('flex flex-col gap-4', !quota.enabled && 'opacity-50')}>
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="quota-critical-action" className="text-[13px] font-medium text-foreground">
+          At the critical level
+        </Label>
+        <Select
+          value={quota.criticalAction}
+          disabled={!quota.enabled}
+          onValueChange={(value: string): void => {
+            if (isCriticalAction(value)) onPatch({ quota: { criticalAction: value } })
+          }}
+        >
+          <SelectTrigger id="quota-critical-action" size="sm" className="w-full min-w-40 max-w-64 text-xs sm:w-auto">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper">
+            {CRITICAL_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value} className="text-xs">
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="quota-reset-action" className="text-[13px] font-medium text-foreground">
+          When the 5-hour window resets
+        </Label>
+        <Select
+          value={quota.resetAction}
+          disabled={!quota.enabled}
+          onValueChange={(value: string): void => {
+            if (isResetAction(value)) onPatch({ quota: { resetAction: value } })
+          }}
+        >
+          <SelectTrigger id="quota-reset-action" size="sm" className="w-full min-w-40 max-w-64 text-xs sm:w-auto">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper">
+            {RESET_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value} className="text-xs">
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="quota-continue-on-wake" className="text-[13px] font-medium text-foreground">
+          Type “continue” where a turn was cut off by the limit
+        </Label>
+        <Switch
+          id="quota-continue-on-wake"
+          checked={quota.continueOnWake}
+          disabled={!quota.enabled}
+          onCheckedChange={(checked: boolean): void => onPatch({ quota: { continueOnWake: checked } })}
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">{AUTOPILOT_HELP}</p>
+    </div>
+  )
 }
 
 export function QuotaSection({ settings, actions }: QuotaSectionProps): ReactElement {
@@ -145,6 +248,10 @@ export function QuotaSection({ settings, actions }: QuotaSectionProps): ReactEle
         Alerts use the sound chosen under Sound &gt; Quota warning and a desktop notification when
         enabled.
       </p>
+
+      <Separator />
+
+      <QuotaAutopilotFields quota={quota} onPatch={(patch: SettingsPatch): void => void applyPatch(patch)} />
 
       {error !== null ? (
         <p role="alert" className="text-xs text-destructive">

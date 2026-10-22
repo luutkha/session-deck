@@ -16,6 +16,7 @@ function fakeHandlers(): PaletteHandlers {
     newSession: vi.fn(),
     openHub: vi.fn(),
     openSettings: vi.fn(),
+    showAwaySummary: vi.fn(),
     setStatus: vi.fn()
   }
 }
@@ -68,6 +69,12 @@ describe('runPaletteCommand: session and view commands', () => {
   it('opens Settings for open-settings', () => {
     runPaletteCommand({ kind: 'open-settings' }, handlers, api)
     expect(handlers.openSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the away summary for show-away-summary', () => {
+    runPaletteCommand({ kind: 'show-away-summary' }, handlers, api)
+    expect(handlers.showAwaySummary).toHaveBeenCalledTimes(1)
+    expect(handlers.openSettings).not.toHaveBeenCalled()
   })
 
   it('passes the id and status to setStatus for set-status', () => {

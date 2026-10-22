@@ -1,4 +1,13 @@
-import type { AgentSettings, AutoStatusSettings, HubSettings, QuotaSettings, SettingsPatch, SleepSettings, TraySettings } from '../../shared/types'
+import type {
+  AgentSettings,
+  AutoStatusSettings,
+  AwaySettings,
+  HubSettings,
+  QuotaSettings,
+  SettingsPatch,
+  SleepSettings,
+  TraySettings
+} from '../../shared/types'
 import { SETTINGS_SECTIONS, pickSectionFields, settingsFieldNames, type SettingsSection } from '../store'
 
 function isSection(key: string): key is SettingsSection {
@@ -26,7 +35,7 @@ function sectionOf(obj: Record<string, unknown>, name: SettingsSection): Record<
 }
 
 /**
- * IPC payload check for settings:update. Accepts an object with the keys autoStatus / tray / quota / sleep / agents / hub;
+ * IPC payload check for settings:update. Accepts an object with the keys autoStatus / tray / quota / sleep / agents / hub / away;
  * each section is an object with known keys only and primitive values (booleans, integers, status id or null).
  * Range rules and status existence are checked by the store reducer. Throws `Invalid settings: <reason>`.
  */
@@ -47,6 +56,7 @@ export function asSettingsPatch(raw: unknown): SettingsPatch {
   const sleep = sectionOf(obj, 'sleep')
   const agents = sectionOf(obj, 'agents')
   const hub = sectionOf(obj, 'hub')
+  const away = sectionOf(obj, 'away')
 
   return {
     ...(autoStatus !== undefined ? { autoStatus: autoStatus as Partial<AutoStatusSettings> } : {}),
@@ -54,6 +64,7 @@ export function asSettingsPatch(raw: unknown): SettingsPatch {
     ...(quota !== undefined ? { quota: quota as Partial<QuotaSettings> } : {}),
     ...(sleep !== undefined ? { sleep: sleep as Partial<SleepSettings> } : {}),
     ...(agents !== undefined ? { agents: agents as Partial<AgentSettings> } : {}),
-    ...(hub !== undefined ? { hub: hub as Partial<HubSettings> } : {})
+    ...(hub !== undefined ? { hub: hub as Partial<HubSettings> } : {}),
+    ...(away !== undefined ? { away: away as Partial<AwaySettings> } : {})
   }
 }
