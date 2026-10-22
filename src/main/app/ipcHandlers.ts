@@ -1,11 +1,12 @@
-import { app, ipcMain, dialog, shell, BrowserWindow } from 'electron'
+import { app, ipcMain, dialog, shell, type BrowserWindow, type OpenDialogOptions } from 'electron'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { createLinkService, MAX_LINK_TEXTS } from '../links'
-import type { AppSettings, StoreData, RuntimeState, Session, Group, Id, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo } from '../../shared/types'
+import type { AppSettings, StoreData, RuntimeState, Session, Group, Id, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from './sessionController'
+import type { ActiveSessions } from './activeSessions'
 import {
   assertId,
   assertNullableId,
@@ -44,8 +45,19 @@ export interface IpcHandlersDeps {
   readonly usageRefresher: UsageRefresher
   /** OpenCode workers started from inside Claude sessions (read-only). */
   readonly workers: WorkerHub
-  readonly window: BrowserWindow
+  /** Sends to every open window (main and, when popped out, Code). */
+  readonly broadcast: (channel: string, ...args: unknown[]) => void
+  /** The window that sent an IPC call, used as the dialog parent. Null when it is gone: the dialog then has no parent. */
+  readonly windowForSender: (webContentsId: number) => BrowserWindow | null
+  /** Which window sent an IPC call. Null for an unknown sender. */
+  readonly roleOfSender: (webContentsId: number) => WindowRole | null
+  /** The session on screen per window role. */
+  readonly activeSessions: ActiveSessions
   readonly getActiveSessionId: () => Id | null
+  /** Whether Code mode is popped out into its own window. */
+  readonly windowState: () => WindowState
+  readonly popOutCode: () => void
+  readonly dockCode: () => void
   /** Directory of main-errors.log. */
   readonly userDataDir: string
   /** Start-on-login state and toggle (packaged app only). */
@@ -55,28 +67,33 @@ export interface IpcHandlersDeps {
 }
 
 /**
- * Registers an `ipcMain.on` listener. Fire-and-forget channels have no reply, so an exception thrown from the
- * listener would be an uncaught exception in the main process. Instead it is logged and the call is dropped.
+ * Registers an `ipcMain.on` listener that also receives the sender's webContents id. Fire-and-forget channels have
+ * no reply, so an exception thrown from the listener would be an uncaught exception in the main process.
+ * Instead it is logged and the call is dropped.
  */
-function onFireAndForget(channel: string, userDataDir: string, listener: (...args: unknown[]) => void): void {
-  ipcMain.on(channel, (_event, ...args: unknown[]) => {
+function onFireAndForgetFromSender(channel: string, userDataDir: string, listener: (senderId: number, ...args: unknown[]) => void): void {
+  ipcMain.on(channel, (event, ...args: unknown[]) => {
     try {
-      listener(...args)
+      listener(event.sender.id, ...args)
     } catch (error) {
       logMainError(userDataDir, `ipc ${channel}`, error)
     }
   })
 }
 
+function onFireAndForget(channel: string, userDataDir: string, listener: (...args: unknown[]) => void): void {
+  onFireAndForgetFromSender(channel, userDataDir, (_senderId, ...args) => listener(...args))
+}
+
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, window, getActiveSessionId, userDataDir, loginItem, onUserActivity } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, broadcast, windowForSender, roleOfSender, activeSessions, getActiveSessionId, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
 
   const sendStoreChanged = (data: StoreData): void => {
-    window.webContents.send(IPC.evStoreChanged, data)
+    broadcast(IPC.evStoreChanged, data)
   }
 
   const sendRuntime = (state: RuntimeState): void => {
-    window.webContents.send(IPC.evRuntime, state)
+    broadcast(IPC.evRuntime, state)
   }
 
   store.subscribe(sendStoreChanged)
@@ -206,8 +223,20 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     attention.markUnread(assertId(rawId, 'session id'))
   })
 
-  onFireAndForget(IPC.sessionSetActive, userDataDir, (rawId) => {
-    controller.setActiveSession(assertNullableId(rawId, 'session id'))
+  onFireAndForgetFromSender(IPC.sessionSetActive, userDataDir, (senderId, rawId) => {
+    const id = assertNullableId(rawId, 'session id')
+    activeSessions.set(roleOfSender(senderId) ?? 'main', id)
+    controller.setActiveSession(id)
+  })
+
+  ipcMain.handle(IPC.windowGetState, async (): Promise<WindowState> => windowState())
+
+  ipcMain.handle(IPC.windowPopOutCode, async (): Promise<void> => {
+    popOutCode()
+  })
+
+  ipcMain.handle(IPC.windowDockCode, async (): Promise<void> => {
+    dockCode()
   })
 
   ipcMain.handle(IPC.settingsSetSound, async (_event, rawEnabled: unknown): Promise<void> => {
@@ -272,24 +301,24 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     return usageRefresher.refresh()
   })
 
-  ipcMain.handle(IPC.pickFolder, async (): Promise<string | null> => {
-    const result = await dialog.showOpenDialog(window, {
-      properties: ['openDirectory']
-    })
+  /** Opens a file dialog parented to the sender's window (no parent when that window is gone). */
+  const showOpenDialog = async (senderId: number, options: OpenDialogOptions): Promise<string | null> => {
+    const parent = windowForSender(senderId)
+    const result = parent === null ? await dialog.showOpenDialog(options) : await dialog.showOpenDialog(parent, options)
     if (result.canceled || result.filePaths.length === 0) {
       return null
     }
     return result.filePaths[0]
+  }
+
+  ipcMain.handle(IPC.pickFolder, async (event): Promise<string | null> => {
+    return showOpenDialog(event.sender.id, { properties: ['openDirectory'] })
   })
 
-  ipcMain.handle(IPC.pickSoundFile, async (): Promise<string | null> => {
-    const result = await dialog.showOpenDialog(window, {
+  ipcMain.handle(IPC.pickSoundFile, async (event): Promise<string | null> => {
+    return showOpenDialog(event.sender.id, {
       properties: ['openFile'],
       filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg', 'm4a', 'aac', 'flac'] }]
     })
-    if (result.canceled || result.filePaths.length === 0) {
-      return null
-    }
-    return result.filePaths[0]
   })
 }

@@ -1,6 +1,6 @@
 // Runs a palette command. App supplies the navigation handlers; the session actions go through the preload API.
 // Never throws: a failed command is logged and the palette closes as usual.
-import type { Id } from '../../shared/types'
+import type { Id, UiMode } from '../../shared/types'
 import type { Api } from '../../shared/ipc'
 import type { PaletteCommand } from './paletteItems'
 
@@ -12,6 +12,13 @@ export interface PaletteHandlers {
   readonly openSettings: () => void
   readonly showAwaySummary: () => void
   readonly setStatus: (id: Id, statusId: Id) => void | Promise<void>
+  /** Mode switch (main window). */
+  readonly switchMode: (mode: UiMode) => void
+  /** Opens the Code window, or focuses it. */
+  readonly popOutCode: () => void
+  /** Closes the Code window (Code returns to the main window). */
+  readonly dockCode: () => void
+  readonly newWorktree: () => void
 }
 
 export type PaletteApi = Pick<Api, 'sleepSession' | 'setKeepAwake' | 'clearAttention' | 'markUnread'>
@@ -54,6 +61,14 @@ function runSessionCommand(
       return attempt(command, () => handlers.showAwaySummary())
     case 'set-status':
       return attempt(command, () => handlers.setStatus(command.id, command.statusId))
+    case 'switch-mode':
+      return attempt(command, () => handlers.switchMode(command.mode))
+    case 'pop-out-code':
+      return attempt(command, () => handlers.popOutCode())
+    case 'dock-code':
+      return attempt(command, () => handlers.dockCode())
+    case 'new-worktree':
+      return attempt(command, () => handlers.newWorktree())
     case 'sleep':
       return attempt(command, () => api.sleepSession(command.id))
     case 'set-keep-awake':

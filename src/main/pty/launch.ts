@@ -2,14 +2,15 @@
 // against a strict allow-list to prevent shell injection via cmd.exe (Windows)
 // or the shell (POSIX).
 // Internal args are TRUSTED (not validated) and placed BEFORE user claudeArgs.
+import type { ShellKind } from '../../shared/types'
 
 const SAFE_ARG = /^[A-Za-z0-9_@=:,./\\-]+$/
 
 const WIN_LAUNCHER = 'cmd.exe'
 const WIN_LAUNCHER_ARGS: readonly string[] = ['/d', '/c']
 
-/** Which agent binary a session launches. */
-export type LaunchCommand = 'claude' | 'opencode'
+/** Which program a session launches: an agent binary, or a plain shell (Code mode Shell sessions). */
+export type LaunchCommand = 'claude' | 'opencode' | ShellKind
 
 export interface LaunchSpec {
   readonly file: string

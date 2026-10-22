@@ -22,11 +22,24 @@ import type {
   StatusDef,
   StoreData,
   UsageRefreshResult,
-  UsageState
+  UsageState,
+  Repo,
+  RepoBranches,
+  CreateWorktreeInput,
+  CreateWorktreeResult,
+  WorktreeChanges,
+  FileDiff,
+  WindowState,
+  WindowRole
 } from '../shared/types'
 import type { PtyReplay } from '../shared/ipc'
+import { CODE_WINDOW_ARG } from '../shared/ipc'
+
+const windowRole: WindowRole = process.argv.includes(CODE_WINDOW_ARG) ? 'code' : 'main'
 
 const api: Api = {
+  windowRole,
+
   getStore(): Promise<{ data: StoreData; runtime: readonly RuntimeState[] }> {
     return ipcRenderer.invoke(IPC.storeGet)
   },
@@ -274,6 +287,66 @@ const api: Api = {
     const handler = (_event: Electron.IpcRendererEvent, state: QuotaAutopilotState) => cb(state)
     ipcRenderer.on(IPC.evQuotaAutopilot, handler)
     return () => ipcRenderer.off(IPC.evQuotaAutopilot, handler)
+  },
+
+  addRepo(folder: string): Promise<Repo> {
+    return ipcRenderer.invoke(IPC.repoAdd, folder)
+  },
+
+  removeRepo(repoId: Id): Promise<void> {
+    return ipcRenderer.invoke(IPC.repoRemove, repoId)
+  },
+
+  setRepoCollapsed(repoId: Id, collapsed: boolean): Promise<void> {
+    return ipcRenderer.invoke(IPC.repoSetCollapsed, repoId, collapsed)
+  },
+
+  getRepoBranches(repoId: Id): Promise<RepoBranches> {
+    return ipcRenderer.invoke(IPC.repoBranches, repoId)
+  },
+
+  createWorktree(input: CreateWorktreeInput): Promise<CreateWorktreeResult> {
+    return ipcRenderer.invoke(IPC.worktreeCreate, input)
+  },
+
+  removeWorktree(worktreeId: Id): Promise<void> {
+    return ipcRenderer.invoke(IPC.worktreeRemove, worktreeId)
+  },
+
+  setWorktreeCollapsed(worktreeId: Id, collapsed: boolean): Promise<void> {
+    return ipcRenderer.invoke(IPC.worktreeSetCollapsed, worktreeId, collapsed)
+  },
+
+  getWorktreeChanges(worktreeId: Id): Promise<WorktreeChanges> {
+    return ipcRenderer.invoke(IPC.worktreeChanges, worktreeId)
+  },
+
+  getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff> {
+    return ipcRenderer.invoke(IPC.worktreeFileDiff, worktreeId, path)
+  },
+
+  getWindowState(): Promise<WindowState> {
+    return ipcRenderer.invoke(IPC.windowGetState)
+  },
+
+  popOutCode(): Promise<void> {
+    return ipcRenderer.invoke(IPC.windowPopOutCode)
+  },
+
+  dockCode(): Promise<void> {
+    return ipcRenderer.invoke(IPC.windowDockCode)
+  },
+
+  onWorktreeChanges(cb: (changes: WorktreeChanges) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, changes: WorktreeChanges) => cb(changes)
+    ipcRenderer.on(IPC.evWorktreeChanges, handler)
+    return () => ipcRenderer.off(IPC.evWorktreeChanges, handler)
+  },
+
+  onWindowState(cb: (state: WindowState) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, state: WindowState) => cb(state)
+    ipcRenderer.on(IPC.evWindowState, handler)
+    return () => ipcRenderer.off(IPC.evWindowState, handler)
   }
 }
 

@@ -1,7 +1,9 @@
+import { isAbsolute } from 'node:path'
 import type {
   AppSettings,
   AutoStatusSettings,
   AwaySettings,
+  CodeSettings,
   Id,
   QuotaSettings,
   SettingsPatch,
@@ -11,7 +13,7 @@ import type {
 import { resolveSettings, MAX_SLEEP_MINUTES, MIN_SLEEP_MINUTES } from '../../shared/types'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
 
-export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'away'] as const
+export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'away', 'code'] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 const AUTO_STATUS_KEYS = ['working', 'needsInput', 'finished'] as const
@@ -27,6 +29,11 @@ const isInteger: FieldCheck = (value) => typeof value === 'number' && Number.isI
 /** A status id (non-empty string) or null = no mapping. */
 const isIdOrNull: FieldCheck = (value) => value === null || (typeof value === 'string' && value.length > 0)
 const isAgentKind: FieldCheck = (value) => value === 'claude' || value === 'opencode'
+const SHELL_KINDS: readonly unknown[] = ['powershell', 'pwsh', 'cmd']
+const isShellKind: FieldCheck = (value) => SHELL_KINDS.includes(value)
+const isString: FieldCheck = (value) => typeof value === 'string'
+const WORKTREES_ROOT_MAX = 260
+const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/
 const CRITICAL_ACTIONS: readonly unknown[] = ['ask', 'sleep', 'nothing']
 const RESET_ACTIONS: readonly unknown[] = ['ask', 'wake']
 const isCriticalAction: FieldCheck = (value) => CRITICAL_ACTIONS.includes(value)
@@ -72,6 +79,10 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
   away: {
     enabled: isBoolean,
     afterMinutes: isInteger
+  },
+  code: {
+    worktreesRoot: isString,
+    shell: isShellKind
   }
 }
 
@@ -133,12 +144,33 @@ function awayProblem(away: AwaySettings): string | null {
   return null
 }
 
+/** First problem in the code section (worktrees folder: '' or an absolute path; shell program), or null. */
+function codeProblem(code: CodeSettings): string | null {
+  if (typeof code.worktreesRoot !== 'string') return 'code.worktreesRoot must be a string'
+  if (code.worktreesRoot.length > WORKTREES_ROOT_MAX) {
+    return `code.worktreesRoot must be at most ${WORKTREES_ROOT_MAX} characters`
+  }
+  if (CONTROL_CHARS_RE.test(code.worktreesRoot)) return 'code.worktreesRoot must not contain control characters'
+  if (code.worktreesRoot !== '' && !isAbsolute(code.worktreesRoot)) {
+    return 'code.worktreesRoot must be an absolute path, or empty for the default folder'
+  }
+  if (!isShellKind(code.shell)) return 'code.shell must be "powershell", "pwsh" or "cmd"'
+  return null
+}
+
+/** Trims the worktrees folder (surrounding spaces are never meaningful). */
+function normalizeCode(code: CodeSettings): CodeSettings {
+  return { ...code, worktreesRoot: code.worktreesRoot.trim() }
+}
+
 /** Returns the first problem with a complete settings object (types, ranges, warn < critical), or null when valid. */
 export function settingsProblem(settings: AppSettings): string | null {
   const quotaIssue = quotaProblem(settings.quota)
   if (quotaIssue !== null) return quotaIssue
   const awayIssue = awayProblem(settings.away)
   if (awayIssue !== null) return awayIssue
+  const codeIssue = codeProblem(settings.code)
+  if (codeIssue !== null) return codeIssue
 
   const auto = settings.autoStatus
   if (typeof auto.enabled !== 'boolean') return 'autoStatus.enabled must be a boolean'
@@ -206,6 +238,7 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
   const agents = pickSectionFields('agents', raw.agents)
   const hub = pickSectionFields('hub', raw.hub)
   const away = pickSectionFields('away', raw.away)
+  const code = pickSectionFields('code', raw.code)
   if (
     autoStatus === null ||
     tray === null ||
@@ -213,20 +246,23 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
     sleep === null ||
     agents === null ||
     hub === null ||
-    away === null
+    away === null ||
+    code === null
   ) {
     return undefined
   }
 
-  const merged = resolveSettings({
+  const resolved = resolveSettings({
     autoStatus: autoStatus as Partial<AutoStatusSettings>,
     tray: tray as Partial<AppSettings['tray']>,
     quota: quota as Partial<QuotaSettings>,
     sleep: sleep as Partial<AppSettings['sleep']>,
     agents: agents as Partial<AppSettings['agents']>,
     hub: hub as Partial<AppSettings['hub']>,
-    away: away as Partial<AwaySettings>
+    away: away as Partial<AwaySettings>,
+    code: code as Partial<CodeSettings>
   })
+  const merged = { ...resolved, code: normalizeCode(resolved.code) }
   if (settingsProblem(merged) !== null) return undefined
 
   return repairStatusRefs(merged, new Set(statuses.map((s) => s.id)))
@@ -250,15 +286,17 @@ function definedFields<T extends object>(value: Partial<T> | undefined): Partial
  */
 export function updateSettings(data: StoreData, patch: SettingsPatch): StoreData {
   const current = resolveSettings(data.settings)
-  const next: AppSettings = {
+  const merged: AppSettings = {
     autoStatus: { ...current.autoStatus, ...definedFields(patch.autoStatus) },
     tray: { ...current.tray, ...definedFields(patch.tray) },
     quota: { ...current.quota, ...definedFields(patch.quota) },
     sleep: { ...current.sleep, ...definedFields(patch.sleep) },
     agents: { ...current.agents, ...definedFields(patch.agents) },
     hub: { ...current.hub, ...definedFields(patch.hub) },
-    away: { ...current.away, ...definedFields(patch.away) }
+    away: { ...current.away, ...definedFields(patch.away) },
+    code: { ...current.code, ...definedFields(patch.code) }
   }
+  const next: AppSettings = { ...merged, code: normalizeCode(merged.code) }
 
   const problem = settingsProblem(next)
   if (problem !== null) {

@@ -1,6 +1,6 @@
 // Pure model of the command palette: which items exist, their labels, and what each one does.
 // No React, no DOM, no IPC. Commands are data only; App maps them to real calls (runCommand.ts).
-import type { Id, RuntimeState, Session, StatusDef } from '../../shared/types'
+import type { Id, RuntimeState, Session, StatusDef, UiMode, WindowRole } from '../../shared/types'
 
 export type PaletteGroup = 'Sessions' | 'Actions' | 'This session'
 export type PaletteView = 'terminal' | 'hub'
@@ -18,6 +18,10 @@ export type PaletteCommand =
   | { readonly kind: 'set-status'; readonly id: Id; readonly statusId: Id }
   | { readonly kind: 'mark-read'; readonly id: Id }
   | { readonly kind: 'mark-unread'; readonly id: Id }
+  | { readonly kind: 'switch-mode'; readonly mode: UiMode }
+  | { readonly kind: 'pop-out-code' }
+  | { readonly kind: 'dock-code' }
+  | { readonly kind: 'new-worktree' }
 
 export interface PaletteItem {
   /** Unique within one palette build. */
@@ -36,6 +40,11 @@ export interface PaletteInput {
   readonly runtime: ReadonlyMap<Id, RuntimeState>
   readonly activeId: Id | null
   readonly view: PaletteView
+  /** The mode on screen (D31). */
+  readonly mode: UiMode
+  /** Which window the palette runs in: the main window offers the switch, the Code window offers to dock back. */
+  readonly windowRole: WindowRole
+  readonly codePoppedOut: boolean
 }
 
 const NO_STATUS = 'No status'
@@ -226,7 +235,61 @@ function findOpenSession(sessions: readonly Session[], activeId: Id | null): Ses
   return session !== undefined && session.closedAt === undefined ? session : null
 }
 
-function actionItems(view: PaletteView): readonly PaletteItem[] {
+const MODE_NAMES: Readonly<Record<UiMode, string>> = { ops: 'Ops', code: 'Code' }
+
+function switchModeItem(mode: UiMode): PaletteItem {
+  const target: UiMode = mode === 'ops' ? 'code' : 'ops'
+  return {
+    id: 'action:switch-mode',
+    group: 'Actions',
+    label: `Switch to ${MODE_NAMES[target]} mode`,
+    detail: target === 'code' ? 'Repositories, worktrees and their sessions' : 'Sessions outside worktrees',
+    keywords: 'mode ops code switch',
+    run: { kind: 'switch-mode', mode: target }
+  }
+}
+
+/** Mode and window commands. The main window switches or pops Code out; the Code window docks it back. */
+function modeItems(input: PaletteInput): readonly PaletteItem[] {
+  const { mode, windowRole, codePoppedOut } = input
+  const items: PaletteItem[] = []
+  if (windowRole === 'code') {
+    items.push({
+      id: 'action:dock-code',
+      group: 'Actions',
+      label: 'Move Code back to the main window',
+      detail: 'Closes this window; Code returns to the main window',
+      keywords: 'dock close merge main window',
+      run: { kind: 'dock-code' }
+    })
+  } else {
+    if (!codePoppedOut) {
+      items.push(switchModeItem(mode))
+    }
+    items.push({
+      id: 'action:pop-out-code',
+      group: 'Actions',
+      label: 'Open Code in its own window',
+      detail: 'Code mode in a separate window',
+      keywords: 'pop out detach separate window',
+      run: { kind: 'pop-out-code' }
+    })
+  }
+  if (mode === 'code') {
+    items.push({
+      id: 'action:new-worktree',
+      group: 'Actions',
+      label: 'New worktree',
+      detail: 'A branch and folder from a repository',
+      keywords: 'worktree branch repo create add git',
+      run: { kind: 'new-worktree' }
+    })
+  }
+  return items
+}
+
+function actionItems(input: PaletteInput): readonly PaletteItem[] {
+  const { view, windowRole } = input
   const items: PaletteItem[] = [
     {
       id: 'action:new-session',
@@ -255,25 +318,28 @@ function actionItems(view: PaletteView): readonly PaletteItem[] {
     keywords: 'preferences options config',
     run: { kind: 'open-settings' }
   })
-  items.push({
-    id: 'action:show-away-summary',
-    group: 'Actions',
-    label: 'Show "While you were away"',
-    detail: 'What happened since you left',
-    keywords: 'away summary timeline activity',
-    run: { kind: 'show-away-summary' }
-  })
-  return items
+  // The away summary dialog lives in the main window only (one summary), so the Code window does not offer it.
+  if (windowRole === 'main') {
+    items.push({
+      id: 'action:show-away-summary',
+      group: 'Actions',
+      label: 'Show "While you were away"',
+      detail: 'What happened since you left',
+      keywords: 'away summary timeline activity',
+      run: { kind: 'show-away-summary' }
+    })
+  }
+  return [...items, ...modeItems(input)]
 }
 
 /** Every palette item in builder order: Sessions, then This session, then Actions. */
 export function buildPaletteItems(input: PaletteInput): readonly PaletteItem[] {
-  const { sessions, statuses, runtime, activeId, view } = input
+  const { sessions, statuses, runtime, activeId } = input
   const sessionItems = sortedSessions(sessions, runtime).map(
     (session: Session): PaletteItem => sessionItem(session, runtime.get(session.id), statuses)
   )
   const active = findOpenSession(sessions, activeId)
   const thisItems =
     active === null ? [] : thisSessionItems(active, runtime.get(active.id), statuses)
-  return [...sessionItems, ...thisItems, ...actionItems(view)]
+  return [...sessionItems, ...thisItems, ...actionItems(input)]
 }

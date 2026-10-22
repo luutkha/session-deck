@@ -39,8 +39,8 @@ From the first hands-on test. Settings > Sound, the Hub board, Settings > Status
 **D08 · 2026-10-13 · Batch 2: auto status, quota guard, split panes, installer, tray** · active
 "do for 1, and 3, 4, 5 and tray icon" (from my list: 1 auto status, 2 worktrees, 3 quota guard, 4 split panes, 5 installer).
 
-**D09 · 2026-10-13 · No git worktrees** · rejected
-Option 2 of that list was skipped on purpose and the user has repeated they do not want it. Do not propose or build worktree-per-session.
+**D09 · 2026-10-13 · No git worktrees** · superseded by D31 (2026-10-22) for Code mode only
+Option 2 of that list was skipped on purpose and the user has repeated they do not want it. Do not propose or build worktree-per-session. 2026-10-22: the user asked for worktrees themselves, in a separate Code mode (D31). Ops mode stays worktree-free.
 
 **D10 · 2026-10-17 · Claude sessions always run in yolo mode** · active
 "when create session, i want it always on yolo mode". `--dangerously-skip-permissions` unless the user already passed a permission flag. OpenCode sessions get `permission: {"*": "allow"}`.
@@ -110,6 +110,9 @@ Asked "any big feature u recommend?", replied "do 2,3". Item 2: per-session log 
 
 **D30 · 2026-10-22 · Quota-aware autopilot** · active
 Item 3 of the same reply: at the critical quota level offer to sleep idle sessions; when the 5-hour window resets, notify and wake them with one click (optional "continue"). Plan shown, user said "go". Defaults: both actions ask (automatic is a setting), "continue" off. Busy, Keep-awake and Remote Control sessions are never slept.
+
+**D31 · 2026-10-22 · Code mode (worktrees)** · active
+"a new saparate mode for task that will require changing code ... saparate windows ( or have a swith ...) ... UI should be complettly saparate ... follow the approach of Orca (create work-tree), all others feature should similar". Answers: layout = BOTH (Ops | Code switch in the main window, plus pop Code out into its own window and back); structure = Orca style repo > worktree > sessions (Claude, OpenCode or a plain shell in one worktree); git actions in v1 = Changes / diff view ONLY (no commit/merge, no PR, no git delete: user left those unticked); alerts = shared across modes (one quota, autopilot, sleep-all, sounds), bell and Needs-you list per mode, badge on the switch when the other mode needs you. Plan shown, user said "go". Defaults (Claude chose, user may change): worktrees in <home>/SessionDeck/worktrees/<repo>/<name> (Settings), branch = name made git-safe, base = repo's current branch, Shell = PowerShell, "Remove from SessionDeck" keeps folder and branch on disk, Claude's trust-folder prompt is not bypassed.
 
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.

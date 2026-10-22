@@ -21,7 +21,7 @@ Electron desktop app (an Orca-like, narrower tool) for running and managing many
 - Show a plan and wait when the user asks for analysis or a plan.
 - Verify in the real built app (CDP e2e in `scripts/`), not only unit tests. Never skip a failing test; find the root cause.
 - Features must work on any PC and any folder.
-- Claude sessions always run yolo. No git worktrees.
+- Claude sessions always run yolo. Git worktrees only in Code mode (D31); Ops mode never creates them.
 - Commit after each finished feature (conventional commits). Rollback point: tag `baseline-2026-10-17`.
 - Relaunch the app yourself after a change. Build the installer (`npm run dist`) only when the user asks.
 - Delegated work uses cheap OpenCode models first (free, then flash, then deepseek-v4-pro).

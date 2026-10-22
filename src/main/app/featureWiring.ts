@@ -80,7 +80,8 @@ export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
     now: () => Date.now(),
     getSettings: () => store.getSettings().quota,
     getUsage: () => usage.getState(),
-    listSessions: () => store.get().sessions,
+    // Shell sessions (Code mode) run dev servers and have no conversation to resume: never slept for the quota.
+    listSessions: () => store.get().sessions.map((s) => (s.agent === 'shell' ? { ...s, keepAwake: true } : s)),
     getRuntime: () => runtimeMap(runtime),
     sleepSession: (id) => controller.sleepSession(id),
     wakeSession: (id) => controller.wakeSession(id),

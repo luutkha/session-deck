@@ -1,10 +1,17 @@
 import { statSync } from 'node:fs'
-import type { Session } from '../../shared/types'
+import type { Session, ShellKind } from '../../shared/types'
 import type { StartOptions } from '../pty/PtyManager'
 import type { AttentionService } from '../attention'
 import { chooseClaudeLaunch } from './claudeLaunch'
 
 export const YOLO_FLAG = '--dangerously-skip-permissions'
+
+/** Arguments that keep a shell interactive and quiet: no banner for PowerShell, nothing for cmd. */
+const SHELL_ARGS: Record<ShellKind, readonly string[]> = {
+  powershell: ['-NoLogo'],
+  pwsh: ['-NoLogo'],
+  cmd: []
+}
 
 function hasPermissionFlag(args: readonly string[]): boolean {
   return args.some((a) => a === YOLO_FLAG || a === '--permission-mode' || a.startsWith('--permission-mode=') || a === '--allow-dangerously-skip-permissions')
@@ -26,12 +33,19 @@ export function validateCwd(cwd: string): void {
   }
 }
 
-/** Builds the pty launch options for `claude`. `everStarted` picks `--resume` (true) or `--session-id` (false). */
+/**
+ * Builds the pty launch options for `claude`. `everStarted` picks `--resume` (true) or `--session-id` (false).
+ * A shell session starts a fresh `shell` program (there is no conversation to resume); `shell` is used only by it.
+ */
 export function buildStartOptions(
   session: Session,
   everStarted: boolean,
-  attention: AttentionService
+  attention: AttentionService,
+  shell: ShellKind = 'powershell'
 ): StartOptions {
+  if (session.agent === 'shell') {
+    return buildShellStartOptions(session, attention, shell)
+  }
   if (session.agent === 'opencode') {
     return buildOpencodeStartOptions(session, attention)
   }
@@ -45,6 +59,27 @@ export function buildStartOptions(
     internalArgs: [...attention.claudeArgs(), ...chosen.args],
     // Any `opencode` started from this terminal loads the worker plugin and shows up as a read-only worker tab.
     env: { ...attention.envFor(session.id), ...attention.workerEnv() },
+    cols: INITIAL_COLS,
+    rows: INITIAL_ROWS
+  }
+}
+
+/**
+ * Builds the pty launch options for a plain shell (Code mode). A shell has no hooks, so only the worker env is set;
+ * no Claude flags and no conversation id are used.
+ */
+export function buildShellStartOptions(
+  session: Session,
+  attention: AttentionService,
+  shell: ShellKind
+): StartOptions {
+  return {
+    sessionId: session.id,
+    cwd: session.cwd,
+    claudeArgs: [],
+    internalArgs: [...SHELL_ARGS[shell]],
+    command: shell,
+    env: { ...attention.workerEnv() },
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS
   }

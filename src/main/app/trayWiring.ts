@@ -22,6 +22,8 @@ export interface TrayWiringDeps {
   readonly trayAttentionIconPath: string | null
   readonly userDataDir: string
   readonly onError: (where: string, error: unknown) => void
+  /** Shows a session from the tray menu in the window that owns it. Default: the main window. */
+  readonly focusSession?: (sessionId: string) => void
 }
 
 export interface TrayWiring {
@@ -82,7 +84,7 @@ export function attachTrayWiring(deps: TrayWiringDeps): TrayWiring {
           showMainWindow(win)
         }
       },
-      onSession: (sessionId: string) => focusSessionInWindow(win, sessionId),
+      onSession: (sessionId: string) => (deps.focusSession ?? ((id: string) => focusSessionInWindow(win, id)))(sessionId),
       onQuit: () => {
         markQuitting()
         app.quit()

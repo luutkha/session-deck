@@ -16,6 +16,9 @@ import { createSoundRelay } from './app/soundRelay'
 import { createUsageService, createUsageRefresher, readClaudeAccessToken, fetchOAuthUsage } from './usage'
 import { registerIpcHandlers } from './app/ipcHandlers'
 import { createMainWindow, focusSessionInWindow, showMainWindow } from './app/window'
+import { createWindowRegistry } from './app/windowRegistry'
+import { createActiveSessions } from './app/activeSessions'
+import { createCodeWiring } from './app/codeWiring'
 import { logMainError } from './app/errorLog'
 import { createLoginItem } from './app/loginItem'
 import { isQuitting, markQuitting } from './app/quitState'
@@ -54,9 +57,11 @@ process.on('unhandledRejection', (reason: unknown) => {
 })
 
 let mainWindow: BrowserWindow | null = null
+let codeWindowFocused: () => boolean = () => false
 
+/** True while ANY SessionDeck window (main or the popped-out Code window) has focus. */
 function isMainWindowFocused(): boolean {
-  return mainWindow !== null && !mainWindow.isDestroyed() && mainWindow.isFocused()
+  return (mainWindow !== null && !mainWindow.isDestroyed() && mainWindow.isFocused()) || codeWindowFocused()
 }
 
 const gotTheLock = app.requestSingleInstanceLock()
@@ -103,12 +108,37 @@ if (!gotTheLock) {
 
     const saver = createDebouncedSaver(storePath, SAVER_DELAY_MS)
 
+    // Code mode (D31): the main window, plus the Code window while it is popped out. Events go to both.
+    const windows = createWindowRegistry<BrowserWindow>({
+      createWindow: (role) => createMainWindow({
+        preloadPath: path.join(__dirname, '../preload/index.mjs'),
+        iconPath: appIconPath,
+        role,
+        parent: mainWindow ?? undefined
+      }).window,
+      onStateChange: (state) => windows.broadcast(IPC.evWindowState, state),
+      onError
+    })
+    codeWindowFocused = () => windows.code()?.isFocused() === true
+    const activeSessions = createActiveSessions()
+
+    /** Notification / tray click: a Code session opens in the Code window when it is popped out, else in the main window. */
+    function focusSession(id: string): void {
+      const session = store.get().sessions.find((s) => s.id === id)
+      const codeWin = windows.code()
+      if (session?.worktreeId !== undefined && codeWin !== null) {
+        focusSessionInWindow(codeWin, id)
+        return
+      }
+      focusSessionInWindow(mainWindow, id)
+    }
+
     const notifier = createDesktopNotifier({
       NotificationCtor: Notification,
       isSupported: () => Notification.isSupported(),
       getSettings: () => store.getSettings().tray,
       isWindowFocused: isMainWindowFocused,
-      onClickSession: (id) => focusSessionInWindow(mainWindow, id),
+      onClickSession: (id) => focusSession(id),
       onClickApp: () => showMainWindow(mainWindow),
       iconPath: appIconPath ?? undefined,
       onError
@@ -117,20 +147,14 @@ if (!gotTheLock) {
     const pty = new PtyManager()
 
     function sendToWindow(channel: string, ...args: unknown[]): void {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(channel, ...args)
-      }
+      windows.broadcast(channel, ...args)
     }
 
     const runtime = createRuntimeRegistry()
 
     // Plan usage and per-session model/context/cost, fed by Claude Code's statusLine (see attention/claudeSettings).
     const usage = createUsageService({ now: () => Date.now() })
-    usage.onChange((state) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(IPC.evUsage, state)
-      }
-    })
+    usage.onChange((state) => sendToWindow(IPC.evUsage, state))
     // Usage entries of sessions that were removed from the store are dropped.
     store.subscribe((data) => {
       const live = new Set(data.sessions.map((s) => s.id))
@@ -178,11 +202,7 @@ if (!gotTheLock) {
     const workers = createWorkerHub({
       now: () => Date.now(),
       isKnownSession: (id: string) => store.get().sessions.some((s) => s.id === id),
-      onChange: (list) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(IPC.evWorkers, list)
-        }
-      }
+      onChange: (list) => sendToWindow(IPC.evWorkers, list)
     })
     store.subscribe((data) => {
       const live = new Set(data.sessions.map((s) => s.id))
@@ -211,6 +231,7 @@ if (!gotTheLock) {
       onHookEvent: (event) => {
         controller.handleHookEvent(event)
         features.onHookEvent(event)
+        code.onHookEvent(event)
       },
       onWorkerEvent: (sessionId, payload) => workers.ingest(sessionId, payload)
     })
@@ -219,17 +240,19 @@ if (!gotTheLock) {
       return controller.getActiveSessionId()
     }
 
-    /** The session the user is looking at right now: its bell still shows, but it never pings. */
+    /** The session the user is looking at right now (in the focused window): its bell still shows, but it never pings. */
     function isSessionOnScreen(id: string): boolean {
-      return isMainWindowFocused() && activeSessionId() === id
+      const role = windows.focusedRole()
+      return role !== null && activeSessions.get(role) === id
     }
 
     // Idle sessions are put to sleep (Claude process stopped, conversation kept) when Settings > Sleep is on.
     const sleepScheduler = createSleepScheduler({
       getSettings: () => store.getSettings().sleep,
-      getSessions: () => store.get().sessions,
+      // Shell sessions (Code mode) often run a dev server: never slept automatically (a manual Sleep still works).
+      getSessions: () => store.get().sessions.map((s) => (s.agent === 'shell' ? { ...s, keepAwake: true } : s)),
       getRuntime: () => new Map(runtime.snapshot().map((state) => [state.sessionId, state])),
-      getActiveSessionId: activeSessionId,
+      getActiveSessionId: () => activeSessions.get(windows.focusedRole() ?? 'main') ?? activeSessionId(),
       sleepSession: (id) => controller.sleepSession(id),
       now: () => Date.now(),
       onError
@@ -243,9 +266,7 @@ if (!gotTheLock) {
       runtime,
       sendPtyData: (id, data, seq) => {
         sleepScheduler.touch(id)
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(IPC.evPtyData, id, data, seq)
-        }
+        sendToWindow(IPC.evPtyData, id, data, seq)
       },
       userDataDir: userData,
       onUsageLimit: (id) => features.onUsageLimit(id)
@@ -263,6 +284,9 @@ if (!gotTheLock) {
       deliverAlert: (alert) => deliverQuotaAlert(quotaDelivery, alert),
       onError
     })
+
+    // Code mode (D31): repos, worktrees, changes and diffs.
+    const code = createCodeWiring({ store, controller, broadcast: sendToWindow, homedir: homedir(), now: () => Date.now(), onError })
 
     // Quota thresholds and reset notices (see quota/quotaGuard.ts). Markers survive restarts. Every guard alert goes
     // through the autopilot first (it adds the sleep/wake offer or acts by itself).
@@ -301,6 +325,7 @@ if (!gotTheLock) {
     })
 
     mainWindow = win
+    windows.setMain(win)
 
     registerIpcHandlers({
       store,
@@ -311,7 +336,16 @@ if (!gotTheLock) {
       usage,
       usageRefresher,
       workers,
-      window: mainWindow,
+      broadcast: sendToWindow,
+      windowForSender: (senderId) => {
+        const role = windows.roleOf(senderId)
+        return role === 'code' ? windows.code() : role === 'main' ? windows.main() : null
+      },
+      roleOfSender: (senderId) => windows.roleOf(senderId),
+      activeSessions,
+      windowState: () => windows.state(),
+      popOutCode: () => { windows.popOutCode() },
+      dockCode: () => windows.dockCode(),
       getActiveSessionId: activeSessionId,
       userDataDir: userData,
       loginItem: createLoginItem(app),
@@ -323,6 +357,7 @@ if (!gotTheLock) {
     // Start loading first so the quota handlers can wait for it; they are registered before the renderer asks.
     const autopilotLoaded = features.startAutopilot()
     features.registerIpc()
+    code.registerIpc()
     await autopilotLoaded
 
     // Tray icon and menu, close-to-tray (the window is hidden, sessions keep running). Never throws.
@@ -334,7 +369,8 @@ if (!gotTheLock) {
       trayIconPath,
       trayAttentionIconPath,
       userDataDir: userData,
-      onError
+      onError,
+      focusSession
     })
 
     async function runShutdownStep(step: string, action: () => void | Promise<void>): Promise<void> {
@@ -349,6 +385,8 @@ if (!gotTheLock) {
       sleepScheduler.stop()
       clearInterval(workerSweep)
       await runShutdownStep('timeline + autopilot', () => features.shutdown())
+      await runShutdownStep('code mode', () => code.shutdown())
+      await runShutdownStep('close Code window', () => windows.closeCode())
       await runShutdownStep('flush store', () => saver.flush())
       await runShutdownStep('kill sessions', () => pty.killAll())
       await runShutdownStep('dispose pty', () => pty.dispose())

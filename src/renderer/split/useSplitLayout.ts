@@ -141,8 +141,8 @@ export function splitReducer(state: SplitState, action: SplitAction): SplitState
   }
 }
 
-function loadLayout(activeId: Id | null): SplitLayout {
-  return parseLayout(readStorageItem(SPLIT_STORAGE_KEY)) ?? singleLayout(activeId)
+function loadLayout(activeId: Id | null, storageKey: string): SplitLayout {
+  return parseLayout(readStorageItem(storageKey)) ?? singleLayout(activeId)
 }
 
 export interface SplitLayoutApi {
@@ -160,16 +160,21 @@ export interface SplitLayoutApi {
   readonly equalize: () => void
 }
 
-export function useSplitLayout(openIds: readonly Id[], activeId: Id | null): SplitLayoutApi {
+/** storageKey: where the layout is remembered (Code mode uses its own key, D31). */
+export function useSplitLayout(
+  openIds: readonly Id[],
+  activeId: Id | null,
+  storageKey: string = SPLIT_STORAGE_KEY
+): SplitLayoutApi {
   const [state, dispatch] = useReducer(
     splitReducer,
     undefined,
-    (): SplitState => initSplitState(openIds, activeId, loadLayout(activeId))
+    (): SplitState => initSplitState(openIds, activeId, loadLayout(activeId, storageKey))
   )
 
   useEffect((): void => {
-    writeStorageItem(SPLIT_STORAGE_KEY, serializeLayout(state.layout))
-  }, [state.layout])
+    writeStorageItem(storageKey, serializeLayout(state.layout))
+  }, [state.layout, storageKey])
 
   useEffect((): void => {
     dispatch({ type: 'sync', openIds, activeId })

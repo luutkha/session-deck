@@ -26,6 +26,9 @@ function input(overrides: Partial<PaletteInput> = {}): PaletteInput {
     runtime: new Map(),
     activeId: null,
     view: 'terminal',
+    mode: 'ops',
+    windowRole: 'main',
+    codePoppedOut: false,
     ...overrides
   }
 }
@@ -154,7 +157,9 @@ describe('buildPaletteItems: sessions group', () => {
       'New session',
       'Open Hub',
       'Open Settings',
-      'Show "While you were away"'
+      'Show "While you were away"',
+      'Switch to Code mode',
+      'Open Code in its own window'
     ])
   })
 })
@@ -168,7 +173,9 @@ describe('buildPaletteItems: actions group', () => {
       'New session',
       'Open Hub',
       'Open Settings',
-      'Show "While you were away"'
+      'Show "While you were away"',
+      'Switch to Code mode',
+      'Open Code in its own window'
     ])
     expect(byId(items, 'action:new-session').run).toEqual({ kind: 'new-session' })
     expect(byId(items, 'action:open-settings').run).toEqual({ kind: 'open-settings' })
@@ -304,6 +311,67 @@ describe('buildPaletteItems: this session group', () => {
         activeId: 's1'
       })
     )
+    expect(new Set(items.map((item: PaletteItem): string => item.id)).size).toBe(items.length)
+  })
+})
+
+describe('buildPaletteItems: mode and window actions', () => {
+  const codeSession = session({ id: 'c1', name: 'Feature', worktreeId: 'w1' })
+
+  function actionLabels(overrides: Partial<PaletteInput>): string[] {
+    return labels(buildPaletteItems(input(overrides))).filter((label: string): boolean => label.startsWith('Switch') || label.startsWith('Open Code') || label.startsWith('Move Code') || label === 'New worktree')
+  }
+
+  it('offers Switch to Code mode in the main window while in Ops', () => {
+    const item = byId(buildPaletteItems(input({ mode: 'ops' })), 'action:switch-mode')
+    expect(item.label).toBe('Switch to Code mode')
+    expect(item.run).toEqual({ kind: 'switch-mode', mode: 'code' })
+  })
+
+  it('offers Switch to Ops mode in the main window while in Code', () => {
+    const item = byId(buildPaletteItems(input({ mode: 'code' })), 'action:switch-mode')
+    expect(item.label).toBe('Switch to Ops mode')
+    expect(item.run).toEqual({ kind: 'switch-mode', mode: 'ops' })
+  })
+
+  it('hides the switch while Code is popped out', () => {
+    expect(actionLabels({ codePoppedOut: true })).not.toContain('Switch to Code mode')
+  })
+
+  it('offers Open Code in its own window in the main window, popped out or not', () => {
+    expect(actionLabels({})).toContain('Open Code in its own window')
+    expect(actionLabels({ codePoppedOut: true })).toContain('Open Code in its own window')
+  })
+
+  it('offers Move Code back to the main window only in the Code window', () => {
+    const codeWindow = buildPaletteItems(input({ windowRole: 'code', mode: 'code', codePoppedOut: true }))
+    expect(byId(codeWindow, 'action:dock-code').run).toEqual({ kind: 'dock-code' })
+    expect(actionLabels({ windowRole: 'code', mode: 'code', codePoppedOut: true })).not.toContain('Open Code in its own window')
+    expect(actionLabels({ windowRole: 'code', mode: 'code', codePoppedOut: true })).not.toContain('Switch to Ops mode')
+  })
+
+  it('offers New worktree only in Code mode', () => {
+    const codeItems = buildPaletteItems(input({ mode: 'code', windowRole: 'code', codePoppedOut: true }))
+    expect(byId(codeItems, 'action:new-worktree').run).toEqual({ kind: 'new-worktree' })
+    expect(actionLabels({ mode: 'ops' })).not.toContain('New worktree')
+  })
+
+  it('keeps the away summary in the main window only', () => {
+    expect(labels(buildPaletteItems(input({ windowRole: 'main' })))).toContain('Show "While you were away"')
+    expect(labels(buildPaletteItems(input({ windowRole: 'code', mode: 'code', codePoppedOut: true })))).not.toContain(
+      'Show "While you were away"'
+    )
+  })
+
+  it('lists only the sessions it is given (the caller filters by mode)', () => {
+    const items = buildPaletteItems(input({ mode: 'code', sessions: [codeSession] }))
+    expect(items.filter((item: PaletteItem): boolean => item.group === 'Sessions').map((item: PaletteItem): string => item.label)).toEqual([
+      'Feature'
+    ])
+  })
+
+  it('keeps every item id unique across the mode actions', () => {
+    const items = buildPaletteItems(input({ mode: 'code', sessions: [codeSession], activeId: 'c1' }))
     expect(new Set(items.map((item: PaletteItem): string => item.id)).size).toBe(items.length)
   })
 })

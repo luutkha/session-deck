@@ -1,4 +1,5 @@
-import type { ChecklistItem, Id, CreateSessionInput, Group, StatusDef } from '../../shared/types'
+import { WORKTREE_NAME_MAX } from '../../shared/types'
+import type { AgentKind, ChecklistItem, CreateSessionInput, CreateWorktreeInput, Group, Id, StatusDef } from '../../shared/types'
 import { buildLaunch } from '../pty/launch'
 import { MAX_NOTES_LENGTH, validateChecklist } from '../store'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
@@ -120,7 +121,8 @@ const ALLOWED_CREATE_SESSION_KEYS = new Set<keyof CreateSessionInput>([
   'statusId',
   'claudeArgs',
   'agent',
-  'model'
+  'model',
+  'worktreeId'
 ])
 
 export function asCreateSessionInput(raw: unknown): CreateSessionInput {
@@ -140,10 +142,11 @@ export function asCreateSessionInput(raw: unknown): CreateSessionInput {
   const groupId = obj.groupId !== undefined && obj.groupId !== null ? assertId(obj.groupId, 'groupId') : null
   const statusId = obj.statusId !== undefined && obj.statusId !== null ? assertId(obj.statusId, 'statusId') : null
   const claudeArgs = obj.claudeArgs !== undefined ? assertClaudeArgs(obj.claudeArgs) : undefined
-  const agent = obj.agent !== undefined ? assertAgentKind(obj.agent) : undefined
-  // The model only applies to OpenCode sessions; for claude sessions it is ignored.
+  const agent = obj.agent !== undefined ? assertAgentKind(obj.agent, 'createSession input') : undefined
+  // The model only applies to OpenCode sessions; for claude and shell sessions it is ignored.
   const model =
-    agent === 'opencode' && obj.model !== undefined ? assertOpencodeModel(obj.model) : undefined
+    agent === 'opencode' && obj.model !== undefined ? assertOpencodeModel(obj.model, 'createSession input') : undefined
+  const worktreeId = obj.worktreeId !== undefined ? assertId(obj.worktreeId, 'worktreeId') : undefined
 
   return {
     cwd,
@@ -152,27 +155,89 @@ export function asCreateSessionInput(raw: unknown): CreateSessionInput {
     statusId,
     claudeArgs,
     ...(agent !== undefined ? { agent } : {}),
-    ...(model !== undefined ? { model } : {})
+    ...(model !== undefined ? { model } : {}),
+    ...(worktreeId !== undefined ? { worktreeId } : {})
   }
 }
 
-function assertAgentKind(raw: unknown): 'claude' | 'opencode' {
-  if (raw !== 'claude' && raw !== 'opencode') {
-    throw new Error(`Invalid createSession input: agent must be "claude" or "opencode"`)
+const ALLOWED_CREATE_WORKTREE_KEYS: ReadonlySet<string> = new Set<string>([
+  'repoId',
+  'name',
+  'baseBranch',
+  'agent',
+  'model'
+])
+const MAX_BASE_BRANCH_LENGTH = 255
+/** Refs git would not accept as a plain branch name here: whitespace, control characters, ~ ^ : ? * [ \, and ".." */
+const BASE_BRANCH_FORBIDDEN_RE = /[\s\u0000-\u001f\u007f~^:?*[\\]|\.\./
+
+function assertBaseBranch(raw: unknown): string {
+  const invalid =
+    typeof raw !== 'string' ||
+    raw.length === 0 ||
+    raw.length > MAX_BASE_BRANCH_LENGTH ||
+    raw.startsWith('-') ||
+    BASE_BRANCH_FORBIDDEN_RE.test(raw)
+  if (invalid) {
+    throw new Error('Invalid base branch')
   }
   return raw
 }
 
-function assertOpencodeModel(raw: unknown): string {
+function assertWorktreeName(raw: unknown): string {
+  const trimmed = typeof raw === 'string' ? raw.trim() : ''
+  if (trimmed.length === 0 || trimmed.length > WORKTREE_NAME_MAX) {
+    throw new Error(`Invalid createWorktree input: name must be 1 to ${WORKTREE_NAME_MAX} characters`)
+  }
+  return trimmed
+}
+
+/** IPC payload check for worktree:create. The branch and folder are derived in main from the name (see git/*). */
+export function asCreateWorktreeInput(raw: unknown): CreateWorktreeInput {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error('Invalid createWorktree input: must be an object')
+  }
+  const obj = raw as Record<string, unknown>
+  for (const key of Object.keys(obj)) {
+    if (!ALLOWED_CREATE_WORKTREE_KEYS.has(key)) {
+      throw new Error(`Invalid createWorktree input: unknown key "${key}"`)
+    }
+  }
+
+  const repoId = assertId(obj.repoId, 'repoId')
+  const name = assertWorktreeName(obj.name)
+  const baseBranch = assertBaseBranch(obj.baseBranch)
+  const agent = assertAgentKind(obj.agent, 'createWorktree input')
+  // The model only applies to OpenCode; for other agents it is dropped.
+  const model =
+    agent === 'opencode' && obj.model !== undefined ? assertOpencodeModel(obj.model, 'createWorktree input') : undefined
+
+  return {
+    repoId,
+    name,
+    baseBranch,
+    agent,
+    ...(model !== undefined && model.length > 0 ? { model } : {})
+  }
+}
+
+function assertAgentKind(raw: unknown, context: string): AgentKind {
+  if (raw !== 'claude' && raw !== 'opencode' && raw !== 'shell') {
+    throw new Error(`Invalid ${context}: agent must be "claude", "opencode" or "shell"`)
+  }
+  return raw
+}
+
+function assertOpencodeModel(raw: unknown, context: string): string {
   if (typeof raw !== 'string') {
-    throw new Error(`Invalid createSession input: model must be a string of at most ${MAX_OPENCODE_MODEL_LENGTH} characters`)
+    throw new Error(`Invalid ${context}: model must be a string of at most ${MAX_OPENCODE_MODEL_LENGTH} characters`)
   }
   const trimmed = raw.trim()
   if (trimmed.length > MAX_OPENCODE_MODEL_LENGTH) {
-    throw new Error(`Invalid createSession input: model must be at most ${MAX_OPENCODE_MODEL_LENGTH} characters`)
+    throw new Error(`Invalid ${context}: model must be at most ${MAX_OPENCODE_MODEL_LENGTH} characters`)
   }
   if (trimmed.length > 0 && !OPENCODE_MODEL_RE.test(trimmed)) {
-    throw new Error(`Invalid createSession input: model may only contain letters, digits and . _ : / @ + -`)
+    throw new Error(`Invalid ${context}: model may only contain letters, digits and . _ : / @ + -`)
   }
   return trimmed
 }

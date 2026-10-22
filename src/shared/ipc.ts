@@ -1,6 +1,7 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState
+  AppSettings, ChecklistItem, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
+  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, WindowState, WindowRole
 } from './types'
 
 export const IPC = {
@@ -53,6 +54,19 @@ export const IPC = {
   quotaAutopilotGet: 'quota:autopilotGet', // -> QuotaAutopilotState (D30)
   quotaSleepIdle: 'quota:sleepIdle', // -> Id[] slept: open, running, not-working sessions except Keep awake / Remote Control
   quotaWake: 'quota:wake', // ({ sendContinue: boolean }) -> Id[] woken: the sessions held by the autopilot, in the background
+  // Code mode (D31)
+  repoAdd: 'repo:add', // (folder path) -> Repo; the git top-level of that folder; an already added repo is returned as is
+  repoRemove: 'repo:remove', // (repoId) removes the repo, its worktrees and their sessions from SessionDeck; files and branches stay on disk
+  repoSetCollapsed: 'repo:setCollapsed', // (repoId, collapsed)
+  repoBranches: 'repo:branches', // (repoId) -> RepoBranches
+  worktreeCreate: 'worktree:create', // (CreateWorktreeInput) -> CreateWorktreeResult: git worktree add -b, then the first session starts in it
+  worktreeRemove: 'worktree:remove', // (worktreeId) stops and removes its sessions and forgets it; the folder and branch stay on disk
+  worktreeSetCollapsed: 'worktree:setCollapsed', // (worktreeId, collapsed)
+  worktreeChanges: 'worktree:changes', // (worktreeId) -> WorktreeChanges (recomputed now)
+  worktreeFileDiff: 'worktree:fileDiff', // (worktreeId, path) -> FileDiff; path must be one of the current changed files
+  windowGetState: 'window:getState', // -> WindowState
+  windowPopOutCode: 'window:popOutCode', // opens (or focuses) the separate Code window
+  windowDockCode: 'window:dockCode', // closes the Code window; Code mode returns to the main window's switch
   // events main -> renderer
   evStoreChanged: 'ev:store',
   evRuntime: 'ev:runtime',
@@ -64,7 +78,9 @@ export const IPC = {
   evWorkers: 'ev:workers', // main -> renderer: the full WorkerInfo[] changed
   evTimeline: 'ev:timeline', // main -> renderer: (sessionId) that session's timeline changed; refetch with timelineGet
   evAwaySummary: 'ev:awaySummary', // main -> renderer: AwaySummary (non-empty) when the user comes back
-  evQuotaAutopilot: 'ev:quotaAutopilot' // main -> renderer: QuotaAutopilotState changed
+  evQuotaAutopilot: 'ev:quotaAutopilot', // main -> renderer: QuotaAutopilotState changed
+  evWorktreeChanges: 'ev:worktreeChanges', // main -> renderer: WorktreeChanges recomputed (after a turn ended in that worktree)
+  evWindowState: 'ev:windowState' // main -> renderer: WindowState changed
 } as const
 
 /** Buffered output for reattach. `seq` = sequence number of the last chunk included (0 if none).
@@ -75,6 +91,8 @@ export interface PtyReplay {
 }
 
 export interface Api {
+  /** Which window this renderer runs in (fixed for its lifetime). */
+  readonly windowRole: WindowRole
   getStore(): Promise<{ data: StoreData; runtime: readonly RuntimeState[] }>
   createSession(input: CreateSessionInput): Promise<Session>
   renameSession(id: Id, name: string): Promise<void>
@@ -139,7 +157,25 @@ export interface Api {
   onTimeline(cb: (sessionId: Id) => void): () => void
   onAwaySummary(cb: (summary: AwaySummary) => void): () => void
   onQuotaAutopilot(cb: (state: QuotaAutopilotState) => void): () => void
+  // Code mode (D31)
+  addRepo(folder: string): Promise<Repo>
+  removeRepo(repoId: Id): Promise<void>
+  setRepoCollapsed(repoId: Id, collapsed: boolean): Promise<void>
+  getRepoBranches(repoId: Id): Promise<RepoBranches>
+  createWorktree(input: CreateWorktreeInput): Promise<CreateWorktreeResult>
+  removeWorktree(worktreeId: Id): Promise<void>
+  setWorktreeCollapsed(worktreeId: Id, collapsed: boolean): Promise<void>
+  getWorktreeChanges(worktreeId: Id): Promise<WorktreeChanges>
+  getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff>
+  getWindowState(): Promise<WindowState>
+  popOutCode(): Promise<void>
+  dockCode(): Promise<void>
+  onWorktreeChanges(cb: (changes: WorktreeChanges) => void): () => void
+  onWindowState(cb: (state: WindowState) => void): () => void
 }
+
+/** Command-line flag main passes to the Code window (webPreferences.additionalArguments); preload reads it. */
+export const CODE_WINDOW_ARG = '--sessiondeck-window=code'
 
 declare global {
   interface Window { api: Api }

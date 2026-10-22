@@ -4,6 +4,7 @@ import type { ChecklistItem, Group, Session, StatusDef, StoreData } from '../../
 import { emptyStore } from './reducers'
 import { validateChecklist, validateNotes } from './sessionNotes'
 import { parseStoredSettings } from './settings'
+import { hasUnknownWorktreeRef, parseRepos, parseWorktrees } from './codePersistence'
 import { isOpencodeSessionId, isOpencodeModel } from '../opencode/values'
 
 const STORE_VERSION = 1
@@ -80,8 +81,8 @@ function parseSession(raw: unknown, index: number): Session {
     throw new Error(`Invalid store: sessions[${index}].closedAt must be a non-negative number`)
   }
 
-  // OpenCode fields (absent on every session saved before OpenCode support = a claude session).
-  const opencode = parseOpencodeFields(raw, index)
+  // Agent fields (absent on every session saved before OpenCode support = a claude session).
+  const opencode = parseAgentFields(raw, index)
   // Notes and checklist are optional extras: an invalid value is dropped, never failing the whole file.
   const notes = parseOptionalNotes(raw.notes)
   const checklist = parseOptionalChecklist(raw.checklist)
@@ -104,30 +105,40 @@ function parseSession(raw: unknown, index: number): Session {
     ...(raw.closedAt !== undefined ? { closedAt: raw.closedAt as number } : {}),
     ...(raw.keepAwake === true ? { keepAwake: true } : {}),
     ...(notes !== undefined ? { notes } : {}),
-    ...(checklist !== undefined ? { checklist } : {})
+    ...(checklist !== undefined ? { checklist } : {}),
+    // Checked by parseStoreData: a present worktreeId is a non-empty string of a stored worktree.
+    ...(raw.worktreeId !== undefined ? { worktreeId: raw.worktreeId as string } : {})
   }
 
   return session
 }
 
+interface AgentFields {
+  readonly agent: 'opencode' | 'shell' | undefined
+  readonly opencodeSessionId: string | undefined
+  readonly model: string | undefined
+}
+
+const NO_AGENT_FIELDS: AgentFields = { agent: undefined, opencodeSessionId: undefined, model: undefined }
+
 /**
- * The optional OpenCode fields of one session. Absent = a claude session (no agent field stored). An invalid
- * present value fails the file like an invalid claudeSessionId would. Fields other than `agent` are only read
- * for opencode sessions; an empty stored model means "OpenCode's own default" (absent).
+ * The optional agent fields of one session. Absent = a claude session (no agent field stored). An invalid
+ * present value fails the file like an invalid claudeSessionId would. A shell session stores only its agent.
+ * Other fields are only read for opencode sessions; an empty stored model means "OpenCode's own default".
  */
-function parseOpencodeFields(
-  raw: Record<string, unknown>,
-  index: number
-): { agent: 'opencode' | undefined; opencodeSessionId: string | undefined; model: string | undefined } {
+function parseAgentFields(raw: Record<string, unknown>, index: number): AgentFields {
   const agent = raw.agent
   if (agent === undefined) {
-    return { agent: undefined, opencodeSessionId: undefined, model: undefined }
+    return NO_AGENT_FIELDS
   }
-  if (agent !== 'claude' && agent !== 'opencode') {
-    throw new Error(`Invalid store: sessions[${index}].agent must be "claude" or "opencode"`)
+  if (agent !== 'claude' && agent !== 'opencode' && agent !== 'shell') {
+    throw new Error(`Invalid store: sessions[${index}].agent must be "claude", "opencode" or "shell"`)
+  }
+  if (agent === 'shell') {
+    return { agent: 'shell', opencodeSessionId: undefined, model: undefined }
   }
   if (agent !== 'opencode') {
-    return { agent: undefined, opencodeSessionId: undefined, model: undefined }
+    return NO_AGENT_FIELDS
   }
 
   let opencodeSessionId: string | undefined
@@ -212,7 +223,13 @@ export function parseStoreData(raw: unknown): StoreData {
     throw new Error('Invalid store: groupOrder is not a string array')
   }
 
-  const sessions = raw.sessions.map(parseSession)
+  const repos = parseRepos(raw.repos)
+  const worktrees = parseWorktrees(raw.worktrees, new Set((repos ?? []).map((r) => r.id)))
+  const worktreeIds = new Set((worktrees ?? []).map((w) => w.id))
+  // A session whose worktree is malformed or missing is dropped; every other session is kept.
+  const sessions = raw.sessions
+    .filter((s) => !hasUnknownWorktreeRef(s, worktreeIds))
+    .map(parseSession)
   const groups = raw.groups.map(parseGroup)
   const statuses = raw.statuses.map(parseStatus)
 
@@ -246,7 +263,9 @@ export function parseStoreData(raw: unknown): StoreData {
     groups,
     statuses,
     groupOrder: [...raw.groupOrder],
-    ...(settings !== undefined ? { settings } : {})
+    ...(settings !== undefined ? { settings } : {}),
+    ...(repos !== undefined ? { repos } : {}),
+    ...(worktrees !== undefined ? { worktrees } : {})
   }
 }
 

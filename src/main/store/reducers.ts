@@ -2,6 +2,7 @@ import type { CreateSessionInput, Group, Id, Session, StatusDef, StoreData } fro
 import { DEFAULT_STATUSES } from '../../shared/types'
 import { isOpencodeSessionId } from '../opencode/values'
 import { clearAutoStatusReference } from './settings'
+import { findWorktree } from './codeReducers'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -87,6 +88,20 @@ export function emptyStore(): StoreData {
   }
 }
 
+const SHELL_SESSION_NAME = 'Shell'
+
+/** The agent-specific fields of a new session. Claude gets its conversation id now; OpenCode reports its own later; a shell has none. */
+function agentFieldsFor(input: CreateSessionInput, id: Id): Partial<Pick<Session, 'agent' | 'model' | 'claudeSessionId'>> {
+  if (input.agent === 'shell') {
+    return { agent: 'shell' }
+  }
+  if (input.agent === 'opencode') {
+    const model = input.model !== undefined && input.model.trim().length > 0 ? input.model : undefined
+    return { agent: 'opencode', ...(model !== undefined ? { model } : {}) }
+  }
+  return { claudeSessionId: id }
+}
+
 export function createSession(
   data: StoreData,
   input: CreateSessionInput,
@@ -97,7 +112,12 @@ export function createSession(
     throw new Error('Invalid cwd')
   }
 
-  const groupId = input.groupId ?? null
+  const worktreeId = input.worktreeId
+  if (worktreeId !== undefined && !findWorktree(data, worktreeId)) {
+    throw new Error('Worktree not found')
+  }
+  // Worktree sessions live under their worktree (Code mode), never in an Ops group.
+  const groupId = worktreeId !== undefined ? null : input.groupId ?? null
   const statusId = input.statusId ?? null
 
   if (!groupExists(data, groupId)) {
@@ -109,10 +129,8 @@ export function createSession(
 
   const name = input.name?.trim().length
     ? validateName(input.name)
-    : defaultNameFromCwd(cwd)
+    : input.agent === 'shell' ? SHELL_SESSION_NAME : defaultNameFromCwd(cwd)
   const claudeArgs = input.claudeArgs ?? []
-  const opencode = input.agent === 'opencode'
-  const model = input.model !== undefined && input.model.trim().length > 0 ? input.model : undefined
 
   const siblings = sessionsInGroup(data, groupId)
   const order = siblings.length === 0 ? 0 : Math.max(...siblings.map((s) => s.order)) + 1
@@ -126,9 +144,8 @@ export function createSession(
     order,
     createdAt: meta.now,
     claudeArgs,
-    // Claude sessions carry their conversation id from the start; OpenCode sessions report theirs via the
-    // injected plugin (persisted as opencodeSessionId) instead.
-    ...(opencode ? { agent: 'opencode' as const, ...(model !== undefined ? { model } : {}) } : { claudeSessionId: meta.id })
+    ...agentFieldsFor(input, meta.id),
+    ...(worktreeId !== undefined ? { worktreeId } : {})
   }
 
   return {

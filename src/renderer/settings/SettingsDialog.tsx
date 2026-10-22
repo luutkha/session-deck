@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Bot, Gauge, Settings2, Tags, Volume2, Wand2 } from 'lucide-react'
+import { Bot, Gauge, GitBranch, Settings2, Tags, Volume2, Wand2 } from 'lucide-react'
 import type { AppSettings, StatusDef } from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
 import { cn } from '@/lib/utils'
@@ -17,12 +17,13 @@ import { SoundSection } from './SoundSection'
 import { AutomationSection } from './AutomationSection'
 import { QuotaSection } from './QuotaSection'
 import { StatusesSection } from './StatusesSection'
+import { CodeSection } from './CodeSection'
 
-export type SettingsSection = 'general' | 'agents' | 'sound' | 'automation' | 'quota' | 'statuses'
+export type SettingsSection = 'general' | 'agents' | 'code' | 'sound' | 'automation' | 'quota' | 'statuses'
 
 export type SettingsActions = Pick<
   SessionActions,
-  'upsertStatus' | 'removeStatus' | 'reorderStatuses' | 'updateSettings'
+  'upsertStatus' | 'removeStatus' | 'reorderStatuses' | 'updateSettings' | 'pickFolder'
 >
 
 export interface SettingsDialogProps {
@@ -67,6 +68,7 @@ const NAV_ITEMS: readonly {
 }[] = [
   { id: 'general', label: 'General', icon: <Settings2 className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'agents', label: 'Agents', icon: <Bot className="size-4 shrink-0" aria-hidden="true" /> },
+  { id: 'code', label: 'Code', icon: <GitBranch className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'sound', label: 'Sound', icon: <Volume2 className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'automation', label: 'Automation', icon: <Wand2 className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'quota', label: 'Quota', icon: <Gauge className="size-4 shrink-0" aria-hidden="true" /> },
@@ -89,6 +91,8 @@ function SettingsPane({
       return <GeneralSection settings={settings} actions={actions} />
     case 'agents':
       return <AgentsSection settings={settings} actions={actions} />
+    case 'code':
+      return <CodeSection settings={settings} actions={actions} />
     case 'sound':
       return <SoundSection />
     case 'automation':
@@ -119,7 +123,7 @@ export function SettingsDialog({
         <DialogHeader className="border-b border-border/50 px-6 pt-5 pb-4">
           <DialogTitle className="text-sm">Settings</DialogTitle>
           <DialogDescription className="text-xs">
-            Agents, notifications, automation, quota and statuses.
+            Agents, Code, notifications, automation, quota and statuses.
           </DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 flex-1">

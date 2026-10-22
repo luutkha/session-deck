@@ -1,4 +1,4 @@
-import type { AttentionReason, HookEvent, Id, Session, CreateSessionInput } from '../../shared/types'
+import type { AttentionReason, HookEvent, Id, Session, CreateSessionInput, ShellKind } from '../../shared/types'
 import { SessionStore } from '../store'
 import { PtyManager, type StartOptions } from '../pty/PtyManager'
 import type { AttentionService } from '../attention'
@@ -39,6 +39,10 @@ export interface SessionControllerDeps {
 export interface SessionController {
   createSession(input: CreateSessionInput): Session
   removeSession(id: Id): void
+  /** Code mode: stops and removes every session of the worktree, then the worktree (the folder is not touched). */
+  removeWorktree(id: Id): void
+  /** Code mode: removes each worktree of the repo (with its sessions), then the repo itself. */
+  removeRepo(id: Id): void
   /** Stops the process, marks the session closed (keeps conversation id). */
   closeSession(id: Id): void
   /** Clears closed and starts the session with `--resume`. Throws if the folder is missing (session stays open, exited). */
@@ -83,8 +87,8 @@ function handleExitWithFallback(
   if (!state) return false
 
   const session = store.get().sessions.find((s) => s.id === sessionId)
-  // The "no conversation" fallback and resume args are Claude-only; OpenCode sessions just stay exited.
-  if (!session || session.agent === 'opencode' || !session.claudeSessionId) return false
+  // The "no conversation" fallback and resume args are Claude-only; OpenCode and shell sessions just stay exited.
+  if (!session || session.agent === 'opencode' || session.agent === 'shell' || !session.claudeSessionId) return false
 
   const outputTail = getOutputTail(pty, sessionId)
   if (
@@ -139,7 +143,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   // are read off its screen instead: that Remote Control is on (keeps the session awake) and that a turn is running
   // again after a question was answered remotely (hooks only report the next Stop).
   function readScreenSignals(id: Id, data: string): void {
-    if (findSession(id)?.agent === 'opencode') return
+    const agent = findSession(id)?.agent
+    if (agent === 'opencode' || agent === 'shell') return
     const signals = detectOutputSignals(data)
     if (signals.usageLimit) reportUsageLimit(id)
     if (signals.remoteControl && runtime.get(id)?.remoteControl !== true) {
@@ -221,9 +226,14 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     runtime.setAttention(id, reason as AttentionReason | null)
   })
 
+  /** The program a Shell session runs (Settings > Code). */
+  function shellProgram(): ShellKind {
+    return store.getSettings().code.shell
+  }
+
   function ensureClaudeSessionId(session: Session): Session {
-    // The Claude `--session-id` bookkeeping never applies to OpenCode sessions.
-    if (session.agent === 'opencode' || session.claudeSessionId) {
+    // The Claude `--session-id` bookkeeping never applies to OpenCode or shell sessions.
+    if (session.agent === 'opencode' || session.agent === 'shell' || session.claudeSessionId) {
       return session
     }
     const newId = crypto.randomUUID()
@@ -252,7 +262,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         startTime: Date.now()
       }
       startState.set(sessionWithId.id, state)
-      const opts: StartOptions = buildStartOptions(sessionWithId, mode === 'resume', attention)
+      const opts: StartOptions = buildStartOptions(sessionWithId, mode === 'resume', attention, shellProgram())
       pty.start(opts)
       runtime.markRunning(sessionWithId.id)
     } catch (error) {
@@ -268,7 +278,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
 
     const sessions = store.get().sessions
     for (const session of sessions) {
-      if (session.agent === 'opencode') {
+      if (session.agent === 'opencode' || session.agent === 'shell') {
         continue
       }
       if (!session.claudeSessionId) {
@@ -305,11 +315,39 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     startSession(sessionWithId, wasRestoredWithoutId ? 'new' : 'resume')
   }
 
+  /** Stops and forgets one session (process, attention, runtime, store). Shared by removeSession and worktree removal. */
+  function removeSessionNow(id: Id): void {
+    if (pty.isRunning(id)) {
+      pty.kill(id)
+    }
+    attention.forget(id)
+    runtime.forget(id)
+    store.removeSession(id)
+    startState.delete(id)
+    if (activeId === id) {
+      activeId = null
+    }
+  }
+
+  /** Removes every session of a worktree, then the worktree. Unknown id = nothing to remove. */
+  function removeWorktreeNow(id: Id): void {
+    for (const session of store.get().sessions) {
+      if (session.worktreeId === id) removeSessionNow(session.id)
+    }
+    store.removeWorktree(id)
+  }
+
   return {
     createSession(input: CreateSessionInput): Session {
+      // A session in a worktree always runs in the worktree folder; input.cwd is ignored then.
+      const worktree = input.worktreeId !== undefined ? store.getWorktree(input.worktreeId) : undefined
+      if (input.worktreeId !== undefined && worktree === undefined) {
+        throw new Error('Worktree not found')
+      }
+      const request: CreateSessionInput = worktree ? { ...input, cwd: worktree.path } : input
       // Validate before storing so a rejected request leaves no session behind.
-      validateCwd(input.cwd)
-      const session = store.createSession(input)
+      validateCwd(request.cwd)
+      const session = store.createSession(request)
       try {
         startSession(session, 'new')
       } catch (error) {
@@ -322,16 +360,18 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     },
 
     removeSession(id: Id): void {
-      if (pty.isRunning(id)) {
-        pty.kill(id)
+      removeSessionNow(id)
+    },
+
+    removeWorktree(id: Id): void {
+      removeWorktreeNow(id)
+    },
+
+    removeRepo(id: Id): void {
+      for (const worktree of store.get().worktrees ?? []) {
+        if (worktree.repoId === id) removeWorktreeNow(worktree.id)
       }
-      attention.forget(id)
-      runtime.forget(id)
-      store.removeSession(id)
-      startState.delete(id)
-      if (activeId === id) {
-        activeId = null
-      }
+      store.removeRepo(id)
     },
 
     closeSession(id: Id): void {
@@ -389,7 +429,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       startState.set(id, state)
 
       try {
-        pty.restart(buildStartOptions(sessionWithId, true, attention))
+        pty.restart(buildStartOptions(sessionWithId, true, attention, shellProgram()))
       } catch (error) {
         // Put back the previous start state so a stale "everStarted" does not block a later start.
         if (previousState) {
@@ -474,8 +514,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         // A prompt means someone is at the keyboard (here or via Remote Control): drop any pending ping.
         if (event.event === 'UserPromptSubmit') {
           attention.clear(event.sessionId)
-          // Only a turn submitted in this process can be cut off by the limit: arm the edge trigger.
-          limitArmed.add(event.sessionId)
+          // Only a turn submitted in this process can be cut off by the limit: arm the edge trigger (not for shells).
+          if (findSession(event.sessionId)?.agent !== 'shell') limitArmed.add(event.sessionId)
         }
         const next = activityFromHook(event, previous)
         runtime.setActivity(event.sessionId, next.activity, next.message, Date.now())

@@ -17,7 +17,11 @@ function fakeHandlers(): PaletteHandlers {
     openHub: vi.fn(),
     openSettings: vi.fn(),
     showAwaySummary: vi.fn(),
-    setStatus: vi.fn()
+    setStatus: vi.fn(),
+    switchMode: vi.fn(),
+    popOutCode: vi.fn(),
+    dockCode: vi.fn(),
+    newWorktree: vi.fn()
   }
 }
 
@@ -180,5 +184,49 @@ describe('runPaletteCommand: failures never throw', () => {
     expect(() => runPaletteCommand(unknown, handlers, fakeApi())).not.toThrow()
     expect(consoleError).toHaveBeenCalled()
     expect(handlers.openHub).not.toHaveBeenCalled()
+  })
+})
+
+describe('runPaletteCommand: mode and window commands', () => {
+  let handlers: PaletteHandlers
+
+  beforeEach(() => {
+    handlers = fakeHandlers()
+    vi.spyOn(console, 'error').mockImplementation((): void => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('switches to the mode it is given for switch-mode', () => {
+    runPaletteCommand({ kind: 'switch-mode', mode: 'code' }, handlers, fakeApi())
+    expect(handlers.switchMode).toHaveBeenCalledWith('code')
+  })
+
+  it('pops the Code window out for pop-out-code', () => {
+    runPaletteCommand({ kind: 'pop-out-code' }, handlers, fakeApi())
+    expect(handlers.popOutCode).toHaveBeenCalledTimes(1)
+    expect(handlers.dockCode).not.toHaveBeenCalled()
+  })
+
+  it('docks the Code window back for dock-code', () => {
+    runPaletteCommand({ kind: 'dock-code' }, handlers, fakeApi())
+    expect(handlers.dockCode).toHaveBeenCalledTimes(1)
+    expect(handlers.popOutCode).not.toHaveBeenCalled()
+  })
+
+  it('starts the new worktree dialog for new-worktree', () => {
+    runPaletteCommand({ kind: 'new-worktree' }, handlers, fakeApi())
+    expect(handlers.newWorktree).toHaveBeenCalledTimes(1)
+    expect(handlers.newSession).not.toHaveBeenCalled()
+  })
+
+  it('logs and swallows a failing mode handler', () => {
+    vi.mocked(handlers.switchMode).mockImplementation((): void => {
+      throw new Error('no window')
+    })
+    expect(() => runPaletteCommand({ kind: 'switch-mode', mode: 'ops' }, handlers, fakeApi())).not.toThrow()
+    expect(console.error).toHaveBeenCalled()
   })
 })

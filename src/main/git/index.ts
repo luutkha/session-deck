@@ -1,0 +1,10 @@
+// Public surface of the git service (Code mode, D31). Everything here runs git through runGit (execFile, no shell).
+export { branchNameFor, folderNameFor, repoFolderName, validateWorktreeName } from './branchName'
+export { GIT_FATAL_EXIT_CODE, GIT_MAX_BYTES, GIT_TIMEOUT_MS, GitError, runGit } from './gitRunner'
+export type { GitResult, GitRun, GitRunOptions } from './gitRunner'
+export { branchExists, listBranches, resolveCommit, resolveRepoRoot } from './repoInfo'
+export { createGitWorktree, defaultWorktreesRoot } from './worktreeCreate'
+export type { CreatedGitWorktree, CreateGitWorktreeInput } from './worktreeCreate'
+export { diffBase, readWorktreeChanges } from './worktreeChanges'
+export type { WorktreeRef } from './worktreeChanges'
+export { readFileDiff } from './worktreeFileDiff'

@@ -1,5 +1,23 @@
 import { describe, it, expect } from 'vitest'
-import { buildLaunch } from './launch'
+import { buildCommandLaunch, buildLaunch } from './launch'
+
+describe('buildCommandLaunch shells', () => {
+  it('starts powershell through cmd.exe on win32', () => {
+    expect(buildCommandLaunch('win32', 'powershell', [], ['-NoLogo'])).toEqual({
+      file: 'cmd.exe',
+      args: ['/d', '/c', 'powershell', '-NoLogo']
+    })
+  })
+
+  it('starts pwsh and cmd through cmd.exe on win32 (cmd gets no internal args)', () => {
+    expect(buildCommandLaunch('win32', 'pwsh', [], ['-NoLogo']).args).toEqual(['/d', '/c', 'pwsh', '-NoLogo'])
+    expect(buildCommandLaunch('win32', 'cmd', [], []).args).toEqual(['/d', '/c', 'cmd'])
+  })
+
+  it('starts the shell directly on other platforms', () => {
+    expect(buildCommandLaunch('linux', 'pwsh', [], ['-NoLogo'])).toEqual({ file: 'pwsh', args: ['-NoLogo'] })
+  })
+})
 
 describe('buildLaunch', () => {
   it('wraps claude in cmd.exe /d /c on win32', () => {

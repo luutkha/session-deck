@@ -3,9 +3,17 @@ import { useState, type ReactElement } from 'react'
 import type { Session } from '../../shared/types'
 import { Button } from '../components/ui/button'
 import { ScrollArea } from '../components/ui/scroll-area'
+import { ChangesPanel } from '../code/changes'
 import type { SessionActions } from '../state/useSessionStore'
 import { ActivityList } from '../timeline/ActivityList'
-import { readSidePanelTab, storeSidePanelTab, type SidePanelTab } from '../timeline/sidePanelTab'
+import {
+  SIDE_PANEL_TAB_KEY,
+  readSidePanelTab,
+  resolveSidePanelTab,
+  sidePanelTabsFor,
+  storeSidePanelTab,
+  type SidePanelTab
+} from '../timeline/sidePanelTab'
 import { ChecklistSection } from './ChecklistSection'
 import { NotesSection } from './NotesSection'
 import { useChecklistDraft } from './checklistDrafts'
@@ -16,22 +24,27 @@ export interface NotesPanelProps {
   readonly session: Session
   readonly actions: Pick<SessionActions, 'setSessionNotes' | 'setSessionChecklist'>
   readonly onClose: () => void
+  /** Where the chosen tab is remembered (each mode has its own, D31). Default = the Ops key. */
+  readonly storageKey?: string
 }
 
-const SIDE_PANEL_TABS: readonly { readonly tab: SidePanelTab; readonly label: string }[] = [
-  { tab: 'notes', label: 'Notes' },
-  { tab: 'activity', label: 'Activity' }
-]
+const TAB_LABELS: Readonly<Record<SidePanelTab, string>> = {
+  notes: 'Notes',
+  activity: 'Activity',
+  changes: 'Changes'
+}
 
-export function NotesPanel({ session, actions, onClose }: NotesPanelProps): ReactElement {
+export function NotesPanel({ session, actions, onClose, storageKey = SIDE_PANEL_TAB_KEY }: NotesPanelProps): ReactElement {
   const notes = useSessionNotes(session, actions)
   const [draft, setDraft] = useChecklistDraft(session.id)
-  const [tab, setTabState] = useState<SidePanelTab>(readSidePanelTab)
+  const [storedTab, setStoredTab] = useState<SidePanelTab>((): SidePanelTab => readSidePanelTab(storageKey))
+  const worktreeId = session.worktreeId
+  const tab = resolveSidePanelTab(storedTab, worktreeId !== undefined)
   const unsaved = notes.notes !== (session.notes ?? '') || parseSteps(draft).length > 0
 
   function selectTab(next: SidePanelTab): void {
-    setTabState(next)
-    storeSidePanelTab(next)
+    setStoredTab(next)
+    storeSidePanelTab(next, storageKey)
   }
 
   function save(): void {
@@ -45,7 +58,7 @@ export function NotesPanel({ session, actions, onClose }: NotesPanelProps): Reac
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-sidebar-border pl-3 pr-1.5">
         <NotebookPen className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <div role="tablist" aria-label="Side panel" className="flex shrink-0 items-center gap-0.5">
-          {SIDE_PANEL_TABS.map(({ tab: option, label }) => (
+          {sidePanelTabsFor(worktreeId !== undefined).map((option: SidePanelTab) => (
             <Button
               key={option}
               type="button"
@@ -53,10 +66,11 @@ export function NotesPanel({ session, actions, onClose }: NotesPanelProps): Reac
               size="xs"
               role="tab"
               aria-selected={tab === option}
+              data-side-tab={option}
               className="text-xs"
               onClick={(): void => selectTab(option)}
             >
-              {label}
+              {TAB_LABELS[option]}
             </Button>
           ))}
         </div>
@@ -89,7 +103,9 @@ export function NotesPanel({ session, actions, onClose }: NotesPanelProps): Reac
         </Button>
       </header>
 
-      {tab === 'activity' ? (
+      {tab === 'changes' && worktreeId !== undefined ? (
+        <ChangesPanel worktreeId={worktreeId} className="min-h-0 flex-1" />
+      ) : tab === 'activity' ? (
         <ActivityList sessionId={session.id} />
       ) : (
         <>

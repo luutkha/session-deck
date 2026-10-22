@@ -40,8 +40,8 @@ function tabsReducer(state: OpenTabsState, action: TabsAction): OpenTabsState {
   }
 }
 
-function loadInitialTabs(): OpenTabsState {
-  return parseOpenTabs(readStorageItem(OPEN_TABS_STORAGE_KEY))
+function loadInitialTabs(storageKey: string): OpenTabsState {
+  return parseOpenTabs(readStorageItem(storageKey))
 }
 
 /** A rejected store action has already recorded its message in lastError (shown by the sidebar banner). */
@@ -68,15 +68,20 @@ export interface OpenTabsApi {
   readonly closeActive: () => void
 }
 
-export function useOpenTabs(sessions: readonly Session[] | null, actions: TabActions): OpenTabsApi {
-  const [state, dispatch] = useReducer(tabsReducer, undefined, loadInitialTabs)
+/** storageKey: where the open tabs are remembered (Code mode uses its own key, D31). */
+export function useOpenTabs(
+  sessions: readonly Session[] | null,
+  actions: TabActions,
+  storageKey: string = OPEN_TABS_STORAGE_KEY
+): OpenTabsApi {
+  const [state, dispatch] = useReducer(tabsReducer, storageKey, loadInitialTabs)
   const loaded = sessions !== null
   const { activeId, ids } = state
 
   // Persist the ordered ids and the active id on every change.
   useEffect((): void => {
-    writeStorageItem(OPEN_TABS_STORAGE_KEY, serializeOpenTabs(state))
-  }, [state])
+    writeStorageItem(storageKey, serializeOpenTabs(state))
+  }, [state, storageKey])
 
   // Restored tabs are checked against the loaded store: closed or removed sessions lose their tab.
   useEffect((): void => {

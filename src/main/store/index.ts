@@ -46,5 +46,14 @@ export {
   saveStoreFile
 } from './persistence'
 export type { DebouncedSaver, DebouncedSaverDeps } from './persistence'
+export {
+  addRepo,
+  addWorktree,
+  pathKey,
+  removeRepo,
+  removeWorktree,
+  setRepoCollapsed,
+  setWorktreeCollapsed
+} from './codeReducers'
 export { SessionStore } from './SessionStore'
 export type { SessionStoreDeps, SessionStoreSaver } from './SessionStore'

@@ -35,7 +35,8 @@
     "e2e:sleepbell": "node scripts/e2e-sleepbell.cjs",
     "e2e:palette": "node scripts/e2e-palette.cjs",
     "e2e:away": "node scripts/e2e-away.cjs",
-    "e2e:autopilot": "node scripts/e2e-autopilot.cjs"
+    "e2e:autopilot": "node scripts/e2e-autopilot.cjs",
+    "e2e:codemode": "node scripts/e2e-codemode.cjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

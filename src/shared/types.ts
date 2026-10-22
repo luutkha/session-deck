@@ -23,7 +23,10 @@ export interface Group {
 export type SessionRun = 'running' | 'exited'
 
 /** Which coding agent a session runs. Absent on a stored session = 'claude'. */
-export type AgentKind = 'claude' | 'opencode'
+export type AgentKind = 'claude' | 'opencode' | 'shell'
+
+/** Which UI a session belongs to (D31). 'code' = it lives in a git worktree (Session.worktreeId present). */
+export type UiMode = 'ops' | 'code'
 
 export interface Session {
   readonly id: Id
@@ -50,7 +53,40 @@ export interface Session {
   readonly notes?: string
   /** Work-in-progress checklist (max 100 items). Absent or empty = none. */
   readonly checklist?: readonly ChecklistItem[]
+  /** Code mode (D31): the worktree this session runs in (its cwd is the worktree path). Absent = an Ops session. */
+  readonly worktreeId?: Id
 }
+
+/** Code mode (D31): a git repository the user added. Worktrees are created from it. */
+export interface Repo {
+  readonly id: Id
+  /** Display name: the folder name of `path`. */
+  readonly name: string
+  /** Absolute path of the repository's main working tree (git top-level), Windows separators. Unique. */
+  readonly path: string
+  readonly createdAt: number // epoch ms
+  readonly collapsed: boolean
+}
+
+/** Code mode (D31): a linked git worktree on its own branch, created by SessionDeck from a Repo. */
+export interface Worktree {
+  readonly id: Id
+  readonly repoId: Id
+  /** Display name the user typed (1..WORKTREE_NAME_MAX chars). */
+  readonly name: string
+  /** Branch created for it (`git worktree add -b <branch>`). */
+  readonly branch: string
+  /** Absolute path of the worktree folder, Windows separators. Unique. */
+  readonly path: string
+  /** Local branch it was created from; changes are shown against merge-base(baseBranch, HEAD). */
+  readonly baseBranch: string
+  /** Commit of baseBranch at creation (fallback base when baseBranch no longer exists). 40-char hex sha. */
+  readonly baseCommit: string
+  readonly createdAt: number // epoch ms
+  readonly collapsed: boolean
+}
+
+export const WORKTREE_NAME_MAX = 60
 
 /** Persisted document (JSON on disk). Runtime-only data (run state, attention) is NOT persisted. */
 export interface StoreData {
@@ -61,6 +97,10 @@ export interface StoreData {
   readonly groupOrder: readonly Id[]
   /** App settings (auto status, tray, quota). Absent = all defaults (see DEFAULT_APP_SETTINGS / resolveSettings). */
   readonly settings?: AppSettings
+  /** Code mode repos (D31). Absent = none. Array order = sidebar order. */
+  readonly repos?: readonly Repo[]
+  /** Code mode worktrees (D31). Absent = none. Array order within a repo = sidebar order. */
+  readonly worktrees?: readonly Worktree[]
 }
 
 /** unread = the user flagged the session themselves (Mark as unread): silent, never a sound or notification. */
@@ -98,7 +138,83 @@ export interface CreateSessionInput {
   readonly agent?: AgentKind
   /** OpenCode only: "provider/model". */
   readonly model?: string
+  /** Code mode: start the session inside this worktree. Main then uses the worktree path as cwd (input.cwd is ignored). */
+  readonly worktreeId?: Id
 }
+
+/** Code mode: create a branch + worktree from a repo and start the first session in it. */
+export interface CreateWorktreeInput {
+  readonly repoId: Id
+  /** 1..WORKTREE_NAME_MAX chars; the branch and folder name are derived from it (see branchNameFor). */
+  readonly name: string
+  /** An existing local branch of the repo. */
+  readonly baseBranch: string
+  /** Agent of the first session started in the new worktree. */
+  readonly agent: AgentKind
+  /** OpenCode only: "provider/model". */
+  readonly model?: string
+}
+
+export interface CreateWorktreeResult {
+  readonly worktree: Worktree
+  readonly session: Session
+}
+
+/** Local branches of a repo, for the New worktree dialog. */
+export interface RepoBranches {
+  /** Branch checked out in the repo's main working tree; null = detached HEAD. */
+  readonly current: string | null
+  /** Local branch names (refs/heads), sorted. */
+  readonly branches: readonly string[]
+}
+
+/** How a file differs from the worktree's base. */
+export type ChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked'
+
+export interface ChangedFile {
+  /** Path relative to the worktree root, forward slashes. For a rename: the new path. */
+  readonly path: string
+  /** Renames only: the old path. */
+  readonly oldPath?: string
+  readonly kind: ChangeKind
+  /** Changed line counts; null for binary files (or an untracked file too large to count). */
+  readonly additions: number | null
+  readonly deletions: number | null
+}
+
+/** Everything that differs between merge-base(baseBranch, HEAD) and the worktree on disk (committed, staged, unstaged, untracked). */
+export interface WorktreeChanges {
+  readonly worktreeId: Id
+  /** Sorted by path. At most CHANGES_MAX_FILES entries (truncated = true when there were more). */
+  readonly files: readonly ChangedFile[]
+  readonly truncated: boolean
+  /** Sums of the known counts. */
+  readonly additions: number
+  readonly deletions: number
+  readonly computedAt: number // epoch ms
+  /** User-readable reason when the changes could not be read (folder missing, git missing...). files is [] then. */
+  readonly error?: string
+}
+
+export interface FileDiff {
+  readonly worktreeId: Id
+  readonly path: string
+  /** Unified diff text (git diff output) of this one file; '' when binary. Cut at DIFF_MAX_BYTES. */
+  readonly diff: string
+  readonly binary: boolean
+  readonly truncated: boolean
+}
+
+export const CHANGES_MAX_FILES = 500
+export const DIFF_MAX_BYTES = 512 * 1024
+
+/** Which windows are open. The Code mode either lives in the main window (switch) or in its own window. */
+export interface WindowState {
+  readonly codePoppedOut: boolean
+}
+
+/** Which window a renderer runs in. 'code' = the popped-out Code window (shows Code mode only). */
+export type WindowRole = 'main' | 'code'
 
 export interface HookEvent {
   readonly sessionId: Id
@@ -239,6 +355,16 @@ export interface AwaySettings {
   readonly afterMinutes: number
 }
 
+/** Code mode (D31). */
+export interface CodeSettings {
+  /** Folder new worktrees go in (<root>/<repo name>/<worktree folder>). '' = <home>/SessionDeck/worktrees. Absolute when set. */
+  readonly worktreesRoot: string
+  /** Program used by Shell sessions. */
+  readonly shell: ShellKind
+}
+
+export type ShellKind = 'powershell' | 'pwsh' | 'cmd'
+
 export interface AppSettings {
   readonly autoStatus: AutoStatusSettings
   readonly tray: TraySettings
@@ -247,6 +373,7 @@ export interface AppSettings {
   readonly agents: AgentSettings
   readonly hub: HubSettings
   readonly away: AwaySettings
+  readonly code: CodeSettings
 }
 
 export interface SettingsPatch {
@@ -257,6 +384,7 @@ export interface SettingsPatch {
   readonly agents?: Partial<AgentSettings>
   readonly hub?: Partial<HubSettings>
   readonly away?: Partial<AwaySettings>
+  readonly code?: Partial<CodeSettings>
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -266,7 +394,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   sleep: { enabled: false, afterMinutes: 30, allEnabled: false, allAfterMinutes: 60 },
   agents: { defaultAgent: 'claude', opencodeModel: '' },
   hub: { scrollToBusiest: true },
-  away: { enabled: true, afterMinutes: 15 }
+  away: { enabled: true, afterMinutes: 15 },
+  code: { worktreesRoot: '', shell: 'powershell' }
 }
 
 export const MIN_SLEEP_MINUTES = 1
@@ -281,7 +410,8 @@ export function resolveSettings(stored: Partial<{ [K in keyof AppSettings]: Part
     sleep: { ...DEFAULT_APP_SETTINGS.sleep, ...(stored?.sleep ?? {}) },
     agents: { ...DEFAULT_APP_SETTINGS.agents, ...(stored?.agents ?? {}) },
     hub: { ...DEFAULT_APP_SETTINGS.hub, ...(stored?.hub ?? {}) },
-    away: { ...DEFAULT_APP_SETTINGS.away, ...(stored?.away ?? {}) }
+    away: { ...DEFAULT_APP_SETTINGS.away, ...(stored?.away ?? {}) },
+    code: { ...DEFAULT_APP_SETTINGS.code, ...(stored?.code ?? {}) }
   }
 }
 

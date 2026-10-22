@@ -4,13 +4,27 @@ import type {
   CreateSessionInput,
   Group,
   Id,
+  Repo,
   SettingsPatch,
   Session,
   StatusDef,
-  StoreData
+  StoreData,
+  Worktree
 } from '../../shared/types'
 import { resolveSettings } from '../../shared/types'
 import { updateSettings as updateSettingsReducer } from './settings'
+import {
+  addRepo as addRepoReducer,
+  addWorktree as addWorktreeReducer,
+  findRepo,
+  findWorktree,
+  removeRepo as removeRepoReducer,
+  removeWorktree as removeWorktreeReducer,
+  setRepoCollapsed as setRepoCollapsedReducer,
+  setWorktreeCollapsed as setWorktreeCollapsedReducer,
+  type AddRepoInput,
+  type WorktreeDraft
+} from './codeReducers'
 import {
   setSessionChecklist as setSessionChecklistReducer,
   setSessionNotes as setSessionNotesReducer
@@ -221,6 +235,46 @@ export class SessionStore {
     this.saver.schedule(next)
     this.emit(next)
     return resolveSettings(next.settings)
+  }
+
+  /** Code mode: adds a repo (or returns the one already stored with that path). Saves only when something was added. */
+  addRepo(input: AddRepoInput): Repo {
+    const { data, repo } = addRepoReducer(this.data, input, { id: this.deps.newId(), now: this.deps.now() })
+    this.commitIfChanged(data)
+    return repo
+  }
+
+  /** Removes the repo with its worktrees and their sessions (the controller stops the processes first). */
+  removeRepo(id: Id): void {
+    this.commitIfChanged(removeRepoReducer(this.data, id))
+  }
+
+  setRepoCollapsed(id: Id, collapsed: boolean): void {
+    this.commitIfChanged(setRepoCollapsedReducer(this.data, id, collapsed))
+  }
+
+  /** Code mode: adds a worktree to a stored repo. Throws `Repo not found` or `Worktree already added`. */
+  addWorktree(input: WorktreeDraft): Worktree {
+    const { data, worktree } = addWorktreeReducer(this.data, input, { id: this.deps.newId(), now: this.deps.now() })
+    this.commitIfChanged(data)
+    return worktree
+  }
+
+  /** Removes the worktree and its sessions (the controller stops the processes first). */
+  removeWorktree(id: Id): void {
+    this.commitIfChanged(removeWorktreeReducer(this.data, id))
+  }
+
+  setWorktreeCollapsed(id: Id, collapsed: boolean): void {
+    this.commitIfChanged(setWorktreeCollapsedReducer(this.data, id, collapsed))
+  }
+
+  getRepo(id: Id): Repo | undefined {
+    return findRepo(this.data, id)
+  }
+
+  getWorktree(id: Id): Worktree | undefined {
+    return findWorktree(this.data, id)
   }
 
   /** Stamps closedAt with the store clock. No save or notification when already closed. */
