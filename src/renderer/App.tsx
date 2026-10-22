@@ -33,6 +33,10 @@ import { useUserActivityReporter } from './shell/useUserActivityReporter'
 import { buildTabModels } from './shell/tabStatus'
 import { needsYouItems } from './attention/needsYou'
 import { NeedsYouButton } from './attention/NeedsYouButton'
+import { CommandPalette } from './palette/CommandPalette'
+import { buildPaletteItems, type PaletteCommand } from './palette/paletteItems'
+import { runPaletteCommand } from './palette/runCommand'
+import { usePaletteShortcut } from './palette/usePaletteShortcut'
 import './styles.css'
 
 const SIDEBAR_WIDTH_CLASS = 'w-[300px]'
@@ -140,6 +144,31 @@ export function App(): ReactElement {
   )
 
   useTabShortcuts({ closeActive: tabs.closeActive, cycle: tabs.cycle })
+
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const openPalette = useCallback((): void => setPaletteOpen(true), [])
+  usePaletteShortcut(openPalette)
+  // The Hub covers the terminal, so no session counts as "on screen" there (same as the status bar).
+  const paletteItems = useMemo(
+    () => buildPaletteItems({
+      sessions: sessions ?? [],
+      statuses: data?.statuses ?? [],
+      runtime,
+      activeId: view === 'hub' ? null : activeId,
+      view
+    }),
+    [sessions, data?.statuses, runtime, view, activeId]
+  )
+  const runPalette = useCallback((command: PaletteCommand): void => {
+    runPaletteCommand(command, {
+      openSession: selectSession,
+      reopenSession,
+      newSession: handleNewTab,
+      openHub: (): void => setView('hub'),
+      openSettings: handleOpenSettings,
+      setStatus: (id, statusId): void | Promise<void> => actions.setSessionStatus(id, statusId)
+    })
+  }, [selectSession, reopenSession, handleNewTab, setView, handleOpenSettings, actions])
 
   const paneNames = useMemo(
     (): ReadonlyMap<Id, string> => new Map((sessions ?? []).map((s: Session): [Id, string] => [s.id, s.name])),
@@ -342,6 +371,7 @@ export function App(): ReactElement {
           onClose={closeSettings}
         />
       )}
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} items={paletteItems} onRun={runPalette} />
       <QuotaToast />
     </TooltipProvider>
   )

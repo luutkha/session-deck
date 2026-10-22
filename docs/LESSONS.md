@@ -31,3 +31,6 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 - Plugin events posted with parallel `fetch` arrive out of order; the worker plugin serializes posts.
 - In this shell, heredocs/`sed` with backslashes or odd quotes get mangled; write files with the Write tool or a Python script file.
 - A check that only proves "no crash" is not a test of the bug: the first e2e-paste passed while the real bug was present, because the bug needed fullscreen mode.
+
+- **2026-10-22 · Palette e2e "failed" twice; the app was right.** The palette (Radix dialog) fades out, so "closed" must be awaited, not read right after Enter. Closing also returns focus to the element focused before (usually the terminal), where plain Ctrl+K is deliberately ignored: blurring right after Enter loses that race. Use Ctrl+Shift+K in tests after an action.
+- **2026-10-22 · `deepseek-v4-flash` returned "Unexpected server error" for every call** (even a one-word probe), so the batch fell back to `claude-haiku-5-5`. Probe with a one-word `oc-run` before blaming a brief.

@@ -99,6 +99,12 @@ User asked how to push updates that other machines install over the internet, th
 **D26 · 2026-10-22 · Sleep everything when the app is idle** · active
 "i want a setting that can auto trigger sleep for alls after a specific time the apps not working". User picked: trigger = no session working or waiting for you AND no key/click/wheel in SessionDeck for X minutes (then the session on screen sleeps too); spared = Keep-awake and Remote Control sessions. Separate switch from the per-session idle timer (D14), default off, 60 minutes.
 
+**D27 · 2026-10-22 · Sleeping keeps the attention bell** · active
+Asked for recommendations, user replied "do 1 and 3". Item 1: a session put to sleep (manually, idle timer or sleep-all) keeps its bell and its "Needs you" entry until the user opens it or marks it read.
+
+**D28 · 2026-10-22 · Command palette** · active
+Item 3 of the same reply. Ctrl+K (outside the terminal, which keeps Ctrl+K for Claude's delete-to-end-of-line) or Ctrl+Shift+K (anywhere) opens an Orca-style palette: jump to any session (open, sleeping, closed), New session / Hub / Settings, and actions on the session on screen (sleep, keep awake, read/unread, set status).
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

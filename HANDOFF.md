@@ -98,3 +98,10 @@ Settings > Automation > "Sleep everything when idle" (`SleepSettings.allEnabled`
 - User input: renderer `shell/useUserActivityReporter.ts` listens (capture phase, so xterm typing counts) to keydown/pointerdown/wheel and sends `IPC.appUserActivity` at most every 15 s (`shell/userActivity.ts`); main also counts every `pty:write`. `SleepScheduler.noteUserInput()`; the scheduler runs both rules on the same 30 s tick and sleeps the union.
 - Window hidden in the tray = no input = counts as away.
 - E2E: `scripts/e2e-sleepall.cjs` (12 checks, ~4 min: real switch click, real key press postpones, all sleep incl. the one on screen, Keep awake stays running, wake works). `e2e-sleep.cjs` still passes.
+
+## Sleeping keeps the bell (D27)
+`sleepSession` calls `AttentionService.suspend(id)` (drops idle timers only) instead of `forget`, and `runtimeRegistry.markSleeping` keeps `attention` + `attentionAt`. So a sleeping card, tab and the "Needs you" list keep the bell until the user opens the session or marks it read. Close and remove still forget it. E2E: `scripts/e2e-sleepbell.cjs` (10 checks, real Stop hook).
+
+## Command palette (D28)
+Ctrl+K (outside the terminal and text inputs) or Ctrl+Shift+K (anywhere, never over another dialog) opens it. `src/renderer/palette/`: `paletteShortcut.ts` (pure key rule) + `usePaletteShortcut.ts`, `paletteItems.ts` (Sessions: every session with folder and state, bell first, then open, sleeping, closed; This session: sleep, keep awake toggle, read/unread, set status; Actions: New session, Open Hub, Open Settings), `paletteFilter.ts` (all tokens must match label/detail/keywords; label prefix ranks first; max 50), `runCommand.ts` (data-only commands mapped to App handlers / window.api), `CommandPalette.tsx` on `components/ui/command.tsx` (ported from Orca, cmdk with `shouldFilter={false}`). Closing returns focus to where it was (often the terminal).
+E2E: `scripts/e2e-palette.cjs` (16 checks, real key presses).

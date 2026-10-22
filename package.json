@@ -31,7 +31,9 @@
     "e2e:hub": "node scripts/e2e-hub.cjs",
     "e2e:notes": "node scripts/e2e-notes-usage.cjs",
     "e2e:usage-refresh": "node scripts/e2e-usage-refresh.cjs",
-    "e2e:sleepall": "node scripts/e2e-sleepall.cjs"
+    "e2e:sleepall": "node scripts/e2e-sleepall.cjs",
+    "e2e:sleepbell": "node scripts/e2e-sleepbell.cjs",
+    "e2e:palette": "node scripts/e2e-palette.cjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -43,6 +45,7 @@
     "@xterm/xterm": "^5.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "lucide-react": "^0.577.0",
     "node-pty": "^1.1.0-beta22",
     "radix-ui": "^1.8.1",
