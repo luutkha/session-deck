@@ -148,3 +148,4 @@ The first double-paste "fix" was a guess and the bug came back (D21). Reproduce 
 
 **W12 · Keep this knowledge base current** · active
 "build knownledge for this project, to avoid forget what we decided". Every decision goes into this file in the same turn it is made; gotchas go into `docs/LESSONS.md`; state goes into `HANDOFF.md`.
+2026-10-22: asked "do we have a knownledge hub for this project, for agent can check and get infomation?", then "yes" to adding `AGENTS.md` (entry point for OpenCode and other agents, points to CLAUDE.md) and `docs/CODEMAP.md` (folder-by-folder map).
