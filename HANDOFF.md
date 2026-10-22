@@ -105,3 +105,6 @@ Settings > Automation > "Sleep everything when idle" (`SleepSettings.allEnabled`
 ## Command palette (D28)
 Ctrl+K (outside the terminal and text inputs) or Ctrl+Shift+K (anywhere, never over another dialog) opens it. `src/renderer/palette/`: `paletteShortcut.ts` (pure key rule) + `usePaletteShortcut.ts`, `paletteItems.ts` (Sessions: every session with folder and state, bell first, then open, sleeping, closed; This session: sleep, keep awake toggle, read/unread, set status; Actions: New session, Open Hub, Open Settings), `paletteFilter.ts` (all tokens must match label/detail/keywords; label prefix ranks first; max 50), `runCommand.ts` (data-only commands mapped to App handlers / window.api), `CommandPalette.tsx` on `components/ui/command.tsx` (ported from Orca, cmdk with `shouldFilter={false}`). Closing returns focus to where it was (often the terminal).
 E2E: `scripts/e2e-palette.cjs` (16 checks, real key presses).
+
+## Installer 0.0.3 (2026-10-22)
+`release/SessionDeck-Setup-0.0.3.exe` built at the commit after `5e05505` (version bumped 0.0.1 -> 0.0.3; the old `SessionDeck-Setup-0.0.2.exe` in `release/` was a renamed 0.0.1 build from 2026-10-18). Contains sleep-all, bell kept on sleep, command palette. `e2e-packaged` 12/12; the unpacked exe also has the new API, settings and palette. Unsigned (SmartScreen warns once).
