@@ -50,6 +50,8 @@ export interface IpcHandlersDeps {
   readonly userDataDir: string
   /** Start-on-login state and toggle (packaged app only). */
   readonly loginItem: LoginItem
+  /** The user pressed a key / clicked in SessionDeck (resets the app-wide idle sleep timer). */
+  readonly onUserActivity: () => void
 }
 
 /**
@@ -67,7 +69,7 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 }
 
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, window, getActiveSessionId, userDataDir, loginItem } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, window, getActiveSessionId, userDataDir, loginItem, onUserActivity } = deps
 
   const sendStoreChanged = (data: StoreData): void => {
     window.webContents.send(IPC.evStoreChanged, data)
@@ -170,8 +172,15 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
   })
 
   onFireAndForget(IPC.ptyWrite, userDataDir, (rawId, rawData) => {
-    controller.writeToPty(assertId(rawId, 'session id'), assertPtyWriteData(rawData))
+    const id = assertId(rawId, 'session id')
+    const data = assertPtyWriteData(rawData)
+    // Typing into a terminal is user input for the app-wide idle timer.
+    onUserActivity()
+    controller.writeToPty(id, data)
   })
+
+  // Takes no arguments: any payload from the renderer is ignored.
+  onFireAndForget(IPC.appUserActivity, userDataDir, () => onUserActivity())
 
   onFireAndForget(IPC.ptyResize, userDataDir, (rawId, rawCols, rawRows) => {
     controller.resizePty(

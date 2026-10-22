@@ -20,6 +20,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { parseSleepMinutes } from './sleepValidation'
+import { SleepAllBlock } from './SleepAllBlock'
 
 export interface AutomationSectionProps {
   readonly settings: AppSettings
@@ -196,6 +197,8 @@ export function AutomationSection({
           waiting for you) to free memory and CPU. Open it again and the same conversation resumes.
         </p>
       </div>
+
+      <SleepAllBlock sleep={sleep} onPatch={applyPatch} />
 
       {error !== null ? (
         <p role="alert" className="text-xs text-destructive">

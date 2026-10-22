@@ -29,6 +29,7 @@ import { useOpenTabs } from './shell/useOpenTabs'
 import { useSoundEnabled } from './shell/useSoundEnabled'
 import { useTabShortcuts } from './shell/useTabShortcuts'
 import { usePersistedBoolean } from './shell/usePersistedBoolean'
+import { useUserActivityReporter } from './shell/useUserActivityReporter'
 import { buildTabModels } from './shell/tabStatus'
 import { needsYouItems } from './attention/needsYou'
 import { NeedsYouButton } from './attention/NeedsYouButton'
@@ -64,6 +65,7 @@ function activeRuntime(
 }
 
 export function App(): ReactElement {
+  useUserActivityReporter()
   const { data, runtime, lastError, clearError, actions } = useSessionStore()
   const [sidebarOpen, setSidebarOpen] = usePersistedBoolean(SIDEBAR_STORAGE_KEY, true)
   const [soundEnabled, setSoundEnabled] = useSoundEnabled()

@@ -286,7 +286,8 @@ if (!gotTheLock) {
       window: mainWindow,
       getActiveSessionId: activeSessionId,
       userDataDir: userData,
-      loginItem: createLoginItem(app)
+      loginItem: createLoginItem(app),
+      onUserActivity: () => sleepScheduler.noteUserInput()
     })
 
     // Tray icon and menu, close-to-tray (the window is hidden, sessions keep running). Never throws.

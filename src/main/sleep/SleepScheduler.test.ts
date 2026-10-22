@@ -25,7 +25,7 @@ function runtimeRunning(ids: readonly Id[]): ReadonlyMap<Id, RuntimeState> {
 
 function harness(): Harness {
   let time = 10_000
-  let settings: SleepSettings = { enabled: true, afterMinutes: 1 }
+  let settings: SleepSettings = { enabled: true, afterMinutes: 1, allEnabled: false, allAfterMinutes: 60 }
   let sessions: ReadonlyArray<{ id: Id; closedAt?: number }> = []
   let runtime: ReadonlyMap<Id, RuntimeState> = new Map()
   let active: Id | null = null
@@ -98,7 +98,7 @@ describe('createSleepScheduler', () => {
   it('uses the injected checkEveryMs', () => {
     let interval = 0
     const scheduler = createSleepScheduler({
-      getSettings: () => ({ enabled: false, afterMinutes: 1 }),
+      getSettings: () => ({ enabled: false, afterMinutes: 1, allEnabled: false, allAfterMinutes: 60 }),
       getSessions: () => [],
       getRuntime: () => new Map(),
       getActiveSessionId: () => null,
@@ -210,7 +210,7 @@ describe('createSleepScheduler', () => {
     const errors: Array<readonly [string, unknown]> = []
     let callback: (() => void) | null = null
     const scheduler = createSleepScheduler({
-      getSettings: () => ({ enabled: true, afterMinutes: 1 }),
+      getSettings: () => ({ enabled: true, afterMinutes: 1, allEnabled: false, allAfterMinutes: 60 }),
       getSessions: () => [{ id: 'a' }, { id: 'b' }],
       getRuntime: () =>
         new Map([
@@ -237,6 +237,167 @@ describe('createSleepScheduler', () => {
 
     expect(slept).toEqual(['b'])
     expect(errors[0]?.[0]).toBe('sleep session a')
+  })
+
+  it('does not sleep everything on the first tick after a fresh start (app-wide rule)', () => {
+    const h = harness()
+    h.setSettings({ enabled: false, afterMinutes: 1, allEnabled: true, allAfterMinutes: 1 })
+    h.setSessions([{ id: 'a' }, { id: 'b' }])
+    h.setRuntime(runtimeRunning(['a', 'b']))
+    h.scheduler.start()
+
+    h.tick()
+
+    expect(h.slept).toEqual([])
+  })
+
+  it('sleeps everything once the whole app has been idle for allAfterMinutes', () => {
+    const h = harness()
+    h.setSettings({ enabled: false, afterMinutes: 1, allEnabled: true, allAfterMinutes: 1 })
+    h.setSessions([{ id: 'a' }, { id: 'b' }])
+    h.setRuntime(runtimeRunning(['a', 'b']))
+    h.setActive('a')
+    h.scheduler.start()
+
+    h.setNow(10_000 + 60_000)
+    h.tick()
+
+    expect(h.slept).toEqual(['a', 'b'])
+  })
+
+  it('noteUserInput postpones the app-wide sleep', () => {
+    const h = harness()
+    h.setSettings({ enabled: false, afterMinutes: 1, allEnabled: true, allAfterMinutes: 1 })
+    h.setSessions([{ id: 'a' }])
+    h.setRuntime(runtimeRunning(['a']))
+    h.scheduler.start()
+
+    h.setNow(10_000 + 60_000)
+    h.scheduler.noteUserInput()
+    h.tick()
+    expect(h.slept).toEqual([])
+
+    h.setNow(10_000 + 120_000)
+    h.tick()
+    expect(h.slept).toEqual(['a'])
+  })
+
+  it('sleeps a session picked by both rules only once', () => {
+    const h = harness()
+    h.setSettings({ enabled: true, afterMinutes: 1, allEnabled: true, allAfterMinutes: 1 })
+    h.setSessions([{ id: 'a' }])
+    h.setRuntime(runtimeRunning(['a']))
+    h.scheduler.start()
+
+    h.setNow(10_000 + 60_000)
+    h.tick()
+
+    expect(h.slept).toEqual(['a'])
+  })
+
+  it('a failing sleepSession for one session still sleeps the others (app-wide rule)', () => {
+    let time = 10_000
+    const slept: Id[] = []
+    const errors: Array<readonly [string, unknown]> = []
+    let callback: (() => void) | null = null
+    const scheduler = createSleepScheduler({
+      getSettings: () => ({ enabled: false, afterMinutes: 1, allEnabled: true, allAfterMinutes: 1 }),
+      getSessions: () => [{ id: 'a' }, { id: 'b' }],
+      getRuntime: () => runtimeRunning(['a', 'b']),
+      getActiveSessionId: () => null,
+      sleepSession: (id) => {
+        if (id === 'a') throw new Error('boom')
+        slept.push(id)
+      },
+      now: () => time,
+      onError: (where, error) => errors.push([where, error]),
+      setInterval: (cb) => {
+        callback = cb
+        return 0 as unknown as SleepTimer
+      },
+      clearInterval: () => {}
+    })
+
+    scheduler.start()
+    time = 10_000 + 60_000
+    expect(() => callback?.()).not.toThrow()
+
+    expect(slept).toEqual(['b'])
+    expect(errors[0]?.[0]).toBe('sleep session a')
+  })
+
+  it('a failing app-wide check is reported and the per-session rule still sleeps', () => {
+    let time = 10_000
+    const slept: Id[] = []
+    const errors: Array<readonly [string, unknown]> = []
+    let callback: (() => void) | null = null
+    const scheduler = createSleepScheduler({
+      getSettings: () => ({
+        enabled: true,
+        afterMinutes: 1,
+        allEnabled: true,
+        get allAfterMinutes(): number {
+          throw new Error('all boom')
+        }
+      }),
+      getSessions: () => [{ id: 'a' }],
+      getRuntime: () => runtimeRunning(['a']),
+      getActiveSessionId: () => null,
+      sleepSession: (id) => {
+        slept.push(id)
+      },
+      now: () => time,
+      onError: (where, error) => errors.push([where, error]),
+      setInterval: (cb) => {
+        callback = cb
+        return 0 as unknown as SleepTimer
+      },
+      clearInterval: () => {}
+    })
+
+    scheduler.start()
+    time = 10_000 + 60_000
+    expect(() => callback?.()).not.toThrow()
+
+    expect(slept).toEqual(['a'])
+    expect(errors[0]?.[0]).toBe('sleep-all check')
+  })
+
+  it('a failing per-session check is reported and the app-wide rule still sleeps', () => {
+    let time = 10_000
+    const slept: Id[] = []
+    const errors: Array<readonly [string, unknown]> = []
+    let callback: (() => void) | null = null
+    const scheduler = createSleepScheduler({
+      getSettings: () => ({
+        enabled: true,
+        get afterMinutes(): number {
+          throw new Error('per-session boom')
+        },
+        allEnabled: true,
+        allAfterMinutes: 1
+      }),
+      getSessions: () => [{ id: 'a' }],
+      getRuntime: () => runtimeRunning(['a']),
+      getActiveSessionId: () => null,
+      sleepSession: (id) => {
+        slept.push(id)
+      },
+      now: () => time,
+      onError: (where, error) => errors.push([where, error]),
+      setInterval: (cb) => {
+        callback = cb
+        return 0 as unknown as SleepTimer
+      },
+      clearInterval: () => {}
+    })
+
+    scheduler.start()
+    time = 10_000 + 60_000
+    expect(() => callback?.()).not.toThrow()
+
+    expect(slept).toEqual(['a'])
+    expect(errors[0]?.[0]).toBe('sleep check')
   })
 
   it('reports a failure in the policy check without throwing out of the timer', () => {

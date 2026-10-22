@@ -30,7 +30,8 @@
     "e2e:busyclose": "node scripts/e2e-busy-close.cjs",
     "e2e:hub": "node scripts/e2e-hub.cjs",
     "e2e:notes": "node scripts/e2e-notes-usage.cjs",
-    "e2e:usage-refresh": "node scripts/e2e-usage-refresh.cjs"
+    "e2e:usage-refresh": "node scripts/e2e-usage-refresh.cjs",
+    "e2e:sleepall": "node scripts/e2e-sleepall.cjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -91,3 +91,10 @@ A session that needs the user (Stop hook = finished, Notification hook = permiss
 
 ## Hub opens at the busiest status (D24)
 New settings section `hub` (`AppSettings.hub.scrollToBusiest`, default true; validated in `main/store/settings.ts` and `main/app/settingsValidation.ts`). `busiestColumnIndex` in `hub/hubLogic.ts` (tests); `HubView` scrolls its board (`data-hub-board`) once on mount, left-aligning that column unless it is already fully visible. Switch: Settings > General. E2E: `scripts/e2e-hubscroll.cjs` (7 checks).
+
+## Sleep everything when idle (D26)
+Settings > Automation > "Sleep everything when idle" (`SleepSettings.allEnabled` / `allAfterMinutes`, default off / 60, range 1..1440, validated in `main/store/settings.ts`). Independent of the per-session "Sleep idle sessions" switch.
+- Rule (`src/main/sleep/sleepAllPolicy.ts`, pure, all or nothing): fires when the user gave no input for X minutes AND every candidate session (open, running, not asleep, not Keep awake, not Remote Control) is idle for X minutes (no output / activity change), not working, not needs-input, no permission request. A finished-turn bell does not block (sleeping clears it; the auto status still shows it finished). The session on screen is included.
+- User input: renderer `shell/useUserActivityReporter.ts` listens (capture phase, so xterm typing counts) to keydown/pointerdown/wheel and sends `IPC.appUserActivity` at most every 15 s (`shell/userActivity.ts`); main also counts every `pty:write`. `SleepScheduler.noteUserInput()`; the scheduler runs both rules on the same 30 s tick and sleeps the union.
+- Window hidden in the tray = no input = counts as away.
+- E2E: `scripts/e2e-sleepall.cjs` (12 checks, ~4 min: real switch click, real key press postpones, all sleep incl. the one on screen, Keep awake stays running, wake works). `e2e-sleep.cjs` still passes.

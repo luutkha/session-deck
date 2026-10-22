@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { StoreData, StatusDef } from '../../shared/types'
+import type { AppSettings, StoreData, StatusDef } from '../../shared/types'
 import { DEFAULT_APP_SETTINGS, MAX_SLEEP_MINUTES, MIN_SLEEP_MINUTES } from '../../shared/types'
 import { parseStoreData } from './persistence'
 import { emptyStore, removeStatus } from './reducers'
@@ -33,7 +33,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       autoStatus: { enabled: false, working: 'todo', needsInput: null, finished: 'done' },
       tray: { closeToTray: false, desktopNotifications: false, notifyOnlyWhenUnfocused: false },
       quota: { enabled: false, warnAtPercent: 50, criticalAtPercent: 60, notifyOnReset: false },
-      sleep: { enabled: true, afterMinutes: 15 },
+      sleep: { enabled: true, afterMinutes: 15, allEnabled: false, allAfterMinutes: 60 },
       agents: { defaultAgent: 'claude' as const, opencodeModel: '' },
       hub: { scrollToBusiest: false }
     }
@@ -98,12 +98,28 @@ describe('parseStoredSettings / parseStoreData settings', () => {
 
   it('accepts and persists the sleep section', () => {
     const settings = parseStoredSettings({ sleep: { enabled: true, afterMinutes: 42 } }, STATUSES)
-    expect(settings?.sleep).toEqual({ enabled: true, afterMinutes: 42 })
+    expect(settings?.sleep).toEqual({ ...DEFAULT_APP_SETTINGS.sleep, enabled: true, afterMinutes: 42 })
+  })
+
+  it('accepts and persists the app-wide sleep fields', () => {
+    const settings = parseStoredSettings({ sleep: { allEnabled: true, allAfterMinutes: 5 } }, STATUSES)
+    expect(settings?.sleep).toEqual({ ...DEFAULT_APP_SETTINGS.sleep, allEnabled: true, allAfterMinutes: 5 })
+  })
+
+  it('a stored file without the app-wide sleep fields still loads with their defaults', () => {
+    const data = parseStoreData(storeWith({ sleep: { enabled: true, afterMinutes: 15 } }))
+    expect(data.settings?.sleep).toEqual({ enabled: true, afterMinutes: 15, allEnabled: false, allAfterMinutes: 60 })
+  })
+
+  it('rejects a stored app-wide sleep field with the wrong type or out-of-range value', () => {
+    expect(parseStoredSettings({ sleep: { allEnabled: 'yes' } }, STATUSES)).toBeUndefined()
+    expect(parseStoredSettings({ sleep: { allAfterMinutes: 0 } }, STATUSES)).toBeUndefined()
+    expect(parseStoredSettings({ sleep: { allAfterMinutes: MAX_SLEEP_MINUTES + 1 } }, STATUSES)).toBeUndefined()
   })
 
   it('missing sleep fields take their defaults', () => {
     const settings = parseStoredSettings({ sleep: { enabled: true } }, STATUSES)
-    expect(settings?.sleep).toEqual({ enabled: true, afterMinutes: DEFAULT_APP_SETTINGS.sleep.afterMinutes })
+    expect(settings?.sleep).toEqual({ ...DEFAULT_APP_SETTINGS.sleep, enabled: true })
   })
 
   it('rejects a sleep section with a wrong type or out-of-range value', () => {
@@ -152,13 +168,32 @@ describe('settingsProblem', () => {
   })
 
   it('accepts the sleep range edges', () => {
-    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { enabled: true, afterMinutes: MIN_SLEEP_MINUTES } })).toBeNull()
-    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { enabled: false, afterMinutes: MAX_SLEEP_MINUTES } })).toBeNull()
+    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { ...DEFAULT_APP_SETTINGS.sleep, enabled: true, afterMinutes: MIN_SLEEP_MINUTES } })).toBeNull()
+    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { ...DEFAULT_APP_SETTINGS.sleep, enabled: false, afterMinutes: MAX_SLEEP_MINUTES } })).toBeNull()
+  })
+
+  it('rejects a non-boolean sleep.allEnabled with its message', () => {
+    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { ...DEFAULT_APP_SETTINGS.sleep, allEnabled: 1 as unknown as boolean } })).toBe(
+      'sleep.allEnabled must be a boolean'
+    )
+  })
+
+  it('accepts the app-wide sleep range edges and rejects values outside them', () => {
+    const withAll = (allAfterMinutes: number): AppSettings => ({
+      ...DEFAULT_APP_SETTINGS,
+      sleep: { ...DEFAULT_APP_SETTINGS.sleep, allAfterMinutes }
+    })
+    expect(settingsProblem(withAll(MIN_SLEEP_MINUTES))).toBeNull()
+    expect(settingsProblem(withAll(MAX_SLEEP_MINUTES))).toBeNull()
+    expect(settingsProblem(withAll(0))).toBe(
+      `sleep.allAfterMinutes must be an integer from ${MIN_SLEEP_MINUTES} to ${MAX_SLEEP_MINUTES}`
+    )
+    expect(settingsProblem(withAll(MAX_SLEEP_MINUTES + 1))).toContain('sleep.allAfterMinutes')
   })
 
   it('rejects sleep afterMinutes out of range', () => {
-    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { enabled: true, afterMinutes: 0 } })).toContain('sleep.afterMinutes')
-    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { enabled: true, afterMinutes: MAX_SLEEP_MINUTES + 1 } })).toContain(
+    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { ...DEFAULT_APP_SETTINGS.sleep, enabled: true, afterMinutes: 0 } })).toContain('sleep.afterMinutes')
+    expect(settingsProblem({ ...DEFAULT_APP_SETTINGS, sleep: { ...DEFAULT_APP_SETTINGS.sleep, enabled: true, afterMinutes: MAX_SLEEP_MINUTES + 1 } })).toContain(
       'sleep.afterMinutes'
     )
   })
@@ -236,7 +271,18 @@ describe('updateSettings reducer', () => {
 
   it('merges and persists the sleep section', () => {
     const next = updateSettings(baseData(), { sleep: { enabled: true, afterMinutes: 20 } })
-    expect(next.settings?.sleep).toEqual({ enabled: true, afterMinutes: 20 })
+    expect(next.settings?.sleep).toEqual({ ...DEFAULT_APP_SETTINGS.sleep, enabled: true, afterMinutes: 20 })
+  })
+
+  it('merges the app-wide sleep fields and keeps the per-session ones', () => {
+    const next = updateSettings(baseData(), { sleep: { allEnabled: true, allAfterMinutes: 90 } })
+    expect(next.settings?.sleep).toEqual({ ...DEFAULT_APP_SETTINGS.sleep, allEnabled: true, allAfterMinutes: 90 })
+  })
+
+  it('rejects an app-wide sleep afterMinutes out of range', () => {
+    expect(() => updateSettings(baseData(), { sleep: { allAfterMinutes: 99_999 } })).toThrow(
+      `Invalid settings: sleep.allAfterMinutes must be an integer from ${MIN_SLEEP_MINUTES} to ${MAX_SLEEP_MINUTES}`
+    )
   })
 
   it('rejects a sleep afterMinutes out of range', () => {

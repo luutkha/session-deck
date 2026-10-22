@@ -61,6 +61,17 @@ describe('asSettingsPatch', () => {
     expect(asSettingsPatch({ sleep: { enabled: false } })).toEqual({ sleep: { enabled: false } })
   })
 
+  it('accepts the app-wide sleep fields on their own', () => {
+    expect(asSettingsPatch({ sleep: { allEnabled: true } })).toEqual({ sleep: { allEnabled: true } })
+    expect(asSettingsPatch({ sleep: { allAfterMinutes: 5 } })).toEqual({ sleep: { allAfterMinutes: 5 } })
+  })
+
+  it('rejects a wrong type for the app-wide sleep fields and unknown sleep keys', () => {
+    expect(() => asSettingsPatch({ sleep: { allEnabled: 'yes' } })).toThrow('sleep has a field with the wrong type')
+    expect(() => asSettingsPatch({ sleep: { allAfterMinutes: 2.5 } })).toThrow('sleep has a field with the wrong type')
+    expect(() => asSettingsPatch({ sleep: { allEnabled: true, extra: 1 } })).toThrow('unknown key "sleep.extra"')
+  })
+
   it('rejects a sleep field with the wrong type or an unknown key', () => {
     expect(() => asSettingsPatch({ sleep: { enabled: 'yes' } })).toThrow('sleep has a field with the wrong type')
     expect(() => asSettingsPatch({ sleep: { afterMinutes: 5.5 } })).toThrow('sleep has a field with the wrong type')

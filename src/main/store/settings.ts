@@ -49,7 +49,9 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
   },
   sleep: {
     enabled: isBoolean,
-    afterMinutes: isInteger
+    afterMinutes: isInteger,
+    allEnabled: isBoolean,
+    allAfterMinutes: isInteger
   },
   agents: {
     defaultAgent: isAgentKind,
@@ -85,6 +87,11 @@ export function pickSectionFields(section: SettingsSection, raw: unknown): Recor
   return picked
 }
 
+/** An integer minute count within the sleep range (both idle timers use the same range). */
+function isSleepMinutes(value: number): boolean {
+  return Number.isInteger(value) && value >= MIN_SLEEP_MINUTES && value <= MAX_SLEEP_MINUTES
+}
+
 /** Returns the first problem with a complete settings object (types, ranges, warn < critical), or null when valid. */
 export function settingsProblem(settings: AppSettings): string | null {
   const auto = settings.autoStatus
@@ -113,8 +120,12 @@ export function settingsProblem(settings: AppSettings): string | null {
 
   const sleep = settings.sleep
   if (typeof sleep.enabled !== 'boolean') return 'sleep.enabled must be a boolean'
-  if (!Number.isInteger(sleep.afterMinutes) || sleep.afterMinutes < MIN_SLEEP_MINUTES || sleep.afterMinutes > MAX_SLEEP_MINUTES) {
+  if (!isSleepMinutes(sleep.afterMinutes)) {
     return `sleep.afterMinutes must be an integer from ${MIN_SLEEP_MINUTES} to ${MAX_SLEEP_MINUTES}`
+  }
+  if (typeof sleep.allEnabled !== 'boolean') return 'sleep.allEnabled must be a boolean'
+  if (!isSleepMinutes(sleep.allAfterMinutes)) {
+    return `sleep.allAfterMinutes must be an integer from ${MIN_SLEEP_MINUTES} to ${MAX_SLEEP_MINUTES}`
   }
 
   const agents = settings.agents

@@ -1,5 +1,6 @@
 import type { Id, RuntimeState, SleepSettings } from '../../shared/types'
-import { pickSessionsToSleep } from './sleepPolicy'
+import { pickSessionsToSleep, type SleepPolicySession } from './sleepPolicy'
+import { pickAllToSleep } from './sleepAllPolicy'
 
 /** Opaque interval handle; the real one is Node's Timeout. */
 export type SleepTimer = ReturnType<typeof setInterval>
@@ -35,15 +36,27 @@ export interface SleepScheduler {
   touch(id: Id): void
   /** Drops the recorded touch of a session (e.g. it was removed). */
   forget(id: Id): void
+  /** Records keyboard / mouse input in SessionDeck ("the user is here now"). */
+  noteUserInput(): void
   start(): void
   stop(): void
 }
 
 export const CHECK_EVERY_MS = 30_000
 
+/** The inputs both sleep rules read, captured once per check. */
+interface CheckSnapshot {
+  readonly nowMs: number
+  readonly settings: SleepSettings
+  readonly activeSessionId: Id | null
+  readonly sessions: readonly SleepPolicySession[]
+  readonly runtime: ReadonlyMap<Id, RuntimeState>
+}
+
 /**
- * Runs the idle-sleep check on a fixed interval. `lastTouchAt` starts at "now" for every open session, so a freshly
- * launched app does not sleep everything on its first tick. Failures are reported through `onError`, never thrown.
+ * Runs the idle-sleep checks on a fixed interval: the per-session rule and the app-wide rule. `lastTouchAt` and
+ * `lastUserInputAt` start at "now", so a freshly launched app does not sleep anything on its first tick.
+ * Failures are reported through `onError`, never thrown.
  */
 export function createSleepScheduler(deps: SleepSchedulerDeps): SleepScheduler {
   const {
@@ -60,25 +73,49 @@ export function createSleepScheduler(deps: SleepSchedulerDeps): SleepScheduler {
   } = deps
 
   const lastTouchAt = new Map<Id, number>()
+  let lastUserInputAt = now()
   let timer: SleepTimer | null = null
   let started = false
 
-  function check(): void {
-    let ids: readonly Id[]
+  function readSnapshot(): CheckSnapshot {
+    return {
+      nowMs: now(),
+      settings: getSettings(),
+      activeSessionId: getActiveSessionId(),
+      sessions: getSessions().map((s) => ({ id: s.id, closed: s.closedAt !== undefined, keepAwake: s.keepAwake === true })),
+      runtime: getRuntime()
+    }
+  }
+
+  function pickPerSession(snapshot: CheckSnapshot): readonly Id[] {
     try {
-      ids = pickSessionsToSleep({
-        nowMs: now(),
-        settings: getSettings(),
-        activeSessionId: getActiveSessionId(),
-        sessions: getSessions().map((s) => ({ id: s.id, closed: s.closedAt !== undefined, keepAwake: s.keepAwake === true })),
-        runtime: getRuntime(),
-        lastTouchAt
-      })
+      return pickSessionsToSleep({ ...snapshot, lastTouchAt })
+    } catch (error) {
+      onError('sleep check', error)
+      return []
+    }
+  }
+
+  function pickAppWide(snapshot: CheckSnapshot): readonly Id[] {
+    try {
+      return pickAllToSleep({ ...snapshot, lastTouchAt, lastUserInputAt })
+    } catch (error) {
+      onError('sleep-all check', error)
+      return []
+    }
+  }
+
+  function check(): void {
+    let snapshot: CheckSnapshot
+    try {
+      snapshot = readSnapshot()
     } catch (error) {
       onError('sleep check', error)
       return
     }
 
+    // Both rules see the same inputs; a Set keeps each id once, in the order first picked.
+    const ids = new Set<Id>([...pickPerSession(snapshot), ...pickAppWide(snapshot)])
     for (const id of ids) {
       try {
         sleepSession(id)
@@ -104,6 +141,10 @@ export function createSleepScheduler(deps: SleepSchedulerDeps): SleepScheduler {
 
     forget(id: Id): void {
       lastTouchAt.delete(id)
+    },
+
+    noteUserInput(): void {
+      lastUserInputAt = now()
     },
 
     start(): void {

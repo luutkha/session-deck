@@ -33,6 +33,7 @@ export const IPC = {
   // attention
   attentionClear: 'attention:clear',
   attentionMarkUnread: 'attention:markUnread', // the user flags a session (silent bell)
+  appUserActivity: 'app:userActivity', // fire-and-forget, no args: the user pressed a key / clicked / scrolled in the window (throttled by the renderer)
   settingsSetSound: 'settings:setSound',
   // dialogs
   pickFolder: 'dialog:pickFolder',
@@ -106,6 +107,8 @@ export interface Api {
   ptyReplay(id: Id): Promise<PtyReplay>
   clearAttention(id: Id): void
   markUnread(id: Id): void
+  /** Tells main the user is at the keyboard (key, click or wheel in the window). Feeds the "sleep all when idle" timer. */
+  reportUserActivity(): void
   setActiveSession(id: Id | null): void
   setSoundEnabled(enabled: boolean): Promise<void>
   pickFolder(): Promise<string | null>

@@ -181,6 +181,14 @@ export interface SleepSettings {
   readonly enabled: boolean
   /** Minutes without input, output or activity before a session may sleep (1 to 1440). */
   readonly afterMinutes: number
+  /**
+   * Sleep ALL sessions (the one on screen too) once the whole app is idle: no session working or waiting for the user,
+   * no session output, and no keyboard/mouse input in SessionDeck for `allAfterMinutes`. Keep-awake and Remote Control
+   * sessions are spared. Independent of `enabled`.
+   */
+  readonly allEnabled: boolean
+  /** Minutes the whole app must be idle before everything sleeps (1 to 1440). */
+  readonly allAfterMinutes: number
 }
 
 /** Hub board behaviour. */
@@ -233,7 +241,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoStatus: { enabled: true, working: 'working', needsInput: 'waiting', finished: 'review' },
   tray: { closeToTray: true, desktopNotifications: true, notifyOnlyWhenUnfocused: true },
   quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true },
-  sleep: { enabled: false, afterMinutes: 30 },
+  sleep: { enabled: false, afterMinutes: 30, allEnabled: false, allAfterMinutes: 60 },
   agents: { defaultAgent: 'claude', opencodeModel: '' },
   hub: { scrollToBusiest: true }
 }

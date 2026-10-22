@@ -6,7 +6,7 @@ import { pickSessionsToSleep, type SleepPolicySession } from './sleepPolicy'
 const NOW = 1_000_000_000
 
 function settings(overrides: Partial<SleepSettings> = {}): SleepSettings {
-  return { enabled: true, afterMinutes: 30, ...overrides }
+  return { enabled: true, afterMinutes: 30, allEnabled: false, allAfterMinutes: 60, ...overrides }
 }
 
 function state(id: Id, overrides: Partial<RuntimeState> = {}): RuntimeState {

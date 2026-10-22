@@ -167,6 +167,10 @@ const api: Api = {
     ipcRenderer.send(IPC.attentionMarkUnread, id)
   },
 
+  reportUserActivity(): void {
+    ipcRenderer.send(IPC.appUserActivity)
+  },
+
   setActiveSession(id: Id | null): void {
     ipcRenderer.send(IPC.sessionSetActive, id)
   },

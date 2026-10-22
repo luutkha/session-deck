@@ -96,6 +96,9 @@ What raises the bell is unchanged (D11: finished / needs-you only).
 **D25 · 2026-10-19 · Auto-update over the internet** · deferred
 User asked how to push updates that other machines install over the internet, then "any free options?", then "skip for now". Researched answer, for when it comes back: `electron-updater` + electron-builder `publish`; free hosting = GitHub Releases on a public repo (a separate public releases repo if the source stays private; a private repo would need a token in every install) or Cloudflare R2 free tier; no free code signing for a private app (unsigned works, SmartScreen warns once per machine; SignPath Foundation is free only for open source). Existing 0.0.1 installs need one manual install of the first updater build.
 
+**D26 · 2026-10-22 · Sleep everything when the app is idle** · active
+"i want a setting that can auto trigger sleep for alls after a specific time the apps not working". User picked: trigger = no session working or waiting for you AND no key/click/wheel in SessionDeck for X minutes (then the session on screen sleeps too); spared = Keep-awake and Remote Control sessions. Separate switch from the per-session idle timer (D14), default off, 60 minutes.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 
