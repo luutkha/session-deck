@@ -10,7 +10,7 @@ const PLUGIN_ABSPATH = 'C:\\abs\\path\\sessiondeck-opencode-plugin.mjs'
 
 describe('opencodePluginEnv', () => {
   it('builds the per-process plugin injection config with the plugin path as file:/// URL', () => {
-    const env = opencodePluginEnv(PLUGIN_ABSPATH)
+    const env = opencodePluginEnv(PLUGIN_ABSPATH, undefined)
     expect(Object.keys(env)).toEqual([OPENCODE_PLUGIN_ENV_VAR])
     expect(env[OPENCODE_PLUGIN_ENV_VAR]).toBe(
       JSON.stringify({ plugin: ['file:///C:/abs/path/sessiondeck-opencode-plugin.mjs'], permission: { '*': 'allow' } })
@@ -18,7 +18,7 @@ describe('opencodePluginEnv', () => {
   })
 
   it('normalizes a POSIX absolute path to the same file:/// URL shape', () => {
-    const env = opencodePluginEnv('/abs/path/plugin.mjs')
+    const env = opencodePluginEnv('/abs/path/plugin.mjs', undefined)
     expect(JSON.parse(env[OPENCODE_PLUGIN_ENV_VAR])).toEqual({
       plugin: ['file:///abs/path/plugin.mjs'],
       permission: { '*': 'allow' }
@@ -26,7 +26,7 @@ describe('opencodePluginEnv', () => {
   })
 
   it('the injected config enables yolo mode (no permission prompts) and only travels through the environment', () => {
-    expect(opencodePluginEnv(PLUGIN_ABSPATH)).toEqual({
+    expect(opencodePluginEnv(PLUGIN_ABSPATH, undefined)).toEqual({
       OPENCODE_CONFIG_CONTENT: JSON.stringify({
         plugin: ['file:///C:/abs/path/sessiondeck-opencode-plugin.mjs'],
         permission: { '*': 'allow' }

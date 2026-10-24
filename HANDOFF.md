@@ -1,11 +1,18 @@
-# SessionDeck handoff (updated 2026-10-18)
+# SessionDeck handoff (updated 2026-10-25)
 
 This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
 
 ## State: v1 feature-complete, Orca-style UI done, awaiting the user's first hands-on test round
 
-Verification at the end of this round: 691 unit tests, strict typecheck clean, build clean, and these suites against the REAL built app (CDP):
+Verification at the end of this round: 2,769 unit tests (170 files; 1 environment-dependent skip), strict typecheck clean, build clean, and these suites against the REAL built app (CDP):
 `npm run e2e` (18: window shown, create/rename/status, real claude in a PTY, hooks -> attention, COLOUR present even with NO_COLOR in the launcher, close) · `e2e:close` (9: close/reopen/instant reopen/remove) · `e2e:resume` (6: kill app, relaunch, same conversation returns) · `e2e:dialogs` (9: New session + Statuses dialogs through real typing/clicks, unsafe args rejected) · `e2e:robust` (6: late/bogus IPC does not freeze main, malformed createSession rejected, last change saved on graceful quit). Visual review: `node scripts/e2e-visual.cjs` -> `scripts/visual/*.png` (11 states; compare with `reference/orca/docs/assets/readme-hero.jpg`).
+
+## Store durability and config merge (2026-10-25)
+- **A read error is no longer "corrupt".** `store/persistence.ts` only renames the file and starts empty when the JSON or its shape is invalid. A locked/unreadable file (EPERM/EBUSY/EIO) now aborts startup with an error box and leaves the file untouched, so no empty store is ever saved over it. A successful load keeps a best-effort copy at `<userData>/sessiondeck-store.json.bak`.
+- **Saves are serialized and use a unique temp file** (`<path>.<pid>.<uuid>.tmp`): a debounce-timer write and a `flush()` can no longer race on one `.tmp` path. The queue keeps working after a failed write; timer failures are logged, `flush()` rejects to its caller.
+- **OpenCode config is merged, not replaced.** `OPENCODE_CONFIG_CONTENT` now joins the user's own value (plugins appended, `permission: {"*": "allow"}` merged, model/provider/other fields kept). An unparseable value is left alone instead of being overwritten.
+- **Hardening:** HookServer drains an oversized body instead of letting it back up; `will-navigate` compares origin/path/query (`app/navigation.ts`) rather than a string prefix.
+- **Tests:** new `pluginEnv.test.ts` and `navigation.test.ts`; persistence now covers the .bak copy, a non-corruption read error, overlapping saves and a failed save. The bash/curl hook test gets a 20 s timeout and reports a real SKIP when the tools are absent (it used to hang or silently pass).
 
 ## Added after the first hands-on feedback (2026-10-13)
 1. **Custom sounds**: Settings > Sound. main no longer beeps; it sends `ev:sound` (sessionId, reason) and the renderer plays the user's choice (src/renderer/sound/*: 6 synthesized built-ins via WebAudio, custom audio file via file:// URL, volume, per-reason, localStorage key sessiondeck.sound.v1). Status-bar toggle shares the same store.

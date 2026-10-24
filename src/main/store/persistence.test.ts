@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -223,12 +223,22 @@ describe('loadStoreFile', () => {
     expect(warning).toBeUndefined()
   })
 
-  it('loads a valid file', async () => {
+  it('loads a valid file and keeps a copy of the last good store', async () => {
     const store = emptyStore()
     await writeFile(path, JSON.stringify(store), 'utf-8')
     const { data, warning } = await loadStoreFile(path)
     expect(data).toEqual(store)
     expect(warning).toBeUndefined()
+    await expect(readFile(`${path}.bak`, 'utf-8')).resolves.toBe(JSON.stringify(store))
+  })
+
+  it('throws for a read error that is not corruption and leaves the file in place', async () => {
+    // A directory is readable on neither Windows nor POSIX: the store was never parsed, so it must not be renamed.
+    await mkdir(path)
+    await expect(loadStoreFile(path)).rejects.toMatchObject({ code: 'EISDIR' })
+    const files = await readdir(dirname(path))
+    expect(files).toContain('store.json')
+    expect(files.some((f) => f.includes('.corrupt-'))).toBe(false)
   })
 
   it('renames corrupt JSON and returns empty store with warning', async () => {
@@ -240,6 +250,7 @@ describe('loadStoreFile', () => {
     const files = await readdir(dirname(path))
     expect(files.some((f) => f.startsWith('store.json.corrupt-'))).toBe(true)
     expect(files).not.toContain('store.json')
+    expect(files).not.toContain('store.json.bak')
   })
 
   it('renames valid JSON with wrong shape', async () => {
@@ -273,6 +284,21 @@ describe('saveStoreFile', () => {
     await saveStoreFile(path, emptyStore())
     const files = await readdir(dirname(path))
     expect(files).toContain('store.json')
+    expect(files.some((f) => f.endsWith('.tmp'))).toBe(false)
+  })
+
+  it('never shares a temp file between two overlapping saves', async () => {
+    const first = emptyStore()
+    const second: StoreData = {
+      ...first,
+      statuses: [{ id: 'x', name: 'X', color: '#123456' }]
+    }
+
+    await Promise.all([saveStoreFile(path, first), saveStoreFile(path, second)])
+
+    const saved = JSON.parse(await readFile(path, 'utf-8')) as StoreData
+    expect([first, second]).toContainEqual(saved)
+    const files = await readdir(dirname(path))
     expect(files.some((f) => f.endsWith('.tmp'))).toBe(false)
   })
 })
@@ -313,7 +339,53 @@ describe('createDebouncedSaver', () => {
     expect(saves[0]).toEqual(b)
     saver.schedule(a)
     fireTimer()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(saves).toHaveLength(2)
+  })
+
+  it('serializes writes when a save overlaps the debounce timer', async () => {
+    const saves: StoreData[] = []
+    let active = 0
+    let maxActive = 0
+    let markStarted: () => void = () => undefined
+    const firstStarted = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const save = async (_path: string, data: StoreData): Promise<void> => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      markStarted()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      saves.push(data)
+      active -= 1
+    }
+
+    const saver = createDebouncedSaver('/x', 1, { save })
+    const first = emptyStore()
+    const second: StoreData = { ...first, groupOrder: ['g1'] }
+
+    saver.schedule(first)
+    await firstStarted
+    saver.schedule(second)
+    await saver.flush()
+
+    expect(maxActive).toBe(1)
+    expect(saves).toEqual([first, second])
+  })
+
+  it('keeps accepting writes after one save fails', async () => {
+    const save = vi
+      .fn<(path: string, data: StoreData) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('disk full'))
+      .mockResolvedValue(undefined)
+    const saver = createDebouncedSaver('/x', 100, { save })
+
+    saver.schedule(emptyStore())
+    await expect(saver.flush()).rejects.toThrow('disk full')
+
+    saver.schedule(emptyStore())
+    await expect(saver.flush()).resolves.toBeUndefined()
+    expect(save).toHaveBeenCalledTimes(2)
   })
 
   it('flush with nothing pending resolves immediately', async () => {

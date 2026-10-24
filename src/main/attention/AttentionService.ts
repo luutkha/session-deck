@@ -5,7 +5,7 @@ import { createIdleDetector } from './IdleDetector'
 import { createAttentionManager } from './AttentionManager'
 import { createNotifier } from './Notifier'
 import { writeSettingsFile } from './claudeSettings'
-import { writeOpencodePlugin, opencodePluginEnv } from '../opencode'
+import { writeOpencodePlugin, opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from '../opencode'
 import { writeWorkerPlugin, workerPluginEnv } from '../workers/workerPluginEnv'
 
 export interface AttentionServiceDeps {
@@ -153,7 +153,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
       if (!started || pluginFilePath === null) {
         throw new Error('AttentionService not started')
       }
-      return opencodePluginEnv(pluginFilePath)
+      return opencodePluginEnv(pluginFilePath, process.env[OPENCODE_PLUGIN_ENV_VAR])
     },
 
     workerEnv(): Record<string, string> {

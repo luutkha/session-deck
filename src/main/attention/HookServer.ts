@@ -119,22 +119,38 @@ function parseBody(req: IncomingMessage, limit: number): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = ''
     let received = 0
+    let done = false
+
+    const fail = (error: Error): void => {
+      if (done) return
+      done = true
+      reject(error)
+    }
 
     req.on('data', (chunk: Buffer) => {
+      if (done) return
       received += chunk.length
       if (received > limit) {
-        reject(new Error('Body too large'))
+        // Stop buffering, but drain the rest so the 413 response can still be written. Memory stays bounded.
+        req.removeAllListeners('data')
+        req.resume()
+        fail(new Error('Body too large'))
         return
       }
       data += chunk.toString('utf8')
     })
 
-    req.on('end', () => resolve(data))
-    req.on('error', reject)
+    req.on('end', () => {
+      if (done) return
+      done = true
+      resolve(data)
+    })
+    req.on('error', (error) => fail(error))
   })
 }
 
 function sendResponse(res: ServerResponse, statusCode: number, body?: string): void {
+  if (res.destroyed || res.writableEnded) return
   res.statusCode = statusCode
   res.setHeader('content-type', 'application/json')
   res.end(body ?? '')

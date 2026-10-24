@@ -2,6 +2,7 @@ import { app, BrowserWindow, nativeImage, shell, type BrowserWindowConstructorOp
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { attachWindowDiagnostics } from './windowDiagnostics'
+import { isSameDocumentNavigation } from './navigation'
 import { IPC, CODE_WINDOW_ARG } from '../../shared/ipc'
 import type { WindowRole } from '../../shared/types'
 
@@ -142,8 +143,7 @@ export function createMainWindow(deps: MainWindowDeps): MainWindow {
   })
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const currentUrl = mainWindow.webContents.getURL()
-    if (url !== currentUrl && !url.startsWith(currentUrl)) {
+    if (!isSameDocumentNavigation(mainWindow.webContents.getURL(), url)) {
       event.preventDefault()
     }
   })

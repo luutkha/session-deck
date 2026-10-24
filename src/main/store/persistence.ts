@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import type { ChecklistItem, Group, Session, StatusDef, StoreData } from '../../shared/types'
 import { emptyStore } from './reducers'
@@ -269,18 +270,34 @@ export function parseStoreData(raw: unknown): StoreData {
   }
 }
 
-export async function loadStoreFile(path: string): Promise<ParsedResult> {
+/** Best-effort copy of the last known-good store, so a later corruption can be recovered by hand. */
+async function backupStoreFile(path: string): Promise<void> {
   try {
-    const text = await readFile(path, 'utf-8')
-    const parsed = JSON.parse(text) as unknown
-    const data = parseStoreData(parsed)
-    return { data }
+    await copyFile(path, `${path}.bak`)
+  } catch {
+    // A backup must never stop the app from starting; the live file is still valid at this point.
+  }
+}
+
+export async function loadStoreFile(path: string): Promise<ParsedResult> {
+  let text: string
+  try {
+    text = await readFile(path, 'utf-8')
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'ENOENT') {
       return { data: emptyStore() }
     }
+    // A locked, unreadable or permission-denied file is NOT corrupt. Renaming it here (and then saving an empty
+    // store over it) would lose the user's data. Let the caller stop startup and leave the file untouched.
+    throw error
+  }
 
+  let data: StoreData
+  try {
+    const parsed = JSON.parse(text) as unknown
+    data = parseStoreData(parsed)
+  } catch (error) {
     const timestamp = Date.now()
     const corruptPath = `${path}.corrupt-${timestamp}`
     try {
@@ -292,23 +309,35 @@ export async function loadStoreFile(path: string): Promise<ParsedResult> {
     const reason = error instanceof Error ? error.message : String(error)
     return {
       data: emptyStore(),
-      warning: `Store file was corrupt (${reason}); renamed to ${corruptPath}`
+      warning: `Store file was corrupt (${reason}); renamed to ${corruptPath}. ` +
+        `A copy of the last successful load is kept at ${path}.bak when one exists.`
     }
   }
+
+  await backupStoreFile(path)
+  return { data }
 }
 
 export async function saveStoreFile(path: string, data: StoreData): Promise<void> {
   const parent = dirname(path)
   await mkdir(parent, { recursive: true })
-  const tmpPath = `${path}.tmp`
-  await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
-  await rename(tmpPath, path)
+  // A unique temp name per write: a save that overlaps another one (timer + flush) must not share a file.
+  const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
+    await rename(tmpPath, path)
+  } catch (error) {
+    await rm(tmpPath, { force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 export interface DebouncedSaverDeps {
   readonly setTimeout?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>
   readonly clearTimeout?: (id: ReturnType<typeof setTimeout>) => void
   readonly save?: (path: string, data: StoreData) => Promise<void>
+  /** Called when a timer-triggered write fails. Flushes reject to their caller instead. */
+  readonly onError?: (error: unknown) => void
 }
 
 export interface DebouncedSaver {
@@ -324,18 +353,26 @@ export function createDebouncedSaver(
   const setTimer = deps.setTimeout ?? setTimeout
   const clearTimer = deps.clearTimeout ?? clearTimeout
   const save = deps.save ?? saveStoreFile
+  const onError = deps.onError ?? ((error: unknown): void => {
+    console.error('SessionDeck: saving the store failed', error)
+  })
 
   let timer: ReturnType<typeof setTimeout> | null = null
   let pending: StoreData | null = null
-  let flushing: Promise<void> | null = null
+  // Every save waits for the previous one: the temp file and the final rename are never concurrent.
+  let chain: Promise<void> = Promise.resolve()
 
-  const writePending = async (): Promise<void> => {
+  /** Writes the newest pending state after any in-flight save. Resolves when that write has finished. */
+  const writePending = (): Promise<void> => {
     const data = pending
     pending = null
     timer = null
-    if (data) {
-      await save(path, data)
-    }
+    if (data === null) return chain
+
+    const write = chain.then(() => save(path, data))
+    // Keep the queue usable after a failure; the caller of this write still sees the rejection.
+    chain = write.catch(() => undefined)
+    return write
   }
 
   return {
@@ -345,22 +382,15 @@ export function createDebouncedSaver(
         clearTimer(timer)
       }
       timer = setTimer(() => {
-        void writePending()
+        void writePending().catch(onError)
       }, delayMs)
     },
     async flush() {
-      if (flushing) return flushing
-      if (!pending) return
       if (timer) {
         clearTimer(timer)
         timer = null
       }
-      flushing = writePending()
-      try {
-        await flushing
-      } finally {
-        flushing = null
-      }
+      await writePending()
     }
   }
 }

@@ -89,12 +89,25 @@ if (!gotTheLock) {
     const trayIconPath = resolveIconPath('tray.png', iconDeps)
     const trayAttentionIconPath = resolveIconPath('tray-attention.png', iconDeps)
 
-    const { data: initialStoreData, warning } = await loadStoreFile(storePath)
+    let loaded: Awaited<ReturnType<typeof loadStoreFile>>
+    try {
+      loaded = await loadStoreFile(storePath)
+    } catch (error) {
+      logMainError(userData, 'store load', error)
+      const detail = error instanceof Error ? error.message : String(error)
+      dialog.showErrorBox(
+        'SessionDeck',
+        `Could not read the session store at ${storePath}.\n\n${detail}\n\n` +
+          'The file was left untouched. Fix the problem (permissions, antivirus lock) and start SessionDeck again.'
+      )
+      app.quit()
+      return
+    }
+    const { data: initialStoreData, warning } = loaded
     if (warning) {
       logMainError(userData, 'store load', warning)
-      if (mainWindow) {
-        dialog.showErrorBox('SessionDeck', warning)
-      }
+      // A corrupt store was recovered as empty: tell the user even though no window exists yet.
+      dialog.showErrorBox('SessionDeck', warning)
     }
 
     const store = new SessionStore(initialStoreData, {

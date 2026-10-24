@@ -26,8 +26,13 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 - electron-builder needs the winCodeSign cache seeded without symlinks (no Developer Mode).
 - The background job cannot send real OS mouse input (`SetCursorPos`/`mouse_event` reach nothing); use CDP `Input.dispatchMouseEvent`.
 
+## Storage
+- **A `readFile` error is not corruption.** Treating every error as bad JSON renamed the store and returned an empty one, which the next debounced save wrote over the real file. Only `JSON.parse` / shape failures may be quarantined; EPERM/EBUSY/EIO must stop startup with the file untouched. Keep a `.bak` from the last successful load.
+- **A fixed `.tmp` name plus async saves can race.** A timer write and a `flush()` could write the same temp file at once. Serialize saves and use a unique temp name per write.
+
 ## Tests and tooling
 - Vitest cannot import files under the OS temp dir; create test dirs under `process.cwd()`. Turn fake timers on only after the dynamic import.
+- A test that "skips" with an early `return` is a false pass. Use `context.skip()` so the report shows it. Likewise, a helper that reads `process.env` by default makes tests depend on the shell that runs them; pass the value explicitly.
 - Plugin events posted with parallel `fetch` arrive out of order; the worker plugin serializes posts.
 - In this shell, heredocs/`sed` with backslashes or odd quotes get mangled; write files with the Write tool or a Python script file.
 - A check that only proves "no crash" is not a test of the bug: the first e2e-paste passed while the real bug was present, because the bug needed fullscreen mode.

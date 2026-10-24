@@ -302,8 +302,8 @@ describe('AttentionService bash/curl integration', () => {
     rmSync(settingsDir, { recursive: true, force: true })
   })
 
-  it('runs hookCommand through bash against real HookServer', async () => {
-    // Check if bash and curl are available
+  it('runs hookCommand through bash against real HookServer', async (context) => {
+    // Check if bash and curl are available. Missing tools SKIP the test (shown as skipped, not a silent pass).
     const { spawn } = await import('node:child_process')
 
     function runBash(cmd: string, env: Record<string, string>): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -323,13 +323,13 @@ describe('AttentionService bash/curl integration', () => {
     // Test bash availability
     const bashTest = await runBash('echo test', {})
     if (bashTest.code !== 0) {
-      console.log('Skipping: bash not available')
+      context.skip()
       return
     }
 
     const curlTest = await runBash('curl --version', {})
     if (curlTest.code !== 0) {
-      console.log('Skipping: curl not available in bash')
+      context.skip()
       return
     }
 
@@ -343,5 +343,5 @@ describe('AttentionService bash/curl integration', () => {
     const result = await runBash(hookCmd, env)
     expect(result.code).toBe(0)
     expect(service.get('test-session')).toBe('permission')
-  })
+  }, 20_000)
 })

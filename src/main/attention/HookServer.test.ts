@@ -70,6 +70,15 @@ describe('HookServer', () => {
     expect(response.status).toBe(400)
   })
 
+  it('returns 413 for an oversized body', async () => {
+    const response = await fetch(`${baseUrl}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-token': token },
+      body: 'x'.repeat(5000)
+    })
+    expect(response.status).toBe(413)
+  })
+
   it('returns 400 for missing sessionId', async () => {
     const { status } = await postHook({ event: 'Notification' }, { 'x-token': token })
     expect(status).toBe(400)
