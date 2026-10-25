@@ -9,14 +9,14 @@ export function isOpencodeSessionId(value: unknown): value is string {
 
 export const MAX_OPENCODE_MODEL_LENGTH = 200
 
-/** "provider/model" style OpenCode model id as passed to `--model`. */
+/** "provider/model" style OpenCode model id (config `model` key; the TUI CLI has no --model flag). */
 export const OPENCODE_MODEL_RE = /^[A-Za-z0-9._:/@+-]*$/
 
 export function isOpencodeModel(value: unknown): value is string {
   return typeof value === 'string' && value.length <= MAX_OPENCODE_MODEL_LENGTH && OPENCODE_MODEL_RE.test(value)
 }
 
-/** "provider/model" style OpenCode model id as passed to `--model`. */
+/** "provider/model" style OpenCode model id (config `model` key; the TUI CLI has no --model flag). */
 export function trimmedModelOrUndefined(value: string): string | undefined {
   const trimmed = value.trim()
   if (trimmed.length === 0) return undefined

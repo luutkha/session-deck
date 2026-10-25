@@ -1,9 +1,10 @@
-import { PLUGIN_FILE_NAME, buildOpencodePluginSource } from './pluginSource'
-import { opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from './pluginEnv'
+import { PLUGIN_DIR_NAME, buildOpencodePluginSource } from './pluginSource'
+import { applyConfigPatch, opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from './pluginEnv'
 import { writeOpencodePlugin } from './writePlugin'
 
 export {
-  PLUGIN_FILE_NAME,
+  PLUGIN_DIR_NAME,
+  applyConfigPatch,
   buildOpencodePluginSource,
   opencodePluginEnv,
   OPENCODE_PLUGIN_ENV_VAR,

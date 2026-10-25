@@ -22,8 +22,9 @@ async function main() {
     await sleep(1500)
     await app.evaluate(`[...document.querySelectorAll('[role=treeitem]')].find((n) => n.innerText.includes('smoke-claude'))?.click()`)
     const endpoint = JSON.parse(fs.readFileSync(endpointFile, 'utf8'))
-    const pluginFile = path.join(app.userData, 'sessiondeck-attention', 'sessiondeck-worker-plugin.mjs')
-    const config = JSON.stringify({ plugin: ['file:///' + pluginFile.replace(/\\/g, '/')] })
+    // OpenCode v2 loads CONFIGURED plugins from package directories only (a file:/// entry is rejected).
+    const pluginDir = path.join(app.userData, 'sessiondeck-attention', 'sessiondeck-worker-plugin')
+    const config = JSON.stringify({ plugin: [pluginDir.replace(/\\/g, '/')] })
     const env = { ...process.env, SESSIONDECK_SESSION_ID: s.id, SESSIONDECK_PORT: String(endpoint.port), SESSIONDECK_TOKEN: endpoint.token, OPENCODE_CONFIG_CONTENT: config }
     const brief = '# Smoke task: read data.txt\nRead the file data.txt with your read tool and reply with its content.'
     const child = spawn('cmd.exe', ['/d', '/s', '/c', 'opencode run --format json -m opencode/big-pickle'], { env, cwd: proj, stdio: ['pipe', 'ignore', 'ignore'] })

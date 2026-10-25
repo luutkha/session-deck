@@ -1,7 +1,7 @@
 // E2E for the OpenCode agent: real `opencode` TUI on a FREE model. Checks launch, session-id capture, activity ->
 // status (hooks via the injected plugin), sleep + wake with `-s`, and the New Session dialog dropdown.
 // Run: node scripts/e2e-opencode.cjs   (one tiny prompt on opencode/deepseek-v4.1-flash-free)
-const { ROOT, sleep, strip, waitFor, makeChecker, launchApp } = require('./e2e-lib.cjs')
+const { ROOT, sleep, strip, waitFor, makeChecker, launchApp, stopOpencodeService } = require('./e2e-lib.cjs')
 
 const MODEL = 'opencode/deepseek-v4.1-flash-free'
 const store = (app) => app.evaluate('window.api.getStore()')
@@ -10,6 +10,8 @@ const runtimeOf = async (app, id) => (await store(app)).runtime.find((r) => r.se
 const replay = async (app, id) => strip((await app.evaluate(`window.api.ptyReplay(${JSON.stringify(id)})`)).data)
 
 async function main() {
+  // A stale background service would silently swallow the injected plugin config.
+  stopOpencodeService()
   const t = makeChecker()
   let app
   try {
@@ -43,6 +45,13 @@ async function main() {
     const ocId = (await sessionOf(app, s.id)).opencodeSessionId
     const usage = await app.evaluate('window.api.getUsage ? window.api.getUsage() : null')
     void usage
+
+    // ---- owner handshake (worker tabs): the parent loaded the worker plugin, but its own reports are dropped
+    await sleep(2500) // let hello + beats + the parent's self-report arrive and be filtered
+    const mineCount = await app.evaluate(
+      `window.api.getWorkers().then((w) => w.filter((x) => x.ownerSessionIds.includes(${JSON.stringify(s.id)})).length, () => -1)`
+    )
+    t.check('the parent OpenCode session shows no worker tab for itself', mineCount === 0, String(mineCount))
 
     // ---- sleep + wake resumes the same conversation
     await app.evaluate(`window.api.createSession({ cwd: ${JSON.stringify(ROOT)}, name: 'other' })`)

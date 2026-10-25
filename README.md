@@ -42,6 +42,9 @@ Requires Node 22+, Windows (primary target), and the `claude` CLI on PATH.
 | `npm run e2e:usage-refresh` | the reload button: consent dialog (Cancel = no request), then ONE real request to Anthropic's usage endpoint with the local Claude login |
 | `npm run e2e:resume` | kills the app, relaunches it, checks the same conversation returns |
 | `npm run e2e:codemode` | Code mode: real New worktree dialog, git branch + linked worktree on disk, Shell in the worktree, Changes + diff, pop out/dock, restart |
+| `npm run e2e:workers` | OpenCode worker tabs from Claude sessions: real plugin file -> hook server -> hub -> read-only tab |
+| `npm run e2e:opencode` | real `opencode` on a free model: TUI, hooks/status, sleep + wake with `-s`, image paste, no self worker-tab |
+| `npm run e2e:opencode-workers` | worker tabs of an OpenCode session: child events build a tab, child session-plugin events never touch the parent |
 | `node scripts/e2e-visual.cjs` | screenshots every UI state into `scripts/visual/` for visual review |
 
 ## Layout

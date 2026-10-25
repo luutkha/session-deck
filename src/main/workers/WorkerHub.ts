@@ -40,6 +40,8 @@ export interface WorkerHubDeps {
   readonly now: () => number
   readonly onChange: (workers: readonly WorkerInfo[]) => void
   readonly isKnownSession: (id: Id) => boolean
+  /** True when the owner is an OpenCode session: its own process reports first and must never become a worker. */
+  readonly isOpencodeSession: (id: Id) => boolean
 }
 
 export interface WorkerHub {
@@ -49,6 +51,8 @@ export interface WorkerHub {
   sweep(): void
   forgetSession(owner: Id): void
   getWorkers(): readonly WorkerInfo[]
+  /** True when proc is a worker child of an OpenCode owner session (its session-plugin events are ignored). */
+  isWorkerProc(owner: Id, proc: string): boolean
 }
 
 const DEFAULT_TITLE_RE = /^(new session|child session)\b/i
@@ -121,16 +125,26 @@ function applyEvent(rec: Rec, event: WorkerEvent, now: number): Rec {
       return { ...base, sawError: event.text, entries: upsertEntry(base.entries, `error:${event.text}`, { kind: 'error', text: event.text }) }
     case 'beat':
       return rec
+    case 'hello':
+      return rec // hello never reaches applyEvent (ingest returns before), handled for exhaustiveness
   }
 }
 
 /**
- * Collects the workers that OpenCode processes started from Claude terminals report through the worker plugin.
- * Everything is in memory: a worker exists for as long as the app runs and is not older than FORGET_FINISHED_MS.
+ * Collects the workers that OpenCode processes started from Claude, Shell or OpenCode terminals report through
+ * the worker plugin. Everything is in memory: a worker exists for as long as the app runs and is not older than
+ * FORGET_FINISHED_MS.
+ *
+ * Owner handshake: a process born from an OpenCode session (the parent itself) inherits the same config, so both
+ * plugins load in it and in every child. Both report a stable process id (`proc`); the FIRST process that reports
+ * for an OpenCode session becomes the owner — every other proc of that session is a worker, and the owner's own
+ * worker-plugin events are accepted then dropped (no self-tab). `ownerProcs` resets on pty start (see index.ts).
  */
 export function createWorkerHub(deps: WorkerHubDeps): WorkerHub {
   const records = new Map<string, Rec>()
   const lastBeat = new Map<string, number>()
+  /** The owning process per OpenCode session (the first proc that reported a hello/beat/start event). */
+  const ownerProcs = new Map<Id, string>()
 
   function emit(): void {
     deps.onChange(snapshot())
@@ -175,6 +189,16 @@ export function createWorkerHub(deps: WorkerHubDeps): WorkerHub {
       if (event === null || !deps.isKnownSession(owner)) return false
       const now = deps.now()
       lastBeat.set(event.proc, now)
+      // An OpenCode owner session learns its own process first (worker plugin hello/beat): it is never a worker.
+      if (deps.isOpencodeSession(owner)) {
+        let ownerProc = ownerProcs.get(owner)
+        if (ownerProc === undefined) {
+          ownerProcs.set(owner, event.proc)
+          ownerProc = event.proc
+        }
+        if (event.proc === ownerProc) return true // the parent's self-report; accepted, dropped
+      }
+      if (event.kind === 'hello') return true // hello registers; it never creates a worker record
       if (event.kind === 'beat') return true
       const existing = records.get(event.oc)
       if (existing !== undefined && existing.owner !== owner) return false // an id belongs to one Claude session
@@ -184,6 +208,11 @@ export function createWorkerHub(deps: WorkerHubDeps): WorkerHub {
       if (existing === undefined) trim(owner)
       emit()
       return true
+    },
+
+    isWorkerProc(owner: Id, proc: string): boolean {
+      const ownerProc = ownerProcs.get(owner)
+      return ownerProc !== undefined && ownerProc !== proc
     },
 
     sweep(): void {
@@ -212,6 +241,8 @@ export function createWorkerHub(deps: WorkerHubDeps): WorkerHub {
           changed = true
         }
       }
+      // The owner proc belongs to the same pty lifetime: a restart (sleep/wake, close/reopen) re-registers it.
+      ownerProcs.delete(owner)
       if (changed) emit()
     },
 

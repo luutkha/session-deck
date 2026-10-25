@@ -109,3 +109,55 @@ describe('HookServer POST /hook/<sessionId>/<Event>', () => {
     expect(events).toEqual([{ sessionId: 'session-1', event: 'UserPromptSubmit', message: undefined }])
   })
 })
+
+describe('HookServer proc field of OpenCode plugin bodies', () => {
+  let server: HookServer
+  let baseUrl: string
+  const token = 'route-token-123'
+  const knownSessions = new Set(['session-1'])
+  let events: HookEvent[] = []
+
+  beforeEach(async () => {
+    events = []
+    server = createHookServer({
+      token,
+      isKnownSession: (id) => knownSessions.has(id),
+      onEvent: (e) => events.push(e)
+    })
+    const { port } = await server.start()
+    baseUrl = `http://127.0.0.1:${port}`
+  })
+
+  afterEach(async () => {
+    await server.stop()
+  })
+
+  async function post(path: string, body: unknown, headers: Record<string, string> = { 'x-token': token }): Promise<number> {
+    const payload = typeof body === 'string' ? body : JSON.stringify(body)
+    const response = await fetch(`${baseUrl}${path}`, { method: 'POST', headers, body: payload })
+    await response.text()
+    return response.status
+  }
+
+  it('parses the proc into the event for every hook event kind', async () => {
+    expect(await post('/hook/session-1/AgentSession', { session_id: 'ses_abcdefgh12345678', proc: '1234' })).toBe(204)
+    expect(await post('/hook/session-1/UserPromptSubmit', { prompt: 'go', proc: '1234' })).toBe(204)
+    expect(await post('/hook/session-1/Stop', { proc: '1234' })).toBe(204)
+    expect(await post('/hook/session-1/Notification', { message: 'm', proc: '1234' })).toBe(204)
+    expect(events).toEqual([
+      { sessionId: 'session-1', event: 'AgentSession', message: 'ses_abcdefgh12345678', proc: '1234' },
+      { sessionId: 'session-1', event: 'UserPromptSubmit', prompt: 'go', proc: '1234' },
+      { sessionId: 'session-1', event: 'Stop', proc: '1234' },
+      { sessionId: 'session-1', event: 'Notification', message: 'm', proc: '1234' }
+    ])
+  })
+
+  it('a missing or invalid proc is ignored and the event is still accepted', async () => {
+    expect(await post('/hook/session-1/Stop', { proc: 42 })).toBe(204)
+    expect(await post('/hook/session-1/Notification', { proc: '' })).toBe(204)
+    expect(await post('/hook/session-1/Stop', { proc: 'x'.repeat(65) })).toBe(204)
+    expect(await post('/hook/session-1/Notification', '{"message":"m"')).toBe(204)
+    expect(events.every((e) => e.proc === undefined)).toBe(true)
+    expect(events).toHaveLength(4)
+  })
+})

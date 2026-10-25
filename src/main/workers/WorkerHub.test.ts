@@ -7,12 +7,19 @@ let clock: number
 let seen: (readonly WorkerInfo[])[]
 let hub: WorkerHub
 let known: Set<string>
+let opencodeOwners: Set<string>
 
 beforeEach(() => {
   clock = 1_000_000
   seen = []
-  known = new Set(['claude-1', 'claude-2'])
-  hub = createWorkerHub({ now: () => clock, onChange: (w) => seen.push(w), isKnownSession: (id) => known.has(id) })
+  known = new Set(['claude-1', 'claude-2', 'oc-1'])
+  opencodeOwners = new Set()
+  hub = createWorkerHub({
+    now: () => clock,
+    onChange: (w) => seen.push(w),
+    isKnownSession: (id) => known.has(id),
+    isOpencodeSession: (id) => opencodeOwners.has(id)
+  })
 })
 
 const ev = (kind: string, extra: Record<string, unknown> = {}, oc = OC, proc = 'p1'): Record<string, unknown> => ({ v: 1, proc, oc, kind, ...extra })
@@ -84,6 +91,64 @@ describe('WorkerHub.ingest', () => {
       hub.ingest('claude-1', ev('busy', {}, `ses_worker${String(i).padStart(8, '0')}`))
     }
     expect(hub.getWorkers()).toHaveLength(MAX_WORKERS_PER_SESSION)
+  })
+})
+
+describe('WorkerHub owner handshake for OpenCode sessions', () => {
+  /** The OpenCode owner session's own process, as both plugins in it would report it. */
+  const OWNER = '777'
+  const CHILD = '999'
+  const childEv = (kind: string, extra: Record<string, unknown> = {}, oc = OC): Record<string, unknown> => ev(kind, extra, oc, CHILD)
+
+  beforeEach(() => {
+    opencodeOwners.add('oc-1')
+    // The parent OpenCode process loads both plugins and reports itself first: its worker hello registers the owner
+    // before it can start any child.
+    expect(hub.ingest('oc-1', { v: 1, proc: OWNER, kind: 'hello' })).toBe(true)
+    expect(hub.getWorkers()).toHaveLength(0)
+  })
+
+  it('the first hello registers the owner and creates no worker record', () => {
+    // (asserted in beforeEach; the state is checked here again for clarity)
+    expect(hub.getWorkers()).toHaveLength(0)
+    expect(hub.isWorkerProc('oc-1', OWNER)).toBe(false)
+    expect(hub.isWorkerProc('oc-1', CHILD)).toBe(true)
+  })
+
+  it('the owner process start/beat does not create a worker tab for itself', () => {
+    expect(hub.ingest('oc-1', { v: 1, proc: OWNER, kind: 'beat' })).toBe(true)
+    expect(hub.ingest('oc-1', ev('start', { dir: 'C:/p', title: 'Parent - x' }, OC, OWNER))).toBe(true)
+    expect(hub.getWorkers()).toHaveLength(0)
+  })
+
+  it('a child process start creates a normal worker tab, and its proc is reportable as ignored', () => {
+    expect(hub.ingest('oc-1', childEv('start', { dir: 'C:/p', title: 'Child - x' }))).toBe(true)
+    expect(only()).toMatchObject({ id: OC, ownerSessionIds: ['oc-1'] })
+    expect(hub.isWorkerProc('oc-1', CHILD)).toBe(true)
+    expect(hub.isWorkerProc('oc-1', OWNER)).toBe(false)
+  })
+
+  it('the session-plugin events of that child use the same proc logic (filter decision)', () => {
+    expect(hub.isWorkerProc('oc-1', CHILD)).toBe(true)
+    expect(hub.isWorkerProc('oc-1', OWNER)).toBe(false)
+    expect(hub.isWorkerProc('claude-1', CHILD)).toBe(false)
+    expect(hub.isWorkerProc('unknown-owner', CHILD)).toBe(false)
+  })
+
+  it('a Claude owner is never filtered: every proc is a worker', () => {
+    expect(hub.ingest('claude-1', ev('start', { dir: 'C:/p', title: 'x' }, OC, '777'))).toBe(true)
+    expect(hub.ingest('claude-1', ev('start', { dir: 'C:/p', title: 'y' }, 'ses_worker99999999', '999'))).toBe(true)
+    expect(hub.getWorkers()).toHaveLength(2)
+    expect(hub.isWorkerProc('claude-1', '777')).toBe(false)
+    expect(hub.isWorkerProc('claude-1', '999')).toBe(false)
+  })
+
+  it('forgetSession clears the owner proc, so a restarted process can register again', () => {
+    hub.forgetSession('oc-1')
+    expect(hub.isWorkerProc('oc-1', CHILD)).toBe(false)
+    expect(hub.ingest('oc-1', { v: 1, proc: 'other', kind: 'hello' })).toBe(true)
+    expect(hub.isWorkerProc('oc-1', OWNER)).toBe(true)
+    expect(hub.isWorkerProc('oc-1', 'other')).toBe(false)
   })
 })
 

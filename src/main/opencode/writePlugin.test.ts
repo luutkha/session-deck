@@ -1,47 +1,54 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeOpencodePlugin } from './writePlugin'
 import { opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from './pluginEnv'
-import { PLUGIN_FILE_NAME } from './pluginSource'
+import { LEGACY_PLUGIN_FILE_NAME, PLUGIN_DIR_NAME, buildOpencodePluginSource } from './pluginSource'
 
-const PLUGIN_ABSPATH = 'C:\\abs\\path\\sessiondeck-opencode-plugin.mjs'
+const PLUGIN_DIR = 'C:\\abs\\path\\sessiondeck-opencode-plugin'
 
 describe('opencodePluginEnv', () => {
-  it('builds the per-process plugin injection config with the plugin path as file:/// URL', () => {
-    const env = opencodePluginEnv(PLUGIN_ABSPATH, undefined)
+  it('builds the per-process plugin injection config with the plugin package directory path', () => {
+    const env = opencodePluginEnv(PLUGIN_DIR, undefined)
     expect(Object.keys(env)).toEqual([OPENCODE_PLUGIN_ENV_VAR])
     expect(env[OPENCODE_PLUGIN_ENV_VAR]).toBe(
-      JSON.stringify({ plugin: ['file:///C:/abs/path/sessiondeck-opencode-plugin.mjs'], permission: { '*': 'allow' } })
+      JSON.stringify({ plugin: ['C:/abs/path/sessiondeck-opencode-plugin'], permission: { '*': 'allow' } })
     )
-  })
-
-  it('normalizes a POSIX absolute path to the same file:/// URL shape', () => {
-    const env = opencodePluginEnv('/abs/path/plugin.mjs', undefined)
-    expect(JSON.parse(env[OPENCODE_PLUGIN_ENV_VAR])).toEqual({
-      plugin: ['file:///abs/path/plugin.mjs'],
-      permission: { '*': 'allow' }
-    })
-  })
-
-  it('the injected config enables yolo mode (no permission prompts) and only travels through the environment', () => {
-    expect(opencodePluginEnv(PLUGIN_ABSPATH, undefined)).toEqual({
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({
-        plugin: ['file:///C:/abs/path/sessiondeck-opencode-plugin.mjs'],
-        permission: { '*': 'allow' }
-      })
-    })
   })
 })
 
 describe('writeOpencodePlugin', () => {
-  it('writes the plugin as <dir>/sessiondeck-opencode-plugin.mjs (same directory as the Claude settings file) and returns the path', () => {
+  it('writes the plugin as a package <dir>/sessiondeck-opencode-plugin/{package.json,index.mjs} and returns the directory', () => {
     const dir = join(tmpdir(), 'sessiondeck-writeplugin-test-' + Math.random().toString(36).slice(2))
-    const written = writeOpencodePlugin(dir)
-    expect(written).toBe(join(dir, PLUGIN_FILE_NAME))
-    const content = readFileSync(written, 'utf8')
-    expect(content).toContain('export const SessionDeckPlugin')
-    expect(content).toContain('SESSIONDECK_PORT')
+    try {
+      const written = writeOpencodePlugin(dir)
+      expect(written).toBe(join(dir, PLUGIN_DIR_NAME))
+      const pkg = JSON.parse(readFileSync(join(written, 'package.json'), 'utf8')) as Record<string, unknown>
+      expect(pkg).toMatchObject({ name: PLUGIN_DIR_NAME, main: 'index.mjs' })
+      const content = readFileSync(join(written, 'index.mjs'), 'utf8')
+      expect(content).toContain('export default {')
+      expect(content).toContain('setup: async function')
+      expect(content).toContain('SESSIONDECK_PORT')
+      expect(existsSync(join(dir, LEGACY_PLUGIN_FILE_NAME))).toBe(false)
+      expect(buildOpencodePluginSource()).toBe(content)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('removes a leftover v1 single-file plugin beside the package', () => {
+    const dir = join(tmpdir(), 'sessiondeck-writeplugin-legacy-' + Math.random().toString(36).slice(2))
+    const legacy = join(dir, LEGACY_PLUGIN_FILE_NAME)
+    rmSync(dir, { recursive: true, force: true })
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(legacy, 'export const SessionDeckPlugin = () => ({})', 'utf8')
+    try {
+      const written = writeOpencodePlugin(dir)
+      expect(written).toBe(join(dir, PLUGIN_DIR_NAME))
+      expect(existsSync(legacy)).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

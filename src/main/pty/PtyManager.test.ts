@@ -374,6 +374,43 @@ describe('PtyManager', () => {
   })
 })
 
+describe('PtyManager.onStart', () => {
+  it('fires once per successful start and once per restart', () => {
+    const { spawn, ptys } = makeSpawnHarness()
+    const manager = new PtyManager({ spawn, platform: 'linux' })
+    const starts: string[] = []
+    const opts = startOpts()
+    manager.onStart((id) => starts.push(id))
+    manager.start(opts)
+    manager.restart(startOpts())
+    expect(starts).toEqual(['s1', 's1'])
+    expect(manager.onData(() => {})).toBeTruthy() // sanity: the manager keeps working
+    void ptys
+  })
+
+  it('does not fire when the spawn throws', () => {
+    const { spawn, setError } = makeSpawnHarness()
+    setError(new Error('boom'))
+    const manager = new PtyManager({ spawn, platform: 'linux' })
+    const starts: string[] = []
+    manager.onStart((id) => starts.push(id))
+    expect(() => manager.start(startOpts())).toThrow('boom')
+    expect(starts).toEqual([])
+  })
+
+  it('unsubscribing stops it', () => {
+    const { spawn, ptys } = makeSpawnHarness()
+    const manager = new PtyManager({ spawn, platform: 'linux' })
+    const starts: string[] = []
+    const off = manager.onStart((id) => starts.push(id))
+    manager.start(startOpts())
+    off()
+    manager.restart(startOpts())
+    expect(starts).toEqual(['s1'])
+    void ptys
+  })
+})
+
 describe('sanitizeChildEnv colour handling', () => {
   it('removes NO_COLOR and NODE_DISABLE_COLORS so sessions keep their colours', () => {
     const result = sanitizeChildEnv({ NO_COLOR: '1', NODE_DISABLE_COLORS: '1', PATH: 'x' })

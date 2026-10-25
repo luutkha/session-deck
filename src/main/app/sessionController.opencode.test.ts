@@ -202,11 +202,13 @@ describe('opencode sessions: launch spec', () => {
     const opts = pty.getLastStartOpts(created.id)
     expect(opts).toBeDefined()
     expect(opts!.command).toBe('opencode')
-    expect(opts!.internalArgs).toEqual(['--model', 'opencode/deepseek-v4.1-flash-free'])
+    expect(opts!.internalArgs).toEqual(['--standalone'])
     for (const flag of CLAUDE_FLAGS) {
       expect(opts!.internalArgs.join(' ') + ' ' + opts!.claudeArgs.join(' ')).not.toContain(flag)
     }
-    expect(opts!.env.OPENCODE_CONFIG_CONTENT).toBe('{"plugin":["file:///x.mjs"]}')
+    // The model travels in the config content: the TUI CLI has no --model flag (it prints help and exits).
+    // (The fake attention here returns the raw user config; the permission merge happens inside the real opencodeEnv.)
+    expect(opts!.env.OPENCODE_CONFIG_CONTENT).toBe('{"plugin":["file:///x.mjs"],"model":"opencode/deepseek-v4.1-flash-free"}')
     expect(opts!.env.SESSIONDECK_SESSION_ID).toBe(created.id)
     // The stored session carries agent + model, no Claude conversation id bookkeeping.
     const stored = store.get().sessions.find((s) => s.id === created.id)!
@@ -222,14 +224,14 @@ describe('opencode sessions: launch spec', () => {
     // Before the plugin reports: unknown conversation id -> plain new opencode.
     controller.sleepSession(created.id)
     controller.setActiveSession(created.id)
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual([])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--standalone'])
 
     // The plugin reports AgentSession (validated by HookServer first).
     controller.handleHookEvent({ sessionId: created.id, event: 'AgentSession', message: OC_ID })
 
     controller.sleepSession(created.id)
     controller.setActiveSession(created.id)
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['-s', OC_ID])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--standalone', '-s', OC_ID])
   })
 })
 
@@ -275,7 +277,8 @@ describe('opencode sessions: sleep + wake and close/reopen', () => {
     controller.setActiveSession(created.id)
     const opts = pty.getLastStartOpts(created.id)!
     expect(opts.command).toBe('opencode')
-    expect(opts.internalArgs).toEqual(['-s', OC_ID, '--model', 'p/m'])
+    expect(opts.internalArgs).toEqual(['--standalone', '-s', OC_ID])
+    expect(JSON.parse(opts.env.OPENCODE_CONFIG_CONTENT).model).toBe('p/m')
     expect(opts.claudeArgs).toEqual([])
   })
 
@@ -288,7 +291,7 @@ describe('opencode sessions: sleep + wake and close/reopen', () => {
     controller.reopenSession(created.id)
 
     const opts = pty.getLastStartOpts(created.id)!
-    expect(opts.internalArgs).toEqual(['-s', OC_ID])
+    expect(opts.internalArgs).toEqual(['--standalone', '-s', OC_ID])
     expect(store.get().sessions.find((s) => s.id === created.id)!.closedAt).toBeUndefined()
   })
 
@@ -299,6 +302,6 @@ describe('opencode sessions: sleep + wake and close/reopen', () => {
     controller.closeSession(created.id)
     controller.reopenSession(created.id)
 
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual([])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--standalone'])
   })
 })

@@ -35,13 +35,13 @@ describe('buildStartOptions opencode branch', () => {
       ...overrides
     }) as unknown as Session
 
-  it('a new session launches plain opencode, no Claude flags ever', () => {
+  it('a new session launches opencode --standalone (private server), no Claude flags ever', () => {
     const opts = buildStartOptions(ocSession({ agent: 'opencode' }), true, attention)
     expect(opts).toEqual({
       sessionId: 'deck1',
       cwd: 'C:\\proj',
       claudeArgs: [],
-      internalArgs: [],
+      internalArgs: ['--standalone'],
       command: 'opencode',
       env: { SESSIONDECK_SESSION_ID: 's', OPENCODE_CONFIG_CONTENT: '{}' },
       cols: 120,
@@ -49,36 +49,30 @@ describe('buildStartOptions opencode branch', () => {
     })
   })
 
-  it('a known conversation id resumes with -s (never --resume and never --continue)', () => {
+  it('a known conversation id resumes with --standalone -s (never --resume and never --continue)', () => {
     const opts = buildOpencodeStartOptions(ocSession({ agent: 'opencode', opencodeSessionId: 'ses_abcdef12345678' }), attention)
-    expect(opts.internalArgs).toEqual(['-s', 'ses_abcdef12345678'])
+    expect(opts.internalArgs).toEqual(['--standalone', '-s', 'ses_abcdef12345678'])
     expect(JSON.stringify(opts.internalArgs)).not.toContain('--resume')
     expect(JSON.stringify(opts.internalArgs)).not.toContain('--continue')
   })
 
   it('an unknown conversation id starts a fresh opencode (--continue would pick a random conversation)', () => {
     const opts = buildOpencodeStartOptions(ocSession({ agent: 'opencode', opencodeSessionId: undefined }), attention)
-    expect(opts.internalArgs).toEqual([])
+    expect(opts.internalArgs).toEqual(['--standalone'])
   })
 
-  it('--model is only passed when session.model is non-empty', () => {
-    expect(buildOpencodeStartOptions(ocSession({ agent: 'opencode', model: 'opencode/deepseek-v4.1-flash-free' }), attention).internalArgs).toEqual([
-      '--model',
-      'opencode/deepseek-v4.1-flash-free'
-    ])
-    expect(buildOpencodeStartOptions(ocSession({ agent: 'opencode', opencodeSessionId: 'ses_abcdef12345678', model: 'p/m' }), attention).internalArgs).toEqual([
-      '-s',
-      'ses_abcdef12345678',
-      '--model',
-      'p/m'
-    ])
-    expect(buildOpencodeStartOptions(ocSession({ agent: 'opencode', model: '' }), attention).internalArgs).toEqual([])
+  it('the session model travels in the config content (the TUI CLI has no --model flag)', () => {
+    expect(buildOpencodeStartOptions(ocSession({ agent: 'opencode', model: 'opencode/deepseek-v4.1-flash-free' }), attention).internalArgs).toEqual(['--standalone'])
+    const withModel = buildOpencodeStartOptions(ocSession({ agent: 'opencode', opencodeSessionId: 'ses_abcdef12345678', model: 'p/m' }), attention)
+    expect(withModel.internalArgs).toEqual(['--standalone', '-s', 'ses_abcdef12345678'])
+    expect(JSON.parse(withModel.env.OPENCODE_CONFIG_CONTENT)).toEqual({ model: 'p/m' })
+    expect(buildOpencodeStartOptions(ocSession({ agent: 'opencode', model: '' }), attention).env.OPENCODE_CONFIG_CONTENT).toBe('{}')
   })
 
   it('user claudeArgs are validated but NEVER forwarded to opencode (they are Claude flags)', () => {
     const opts = buildOpencodeStartOptions(ocSession({ agent: 'opencode', claudeArgs: ['--continue'] }), attention)
     expect(opts.claudeArgs).toEqual([])
-    expect(opts.internalArgs).toEqual([])
+    expect(opts.internalArgs).toEqual(['--standalone'])
     expect(buildStartOptions(ocSession({ agent: 'opencode', claudeArgs: ['--continue'] }), false, attention).claudeArgs).toEqual([])
   })
 

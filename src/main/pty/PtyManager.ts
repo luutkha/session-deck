@@ -60,6 +60,7 @@ export interface StartOptions {
 
 export type DataListener = (id: Id, data: string, seq: number) => void
 export type ExitListener = (id: Id, code: number | null) => void
+export type StartListener = (id: Id) => void
 
 function realPid(proc: IPty): number | null {
   return typeof proc.pid === 'number' && proc.pid > 0 ? proc.pid : null
@@ -82,6 +83,7 @@ export class PtyManager {
   private readonly buffers = new Map<Id, RingBuffer>()
   private readonly dataListeners = new Set<DataListener>()
   private readonly exitListeners = new Set<ExitListener>()
+  private readonly startListeners = new Set<StartListener>()
 
   constructor(deps: PtyManagerDeps = {}) {
     this.spawn = deps.spawn ?? nodePtySpawn
@@ -118,6 +120,14 @@ export class PtyManager {
     this.exitListeners.add(cb)
     return () => {
       this.exitListeners.delete(cb)
+    }
+  }
+
+  /** Fires after every successful start (or restart): the listener pattern mirrors onExit. */
+  onStart(cb: StartListener): () => void {
+    this.startListeners.add(cb)
+    return () => {
+      this.startListeners.delete(cb)
     }
   }
 
@@ -179,6 +189,7 @@ export class PtyManager {
     this.buffers.clear()
     this.dataListeners.clear()
     this.exitListeners.clear()
+    this.startListeners.clear()
   }
 
   private getOrCreateBuffer(id: Id): RingBuffer {
@@ -219,6 +230,7 @@ export class PtyManager {
     }
 
     this.processes.set(id, proc)
+    this.emitStart(id)
 
     proc.onData((data) => {
       if (this.processes.get(id) !== proc) {
@@ -252,6 +264,12 @@ export class PtyManager {
   private emitData(id: Id, data: string, seq: number): void {
     for (const cb of this.dataListeners) {
       cb(id, data, seq)
+    }
+  }
+
+  private emitStart(id: Id): void {
+    for (const cb of this.startListeners) {
+      cb(id)
     }
   }
 

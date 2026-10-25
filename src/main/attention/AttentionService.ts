@@ -8,8 +8,17 @@ import { writeSettingsFile } from './claudeSettings'
 import { writeOpencodePlugin, opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from '../opencode'
 import { writeWorkerPlugin, workerPluginEnv } from '../workers/workerPluginEnv'
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 export interface AttentionServiceDeps {
   readonly isKnownSession: (id: string) => boolean
+  /**
+   * True when this process id must not drive the session's attention/status/usage: a worker child process of an
+   * OpenCode session (the owner process is learned first through the worker plugin's `hello`, see WorkerHub).
+   */
+  readonly isIgnoredProcess?: (sessionId: string, proc: string) => boolean
   /** True when the session is on screen in the focused window: its attention is shown but never pings. */
   readonly isFocused: (id: string) => boolean
   /** Called with the session id and sound event when a sound should play (sound enabled and debounce elapsed). */
@@ -59,6 +68,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
     isWindowFocused,
     settingsDir,
     token = randomBytes(24).toString('hex'),
+    isIgnoredProcess,
     onStatusLine,
     onHookEvent,
     onWorkerEvent
@@ -88,7 +98,13 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
     }
   })
 
+  function isIgnored(sessionId: string, proc: string | undefined): boolean {
+    return proc !== undefined && isIgnoredProcess !== undefined && isIgnoredProcess(sessionId, proc)
+  }
+
   function handleHook(event: HookEvent): void {
+    // A worker child of an OpenCode session must not raise attention, change activity/status or the timeline.
+    if (isIgnored(event.sessionId, event.proc)) return
     attentionManager.handleHook(event)
     onHookEvent?.(event)
   }
@@ -101,7 +117,11 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
         token,
         isKnownSession,
         onEvent: handleHook,
-        onStatusLine: (sessionId, payload) => onStatusLine?.(sessionId, payload),
+        onStatusLine: (sessionId, payload) => {
+          // A worker child's statusline must not add its cost to the parent session's usage.
+          if (isJsonObject(payload) && isIgnored(sessionId, typeof payload.proc === 'string' ? payload.proc : undefined)) return
+          onStatusLine?.(sessionId, payload)
+        },
         onWorkerEvent
       })
 
@@ -150,10 +170,12 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
     },
 
     opencodeEnv(): Record<string, string> {
-      if (!started || pluginFilePath === null) {
+      if (!started || pluginFilePath === null || workerPluginPath === null) {
         throw new Error('AttentionService not started')
       }
-      return opencodePluginEnv(pluginFilePath, process.env[OPENCODE_PLUGIN_ENV_VAR])
+      // The worker plugin loads first, so the parent (owner) OpenCode process reports itself before it can start
+      // any worker; the session plugin follows (see docs/DECISIONS D19 and the worker-tabs handshake).
+      return opencodePluginEnv([workerPluginPath, pluginFilePath], process.env[OPENCODE_PLUGIN_ENV_VAR])
     },
 
     workerEnv(): Record<string, string> {

@@ -215,6 +215,7 @@ if (!gotTheLock) {
     const workers = createWorkerHub({
       now: () => Date.now(),
       isKnownSession: (id: string) => store.get().sessions.some((s) => s.id === id),
+      isOpencodeSession: (id: string) => store.get().sessions.some((s) => s.id === id && s.agent === 'opencode'),
       onChange: (list) => sendToWindow(IPC.evWorkers, list)
     })
     store.subscribe((data) => {
@@ -227,8 +228,15 @@ if (!gotTheLock) {
     })
     const workerSweep = setInterval(() => workers.sweep(), 5000)
 
+    // A new pty process (start, restart, sleep/wake) invalidates the owner handshake of the previous process:
+    // the first process that reports for an OpenCode session after this moment is the owner again.
+    pty.onStart((id: string) => workers.forgetSession(id))
+
     const attention = createAttentionService({
       isKnownSession: (id: string) => store.get().sessions.some((s) => s.id === id),
+      // A worker child of an OpenCode session (any proc other than the first-reported owner) must not touch
+      // the parent's attention, activity/status, timeline or usage.
+      isIgnoredProcess: (id: string, proc: string) => workers.isWorkerProc(id, proc),
       isFocused: isSessionOnScreen,
       beep: (id, reason) => relaySound(id, reason),
       flash: (on: boolean) => {

@@ -43,7 +43,7 @@ export interface Session {
   readonly agent?: AgentKind
   /** OpenCode conversation id (ses_...), reported by the injected plugin after the first start; resume uses `opencode -s <id>`. */
   readonly opencodeSessionId?: string
-  /** OpenCode only: "provider/model" passed as --model. Absent or empty = OpenCode's own default. */
+  /** OpenCode only: "provider/model", injected via the config content `model` key (the TUI CLI has no --model flag). Absent or empty = OpenCode's own default. */
   readonly model?: string
   /** Present (epoch ms) = the user closed this session: its process is stopped and it lives in the sidebar "Closed" section until reopened. A process that merely exits stays open (not closed). */
   readonly closedAt?: number
@@ -223,6 +223,8 @@ export interface HookEvent {
   readonly message?: string
   /** UserPromptSubmit only: the start of the user's prompt (trimmed, max TIMELINE_PROMPT_MAX chars). Absent = unknown. */
   readonly prompt?: string
+  /** Per-process id the OpenCode plugins report (the owner process vs its child workers). Absent for Claude hooks. */
+  readonly proc?: string
 }
 
 export const DEFAULT_STATUSES: readonly StatusDef[] = [

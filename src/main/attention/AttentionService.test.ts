@@ -277,6 +277,91 @@ describe('AttentionService', () => {
     expect(typeof service.noteOutput).toBe('function')
     expect(typeof service.noteInput).toBe('function')
   })
+
+  describe('ignored worker process (OpenCode worker tabs)', () => {
+    /** Adds an isIgnoredProcess filter to the standard harness and waits for the server. */
+    async function startFiltered(): Promise<void> {
+      await service.stop()
+      focusedSession = null
+      windowFocused = false
+      beepCalls = 0
+      beepArgs = []
+      flashCalls = []
+      changes = []
+      hookEvents = []
+      service = createAttentionService({
+        isKnownSession: (id) => knownSessions.has(id),
+        isIgnoredProcess: (_id, proc) => proc === '999',
+        isFocused: (id) => focusedSession === id,
+        beep: (id, reason) => { beepCalls++; beepArgs.push({ id, reason }) },
+        flash: (on) => { flashCalls.push(on) },
+        isWindowFocused: () => windowFocused,
+        settingsDir,
+        onStatusLine: (_sessionId, _payload) => { statusLineCalls++ },
+        onHookEvent: (event) => hookEvents.push(event)
+      })
+      await service.start()
+    }
+
+    let statusLineCalls: number
+
+    beforeEach(async () => {
+      statusLineCalls = 0
+    })
+
+    afterEach(async () => {
+      statusLineCalls = 0
+    })
+
+    async function post(path: string, body: unknown): Promise<number> {
+      const { SESSIONDECK_PORT: port, SESSIONDECK_TOKEN: token } = service.envFor('session-1')
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: 'POST',
+        headers: { 'x-token': token },
+        body: JSON.stringify(body)
+      })
+      await response.text()
+      return response.status
+    }
+
+    it('an ignored proc raises no attention and no onHookEvent', async () => {
+      await startFiltered()
+      focusedSession = null
+      expect(await post('/hook/session-1/Notification', { message: 'worker asks', proc: '999' })).toBe(204)
+      expect(service.get('session-1')).toBeNull()
+      expect(hookEvents).toEqual([])
+    })
+
+    it('an allowed or absent proc behaves as today', async () => {
+      await startFiltered()
+      focusedSession = null
+      expect(await post('/hook/session-1/Notification', { message: 'owner asks', proc: '777' })).toBe(204)
+      expect(await post('/hook/session-1/Stop', {})).toBe(204)
+      expect(service.get('session-1')).toBe('permission')
+      expect(hookEvents).toEqual([
+        { sessionId: 'session-1', event: 'Notification', message: 'owner asks', proc: '777' },
+        { sessionId: 'session-1', event: 'Stop' }
+      ])
+    })
+
+    it('an ignored statusline proc does not reach usage; an allowed one does', async () => {
+      await startFiltered()
+      expect(await post('/statusline/session-1', { cost: { total_cost_usd: 1 }, proc: '999' })).toBe(204)
+      expect(statusLineCalls).toBe(0)
+      expect(await post('/statusline/session-1', { cost: { total_cost_usd: 2 }, proc: '777' })).toBe(204)
+      expect(statusLineCalls).toBe(1)
+    })
+
+    it('opencodeEnv loads both plugins: the worker package dir first, then the session package dir', async () => {
+      const env = service.opencodeEnv()
+      const plugins = JSON.parse(env.OPENCODE_CONFIG_CONTENT).plugin as string[]
+      expect(plugins.some((dir) => dir.endsWith('sessiondeck-worker-plugin'))).toBe(true)
+      expect(plugins.some((dir) => dir.endsWith('sessiondeck-opencode-plugin'))).toBe(true)
+      expect(plugins[plugins.length - 2].endsWith('sessiondeck-worker-plugin')).toBe(true)
+      expect(plugins[plugins.length - 1].endsWith('sessiondeck-opencode-plugin')).toBe(true)
+      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT).permission).toEqual({ '*': 'allow' })
+    })
+  })
 })
 
 // Integration test with real curl through bash (skipped if bash/curl missing)
@@ -304,11 +389,17 @@ describe('AttentionService bash/curl integration', () => {
 
   it('runs hookCommand through bash against real HookServer', async (context) => {
     // Check if bash and curl are available. Missing tools SKIP the test (shown as skipped, not a silent pass).
+    // On Windows the bash on PATH is the WSL launcher (no distro here: it exits non-zero or hangs when the WSL
+    // service is cold — a 20s timeout failure in the parallel full suite). Prefer Git for Windows' bash, which
+    // ships curl too (same preference as statusLineBash.test.ts).
     const { spawn } = await import('node:child_process')
+    const { existsSync } = await import('node:fs')
+    const GIT_BASH = 'C:\\Program Files\\Git\\bin\\bash.exe'
+    const bashExe = process.platform === 'win32' && existsSync(GIT_BASH) ? GIT_BASH : 'bash'
 
     function runBash(cmd: string, env: Record<string, string>): Promise<{ code: number; stdout: string; stderr: string }> {
       return new Promise((resolve) => {
-        const child = spawn('bash', ['-c', cmd], {
+        const child = spawn(bashExe, ['-c', cmd], {
           env: { ...process.env, ...env },
           stdio: ['ignore', 'pipe', 'pipe']
         })
@@ -343,5 +434,7 @@ describe('AttentionService bash/curl integration', () => {
     const result = await runBash(hookCmd, env)
     expect(result.code).toBe(0)
     expect(service.get('test-session')).toBe('permission')
-  }, 20_000)
+    // 60s: on Windows `bash` is the WSL stub; when the WSL VM is cold or other tests load the machine, WSL init
+    // alone can take tens of seconds (a 20s timeout once failed under the parallel full suite).
+  }, 60_000)
 })

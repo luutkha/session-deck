@@ -1,21 +1,46 @@
 /**
- * Per-process plugin injection for OpenCode: the plugin file plus the "no permission prompts" rule travel
- * through OPENCODE_CONFIG_CONTENT, so nothing is written into the user's project or global OpenCode config.
+ * Per-process plugin injection for OpenCode: the plugin package (see pluginSource.ts / writePlugin.ts) plus the
+ * "no permission prompts" rule travel through OPENCODE_CONFIG_CONTENT, so nothing is written into the user's
+ * project or global OpenCode config.
+ *
+ * OpenCode v2 (verified on 2.1.4) loads configured plugins from PACKAGE DIRECTORIES only: every entry must be an
+ * absolute path to the plugin package directory; `"file:///...mjs"` file entries are rejected with a
+ * "configured plugin path must be a directory" warning. Legacy file entries for SessionDeck's own v1 plugin
+ * files are therefore removed when they are found in a config the user already exports.
  */
 export const OPENCODE_PLUGIN_ENV_VAR = 'OPENCODE_CONFIG_CONTENT'
+
+/** Basenames of the v1 single-file plugin layouts, whose file:// entries v2 cannot load. */
+export const LEGACY_PLUGIN_BASENAMES = ['sessiondeck-opencode-plugin.mjs', 'sessiondeck-worker-plugin.mjs']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** An absolute path as OpenCode config entries expect it: forward slashes ("C:/Users/.../plugin-pkg"). */
+export function pluginEntryPath(pkgDir: string): string {
+  return pkgDir.replace(/\\/g, '/')
+}
+
+function isLegacyFileEntry(entry: unknown): boolean {
+  return (
+    typeof entry === 'string' &&
+    LEGACY_PLUGIN_BASENAMES.some(
+      (name) => entry.toLowerCase().endsWith('/' + name) || entry.toLowerCase().endsWith('\\' + name)
+    )
+  )
+}
+
 /**
- * The config content that makes OpenCode load the SessionDeck plugin and never ask for permissions
- * ({"*": "allow"}). A config the user already exports is kept: the plugin joins its `plugin` list, the permission
- * rule is merged into its own rules, and every other field (model, provider, ...) survives. An unparseable or
+ * The config content that makes OpenCode load the SessionDeck plugins and never ask for permissions
+ * ({"*": "allow"}). A config the user already exports is kept: the plugin package directories join its `plugin`
+ * list (in order, deduplicated, SessionDeck's own legacy file:// entries removed), the permission rule is
+ * merged into its own rules, and every other field (model, provider, ...) survives. An unparseable or
  * non-object value is returned unchanged, so OpenCode keeps its own behaviour instead of failing to start.
  */
-export function buildOpencodeConfigContent(pluginPath: string, existing: string | undefined): string {
-  const fileUrl = `file:///${pluginPath.replace(/\\/g, '/').replace(/^\/+/, '')}`
+export function buildOpencodeConfigContent(pluginDirs: string | readonly string[], existing: string | undefined): string {
+  const dirs = Array.isArray(pluginDirs) ? pluginDirs : [pluginDirs]
+  const entries = dirs.map(pluginEntryPath).filter((entry) => entry.length > 0)
 
   let parsed: Record<string, unknown> = {}
   if (existing !== undefined && existing.trim().length > 0) {
@@ -29,8 +54,11 @@ export function buildOpencodeConfigContent(pluginPath: string, existing: string 
     parsed = value
   }
 
-  const plugins = Array.isArray(parsed.plugin) ? parsed.plugin : []
-  const nextPlugins = plugins.includes(fileUrl) ? [...plugins] : [...plugins, fileUrl]
+  const existingEntries = isRecord(parsed) && Array.isArray(parsed.plugin) ? parsed.plugin : []
+  const nextPlugins = existingEntries.filter((entry) => !isLegacyFileEntry(entry))
+  for (const entry of entries) {
+    if (!nextPlugins.includes(entry)) nextPlugins.push(entry)
+  }
   const permission = isRecord(parsed.permission) ? parsed.permission : {}
 
   return JSON.stringify({
@@ -41,9 +69,31 @@ export function buildOpencodeConfigContent(pluginPath: string, existing: string 
 }
 
 /**
- * Env entries to merge into an OpenCode session's environment (see startOptions.ts). `existing` is the user's own
- * OPENCODE_CONFIG_CONTENT, passed explicitly so tests never depend on the ambient environment.
+ * Merges extra top-level config keys into an OPENCODE_CONFIG_CONTENT value (the model is set this way: the TUI has
+ * no --model flag — passing one makes the CLI print help and exit, "ShowHelp: Help requested" on v2.1.4 — but the
+ * config `model` key ("provider/model-id") works everywhere). A base the user already exports is kept; an
+ * unparseable or non-object base is returned unchanged, so OpenCode keeps its own behaviour instead of failing.
  */
-export function opencodePluginEnv(pluginPath: string, existing: string | undefined): Record<string, string> {
-  return { [OPENCODE_PLUGIN_ENV_VAR]: buildOpencodeConfigContent(pluginPath, existing) }
+export function applyConfigPatch(baseContent: string | undefined, patch: Record<string, unknown>): string {
+  if (baseContent === undefined || baseContent.trim().length === 0) return JSON.stringify(patch)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(baseContent)
+  } catch {
+    return baseContent
+  }
+  if (!isRecord(parsed)) return baseContent
+  return JSON.stringify({ ...parsed, ...patch })
+}
+
+/**
+ * Env entries to merge into an OpenCode session's environment (see startOptions.ts). `existing` is the user's own
+ * OPENCODE_CONFIG_CONTENT, passed explicitly so tests never depend on the ambient environment. Several plugin
+ * package directories load in the given order (the worker plugin first, so the owner process reports itself early).
+ */
+export function opencodePluginEnv(
+  pluginDirs: string | readonly string[],
+  existing: string | undefined
+): Record<string, string> {
+  return { [OPENCODE_PLUGIN_ENV_VAR]: buildOpencodeConfigContent(pluginDirs, existing) }
 }

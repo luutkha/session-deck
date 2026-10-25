@@ -9,6 +9,7 @@ const MAX_MODEL = 200
 export type ToolState = 'running' | 'done' | 'error'
 
 export type WorkerEvent =
+  | { readonly kind: 'hello'; readonly proc: string }
   | { readonly kind: 'beat'; readonly proc: string }
   | { readonly kind: 'start'; readonly proc: string; readonly oc: string; readonly dir: string; readonly title: string }
   | { readonly kind: 'busy'; readonly proc: string; readonly oc: string; readonly dir: string }
@@ -40,6 +41,8 @@ export function parseWorkerEvent(payload: unknown): WorkerEvent | null {
   const proc = str(p.proc, MAX_ID)
   const kind = p.kind
   if (proc === null || typeof kind !== 'string') return null
+  // hello: plugin initialization of (potentially) the owner process itself, before any session exists.
+  if (kind === 'hello') return { kind, proc }
   if (kind === 'beat') return { kind, proc }
   if (!isOpencodeSessionId(p.oc)) return null
   const oc = p.oc

@@ -1,16 +1,19 @@
 // E2E: OpenCode workers started from a Claude session show up as read-only tabs of that session.
-// The REAL worker plugin file that the app wrote is loaded in this process with the session's SESSIONDECK_* env and fed
-// OpenCode-shaped events, so plugin -> hook server -> worker hub -> IPC -> tabs and view are all exercised.
+// The REAL worker plugin PACKAGE the app wrote is loaded in this process with the session's SESSIONDECK_* env and fed
+// OpenCode-shaped events (v2: default export {id, setup}, context.event.subscribe() AsyncIterable), so plugin ->
+// hook server -> worker hub -> IPC -> tabs and view are all exercised.
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { sleep, waitFor, makeChecker, launchApp } = require('./e2e-lib.cjs')
+const { sleep, waitFor, makeChecker, launchApp, stopOpencodeService } = require('./e2e-lib.cjs')
 
 const OC = 'ses_e2eworker000001'
 const OC2 = 'ses_e2eworker000002'
 
 async function main() {
+  // A stale background service would silently swallow the injected plugin config.
+  stopOpencodeService()
   const t = makeChecker()
   let app
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-e2e-workers-'))
@@ -28,16 +31,25 @@ async function main() {
     const b = await mk('claude-b', projB)
     await sleep(1500)
     const endpoint = JSON.parse(fs.readFileSync(endpointFile, 'utf8'))
-    const pluginFile = path.join(app.userData, 'sessiondeck-attention', 'sessiondeck-worker-plugin.mjs')
-    t.check('the app wrote the worker plugin and exposes its hook endpoint', fs.existsSync(pluginFile) && endpoint.port > 0, pluginFile)
+    const pluginDir = path.join(app.userData, 'sessiondeck-attention', 'sessiondeck-worker-plugin')
+    t.check('the app wrote the worker plugin and exposes its hook endpoint', fs.existsSync(path.join(pluginDir, 'package.json')) && endpoint.port > 0, pluginDir)
 
     const startPlugin = async (sessionId) => {
       process.env.SESSIONDECK_PORT = String(endpoint.port)
       process.env.SESSIONDECK_TOKEN = endpoint.token
       process.env.SESSIONDECK_SESSION_ID = sessionId
-      const mod = await import(pathToFileURL(pluginFile).href + '?t=' + Date.now() + Math.random())
-      const hooks = await mod.SessionDeckWorkerPlugin({ directory: projA })
-      return (type, properties) => hooks.event({ event: { type, properties } })
+      const mod = await import(pathToFileURL(path.join(pluginDir, 'index.mjs')).href + '?t=' + Date.now() + Math.random())
+      const queue = []
+      let wake = null
+      const push = (event) => { if (wake) { const w = wake; wake = null; w(event) } else queue.push(event) }
+      async function* iterate() {
+        for (;;) {
+          if (queue.length > 0) yield queue.shift()
+          else yield await new Promise((r) => { wake = r })
+        }
+      }
+      await mod.default.setup({ directory: projA, event: { subscribe: async () => iterate() } })
+      return (type, data) => push({ type, data })
     }
     const clickSession = (name) => app.evaluate(`[...document.querySelectorAll('[role=treeitem]')].find((n) => n.innerText.includes(${JSON.stringify(name)}))?.click()`)
     const chips = () => app.evaluate(`[...document.querySelectorAll('[data-worker-id]')].map((n) => n.getAttribute('data-worker-status') + ':' + n.innerText.trim())`)

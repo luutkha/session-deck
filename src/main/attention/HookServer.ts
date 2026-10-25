@@ -23,6 +23,7 @@ const MAX_BODY_SIZE = 4096
 const MAX_STATUSLINE_BODY_SIZE = 65536
 const MAX_HOOK_BODY_SIZE = 65536
 const MAX_HOOK_MESSAGE_LENGTH = 300
+const MAX_PROC_LENGTH = 64
 const STATUSLINE_PATH_RE = /^\/statusline\/([^/?#]+)$/
 const HOOK_PATH_RE = /^\/hook\/([^/?#]+)\/([^/?#]+)$/
 const WORKER_PATH_RE = /^\/worker\/([^/?#]+)\/event$/
@@ -61,58 +62,63 @@ function decodeSegment(segment: string): string | null {
   }
 }
 
-/**
- * Message of a hook body. The body is optional: empty or invalid JSON, or a body without a string `message`,
- * yields undefined. The message is trimmed and capped at MAX_HOOK_MESSAGE_LENGTH.
- */
-function messageFromHookBody(body: string): string | undefined {
-  if (body.trim().length === 0) return undefined
-  let parsed: unknown
+/** The optional per-process id of an OpenCode plugin body (the owner process vs its child workers). */
+function procFromBody(parsed: unknown): string | undefined {
+  if (!isJsonObject(parsed) || typeof parsed.proc !== 'string') return undefined
+  const proc = parsed.proc
+  return proc.length === 0 || proc.length > MAX_PROC_LENGTH ? undefined : proc
+}
+
+/** JSON parse of a hook body that tolerates everything (an empty or invalid body parses to null). */
+function optionalJson(body: string): Record<string, unknown> | null {
+  if (body.trim().length === 0) return null
   try {
-    parsed = JSON.parse(body)
+    const parsed: unknown = JSON.parse(body)
+    return isJsonObject(parsed) ? parsed : null
   } catch {
-    return undefined
+    return null
   }
-  if (!isJsonObject(parsed) || typeof parsed.message !== 'string') return undefined
-  const trimmed = parsed.message.trim()
-  return trimmed.length === 0 ? undefined : trimmed.slice(0, MAX_HOOK_MESSAGE_LENGTH)
 }
 
 const WHITESPACE_RUN_RE = /\s+/g
 
 /**
- * Prompt of a UserPromptSubmit body (the stdin JSON Claude Code sends, field `prompt`). Whitespace runs collapse to
- * one space, the text is trimmed and cut to TIMELINE_PROMPT_MAX characters (code points, so an emoji is never split).
- * Returns undefined for an empty body, invalid JSON, a missing or non-string field, or an empty result.
+ * The `message` hook field (Notification, Stop). Undefined for a body without a string `message` or an empty text.
+ * The text is trimmed and capped at MAX_HOOK_MESSAGE_LENGTH.
  */
-export function promptFromHookBody(body: string): string | undefined {
-  if (body.trim().length === 0) return undefined
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(body)
-  } catch {
-    return undefined
-  }
-  if (!isJsonObject(parsed) || typeof parsed.prompt !== 'string') return undefined
+function messageField(parsed: Record<string, unknown> | null): string | undefined {
+  if (parsed === null || typeof parsed.message !== 'string') return undefined
+  const trimmed = parsed.message.trim()
+  return trimmed.length === 0 ? undefined : trimmed.slice(0, MAX_HOOK_MESSAGE_LENGTH)
+}
+
+/**
+ * The UserPromptSubmit `prompt` field (the stdin JSON Claude Code sends, field `prompt`). Whitespace runs collapse
+ * to one space, the text is trimmed and cut to TIMELINE_PROMPT_MAX characters (code points, so an emoji is never
+ * split). Returns undefined for a missing or non-string field, or an empty result.
+ */
+export function promptField(parsed: Record<string, unknown> | null): string | undefined {
+  if (parsed === null || typeof parsed.prompt !== 'string') return undefined
   const collapsed = parsed.prompt.replace(WHITESPACE_RUN_RE, ' ').trim()
   if (collapsed.length === 0) return undefined
   return Array.from(collapsed).slice(0, TIMELINE_PROMPT_MAX).join('')
 }
 
 /**
+ * Prompt of a UserPromptSubmit body (the stdin JSON Claude Code sends, field `prompt`). Returns undefined for an
+ * empty body, invalid JSON, a missing or non-string field, or an empty result.
+ */
+export function promptFromHookBody(body: string): string | undefined {
+  return promptField(optionalJson(body))
+}
+
+/**
  * The `session_id` an AgentSession payload must carry (an OpenCode session id). Returns undefined when the body
  * is empty, invalid JSON, not an object, or the id does not match the expected shape.
  */
-function agentSessionIdFromBody(body: string): string | undefined {
-  if (body.trim().length === 0) return undefined
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(body)
-  } catch {
-    return undefined
-  }
-  if (!isJsonObject(parsed) || !isOpencodeSessionId(parsed.session_id)) return undefined
-  return parsed.session_id
+export function agentSessionIdField(parsed: Record<string, unknown> | null): string | undefined {
+  if (parsed === null) return undefined
+  return isOpencodeSessionId(parsed.session_id) ? parsed.session_id : undefined
 }
 
 function parseBody(req: IncomingMessage, limit: number): Promise<string> {
@@ -289,10 +295,12 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
       return
     }
 
+    const parsed = optionalJson(body)
+    const proc = procFromBody(parsed)
     const message =
       event === AGENT_SESSION_EVENT
-        ? agentSessionIdFromBody(body)
-        : messageFromHookBody(body)
+        ? agentSessionIdField(parsed)
+        : messageField(parsed)
     if (event === AGENT_SESSION_EVENT && message === undefined) {
       sendResponse(
         res,
@@ -301,12 +309,13 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
       )
       return
     }
-    const prompt = event === 'UserPromptSubmit' ? promptFromHookBody(body) : undefined
+    const prompt = event === 'UserPromptSubmit' ? promptField(parsed) : undefined
     onEvent({
       sessionId,
       event,
       ...(message !== undefined ? { message } : {}),
-      ...(prompt !== undefined ? { prompt } : {})
+      ...(prompt !== undefined ? { prompt } : {}),
+      ...(proc !== undefined ? { proc } : {})
     })
     sendResponse(res, 204)
   }

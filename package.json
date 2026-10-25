@@ -46,6 +46,7 @@
     "e2e:remote": "node scripts/e2e-remote.cjs",
     "e2e:links": "node scripts/e2e-links.cjs",
     "e2e:opencode": "node scripts/e2e-opencode.cjs",
+    "e2e:opencode-workers": "node scripts/e2e-opencode-workers.cjs",
     "e2e:lastfolder": "node scripts/e2e-lastfolder.cjs",
     "e2e:foldertabs": "node scripts/e2e-foldertabs.cjs",
     "e2e:checklist-draft": "node scripts/e2e-checklist-draft.cjs",

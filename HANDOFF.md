@@ -1,6 +1,6 @@
 # SessionDeck handoff (updated 2026-10-25)
 
-This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
+This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Feature tree + matrices (rules, code path, tests): `docs/FEATURES.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
 
 ## State: v1 feature-complete, Orca-style UI done, awaiting the user's first hands-on test round
 
@@ -68,14 +68,29 @@ Use the `opencode-orchestrator` skill (cost-first: deepseek-v4-flash / claude-ha
 - Not rebuilt: the installer is stale (build only when the user asks).
 
 ## OpenCode worker tabs (read-only)
-Any `opencode` process started from a Claude terminal (by my orchestrator skill, by hand, by any tool, on any PC) shows up as a read-only tab of that Claude session.
-- How: each Claude pty gets `OPENCODE_CONFIG_CONTENT` with only a `plugin` entry (merged into the user's own value if they export one; never a permission rule, so workers behave as before). The plugin (`src/main/workers/workerPluginSource.ts`, written to `<userData>/sessiondeck-attention/sessiondeck-worker-plugin.mjs`) runs inside every such opencode process and POSTs events in order to the local hook server `POST /worker/<claudeSessionId>/event` (token header, 32 KB cap). It also sends a 5 s heartbeat.
+Any `opencode` process started from a SessionDeck session — a Claude terminal, a Shell terminal or an OpenCode session (orchestrator, `!` shell escape, script by hand) — shows up as a read-only tab of that session.
+- How: each pty gets `OPENCODE_CONFIG_CONTENT` with `plugin` entries (merged into the user's own value if they export one; never a permission rule, so workers behave as before). The plugin (`src/main/workers/workerPluginSource.ts`, written to `<userData>/sessiondeck-attention/sessiondeck-worker-plugin.mjs`) runs inside every such opencode process and POSTs events in order to the local hook server `POST /worker/<sessionId>/event` (token header, 32 KB cap). It also sends a 5 s heartbeat.
 - Main: `workerEvents.ts` validates payloads; `WorkerHub.ts` builds `WorkerInfo` (name from the session title, else the first line of the prompt; running -> done on idle; error + idle -> failed, usage limits flagged; no heartbeat for 20 s -> failed "lost"; max 50 workers per session, 400 lines each; in memory only). IPC `workers:get` and `ev:workers`. No folder scanning, no dependency on the skill.
 - Renderer: `src/renderer/workers/` (`useWorkers`, `WorkerTabs`, `WorkerView`, `workerLogic`). Finished tabs close 2 min after ending unless being read; the X only hides the tab. Selecting any session or the Hub leaves the worker view.
-- Limits: `opencode --pure` (no plugins) is invisible; Claude sessions open before this feature need a restart to get the env; workers started from an OpenCode session inside the app are not covered.
+- Limits: `opencode --pure` (no plugins) is invisible; sessions open before this feature need an app restart to get the env.
 - Not built (by choice): a real interactive OpenCode terminal (Phase 2: shared `opencode serve` + `opencode attach`), resume-from-tab.
-- Tests: unit (`src/main/workers/*.test.ts`, `HookServer.worker.test.ts`), `scripts/e2e-workers.cjs` (11 checks; real plugin file -> real app), `scripts/smoke-workers-real.cjs` (manual: a real `opencode run` on a free model, 4 checks). `SESSIONDECK_E2E_ENDPOINT_FILE` makes the app write its hook port/token to that file (test seam only).
+- Tests: unit (`src/main/workers/*.test.ts`, `HookServer.worker.test.ts`), `scripts/e2e-workers.cjs` (11 checks; real plugin file -> real app), `scripts/e2e-opencode-workers.cjs` (real OpenCode owner + child events, 12 checks), `scripts/smoke-workers-real.cjs` (manual: a real `opencode run` on a free model, 4 checks). `SESSIONDECK_E2E_ENDPOINT_FILE` makes the app write its hook port/token to that file (test seam only).
 - Note: after `git init` in session-deck, Claude asks once to trust the folder (new git root); `scripts/e2e.cjs` now answers that prompt.
+
+## Workers from OpenCode sessions (owner-process handshake, 2026-10-25)
+OpenCode sessions now load BOTH plugins in their pty: the worker plugin first, then the session plugin (`AttentionService.opencodeEnv`). This is safe because both report a stable process id (`proc` = `String(process.pid)`) and the hub treats the FIRST process that reports for an OpenCode session as the owner:
+- The worker plugin posts `{kind: 'hello'}` right at initialization (before its first beat), so the parent registers before it can spawn children. `WorkerHub.ownerProcs` keeps the owner per OpenCode session; the parent's own worker events are accepted then dropped (no self-tab). Added `isWorkerProc(owner, proc)`.
+- `PtyManager.onStart(listener)` (mirrors `onExit`; `index.ts` wires `pty.onStart -> workers.forgetSession`) resets the owner and the session's worker records on every start: sleep/wake, restart, migration.
+- The session plugin adds `proc` to every hook body and to the statusline body (`/hook/<id>/AgentSession|UserPromptSubmit|Stop|Notification`, `/statusline/<id>`; `HookServer` parses it once per body, 1..64 chars). `AttentionService` drops a hook event whose proc is a worker child before attention/status/timeline/usage, and filters the same for statusline payloads — so a child cannot change `opencodeSessionId`, raise the bell, alter activity or add cost.
+- Claude and Shell owners: every proc is a worker, behavior unchanged. `e2e-opencode.cjs` gained a "no self-tab after a turn" check.
+- Unit coverage: `WorkerHub.test.ts` (owner handshake), `HookServer.route.test.ts` (proc parsing), `AttentionService.test.ts` (ignored process + combined env), `pluginSource.test.ts`/`workerPlugin.test.ts` (proc in bodies, hello first), `PtyManager.test.ts` (onStart).
+
+### OpenCode v2 plugin loading (2026-10-25, verified on 2.1.4)
+OpenCode v2 changed how CONFIGURED plugins load and how the TUI launches; both plugins were rewritten and the launch changed:
+- Configured plugins must be PACKAGE DIRECTORIES (`package.json` `main` → index.mjs), referenced by absolute path with forward slashes; a `file:///...mjs` entry is rejected with "configured plugin path must be a directory". Singular `plugin` and plural `plugins` keys both work. Module shape: `export default { id, setup }`; events via `await context.event.subscribe()` (the returned `{event}` hook is never called). Both plugins tolerate `.data` (v2) AND `.properties` (v1) payloads and v1 event names.
+- `writePlugin.ts` writes the package dirs into `<userData>/sessiondeck-attention/` and removes the legacy single-file plugins; `AttentionService.opencodeEnv()` puts them into `OPENCODE_CONFIG_CONTENT` (`plugin` list, worker plugin first).
+- OpenCode sessions now launch `opencode --standalone [-s <id>]`: a background-service attach reads the user-global config and never sees the per-process plugin env. The session's model goes into the same config value (`model` key) because the TUI CLI has no `--model` flag (it prints help and exits — the v2 ShowHelp trap).
+- E2E: `e2e:opencode` 13/13 (real TUI turn: busy/finished/review/id capture/sleep+wake resume/image paste/agent dialog), `e2e:opencode-workers` 11/11, `e2e:workers` 11/11. Full suite 2827/2827 green.
 
 ## Workspaces in the sidebar
 Inside each group (Groups view only) sessions are bucketed by the folder they were opened in (`session.cwd`, compared with `folderKey`, so slash style, trailing slash and case don't matter). Renderer only; no IPC or main-process change.

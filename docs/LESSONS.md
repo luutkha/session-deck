@@ -6,6 +6,8 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 - **Fullscreen UI grabs the mouse.** In `tui: fullscreen`, Claude turns on mouse reporting (`?1000h ?1002h ?1003h ?1006h`) and pastes a reported right-click by itself. Anything SessionDeck does with a mouse button must stop xterm from reporting it (see D21, `isRightButton`). Claude may switch fullscreen on by itself, so assume it can be on.
 - **Test sessions use the user's real `~/.claude`.** Slash commands persist (`/tui fullscreen` wrote settings.json). For a per-session setting pass `claudeArgs: ['--settings', <temp json file>]`; inline JSON is rejected by the arg validator.
 - **Trust prompt per git root.** A folder Claude has not seen as a git root asks "Yes, I trust this folder / No, exit" with **No** preselected. E2E scripts press Down before Enter (`scripts/e2e.cjs`).
+- **Never send a blind Enter to a starting Claude TUI.** In `e2e-handsfree.cjs`, "dismiss anything else with its default option" pressed Enter while the trust dialog had not rendered yet; the CR was buffered and confirmed "No, exit" — Claude quit, every later write went nowhere, and the replay buffer froze on the dialog forever. Only press keys on a DETECTED dialog; wait otherwise. (New Claude versions also show a second "Bypass Permissions" dialog — detect it the same way.)
+- **Claude TUI replay text is not reliably spaced.** Redraws overlap in the pty replay, and a dialog may appear in the tail only as a space-collapsed copy (`Quicksafetycheck:...No,exit`). `strip()` alone is not enough for detection — collapse whitespace and match on the collapsed text (`flat.includes('No,exit')`), and check the footer first (`bypasspermissionson`) so dismissed-dialog history in the buffer is not mistaken for a live dialog.
 - **`NO_COLOR` from the launcher** made sessions monochrome; the pty env strips it.
 - **A session never prompted has no conversation.** Resuming it fails; it gets a fresh Claude id instead (`shouldRotateSessionId`).
 - `CLAUDE_CODE_*` / `CLAUDECODE` env from a parent Claude must not leak into sessions; strip them when launching the app from a Claude terminal.
@@ -16,7 +18,10 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 - **Go plan cap is plan-wide** and in `--format json` mode OpenCode goes silent on it; only stderr logs show it.
 - `opencode/<model>` (Zen) bills real money. Free: `opencode/big-pickle` and the `*-free` models.
 - `OPENCODE_CONFIG_CONTENT` merges with a project's own `opencode.json` plugins. `opencode run --pure` disables plugins, so such workers are invisible to worker tabs.
+- **The injected config is inherited by child processes too.** When a session gets several plugin entries, the parent opencode AND every opencode it spawns load all of them. Identify the parent by the first process that reports (`proc` = `String(process.pid)`; the worker plugin posts `hello` at initialization and loads first), and filter child session-plugin events by proc before attention/status/usage. Reset the owner when the pty starts, not on exit (an exit event can arrive after the new process already registered). See D19 and `WorkerHub.ownerProcs`.
 - Quoting `--dir "…"` through `cmd /s /c` breaks OpenCode; use the process cwd.
+- **The TUI CLI has no `--model` flag.** `opencode --standalone --model x/y` prints help and exits instantly ("ShowHelp: Help requested" — and the pty "TUI started" checks can pass vacuously against the help text). The model travels in the OPENCODE_CONFIG_CONTENT value as the top-level `model: "provider/model"` key; `-s`/`--session` IS a valid global flag.
+- **A TUI that attaches to the shared background service never sees per-process plugin env.** The service reads its own user-global config; only `--standalone` (private server) honors the injected `OPENCODE_CONFIG_CONTENT`. Cold-started children inherit the caller's env; a warm service does not. `opencode service stop` is best effort: other opencode clients (an agent session, for instance) respawn the service instantly.
 
 ## Electron / xterm / Windows
 - `ready-to-show` did not fire with the hidden title bar; the window is shown explicitly.
@@ -32,6 +37,7 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 
 ## Tests and tooling
 - Vitest cannot import files under the OS temp dir; create test dirs under `process.cwd()`. Turn fake timers on only after the dynamic import.
+- **ptyWrite control chars through CDP evaluates.** Data goes `node source → JSON.stringify → browser eval`: pass REAL control characters in the Node source (`'\x1b[B'`, JSON.stringify re-escapes them as `\u001b`) — a doubly-escaped `'\x1b[B'` reaches the pty as the literal text `\x1b[B`, which the TUI does not treat as a key. The reference scripts embed the escape in the evaluate template instead; both work, mixing them breaks.
 - A test that "skips" with an early `return` is a false pass. Use `context.skip()` so the report shows it. Likewise, a helper that reads `process.env` by default makes tests depend on the shell that runs them; pass the value explicitly.
 - Plugin events posted with parallel `fetch` arrive out of order; the worker plugin serializes posts.
 - In this shell, heredocs/`sed` with backslashes or odd quotes get mangled; write files with the Write tool or a Python script file.
