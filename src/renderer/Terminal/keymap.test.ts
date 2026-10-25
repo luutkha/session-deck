@@ -138,3 +138,25 @@ describe('isRightButton', () => {
     expect(isRightButton(1)).toBe(false)
   })
 })
+
+describe('decideKeyAction: terminal comfort zoom', () => {
+  it('Ctrl+= and its Shift variant (key "+") zoom in', () => {
+    expect(decideKeyAction(key({ key: '=', ctrlKey: true }), false)).toBe('zoom-in')
+    expect(decideKeyAction(key({ key: '+', ctrlKey: true, shiftKey: true }), false)).toBe('zoom-in')
+  })
+
+  it('Ctrl+- and Ctrl+_ zoom out', () => {
+    expect(decideKeyAction(key({ key: '-', ctrlKey: true }), false)).toBe('zoom-out')
+    expect(decideKeyAction(key({ key: '_', ctrlKey: true, shiftKey: true }), false)).toBe('zoom-out')
+  })
+
+  it('Ctrl+0 resets the zoom', () => {
+    expect(decideKeyAction(key({ key: '0', ctrlKey: true }), false)).toBe('zoom-reset')
+  })
+
+  it('plain - / + / 0 stay with the program', () => {
+    expect(decideKeyAction(key({ key: '-' }), false)).toBe('allow')
+    expect(decideKeyAction(key({ key: '+' }), false)).toBe('allow')
+    expect(decideKeyAction(key({ key: '0' }), false)).toBe('allow')
+  })
+})

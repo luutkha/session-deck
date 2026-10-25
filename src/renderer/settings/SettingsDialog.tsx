@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Bot, Gauge, GitBranch, Settings2, Tags, Volume2, Wand2 } from 'lucide-react'
+import { Bot, Gauge, GitBranch, Settings2, Tags, TerminalSquare, Volume2, Wand2 } from 'lucide-react'
 import type { AppSettings, StatusDef } from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
 import { cn } from '@/lib/utils'
@@ -18,8 +18,9 @@ import { AutomationSection } from './AutomationSection'
 import { QuotaSection } from './QuotaSection'
 import { StatusesSection } from './StatusesSection'
 import { CodeSection } from './CodeSection'
+import { TerminalSection } from './TerminalSection'
 
-export type SettingsSection = 'general' | 'agents' | 'code' | 'sound' | 'automation' | 'quota' | 'statuses'
+export type SettingsSection = 'general' | 'agents' | 'code' | 'terminal' | 'sound' | 'automation' | 'quota' | 'statuses'
 
 export type SettingsActions = Pick<
   SessionActions,
@@ -69,6 +70,7 @@ const NAV_ITEMS: readonly {
   { id: 'general', label: 'General', icon: <Settings2 className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'agents', label: 'Agents', icon: <Bot className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'code', label: 'Code', icon: <GitBranch className="size-4 shrink-0" aria-hidden="true" /> },
+  { id: 'terminal', label: 'Terminal', icon: <TerminalSquare className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'sound', label: 'Sound', icon: <Volume2 className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'automation', label: 'Automation', icon: <Wand2 className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'quota', label: 'Quota', icon: <Gauge className="size-4 shrink-0" aria-hidden="true" /> },
@@ -93,6 +95,8 @@ function SettingsPane({
       return <AgentsSection settings={settings} actions={actions} />
     case 'code':
       return <CodeSection settings={settings} actions={actions} />
+    case 'terminal':
+      return <TerminalSection />
     case 'sound':
       return <SoundSection />
     case 'automation':

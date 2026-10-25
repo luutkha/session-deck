@@ -128,6 +128,9 @@ Asked "do we have auto continue when the quota reset after a session hit limit?"
 **D35 · 2026-10-25 · Rich previews — rendered Markdown and images of worktree files, Code mode only** · active
 Orca's "Rich repo previews", v1 scope per plan (the user approved the queue): a Diff | Preview toggle in the Changes panel for renderable changed files — images (png/jpg/gif/webp/bmp; svg excluded: scriptable) and Markdown (marked + DOMPurify, sanitized; links open through the app's open pipeline, never the window). A new additive IPC reads the file in main with the path resolved (and realpath-checked) inside the worktree and sizes capped (5 MB images, 500 KB text, cut marked). PDFs and a repo-wide file browser are out of v1.
 
+**D36 · 2026-10-25 · Terminal comfort — global zoom + scrollback setting** · active
+User asked for "terminal comfort settings: font zoom + scrollback length". Decisions taken (defaults chosen by Claude, user may change): ONE app-wide terminal profile (no per-pane zoom), Ctrl+= / Ctrl+- / Ctrl+0 and Ctrl+wheel zoom live by 10% steps within 50..200%, the scrollback length is a Settings > Terminal value (1,000..100,000 lines, default 10,000) applied to NEW panes; the profile persists in localStorage and both windows share it.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

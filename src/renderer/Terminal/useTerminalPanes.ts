@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Id, RuntimeState, SessionRun } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { SeqGate } from './seqGate'
+import type { TermView } from './termView'
+import type { ZoomAction } from './paneFactory'
 import {
   buildTerminalView,
   disposeTerminalView,
@@ -105,6 +107,12 @@ export interface TerminalPanesApi {
   readonly focusPane: (id: Id | null) => void
 }
 
+/** Construction profile + zoom sink for the panes (terminal comfort). Read at pane creation time. */
+export interface TerminalPanesOptions {
+  readonly termView?: TermView
+  readonly onZoom?: (action: ZoomAction) => void
+}
+
 /**
  * Owns every pane's xterm lifecycle. Panes are created lazily the first time
  * their session becomes VISIBLE and disposed when the session leaves
@@ -113,10 +121,14 @@ export interface TerminalPanesApi {
 export function useTerminalPanes(
   visibleIds: readonly Id[],
   sessionIds: readonly Id[],
-  runtime: ReadonlyMap<Id, RuntimeState>
+  runtime: ReadonlyMap<Id, RuntimeState>,
+  options: TerminalPanesOptions = {}
 ): TerminalPanesApi {
   const panesRef = useRef<Map<Id, TerminalPaneHandle>>(new Map())
   const [createdIds, setCreatedIds] = useState<readonly Id[]>([])
+  // Panes are built with the profile current at CREATION; later zooms are applied live, never rebuilt.
+  const optionsRef = useRef<TerminalPanesOptions>(options)
+  optionsRef.current = options
 
   // ONE live-data subscription for the whole workspace; panes are dispatched by id.
   useEffect((): (() => void) => {
@@ -134,7 +146,7 @@ export function useTerminalPanes(
       }
       const pane: TerminalPaneHandle = {
         id,
-        view: buildTerminalView(id),
+        view: buildTerminalView(id, { termView: optionsRef.current.termView, onZoom: optionsRef.current.onZoom }),
         gate: new SeqGate(),
         lastRun: runtime.get(id)?.run ?? null,
         opened: false,

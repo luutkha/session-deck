@@ -1,4 +1,5 @@
 import type { ITerminalOptions, ITheme } from '@xterm/xterm'
+import { fontSizeFor, type TermView } from './termView'
 
 const FONT_FAMILY = "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace"
 const FONT_SIZE = 14
@@ -48,4 +49,13 @@ export const TERMINAL_OPTIONS: ITerminalOptions = {
   windowsMode: false,
   smoothScrollDuration: SMOOTH_SCROLL_OFF,
   theme: TERMINAL_THEME
+}
+
+/**
+ * The options a NEW pane is constructed with for a terminal profile (zoom + scrollback, D-Bar):
+ * the base options with the profile's font size and scrollback. Live zoom changes fontSize on
+ * mounted panes (paneFactory.applyTerminalFontSize); scrollback is a construction option.
+ */
+export function terminalOptionsFor(view: TermView): ITerminalOptions {
+  return { ...TERMINAL_OPTIONS, fontSize: fontSizeFor(view.zoomPercent), scrollback: view.scrollbackLines }
 }

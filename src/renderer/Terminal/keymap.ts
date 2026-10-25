@@ -19,7 +19,7 @@ export interface KeyInfo {
   readonly metaKey: boolean
 }
 
-export type KeyDecision = 'copy' | 'paste' | 'allow' | 'app-shortcut'
+export type KeyDecision = 'copy' | 'paste' | 'allow' | 'app-shortcut' | 'zoom-in' | 'zoom-out' | 'zoom-reset'
 
 export type ContextMenuDecision = 'copy' | 'paste'
 
@@ -58,6 +58,16 @@ export function decideKeyAction(event: KeyInfo, hasSelection: boolean): KeyDecis
   // event bubble to the window-level handler.
   if (event.ctrlKey && event.shiftKey && key === 'n') {
     return 'app-shortcut'
+  }
+  // Terminal comfort: Ctrl+= (and its Shift variant, i.e. '+'), Ctrl+- and Ctrl+0 zoom every pane.
+  if (event.ctrlKey && (key === '=' || key === '+')) {
+    return 'zoom-in'
+  }
+  if (event.ctrlKey && (key === '-' || key === '_')) {
+    return 'zoom-out'
+  }
+  if (event.ctrlKey && key === '0') {
+    return 'zoom-reset'
   }
   // Everything else — Ctrl+Backspace, Shift+Enter, plain Ctrl+N (readline history), F2, Ctrl+Tab —
   // is allowed through untouched.

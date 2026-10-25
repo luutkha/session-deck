@@ -1,11 +1,13 @@
 // One mode's workspace (D31): sidebar, tab bar, terminals, Hub, worker view, side panel, status bar, dialogs and palette.
 // Ops and Code each get their own instance (App mounts one at a time, keyed by mode) with mode-scoped storage keys.
-import { useMemo, type ReactElement } from 'react'
+import { useEffect, useMemo, type ReactElement } from 'react'
 import { Sidebar } from '../Sidebar'
 import { useLastRuntimeChange } from '../Sidebar/useLastRuntimeChange'
 import { CodeSidebar } from '../code/sidebar/CodeSidebar'
 import { GridView } from '../grid/GridView'
 import { useTerminalPanes } from '../Terminal/useTerminalPanes'
+import { useTermView } from '../Terminal/useTermView'
+import { applyTerminalFontSize } from '../Terminal/paneFactory'
 import type { GridPreset } from '../grid/gridLogic'
 import { HubView } from '../hub/HubView'
 import { NotesPanel } from '../notes'
@@ -95,15 +97,23 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const tabModels = useMemo(() => buildTabModels(barIds, sessions ?? [], runtime), [barIds, sessions, runtime])
   const needsYou = useMemo(() => needsYouItems(sessions ?? [], runtime), [sessions, runtime])
   const activeState = activeId === null ? undefined : runtime.get(activeId)
-  // One xterm per session across BOTH layouts (D32): the pane registry is owned here and handed to the
-  // split workspace and the grid view. Visible ids follow the current view (split panes or grid cells).
+  // Terminal comfort: the app-wide zoom/scrollback profile; zoom changes apply live to every mounted pane.
+  const termViewApi = useTermView()
   const panes = useTerminalPanes(
     view === 'grid'
       ? nav.grid.layout.cells.filter((id): id is Id => id !== null)
       : split.layout.paneIds,
     ids,
-    runtime
+    runtime,
+    { termView: termViewApi.termView, onZoom: termViewApi.zoom }
   )
+  useEffect((): void => {
+    for (const pane of panes.panesRef.current.values()) {
+      if (pane.opened) {
+        applyTerminalFontSize(pane.view, termViewApi.termView.zoomPercent)
+      }
+    }
+  }, [termViewApi.termView.zoomPercent, panes.panesRef])
   const checklist = progress(activeSession?.checklist ?? [])
   const notesBadge = checklist.total > 0 ? `${checklist.done}/${checklist.total}` : null
   const loaded = data !== null

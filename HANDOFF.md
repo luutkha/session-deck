@@ -137,6 +137,14 @@ See several sessions at once: a preset grid of REAL interactive terminals (`1x1 
 - E2E: `npm run e2e:grid` (9 checks: real Grid ▾ menu → 2x2, assign two sessions through the cell pickers, both terminals live (pty echo), picking an assigned session swaps, preset 2x2→3x2→1x1→2x2 keeps/restores assignments, graceful restart restores preset + cells). Split/tabs regressions re-run: `e2e` 20/20, `e2e:foldertabs` 3/3, `e2e:codemode` 34/34.
 - Visual: the `e2e-visual` `grid-2x2` state is NOT added yet; the behaviour is covered by `e2e:grid`, the look stays a manual check (`src/renderer/grid/MANUAL_TEST.md`).
 
+## Terminal comfort — zoom and scrollback (2026-10-25)
+Terminal panes zoom live and the scrollback length is a setting (was a hard-coded 10,000).
+- Profile: `src/renderer/Terminal/termView.ts` (pure) — `{ zoomPercent 50..200, scrollbackLines 1000..100000 }`, `nextZoom` (10% steps, clamped), `fontSizeFor` (14px base → 7..32px), `parseTermView` (stale/malformed → defaults), localStorage `sessiondeck.termview.v1` (one app-wide profile; both windows share it — the other window hears it through the `storage` event, this one through a local event in `useTermView`).
+- Shortcuts: `keymap.decideKeyAction` gains `zoom-in` (Ctrl+=, Shift variant `+`), `zoom-out` (Ctrl+-, `_`), `zoom-reset` (Ctrl+0); the pane's key handler calls the workspace's zoom sink. **Ctrl+wheel** over a pane zooms too — capture-phase `wheel` listener with `preventDefault`, so xterm does not scroll the buffer instead.
+- Live application: `applyTerminalFontSize` sets `term.options.fontSize` and reuses the ONE existing fit path (`fitTerminalView`), so the pty gets the new cols/rows through `ptyResize` (e2e proves 119→91 columns at 130%). `ModeWorkspace` owns the profile and applies it to every mounted pane (grid cells included); new panes are constructed with `terminalOptionsFor(view)` (font size + scrollback). Scrollback applies to NEW panes (`xterm` construction option); zoom is live.
+- Settings > **Terminal** page: zoom display + A−/100%/A+ buttons, scrollback input (clamped, validated message) and the shortcut note.
+- E2E: `npm run e2e:termview` (7 checks: Ctrl+= ×3 → 130% persisted + the pty width shrinks, Ctrl+0 → 100%, Ctrl+wheel zooms without buffer scroll, settings shows the live zoom, scrollback applies/persists, graceful restart keeps the zoom).
+
 ## Hub opens at the busiest status (D24)
 New settings section `hub` (`AppSettings.hub.scrollToBusiest`, default true; validated in `main/store/settings.ts` and `main/app/settingsValidation.ts`). `busiestColumnIndex` in `hub/hubLogic.ts` (tests); `HubView` scrolls its board (`data-hub-board`) once on mount, left-aligning that column unless it is already fully visible. Switch: Settings > General. E2E: `scripts/e2e-hubscroll.cjs` (7 checks).
 

@@ -3,7 +3,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import type { Id } from '../../shared/types'
-import { TERMINAL_OPTIONS } from './terminalOptions'
+import { terminalOptionsFor } from './terminalOptions'
+import { DEFAULT_TERM_VIEW, fontSizeFor, type TermView } from './termView'
 import { registerLinkProvider } from './links/linkProvider'
 import { attachFileDrop, clipboardHasImageOnly, pasteImageKeysFor } from './inputExtras'
 import {
@@ -12,6 +13,9 @@ import {
   decideKeyAction,
   type KeyInfo
 } from './keymap'
+
+/** What a pane asks the workspace to do on Ctrl+= / Ctrl+- / Ctrl+0 or Ctrl+wheel (terminal comfort). */
+export type ZoomAction = 'in' | 'out' | 'reset'
 
 /**
  * One terminal pane's xterm view: the Terminal itself, its fit addon and the
@@ -23,6 +27,10 @@ export interface TerminalView {
   readonly fitAddon: FitAddon
   webgl: WebglAddon | null
   fitFrame: number | null
+  /** Set by the workspace that owns the terminal profile; absent = zoom shortcuts do nothing. */
+  onZoom: ((action: ZoomAction) => void) | null
+  /** The container the terminal was opened into (for live refits); set by openTerminalView. */
+  openedElement: HTMLElement | null
 }
 
 function toKeyInfo(event: KeyboardEvent): KeyInfo {
@@ -87,17 +95,26 @@ export function pasteOnce(term: Terminal, text: string, now: number = Date.now()
   return true
 }
 
-function attachKeyHandling(term: Terminal): void {
-  term.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
-    const decision = decideKeyAction(toKeyInfo(event), term.hasSelection())
+function attachKeyHandling(view: TerminalView): void {
+  view.term.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+    const decision = decideKeyAction(toKeyInfo(event), view.term.hasSelection())
     switch (decision) {
       case 'copy':
-        void copySelectionToClipboard(term)
+        void copySelectionToClipboard(view.term)
         return false
       case 'paste':
-        void pasteClipboardInto(term)
+        void pasteClipboardInto(view.term)
         return false
       case 'app-shortcut':
+        return false
+      case 'zoom-in':
+        view.onZoom?.('in')
+        return false
+      case 'zoom-out':
+        view.onZoom?.('out')
+        return false
+      case 'zoom-reset':
+        view.onZoom?.('reset')
         return false
       case 'allow':
         return true
@@ -107,11 +124,15 @@ function attachKeyHandling(term: Terminal): void {
 
 /**
  * Builds a Terminal with all addons that may load before `open`, and wires
- * keyboard, input and resize reporting. The WebGL addon is deliberately NOT
- * loaded here: it must be added after `term.open` (see `openTerminalView`).
+ * keyboard, input and resize reporting. The profile carries the zoom font size
+ * and the scrollback of NEW panes (terminal comfort). The WebGL addon is
+ * deliberately NOT loaded here: it must be added after `term.open`.
  */
-export function buildTerminalView(id: Id): TerminalView {
-  const term = new Terminal(TERMINAL_OPTIONS)
+export function buildTerminalView(
+  id: Id,
+  options: { readonly termView?: TermView; readonly onZoom?: (action: ZoomAction) => void } = {}
+): TerminalView {
+  const term = new Terminal(terminalOptionsFor(options.termView ?? DEFAULT_TERM_VIEW))
 
   const fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
@@ -131,9 +152,17 @@ export function buildTerminalView(id: Id): TerminalView {
     window.api.ptyResize(id, cols, rows)
   })
 
-  attachKeyHandling(term)
+  const view: TerminalView = {
+    term,
+    fitAddon,
+    webgl: null,
+    fitFrame: null,
+    onZoom: options.onZoom ?? null,
+    openedElement: null
+  }
+  attachKeyHandling(view)
 
-  return { term, fitAddon, webgl: null, fitFrame: null }
+  return view
 }
 
 function loadWebglRenderer(view: TerminalView): void {
@@ -153,6 +182,7 @@ function loadWebglRenderer(view: TerminalView): void {
 
 /** Opens the terminal into `element` and attaches mouse behaviour + WebGL. */
 export function openTerminalView(view: TerminalView, element: HTMLElement): void {
+  view.openedElement = element
   view.term.open(element)
 
   // xterm also pastes on the textarea's native paste event; all pasting goes through pasteOnce instead.
@@ -190,6 +220,20 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
 
   attachFileDrop(element, view.term)
 
+  // Ctrl+wheel zooms (terminal comfort). Capture phase + preventDefault so xterm does not scroll the buffer.
+  element.addEventListener(
+    'wheel',
+    (event: WheelEvent): void => {
+      if (!event.ctrlKey || view.onZoom === null) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      view.onZoom(event.deltaY < 0 ? 'in' : 'out')
+    },
+    { capture: true, passive: false }
+  )
+
   element.addEventListener('mousedown', (): void => {
     view.term.focus()
   })
@@ -206,6 +250,21 @@ export function fitTerminalView(view: TerminalView, element: HTMLElement): void 
     view.fitAddon.fit()
   } catch (error) {
     console.error('SessionDeck: failed to fit the terminal to its container', error)
+  }
+}
+
+/**
+ * Live zoom (terminal comfort): applies a profile's zoom to ONE mounted pane and refits it so the pty
+ * receives the new cols/rows through the single existing fit path (no second resize path).
+ */
+export function applyTerminalFontSize(view: TerminalView, zoomPercent: number): void {
+  const fontSize = fontSizeFor(zoomPercent)
+  if (view.term.options.fontSize === fontSize) {
+    return
+  }
+  view.term.options.fontSize = fontSize
+  if (view.openedElement !== null) {
+    fitTerminalView(view, view.openedElement)
   }
 }
 

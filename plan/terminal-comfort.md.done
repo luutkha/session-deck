@@ -1,0 +1,108 @@
+# Plan: Terminal comfort — font zoom (Ctrl+=/−/0, Ctrl+wheel) and scrollback setting
+
+Status: proposed — waiting for "go". No code changed yet.
+Date: 2026-10-25
+User request (2026-10-25): plan for "2. terminal comfort settings: font zoom + scrollback length".
+
+## 1. Goal
+
+Two things every terminal app has that SessionDeck's panes don't yet:
+
+1. **Zoom**: Ctrl+= zoom in, Ctrl+- zoom out, Ctrl+0 reset, and Ctrl+wheel — applied to all
+   panes live, persisted across restarts (a view preference, like the split layout).
+2. **Scrollback length** as a setting instead of the hard-coded 10,000 lines, so a long build
+   log doesn't get thrown away.
+
+## 2. What exists already (verified in source)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| `TERMINAL_OPTIONS` is a frozen constant: `fontSize: 14`, `scrollback: 10_000` (tested in `terminalOptions.test.ts`) | `src/renderer/Terminal/terminalOptions.ts:4,6,39-51` | Becomes a factory `terminalOptionsFor(view)` with zoom applied; the test file moves to the factory. |
+| Keys are decided centrally per pane in the custom key handler (`decideKeyAction`), already handling copy/paste/Ctrl+N etc. | `paneFactory.ts:12-15` + `keymap.ts` | The three zoom shortcuts slot into the existing key table — no new event layer. |
+| Inactive panes stay mounted so scrollback/render state survives switching | `useTerminalPanes.ts:3`, `Terminal.css:47` | Live zoom must iterate **all mounted views**, not just the active one. |
+| Fit machinery (FitAddon, WebGL addon, fit frame) re-runs on resize and drives `ptyResize` | `paneFactory.ts` (`fitFrame`, `webgl`) | After `- options.fontSize` the same existing fit routine must run — one exported helper reused, no second resize path (lesson D21 class of bugs: double messages). |
+| Renderer prefs use namespaced localStorage (`sessiondeck.split.v1`, `sessiondeck.sound.v1`) | HANDOFF, split/sound features | Precedent for a renderer-only view setting: **zero contract change** for this plan. |
+
+## 3. Design
+
+### 3.1 Store — `src/renderer/Terminal/termView.ts` (pure, tested)
+
+localStorage key `sessiondeck.termview.v1` — one record for both prefs:
+
+```ts
+export interface TermView { readonly zoomPercent: number; readonly scrollbackLines: number }
+// defaults: { zoomPercent: 100, scrollbackLines: 10_000 }
+```
+
+Rules: clamp zoom 50..200 (step of the controls, stored as any int in range), scrollback
+1_000..100_000; malformed/stale JSON → defaults (splitLogic-style `parseTermView` returning
+null on garbage, caller falls back to defaults). Both windows read the same key (one app-wide
+terminal profile).
+
+### 3.2 Zoom application
+
+- `terminalOptionsFor(view: TermView)` → the existing options with
+  `fontSize: clamp(round(14 * zoomPercent / 100), 7, 32)` and `scrollback`.
+- **New panes** are constructed with it (`paneFactory`).
+- **Live zoom** (shortcuts): iterate all mounted `TerminalView`s, set
+  `term.options.fontSize = ...` and `term.options.fontFamily` unchanged, then run the existing
+  fit routine (`fit()` through the same path resize uses) so the pty follows with `ptyResize`.
+  WebGL re-raster on font change is native to xterm — verify visually in the e2e screenshot.
+  Scrollback is NOT hot-applied to running panes (it is a construction option semantically);
+  new value takes effect for panes created after the change — the settings page says so.
+  (xterm does allow a runtime `options.scrollback` change; if the e2e proves it trims safely
+  in the real app, hot-apply to live panes too — bonus, not blocking.)
+
+### 3.3 Shortcuts
+
+- `keymap.decideKeyAction`: add `ctrl+=`/`ctrl+plus`(shift variant), `ctrl+-`, `ctrl+0` →
+  `zoom-in` / `zoom-out` / `zoom-reset` actions. Terminal-side only (these keys are otherwise
+  dead in a terminal). Shift variants of Ctrl+= are normalised to zoom-in.
+- `Ctrl+wheel`: capture-phase `wheel` listener on the pane container (same capture pattern as
+  `shell/useUserActivityReporter.ts`); if `event.ctrlKey` → zoom step ±10% (clamped) and
+  `preventDefault`+stopPropagation so xterm doesn't scroll instead.
+- Zoom steps: ±10% per shortcut press, snap to the clamp bounds; reset returns exactly 100.
+- Persist on every change (throttled same as other renderer prefs).
+
+### 3.4 Settings UI
+
+Settings > **Terminal** (new small page, same layout discipline as Sound):
+- Scrollback lines number input (validated, clamp message).
+- Current zoom display + "Reset zoom" button.
+- Note "applies to new panes" for scrollback; zoom is live.
+
+## 4. Files touched
+
+- New: `src/renderer/Terminal/termView.ts` + `termView.test.ts`
+- Edit: `terminalOptions.ts` (factory + test rename scope), `paneFactory.ts` (shortcut wiring + wheel capture + live-zoom loop + fit reuse), `keymap.ts` (+ `keymap.test.ts` for the three actions and the Shift+Ctrl+= normalisation), `TerminalWorkspace`/container (pass view in, listen for changes)
+- Edit: `src/renderer/settings/` new Terminal page + nav entry
+- **No `types.ts` / `ipc.ts` / preload change** — renderer-only (same precedent as sounds, D-Bar batch 1)
+- `docs/CODEMAP.md`, `HANDOFF.md` (feature section), DECISIONS if the user confirms a non-default
+
+## 5. Verification (W04)
+
+- Unit: `parseTermView` fallback + clamps; `terminalOptionsFor` maps 50→7px, 100→14px, 200→28px (clamped), scrollback clamped; keymap actions.
+- Real-app e2e `scripts/e2e-termview.cjs` (modelled on the existing terminal e2e):
+  - open a real session pane → send Ctrl+= (CDP key events ×3) → assert the pane's computed font-size grew and presence persisted after an app reload;
+  - Ctrl+0 resets to 14px;
+  - Ctrl+wheel over the pane zooms (mouse wheel event with controlKey) and does **not** scroll the buffer (scrollTop unchanged);
+  - set scrollback 1_000, produce >1_500 output lines in the pane, assert `term.buffer.length` stays ≤ 1_000 + rows;
+  - zoom survives a restart (localStorage read path) and both windows share the value.
+- Screenshot check against the Orca look (D02) for the new settings page and the zoomed terminal.
+
+## 6. Risks
+
+- Font-size change without refit = broken pane/no resize to the pty — mitigated by reusing the single existing fit path (the one shared with container resize), e2e asserts the pty receives a resize.
+- WebGL addon + odd font sizes: rendered via the same addon already used at 14px; sizes outside 7..32 are excluded by clamp.
+- Zoom keys are intercepted from the terminal child process (Ctrl+0 etc. are rare in shells); if a conflict is ever reported, the shortcut table is one switch.
+- Shortcuts chosen to not fight the palette (Ctrl+K / Ctrl+Shift+K) or W3's Ctrl+Shift+F search.
+
+## 7. Out of scope (v1)
+
+- Per-session or per-pane zoom (global profile only).
+- Font *family* selection in Settings (font stack stays Cascadia-first; trivial follow-up later).
+- Hot scrollback change to running panes unless the e2e proves it safe (§3.2).
+
+## 8. Effort
+
+Small: one pure module + keymap additions + one settings page + live-zoom loop. One worker brief (W01); unit + real-app e2e + screenshot, then commit.
