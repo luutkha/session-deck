@@ -28,6 +28,8 @@ export interface FeatureWiringDeps {
   readonly send: (channel: string, ...args: unknown[]) => void
   /** Toast + sound + desktop notice for an alert the autopilot raised itself. */
   readonly deliverAlert: (alert: QuotaAlert) => void
+  /** Desktop notice + sound when the hands-off autopilot could not continue a held session (D33). */
+  readonly notifyContinueFailed?: (sessionName: string) => void
   readonly onError: (where: string, error: unknown) => void
 }
 
@@ -88,6 +90,16 @@ export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
     writeToSession: (id, data) => controller.writeToPty(id, data),
     subscribeOutput: (callback) => pty.onData((id) => callback(id)),
     deliverAlert: deps.deliverAlert,
+    onContinueFailed: deps.notifyContinueFailed === undefined
+      ? undefined
+      : (id) => {
+          const name = store.get().sessions.find((s) => s.id === id)?.name
+          try {
+            deps.notifyContinueFailed?.(name ?? id)
+          } catch (error) {
+            onError('quota continue notice', error)
+          }
+        },
     onStateChange: (state: QuotaAutopilotState) => send(IPC.evQuotaAutopilot, state),
     onError
   })

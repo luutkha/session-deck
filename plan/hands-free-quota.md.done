@@ -1,0 +1,69 @@
+# Plan: Fully hands-off quota autopilot (auto-continue when reset after a limit)
+
+Status: proposed — waiting for "go". No code changed yet.
+Date: 2026-10-25
+Request (user, 2026-10-25): "do we have auto continue when the quota reset after a session hit limit?" → shown the current ask-defaults → "i want it fully handoff".
+
+## 1. Goal
+
+Once a Claude turn is cut off by the usage limit, the user does **nothing**: the app
+sleeps idle sessions at the critical level without asking, and when the window resets it
+**wakes the held sessions and types "continue" itself** — no toast, no click. The user
+only hears about it (notification), and is pinged when automation fails.
+
+## 2. What exists already (verified in source)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| Settings exist for all three behaviors: `quota.criticalAction` ('ask'/'sleep'/'nothing'), `quota.resetAction` ('ask'/'wake'), `quota.continueOnWake` (bool) | `src/shared/types.ts` (QuotaSettings, defaults at line ~395: `ask`/`ask`/`false`), `src/renderer/settings/QuotaSection.tsx` | Hands-off is a **matter of settings**, not missing features. |
+| Limit detection → hold: `USAGE_LIMIT_PATTERNS` (armed only by a prompt submitted in the running process) → `onUsageLimit` → session lands in `stoppedAtLimit` with `resetsAt` from the 5-hour window | `src/main/app/outputSignals.ts`, `src/main/app/featureWiring.ts`, `src/main/quota/autopilotOps.ts` | The held list is already durable (`quota-autopilot.json`) and re-arms the timer after a restart. |
+| Auto-wake path exists: `resetAction: 'wake'` → at `resets_at + 5 s` → `wake()` wakes sleeping held sessions and `scheduleContinue` types `continue` + Enter (quiet 3 s, give up 90 s) — only into limit-stopped sessions | `src/main/quota/autopilotOps.ts`, `autopilotContinue.ts`, `autopilotPolicy.ts` | With `resetAction: 'wake'` + `continueOnWake: true` the reset needs **zero clicks** today. |
+| Critical-level auto-sleep exists: `criticalAction: 'sleep'` → `sleepIdle()` at the 95% five-hour alert; busy / Keep-awake / Remote Control sessions are never interrupted | `autopilotOps.ts` (`onAlert` → `criticalAlert`) | The hold side can also be click-free today — **for the 5-hour window only** (see gap G3). |
+
+So the hands-off loop is reachable by flipping the three switches in Settings > Quota.
+What actually blocks "fully hands-off":
+
+- **G1 — Defaults**: new installs (and any other PC, W07) come up `ask`/`ask`/`false`. And this machine's store already has those values saved, so changing `DEFAULT_APP_SETTINGS` alone would not even change this install.
+- **G2 — Silent failure**: if `continue` is typed but the session never produces output (90 s give-up), or a wake call fails, hands-off leaves it dead silently; today only `logMainError` sees it.
+- **G3 — Weekly window**: `onAlert` passes every non-five-hour alert through unchanged, and `resetsAt` only watches `fiveHour`. A cut-off caused by the weekly cap is woken/continued at the next 5-hour reset — possibly hours too early, with `continue` bouncing off the still-active weekly limit.
+
+## 3. Design — Phase 1 (the hands-off loop, small and safe)
+
+### 3.1 New defaults + one-time migration (`G1`)
+- `DEFAULT_APP_SETTINGS.quota` → `criticalAction: 'sleep'`, `resetAction: 'wake'`, `continueOnWake: true` (`src/shared/types.ts`). `notifyOnReset` stays `true` so the user still *hears* that the window reset and sessions were woken.
+- One-time migration in `src/main/store/settings.ts` (where stored settings are validated/merged): if the **stored** quota block equals the OLD defaults exactly (`ask`/`ask`/`false` — i.e. the user never touched it), upgrade it to the new defaults. A user who deliberately chose different values ("do 1 and 3" people) is untouched. Unit tests cover both branches (never-touched → upgraded; customized → kept).
+- Kept as booleans/selects in `QuotaSection` exactly as-is; no new UI. The three switches remain the off-ramp if the user ever wants asking back.
+
+### 3.2 Automation must never fail silently (`G2`)
+- `scheduleContinue`'s give-up and `wake()`'s failed `wakeSession` already call `onError`; extend the wiring (`src/main/quota/*` deps + `src/main/app/featureWiring.ts`) so a give-up also produces a **desktop notification + sound**: "SessionDeck could not continue <session name> after the reset — it needs you." Reuses `Notifier` + the existing 'quota' sound key; no new sound.
+- Success stays noise-light: the existing `notifyOnReset` reset notice (which carries `autoAction: 'woke'` + session ids) is the success signal.
+
+### 3.3 Verification of the real loop (W04)
+- New pure logic tests for the migration + give-up notification trigger.
+- Extend the real-app E2E (new `scripts/e2e-handsfree.cjs`, modeled on `scripts/e2e-autopilot.cjs`: fake usage through the statusLine endpoint, idle OpenCode sessions so no real usage interferes).
+  12-ish checks: with hands-off settings, at the critical level sessions are slept **with no toast**; at the reset they wake **with no toast click**; `continue` reaches the limit-stopped session; a no-response session produces the "could not continue" notification; toast-only paths still exist when settings are set back to `ask`.
+
+## 4. Phase 1 not in scope (proposed for Phase 2, needs real-world data first)
+
+- **Weekly-window handling (`G3`)**: two held lists with two timers, or parsing the limit message's own reset line ("resets 3pm / reset at 5pm (Europe/Berlin)"). This adds real state-shape and timezone-parsing risk, and the exact wording has **never been seen for real yet** (HANDOFF, D30). Cheaper first step when live data arrives: when a session sends `continue` and the limit message reappears, log the full line to `main-errors.log` so we can widen `USAGE_LIMIT_PATTERNS` and decide whether weekly holds are worth it.
+- Retrying `continue` more than once.
+- Any commit/merge/PR implications — none, sleeping/waking is unchanged.
+
+## 5. Risks / safety
+
+- `continue` is only typed into sessions whose turn was **cut off by the limit** (never busy, never Remote Control), after 3 s of quiet output, with a hard give-up — unchanged.
+- The critical-level auto-sleep never touches Keep-awake / Remote Control / working / needs-input sessions — unchanged, and identical to what the user could already choose in Settings.
+- Migration is exact-match on the old defaults, so nobody's explicit choices are overwritten.
+- Rollback: tags + conventional commits (W10); settings can be flipped back in the UI at any time.
+
+## 6. Files touched
+
+- `src/shared/types.ts` (defaults), `src/main/store/settings.ts` (+ test) — §3.1
+- `src/main/quota/autopilotTypes.ts`, `autopilot.ts`/`autopilotOps.ts` or `featureWiring.ts` (+ Notifier call site), new small pure helper + test — §3.2
+- `src/renderer/settings/QuotaSection.tsx` — only if help text needs a sentence about hands-off defaults
+- `scripts/e2e-handsfree.cjs` (new) — §3.3
+- Doc updates in the same turn (W12, CLAUDE.md): `docs/DECISIONS.md` (new D-number: "fully hands-off quota" with the user's words), `HANDOFF.md` (feature section), no CODEMAP change (no new folders)
+
+## 7. Effort
+
+Small: ~2 code spots + tests + 1 e2e script + docs. One worker session (cheap model per W01), Claude plans/verifies/commits per W02.

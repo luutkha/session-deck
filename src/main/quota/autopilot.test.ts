@@ -47,6 +47,7 @@ interface Log {
   readonly writes: Array<[Id, string]>
   readonly delivered: QuotaAlert[]
   readonly states: QuotaAutopilotState[]
+  readonly continueFailed: Id[]
   readonly errors: Array<[string, unknown]>
 }
 
@@ -68,7 +69,7 @@ function makeWorld(init: WorldInit = {}) {
     sessions: []
   }
   const outputListeners = new Set<(id: Id) => void>()
-  const log: Log = { sleeps: [], wakes: [], writes: [], delivered: [], states: [], errors: [] }
+  const log: Log = { sleeps: [], wakes: [], writes: [], delivered: [], states: [], continueFailed: [], errors: [] }
 
   const autopilot: QuotaAutopilot = createQuotaAutopilot({
     filePath: file,
@@ -97,6 +98,7 @@ function makeWorld(init: WorldInit = {}) {
       }
     },
     deliverAlert: (alert) => log.delivered.push(alert),
+    onContinueFailed: (id) => log.continueFailed.push(id),
     onStateChange: (state) => log.states.push(state),
     onError: (where, error) => log.errors.push([where, error])
   })
@@ -256,6 +258,14 @@ describe('reset alert', () => {
     w.autopilot.onUsageLimit('a')
     vi.advanceTimersByTime((RESET_SEC * 1000 - NOW_MS) + RESET_GRACE_MS)
     expect(w.autopilot.onAlert(RESET)).toBeNull()
+  })
+
+  it('pings the user (onContinueFailed) when a held session could not be woken at the reset', () => {
+    const w = makeWorld({ settings: { criticalAction: 'sleep', resetAction: 'wake' }, failWake: 'a' })
+    w.autopilot.onAlert(CRITICAL)
+    expect(w.autopilot.onAlert(RESET)).toEqual({ ...RESET, autoAction: 'woke', sessionIds: ['b'] })
+    expect(w.log.continueFailed).toEqual(['a'])
+    expect(w.log.errors).toEqual([]) // the notice is not an error path: it is delivered on purpose
   })
 
   it('handles a reset once when the guard reports it first, cancelling the timer', () => {
@@ -429,6 +439,18 @@ describe('wake', () => {
     w.emitOutput('a')
     vi.advanceTimersByTime(CONTINUE_MAX_WAIT_MS)
     expect(w.log.writes).toEqual([])
+  })
+
+  it('pings the user (onContinueFailed) when "continue" is given up', () => {
+    const w = makeWorld({ settings: { continueOnWake: true } })
+    w.autopilot.onUsageLimit('a')
+    w.runtimes.set('a', running('a', { sleeping: true, run: 'exited' }))
+    w.autopilot.wake({ sendContinue: true })
+    // A freshly woken session waits for output that never comes: nothing typed, give-up at the max wait.
+    vi.advanceTimersByTime(CONTINUE_MAX_WAIT_MS)
+    expect(w.log.writes).toEqual([])
+    expect(w.log.continueFailed).toEqual(['a'])
+    expect(w.log.errors.length).toBe(1) // still logged as an error as before
   })
 
   it('cancels the pending "continue" of a session that is forgotten', () => {

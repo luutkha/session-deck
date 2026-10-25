@@ -119,7 +119,8 @@ export function startContinue(ctx: AutopilotContext, id: Id, alreadyRunning = fa
         writeToSession: ctx.deps.writeToSession,
         setTimeout: ctx.setTimer,
         clearTimeout: ctx.clearTimer,
-        onError: ctx.deps.onError
+        onError: ctx.deps.onError,
+        onGiveUp: (id) => ctx.deps.onContinueFailed?.(id)
       },
       id,
       { alreadyRunning }
@@ -149,7 +150,11 @@ function tryWake(ctx: AutopilotContext, id: Id): boolean {
 /** Wakes one held session if it sleeps, then queues "continue" if asked. Returns whether it counts as woken or continued. */
 function wakeOne(ctx: AutopilotContext, id: Id, asleep: boolean, wantContinue: boolean): boolean {
   const woke = asleep && tryWake(ctx, id)
-  if (asleep && !woke) return false
+  if (asleep && !woke) {
+    // Hands-off must never fail silently: the reset passed and this session is still held asleep.
+    ctx.deps.onContinueFailed?.(id)
+    return false
+  }
   if (!wantContinue) return woke
   startContinue(ctx, id, !asleep)
   return true

@@ -61,9 +61,57 @@ describe('parseStoredSettings / parseStoreData settings', () => {
     expect(data.settings?.away).toEqual({ enabled: true, afterMinutes: 15 })
   })
 
-  it('stored quota without the new autopilot fields gets their defaults', () => {
+  it('stored quota without the autopilot fields was never customized: it takes the current defaults', () => {
     const settings = parseStoredSettings({ quota: { warnAtPercent: 70 } }, STATUSES)
-    expect(settings?.quota).toMatchObject({ criticalAction: 'ask', resetAction: 'ask', continueOnWake: false })
+    expect(settings?.quota).toMatchObject({ warnAtPercent: 70, criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true })
+  })
+
+  describe('legacy hands-off quota migration (D33)', () => {
+    const OLD_QUOTA = {
+      enabled: true,
+      warnAtPercent: 80,
+      criticalAtPercent: 95,
+      notifyOnReset: true,
+      criticalAction: 'ask',
+      resetAction: 'ask',
+      continueOnWake: false
+    }
+
+    it('a stored quota block equal to the old defaults field-for-field moves to the new hands-off defaults', () => {
+      const settings = parseStoredSettings({ quota: { ...OLD_QUOTA } }, STATUSES)
+      expect(settings?.quota).toEqual({
+        enabled: true,
+        warnAtPercent: 80,
+        criticalAtPercent: 95,
+        notifyOnReset: true,
+        criticalAction: 'sleep',
+        resetAction: 'wake',
+        continueOnWake: true
+      })
+    })
+
+    it('a partial block that matches the old defaults field-for-field is upgraded too', () => {
+      const settings = parseStoredSettings({ quota: { warnAtPercent: 80, notifyOnReset: true } }, STATUSES)
+      expect(settings?.quota).toMatchObject({ warnAtPercent: 80, criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true })
+    })
+
+    it('a customized criticalAction is kept', () => {
+      const settings = parseStoredSettings({ quota: { ...OLD_QUOTA, criticalAction: 'nothing' } }, STATUSES)
+      expect(settings?.quota).toMatchObject({ criticalAction: 'nothing', resetAction: 'ask', continueOnWake: false })
+    })
+
+    it('a customized threshold means the user touched the section and the block is kept', () => {
+      const settings = parseStoredSettings({ quota: { ...OLD_QUOTA, warnAtPercent: 75 } }, STATUSES)
+      expect(settings?.quota).toMatchObject({ warnAtPercent: 75, criticalAction: 'ask', resetAction: 'ask', continueOnWake: false })
+    })
+
+    it('the newest defaults are not migrated again (idempotent)', () => {
+      const settings = parseStoredSettings(
+        { quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true } },
+        STATUSES
+      )
+      expect(settings?.quota).toMatchObject({ criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true })
+    })
   })
 
   it('a stored away section is kept', () => {

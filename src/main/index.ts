@@ -27,6 +27,7 @@ import { attachTrayWiring } from './app/trayWiring'
 import { createDesktopNotifier } from './notify/desktopNotifier'
 import { wireAttentionNotices } from './notify/attentionWiring'
 import { deliverQuotaAlert, startQuotaWiring, type QuotaDeliveryDeps } from './quota/quotaWiring'
+import { CONTINUE_FAILED_TITLE, continueFailedBody } from './quota/continueFailedNotice'
 import { createFeatureWiring } from './app/featureWiring'
 import { quotaMarkersFilePath } from './quota/quotaMarkers'
 import { createSleepScheduler } from './sleep/SleepScheduler'
@@ -304,6 +305,10 @@ if (!gotTheLock) {
       controller,
       send: sendToWindow,
       deliverAlert: (alert) => deliverQuotaAlert(quotaDelivery, alert),
+      notifyContinueFailed: (sessionName) => {
+        relaySound('', 'quota')
+        notifier.notifyApp(CONTINUE_FAILED_TITLE, continueFailedBody(sessionName))
+      },
       onError
     })
 

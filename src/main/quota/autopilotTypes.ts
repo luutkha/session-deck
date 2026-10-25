@@ -19,6 +19,8 @@ export interface QuotaAutopilotDeps {
   readonly subscribeOutput: (callback: (id: Id) => void) => () => void
   /** Toast + sound + desktop notice for an alert the autopilot raised itself (see quotaWiring deliverQuotaAlert). */
   readonly deliverAlert: (alert: QuotaAlert) => void
+  /** Hands-off automation could not continue a held session (the "continue" gave up, or the wake failed): the user must be pinged. */
+  readonly onContinueFailed?: (id: Id) => void
   readonly onStateChange: (state: QuotaAutopilotState) => void
   readonly onError: (where: string, error: unknown) => void
   readonly setTimeout?: (callback: () => void, ms: number) => TimerHandle

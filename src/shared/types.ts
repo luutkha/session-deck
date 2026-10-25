@@ -392,7 +392,8 @@ export interface SettingsPatch {
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoStatus: { enabled: true, working: 'working', needsInput: 'waiting', finished: 'review' },
   tray: { closeToTray: true, desktopNotifications: true, notifyOnlyWhenUnfocused: true },
-  quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'ask', resetAction: 'ask', continueOnWake: false },
+  // Hands-off defaults (D33): sleep idle sessions at the critical level, wake + continue after the reset, no asking.
+  quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true },
   sleep: { enabled: false, afterMinutes: 30, allEnabled: false, allAfterMinutes: 60 },
   agents: { defaultAgent: 'claude', opencodeModel: '' },
   hub: { scrollToBusiest: true },

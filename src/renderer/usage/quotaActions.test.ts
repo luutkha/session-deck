@@ -82,8 +82,8 @@ describe('quota actions', () => {
     expect(console.error).toHaveBeenCalled()
   })
 
-  it('readContinueOnWake uses the default (false) when settings are absent', async () => {
+  it('readContinueOnWake uses the default (true, hands-off) when settings are absent', async () => {
     const data: StoreData = { version: 1, sessions: [], groups: [], statuses: [], groupOrder: [] }
-    expect(await readContinueOnWake(fakeApi({ getStore: vi.fn(async () => ({ data })) }))).toBe(false)
+    expect(await readContinueOnWake(fakeApi({ getStore: vi.fn(async () => ({ data })) }))).toBe(true)
   })
 })

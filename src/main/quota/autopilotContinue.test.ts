@@ -6,7 +6,9 @@ interface Harness {
   readonly deps: ContinueDeps
   readonly writes: Array<[string, string]>
   readonly onError: ReturnType<typeof vi.fn>
+  readonly onGiveUp: ReturnType<typeof vi.fn>
   readonly unsubscribe: ReturnType<typeof vi.fn>
+  readonly errorsOrder: string[]
   emit(id: string): void
   listenerCount(): number
 }
@@ -15,6 +17,8 @@ function harness(writeToSession = (): void => {}): Harness {
   const listeners = new Set<(id: string) => void>()
   const writes: Array<[string, string]> = []
   const onError = vi.fn()
+  const onGiveUp = vi.fn()
+  const errorsOrder: string[] = []
   const unsubscribe = vi.fn()
   return {
     deps: {
@@ -31,11 +35,20 @@ function harness(writeToSession = (): void => {}): Harness {
       },
       setTimeout: (callback, ms) => setTimeout(callback, ms),
       clearTimeout: (handle) => clearTimeout(handle),
-      onError
+      onError: (where, error) => {
+        onError(where, error)
+        errorsOrder.push('onError')
+      },
+      onGiveUp: (id) => {
+        onGiveUp(id)
+        errorsOrder.push('giveUp')
+      }
     },
     writes,
     onError,
+    onGiveUp,
     unsubscribe,
+    errorsOrder,
     emit(id: string): void {
       for (const listener of [...listeners]) listener(id)
     },
@@ -107,6 +120,15 @@ describe('scheduleContinue', () => {
     expect(h.writes).toEqual([])
     expect(h.onError).toHaveBeenCalledWith('quota autopilot continue', expect.any(Error))
     expect(h.unsubscribe).toHaveBeenCalled()
+  })
+
+  it('reports the give-up through onGiveUp (the notice path) once, before onError', () => {
+    const h = harness()
+    scheduleContinue(h.deps, 's1')
+    vi.advanceTimersByTime(CONTINUE_MAX_WAIT_MS)
+    expect(h.onGiveUp).toHaveBeenCalledTimes(1)
+    expect(h.onGiveUp).toHaveBeenCalledWith('s1')
+    expect(h.errorsOrder).toEqual(['giveUp', 'onError'])
   })
 
   it('stops listening once it has sent "continue"', () => {

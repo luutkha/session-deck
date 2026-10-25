@@ -8,6 +8,8 @@ export interface ContinueDeps {
   readonly setTimeout: (callback: () => void, ms: number) => TimerHandle
   readonly clearTimeout: (handle: TimerHandle) => void
   readonly onError: (where: string, error: unknown) => void
+  /** Called once when the wait is abandoned (see CONTINUE_MAX_WAIT_MS); onError is called for the same timeout too. */
+  readonly onGiveUp?: (id: Id) => void
 }
 
 const WHERE = 'quota autopilot continue'
@@ -73,6 +75,7 @@ export function scheduleContinue(deps: ContinueDeps, id: Id, options: ContinueOp
   maxTimer = deps.setTimeout(() => {
     maxTimer = null
     finish()
+    deps.onGiveUp?.(id)
     deps.onError(WHERE, new Error(`session ${id} gave no quiet output within ${CONTINUE_MAX_WAIT_MS} ms`))
   }, CONTINUE_MAX_WAIT_MS)
 
