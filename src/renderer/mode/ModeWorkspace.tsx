@@ -21,9 +21,10 @@ import { useSoundEnabled } from '../shell/useSoundEnabled'
 import { useTabShortcuts } from '../shell/useTabShortcuts'
 import { buildTabModels } from '../shell/tabStatus'
 import { cn } from '../lib/utils'
+import type { ChangesTarget } from '../code/changes'
 import type { UseSessionStoreResult } from '../state/useSessionStore'
 import type { UseUsageResult } from '../usage/useUsage'
-import { resolveSettings, type Id, type Session, type SessionUsage, type StoreData, type UiMode } from '../../shared/types'
+import { resolveSettings, type Id, type RuntimeState, type Session, type SessionUsage, type StoreData, type UiMode } from '../../shared/types'
 import { dataForMode, modeStorageKeys } from './modeLogic'
 import { ModeTitleBar, type ModeChrome } from './ModeTitleBar'
 import { useWorkspaceCommands } from './useWorkspaceCommands'
@@ -37,6 +38,15 @@ const CODE_EMPTY = {
   description: 'Add a repository, then create a worktree.',
   buttonLabel: 'New worktree'
 } as const
+
+/** Where diff comments get sent: the open session's pty, when its agent can receive typing right now. */
+function changesTarget(session: Session, state: RuntimeState | undefined): ChangesTarget {
+  return {
+    sessionId: session.id,
+    agent: session.agent ?? 'claude',
+    active: state?.run === 'running' && state.sleeping !== true
+  }
+}
 
 export interface ModeWorkspaceProps {
   readonly mode: UiMode
@@ -215,7 +225,14 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
               ) : null}
             </div>
             {nav.notesOpen && view === 'terminal' && activeSession !== null ? (
-              <NotesPanel key={activeSession.id} session={activeSession} actions={actions} onClose={nav.closeNotes} storageKey={keys.sidePanel} />
+              <NotesPanel
+                key={activeSession.id}
+                session={activeSession}
+                actions={actions}
+                onClose={nav.closeNotes}
+                storageKey={keys.sidePanel}
+                changesTarget={changesTarget(activeSession, activeState)}
+              />
             ) : null}
           </div>
           <StatusBar

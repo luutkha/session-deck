@@ -1,0 +1,127 @@
+# Plan: Annotate AI diffs — comment on a diff line, ship it to the agent (Orca feature)
+
+Status: proposed — waiting for "go". No code changed yet.
+Date: 2026-10-25
+User request (2026-10-25): "write plan for 1. => but this should only active for code-change-mode only." (choice 1 = Orca's "Annotate AI Diffs": review, comment per diff line, send the comments back to the agent without leaving the app.)
+
+## 0. Scope rule (the user's condition)
+
+**Code-change mode only (D31).** The changes/diff side panel exists only when a session has a
+worktree (`NotesPanel` renders `ChangesPanel` for worktree sessions — `src/renderer/notes/NotesPanel.tsx:107`;
+Ops sessions never see it). Annotations live in the same place and inherit that guard for free:
+no Code session → no Changes tab → no annotation UI. Nothing more is needed, but the plan keeps
+every anchor worktree-scoped so a future Ops diff view cannot inherit it accidentally.
+
+## 1. Goal
+
+While reviewing a changed file in the Changes panel, the user clicks any diff line, types a
+short comment, and comments stack up. One click ("Send to agent") types them into that
+worktree's session as a ready-to-use prompt:
+
+```
+Review comments on the current changes (file — line):
+- src/renderer/App.tsx:42 — don't cache this, it breaks after restart
+- src/main/index.ts:17 — extract this into a helper
+Please apply these fixes.
+```
+
+No terminal typing, no manual "look at line 42 of …".
+
+## 2. What exists already (verified in source)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| Diff lines are parsed with kinds + real line numbers: `context`/`add`/`del` carry `oldNo` and `newNo` | `src/renderer/code/changes/parseUnifiedDiff.ts` | Comments can anchor to exact lines — no text matching. |
+| `DiffView` renders rows per parsed line; only body lines (not `meta`/`hunk`) show content | `DiffView.tsx`, `MAX_RENDERED_DIFF_LINES`, truncation notices | Click targets exist already; limits documented below. |
+| Typing text into a session is a validated existing IPC: `ptyWrite(id, data)` | `src/shared/ipc.ts:137` | **Zero new IPC / zero contract change** (same precedent as renderer-only workspaces, D20). |
+| Double-paste is already solved once: `pasteOnce` guard in the terminal keymap | `src/renderer/Terminal/keymap.ts` | Send reuses the same one-shot typing pattern. |
+| Worktree sessions have an agent kind, including plain `shell` | D31 (New session in a worktree: Claude/OpenCode/Shell) | **Shell sessions must never receive comments** — a comment typed into PowerShell executes it. Guard below. |
+| The diff refreshes live (Stop hook, 10 s while open, push on recompute) | D31, `useWorktreeChanges`/`useWorktreeFileDiff` | Anchors can go stale → timestamp + staleness notice, not silent lies. |
+| Renderer prefs use namespaced localStorage (`sessiondeck.*.v1`) | `sidebarPrefs.ts` and others | Draft comments persist without touching the store schema. |
+
+## 3. Design
+
+### 3.1 Comment model — pure logic, `src/renderer/code/changes/annotations.ts`
+
+```ts
+export interface DiffAnnotation {
+  readonly id: string            // runtime uuid
+  readonly path: string          // worktree-relative file path (from FileDiff.path)
+  readonly line: number | null   // newNo for context/add, oldNo for del
+  readonly side: 'new' | 'old'
+  readonly text: string          // the comment itself (trimmed, ≤500 chars)
+  readonly createdAt: number     // epoch ms — shown, and the staleness marker
+}
+export const ANNOTATION_MAX_TEXT = 500
+export const ANNOTATIONS_MAX_PER_WORKTREE = 50
+```
+
+Pure functions (unit-testable, no React/IPC, same discipline as `splitLogic.ts`):
+`applyAnnotations(parsed, annotations)` → rows gain an annotation marker,
+`formatAnnotationMessage(annotations)` → the prompt text above (path relative, line, text;
+"Please apply these fixes." appended; multi-file grouping; empty → null),
+`addAnnotation` (dedupe: same path+line+text ignored), `removeAnnotation`,
+`serializeAnnotations/parseAnnotations` (malformed stored JSON → `null`, splitLogic pattern).
+
+### 3.2 Persistence — per worktree, renderer only
+
+localStorage key `sessiondeck.annotate.v1.<worktreeId>`; drafts survive restarts and app
+crashes; cleared intentionally per comment after a successful send. 50-comment cap keeps the
+prompt sane.
+
+### 3.3 UI — Orca look, existing primitives
+
+- **Attach:** hovering a body line shows a small muted message-square-plus button at the right
+  edge (lucide, 14 px; also focusable via keyboard: Enter opens the editor on the focused row —
+  accessibility kept). Click opens a compact inline editor below the line (`Textarea`,
+  `Button` xs: Add / Cancel), Orca radius and spacing (D02).
+- **Marker:** annotated lines get a filled amber dot at the marker column (same amber as the
+  attention bell, D22 — one accent language).
+- **Comments strip:** when count > 0, a strip above the diff footer (`Comments (2)` + per-item
+  chips "file:line ×") + **Send** button. On `All files` view the panel header shows the badge
+  count too.
+- **Send target:** the session whose side panel is open (each worktree may hold several
+  sessions). `ptyWrite(targetId, message + '\r')` with the `pasteOnce` guard; close the editor,
+  clear sent comments, toast-less success (the terminal visibly receives it).
+- **Disabled states (shown as disabled with tooltip, never hidden):**
+  - agent is `shell` → "Comments only work for Claude and OpenCode sessions."
+  - runtime not running / sleeping / closed → "Wake the session first." (no auto-wake in v1)
+  - empty comment list → button disabled.
+
+### 3.4 Staleness (honesty about line numbers)
+
+Comments store the line number **at comment time** + `createdAt`. If
+`useWorktreeFileDiff`'s `computedAt` is newer than a comment's `createdAt` for its file, the
+strip shows a one-line muted notice: "Files changed since a comment was written — line numbers
+may have moved." Text and path stay valid, which is what matters for the agent.
+
+## 4. Files touched
+
+- New: `src/renderer/code/changes/annotations.ts` + `annotations.test.ts` (pure)
+- Edit: `DiffView.tsx` (row hover button, editor, markers), `ChangesPanel.tsx` (strip, badge, send wiring), small additions to `changesFormat.ts` if needed
+- Uses `useSessionStore` for the target session's agent/runtime + `window.api.ptyWrite` — **no `types.ts`/`ipc.ts`/`preload` change**
+- `docs/CODEMAP.md` one-liner update; `HANDOFF.md` feature section; `docs/DECISIONS.md` D-entry ("Code mode only" in the user's words)
+
+## 5. Verification (W04)
+
+- Unit: annotations pure logic (dedupe, cap, format, parse fallback), message formatting incl. del-side lines (oldNo) and multi-file grouping.
+- New real-app e2e `scripts/e2e-annotate.cjs` (modelled on `e2e-codemode.cjs`): real worktree + real file change → open Changes → open file diff → click a line → type comment → Send → **assert the comment text actually arrives in the terminal** (CDP: replay data of the pty) → draft persists across a restart → Send is disabled for a Shell session and for a sleeping session → an Ops session shows no annotation UI at all.
+
+## 6. Risks / safety
+
+- **Shell sessions are hard-coded out** (comments would execute as commands).
+- Typing is one-shot with `pasteOnce`; a second click cannot double-paste (D21 lesson).
+- `ptyWrite` is the same validated IPC every keystroke already uses — no new attack surface.
+- Comment text ≤ 500 chars, 50 comments → prompt stays small.
+- Line numbers may drift after a recompute — surfaced, not hidden (§3.4).
+
+## 7. Out of scope (v1)
+
+- Comment threads/replies, resolving, PR review (GitHub) — Orca's full review scope, user left PRs out in D31.
+- Annotation of files with no diff (read-only browsing).
+- Auto-wake on send, comments beyond `MAX_RENDERED_DIFF_LINES` (render limit stays).
+- Ops mode.
+
+## 8. Effort
+
+Small-medium: 1 new pure module + 2 component edits + 1 e2e script + docs. Fits one worker brief (W01/W02); Claude plans, verifies, commits.

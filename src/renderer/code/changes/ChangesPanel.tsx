@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { ArrowLeft, LoaderCircle, RefreshCw } from 'lucide-react'
-import type { ChangedFile, Id, WorktreeChanges } from '../../../shared/types'
+import { ArrowLeft, LoaderCircle, MessageSquare, RefreshCw, SendHorizontal, X } from 'lucide-react'
+import type { AgentKind, ChangedFile, Id, WorktreeChanges } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import { ScrollArea } from '../../components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
@@ -9,12 +9,32 @@ import { ChangeRow } from './ChangeRow'
 import { DiffView } from './DiffView'
 import { countsLabel } from './changesFormat'
 import { isStillChanged } from './changesState'
+import {
+  addAnnotation,
+  formatAnnotationMessage,
+  readStoredAnnotations,
+  removeAnnotation,
+  storeAnnotations,
+  type DiffAnnotation
+} from './annotations'
 import { useWorktreeChanges, type WorktreeChangesResult } from './useWorktreeChanges'
 import { useWorktreeFileDiff } from './useWorktreeFileDiff'
 
 export interface ChangesPanelProps {
   readonly worktreeId: Id
+  /**
+   * The session whose side panel is open: comments are SENT into it. Absent (no target known) = annotation
+   * UI off. Code mode only (NotesPanel renders ChangesPanel for worktree sessions only).
+   */
+  readonly target?: ChangesTarget
   readonly className?: string
+}
+
+export interface ChangesTarget {
+  readonly sessionId: Id
+  readonly agent: AgentKind
+  /** True when the session's process is running and not sleeping: the comments can be typed right away. */
+  readonly active: boolean
 }
 
 interface Selection {
@@ -28,6 +48,10 @@ const HEADER_TITLE_LOADING = 'Loading changes...'
 const REFRESH_LABEL = 'Refresh changes'
 const BACK_LABEL = 'All files'
 const NO_CHANGES_YET = 'No changes yet.'
+const SEND_LABEL = 'Send comments to the agent'
+const SHELL_NOTICE = 'Comments only work for Claude and OpenCode sessions.'
+const INACTIVE_NOTICE = 'Wake the session first.'
+const STALE_NOTICE = 'Files changed since a comment was written — line numbers may have moved.'
 
 function PanelMessage({ text, failed }: { readonly text: string; readonly failed: boolean }): ReactElement {
   return (
@@ -55,19 +79,36 @@ function RefreshButton({ loading, onRefresh }: { readonly loading: boolean; read
   )
 }
 
+function sendDisabledReason(target: ChangesTarget | undefined, count: number): string | null {
+  if (count === 0) return 'No comments yet.'
+  if (target === undefined) return null
+  if (target.agent === 'shell') return SHELL_NOTICE
+  if (!target.active) return INACTIVE_NOTICE
+  return null
+}
+
 interface PanelHeaderProps {
   readonly title: string
   readonly selectedPath: string | null
   readonly loading: boolean
+  readonly commentCount: number
   readonly onBack: () => void
   readonly onRefresh: () => void
 }
 
-function PanelHeader({ title, selectedPath, loading, onBack, onRefresh }: PanelHeaderProps): ReactElement {
+function PanelHeader({ title, selectedPath, loading, commentCount, onBack, onRefresh }: PanelHeaderProps): ReactElement {
   return (
     <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
       {selectedPath === null ? (
-        <span className="truncate px-1 text-xs text-muted-foreground">{title}</span>
+        <span className="flex min-w-0 items-center gap-1.5 truncate px-1 text-xs text-muted-foreground">
+          {title}
+          {commentCount > 0 ? (
+            <span className="inline-flex items-center gap-0.5 rounded-sm bg-amber-400/15 px-1 text-[10px] font-medium text-amber-500">
+              <MessageSquare className="size-3" aria-hidden="true" />
+              {String(commentCount)}
+            </span>
+          ) : null}
+        </span>
       ) : (
         <div className="flex min-w-0 items-center gap-1">
           <Button type="button" variant="ghost" size="xs" onClick={onBack}>
@@ -129,19 +170,93 @@ function ChangesBody({ list, onSelect }: ChangesBodyProps): ReactElement {
   )
 }
 
-/** Changed files of one worktree; a click opens that file's read-only diff in place of the list. */
-export function ChangesPanel({ worktreeId, className }: ChangesPanelProps): ReactElement {
+interface CommentsStripProps {
+  readonly annotations: readonly DiffAnnotation[]
+  readonly target: ChangesTarget | undefined
+  readonly stale: boolean
+  readonly onRemove: (id: string) => void
+  readonly onSend: () => void
+}
+
+function CommentsStrip({ annotations, target, stale, onRemove, onSend }: CommentsStripProps): ReactElement {
+  const reason = sendDisabledReason(target, annotations.length)
+  return (
+    <div data-testid="comments-strip" className="shrink-0 border-t border-border px-3 py-2">
+      {stale ? <p className="pb-1 text-[11px] text-muted-foreground">{STALE_NOTICE}</p> : null}
+      <div className="flex items-center gap-1.5">
+        <MessageSquare className="size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+        <span className="text-xs font-medium">
+          Comments ({String(annotations.length)})
+        </span>
+        <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+          {annotations.map((a) => (
+            <span
+              key={a.id}
+              data-comment-id={a.id}
+              className="inline-flex max-w-full items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-[11px] text-foreground/80"
+            >
+              <span className="min-w-0 truncate">{`${a.path}:${a.line === null ? '?' : String(a.line)}`}</span>
+              <button
+                type="button"
+                aria-label="Remove comment"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={(): void => onRemove(a.id)}
+              >
+                <X className="size-3" aria-hidden="true" />
+              </button>
+            </span>
+          ))}
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="xs"
+              aria-label={SEND_LABEL}
+              disabled={reason !== null}
+              onClick={onSend}
+            >
+              <SendHorizontal aria-hidden="true" />
+              Send
+            </Button>
+          </TooltipTrigger>
+          {reason !== null ? <TooltipContent side="top" sideOffset={4}>{reason}</TooltipContent> : null}
+        </Tooltip>
+      </div>
+    </div>
+  )
+}
+
+/** Changed files of one worktree; a click opens that file's read-only diff in place of the list.
+ *  With a target session, diff lines can carry comments that are sent to the session as one prompt. */
+export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProps): ReactElement {
   const list = useWorktreeChanges(worktreeId)
   const [selection, setSelection] = useState<Selection | null>(null)
+  const [annotations, setAnnotations] = useState<readonly DiffAnnotation[]>((): readonly DiffAnnotation[] =>
+    readStoredAnnotations(worktreeId)
+  )
   const storedPath = selection !== null && selection.worktreeId === worktreeId ? selection.path : null
   const selectedPath = isStillChanged(list.changes, storedPath) ? storedPath : null
   const diff = useWorktreeFileDiff(worktreeId, selectedPath, list.changes?.computedAt ?? null)
+  const stale =
+    annotations.length > 0 &&
+    list.changes !== null &&
+    annotations.some((a) => list.changes !== null && list.changes.computedAt > a.createdAt)
 
   useEffect((): void => {
     if (storedPath !== null && list.changes !== null && !isStillChanged(list.changes, storedPath)) {
       setSelection(null)
     }
   }, [storedPath, list.changes])
+
+  function update(next: readonly DiffAnnotation[]): void {
+    setAnnotations(next)
+    storeAnnotations(worktreeId, next)
+  }
+
+  const commentCount = annotations.length
+  const showStrip = commentCount > 0
+  const annotateOn = target !== undefined
 
   return (
     <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
@@ -150,14 +265,43 @@ export function ChangesPanel({ worktreeId, className }: ChangesPanelProps): Reac
           title={headerTitle(list)}
           selectedPath={selectedPath}
           loading={list.loading}
+          commentCount={commentCount}
           onBack={(): void => setSelection(null)}
           onRefresh={list.refresh}
         />
         {selectedPath === null ? (
-          <ChangesBody list={list} onSelect={(path: string): void => setSelection({ worktreeId, path })} />
+          <ChangesBody
+            list={list}
+            onSelect={(path: string): void => setSelection({ worktreeId, path })}
+          />
         ) : (
-          <DiffView diff={diff.diff} loading={diff.loading} error={diff.error} />
+          <DiffView
+            diff={diff.diff}
+            loading={diff.loading}
+            error={diff.error}
+            annotations={annotateOn ? annotations : []}
+            onAddComment={annotateOn
+              ? (input): void => {
+                  if (selectedPath === null) return
+                  update(addAnnotation(annotations, { id: crypto.randomUUID(), path: selectedPath, ...input }, Date.now()))
+                }
+              : undefined}
+          />
         )}
+        {showStrip ? (
+          <CommentsStrip
+            annotations={annotations}
+            target={target}
+            stale={stale}
+            onRemove={(id: string): void => update(removeAnnotation(annotations, id))}
+            onSend={(): void => {
+              const message = formatAnnotationMessage(annotations)
+              if (message === null || target === undefined || sendDisabledReason(target, annotations.length) !== null) return
+              window.api.ptyWrite(target.sessionId, message + '\r')
+              update([])
+            }}
+          />
+        ) : null}
       </section>
     </TooltipProvider>
   )

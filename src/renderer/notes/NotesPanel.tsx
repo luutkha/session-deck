@@ -3,7 +3,7 @@ import { useState, type ReactElement } from 'react'
 import type { Session } from '../../shared/types'
 import { Button } from '../components/ui/button'
 import { ScrollArea } from '../components/ui/scroll-area'
-import { ChangesPanel } from '../code/changes'
+import { ChangesPanel, type ChangesTarget } from '../code/changes'
 import type { SessionActions } from '../state/useSessionStore'
 import { ActivityList } from '../timeline/ActivityList'
 import {
@@ -26,6 +26,8 @@ export interface NotesPanelProps {
   readonly onClose: () => void
   /** Where the chosen tab is remembered (each mode has its own, D31). Default = the Ops key. */
   readonly storageKey?: string
+  /** Where "Send comments" types the diff annotations (worktree sessions with a running agent; Code mode). */
+  readonly changesTarget?: ChangesTarget
 }
 
 const TAB_LABELS: Readonly<Record<SidePanelTab, string>> = {
@@ -34,7 +36,7 @@ const TAB_LABELS: Readonly<Record<SidePanelTab, string>> = {
   changes: 'Changes'
 }
 
-export function NotesPanel({ session, actions, onClose, storageKey = SIDE_PANEL_TAB_KEY }: NotesPanelProps): ReactElement {
+export function NotesPanel({ session, actions, onClose, storageKey = SIDE_PANEL_TAB_KEY, changesTarget }: NotesPanelProps): ReactElement {
   const notes = useSessionNotes(session, actions)
   const [draft, setDraft] = useChecklistDraft(session.id)
   const [storedTab, setStoredTab] = useState<SidePanelTab>((): SidePanelTab => readSidePanelTab(storageKey))
@@ -104,7 +106,7 @@ export function NotesPanel({ session, actions, onClose, storageKey = SIDE_PANEL_
       </header>
 
       {tab === 'changes' && worktreeId !== undefined ? (
-        <ChangesPanel worktreeId={worktreeId} className="min-h-0 flex-1" />
+        <ChangesPanel worktreeId={worktreeId} target={changesTarget} className="min-h-0 flex-1" />
       ) : tab === 'activity' ? (
         <ActivityList sessionId={session.id} />
       ) : (

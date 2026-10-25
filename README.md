@@ -43,6 +43,7 @@ Requires Node 22+, Windows (primary target), and the `claude` CLI on PATH.
 | `npm run e2e:resume` | kills the app, relaunches it, checks the same conversation returns |
 | `npm run e2e:codemode` | Code mode: real New worktree dialog, git branch + linked worktree on disk, Shell in the worktree, Changes + diff, pop out/dock, restart |
 | `npm run e2e:workers` | OpenCode worker tabs from Claude sessions: real plugin file -> hook server -> hub -> read-only tab |
+| `npm run e2e:annotate` | diff annotations (Code mode): comment on a diff line, restart (draft survives), send the comments into the real session terminal; disabled for Shell and sleeping sessions |
 | `npm run e2e:opencode` | real `opencode` on a free model: TUI, hooks/status, sleep + wake with `-s`, image paste, no self worker-tab |
 | `npm run e2e:opencode-workers` | worker tabs of an OpenCode session: child events build a tab, child session-plugin events never touch the parent |
 | `npm run e2e:handsfree` | hands-off quota autopilot (D33): fresh hands-off defaults, old-store boot migration, critical level sleeps with no toast, reset wakes + types "continue" into a real Claude TUI that was cut off by the limit; ask-mode still exists (runs one real "continue" turn) |

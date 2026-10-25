@@ -43,6 +43,7 @@
     "e2e:codemode": "node scripts/e2e-codemode.cjs",
     "e2e:workspaces": "node scripts/e2e-workspaces.cjs",
     "e2e:workers": "node scripts/e2e-workers.cjs",
+    "e2e:annotate": "node scripts/e2e-annotate.cjs",
     "e2e:remote": "node scripts/e2e-remote.cjs",
     "e2e:links": "node scripts/e2e-links.cjs",
     "e2e:opencode": "node scripts/e2e-opencode.cjs",

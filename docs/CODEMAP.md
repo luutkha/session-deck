@@ -32,7 +32,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 - `Terminal/`: xterm panes, split workspace, keymap (paste, right click), link detection, file drop.
 - `split/`: split layout logic. `hub/`: Hub board by status. `notes/`: notes and checklist panel.
 - `attention/`: bell icon, Needs you list. `palette/`: command palette (Ctrl+K / Ctrl+Shift+K).
-- `code/`: Code mode UI. `sidebar/` (repo > worktree > sessions tree, `codeTree.ts` pure), `dialogs/` (New worktree, New session in a worktree), `changes/` (Changes panel, `parseUnifiedDiff.ts`, `DiffView`, `useWorktreeChanges` + `useWorktreeChangeCounts`).
+- `code/`: Code mode UI. `sidebar/` (repo > worktree > sessions tree, `codeTree.ts` pure), `dialogs/` (New worktree, New session in a worktree), `changes/` (Changes panel, `parseUnifiedDiff.ts`, `DiffView`, `useWorktreeChanges` + `useWorktreeChangeCounts`, per-line diff comments `annotations.ts` sent to the session via ptyWrite).
 - `timeline/`: Activity tab (`ActivityList`, `useTimeline`), "While you were away" dialog (`AwayDialog`, `useAwaySummary`), formatting (`timelineFormat.ts`), side-panel tab pref.
 - `settings/`: Settings dialog and its sections. `sound/`: built-in and custom sounds. `usage/`: usage chips, quota toast with autopilot buttons (`QuotaToast*`, `quotaToastLogic.ts`, `quotaActions.ts`), held-for-reset chip (`QuotaHeldChip`, `useQuotaAutopilot`).
 - `workers/`: OpenCode worker tabs. `components/ui/`: shadcn/Orca primitives (dialog, command, select...). `styles/`: Orca theme tokens.

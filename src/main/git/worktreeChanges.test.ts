@@ -207,5 +207,6 @@ describe('readWorktreeChanges', () => {
     expect(changes.truncated).toBe(true)
     expect(changes.files[0]?.path).toBe('many/f000.txt')
     expect(changes.additions).toBe(count)
-  })
+    // 60s: ~100 real git operations; the default 5s once timed out under the parallel full suite.
+  }, 60_000)
 })
