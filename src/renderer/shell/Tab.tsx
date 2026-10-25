@@ -1,5 +1,5 @@
 import type { KeyboardEvent, MouseEvent, ReactElement } from 'react'
-import { Columns2, Moon, Sun, X } from 'lucide-react'
+import { Columns2, LoaderCircle, Moon, Sun, X } from 'lucide-react'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -9,7 +9,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { Id } from '../../shared/types'
 import { AgentBadge } from '../components/AgentBadge'
-import { tabIndicatorFor, type TabModel } from './tabStatus'
+import { tabVisualFor, type TabModel } from './tabStatus'
 import { AttentionBell } from '../attention/AttentionBell'
 
 export interface TabSplitInfo {
@@ -56,7 +56,7 @@ export function Tab({
   onCloseAll,
   split
 }: TabProps): ReactElement {
-  const indicator = tabIndicatorFor(tab.run, tab.attention)
+  const visual = tabVisualFor(tab)
   const activate = (): void => onActivate(tab.id)
   const close = (): void => onClose(tab.id)
 
@@ -99,9 +99,9 @@ export function Tab({
               className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[2px] bg-foreground"
             />
           ) : null}
-          {tab.attention !== null ? (
-            <AttentionBell reason={tab.attention} />
-          ) : tab.sleeping === true ? (
+          {visual.kind === 'attention' ? (
+            <AttentionBell reason={visual.reason} />
+          ) : visual.kind === 'sleeping' ? (
             <span
               role="img"
               aria-label="Sleeping"
@@ -109,17 +109,36 @@ export function Tab({
             >
               <Moon size={12} aria-hidden="true" />
             </span>
+          ) : visual.kind === 'working' ? (
+            <span
+              role="img"
+              aria-label="Working"
+              title="Working"
+              data-tab-working=""
+              className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
+            >
+              <LoaderCircle size={12} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            </span>
+          ) : visual.kind === 'needs-input' ? (
+            <>
+              <span
+                aria-hidden="true"
+                data-tab-needs-input=""
+                className="size-1.5 shrink-0 animate-pulse rounded-full bg-[var(--attn-idle)] motion-reduce:animate-none"
+              />
+              <span className="sr-only">Waiting for input</span>
+            </>
           ) : (
             <>
               <span
                 aria-hidden="true"
                 className={cn(
                   'size-1.5 shrink-0 rounded-full',
-                  indicator.colorClass,
-                  indicator.pulse && 'animate-pulse'
+                  visual.indicator.colorClass,
+                  visual.indicator.pulse && 'animate-pulse'
                 )}
               />
-              <span className="sr-only">{indicator.label}</span>
+              <span className="sr-only">{visual.indicator.label}</span>
             </>
           )}
           <span className="min-w-0 flex-1 truncate">{tab.title}</span>

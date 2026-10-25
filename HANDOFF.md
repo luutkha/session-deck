@@ -145,6 +145,13 @@ Terminal panes zoom live and the scrollback length is a setting (was a hard-code
 - Settings > **Terminal** page: zoom display + A−/100%/A+ buttons, scrollback input (clamped, validated message) and the shortcut note.
 - E2E: `npm run e2e:termview` (7 checks: Ctrl+= ×3 → 130% persisted + the pty width shrinks, Ctrl+0 → 100%, Ctrl+wheel zooms without buffer scroll, settings shows the live zoom, scrollback applies/persists, graceful restart keeps the zoom).
 
+## Working indicator on session tabs (2026-10-25)
+A session whose agent turn is running shows a muted spinning icon on its tab, so one glance at the tab bar tells which sessions are busy (previously only the bell / moon / run dot existed).
+- Data: no new IPC — `RuntimeState.activity` already carries `working | needs-input | finished`; `buildTabModels` now passes `activity` into `TabModel`.
+- Precedence (`tabStatus.tabVisualFor`, pure + tested): attention bell → sleeping moon → **working spinner** → needs-input (an OpenCode question that raised no permission hook) → the existing green/red/muted dot. `tabIndicatorFor` stays as the dot-only wrapper for the split/grid headers.
+- UI: `Tab.tsx` renders `LoaderCircle` with `aria-label="Working"` (muted, not amber, so "busy" never competes with "needs you"; `motion-reduce:animate-none`). An unread bell still wins over working.
+- E2E: `npm run e2e:tab-working` (9 checks: spinner while a hook-driven turn runs and no dot, the other tab unchanged, Stop shows the bell, clearing restores the dot, permission bell regression, unread bell over working).
+
 ## Hub opens at the busiest status (D24)
 New settings section `hub` (`AppSettings.hub.scrollToBusiest`, default true; validated in `main/store/settings.ts` and `main/app/settingsValidation.ts`). `busiestColumnIndex` in `hub/hubLogic.ts` (tests); `HubView` scrolls its board (`data-hub-board`) once on mount, left-aligning that column unless it is already fully visible. Switch: Settings > General. E2E: `scripts/e2e-hubscroll.cjs` (7 checks).
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RuntimeState, Session } from '../../shared/types'
-import { buildTabModels, folderName, tabIndicatorFor } from './tabStatus'
+import { buildTabModels, folderName, tabIndicatorFor, tabVisualFor } from './tabStatus'
 
 function runtime(sessionId: string, attention: RuntimeState['attention']): RuntimeState {
   return { sessionId, run: 'running', exitCode: null, attention }
@@ -40,6 +40,41 @@ describe('buildTabModels', () => {
       { id: 'a', title: 'Alpha', run: null, attention: null },
       { id: 'b', title: 'Beta', run: null, attention: null, agent: 'opencode' }
     ])
+  })
+
+  it('carries the runtime activity through to the tab model', () => {
+    const states = new Map<string, RuntimeState>([
+      ['a', { sessionId: 'a', run: 'running', exitCode: null, attention: null, activity: 'working' }]
+    ])
+    expect(buildTabModels(['a'], [sessionNamed('a', 'Alpha')], states)).toEqual([
+      { id: 'a', title: 'Alpha', run: 'running', attention: null, activity: 'working' }
+    ])
+  })
+})
+
+describe('tabVisualFor (working indicator precedence)', () => {
+  it('a working session shows the spinner, not the green dot', () => {
+    expect(tabVisualFor({ run: 'running', attention: null, activity: 'working' })).toEqual({ kind: 'working' })
+  })
+  it('attention (the bell) still wins over working', () => {
+    expect(tabVisualFor({ run: 'running', attention: 'done', activity: 'working' })).toEqual({ kind: 'attention', reason: 'done' })
+    expect(tabVisualFor({ run: 'running', attention: 'permission', activity: 'working' })).toEqual({ kind: 'attention', reason: 'permission' })
+    expect(tabVisualFor({ run: 'running', attention: 'unread', activity: 'working' })).toEqual({ kind: 'attention', reason: 'unread' })
+  })
+  it('sleeping wins over working', () => {
+    expect(tabVisualFor({ run: 'running', attention: null, sleeping: true, activity: 'working' })).toEqual({ kind: 'sleeping' })
+  })
+  it('needs-input without attention shows the waiting indicator', () => {
+    expect(tabVisualFor({ run: 'running', attention: null, activity: 'needs-input' })).toEqual({ kind: 'needs-input' })
+  })
+  it('finished activity falls back to the plain dot', () => {
+    const visual = tabVisualFor({ run: 'running', attention: null, activity: 'finished' })
+    expect(visual.kind).toBe('dot')
+    if (visual.kind === 'dot') expect(visual.indicator.colorClass).toBe('bg-status-success')
+  })
+  it('no activity keeps the old dot mapping', () => {
+    expect(tabVisualFor({ run: 'exited', attention: null })).toEqual({ kind: 'dot', indicator: tabIndicatorFor('exited', null) })
+    expect(tabVisualFor({ run: null, attention: null })).toEqual({ kind: 'dot', indicator: tabIndicatorFor(null, null) })
   })
 })
 

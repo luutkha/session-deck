@@ -318,18 +318,46 @@ export async function loadStoreFile(path: string): Promise<ParsedResult> {
   return { data }
 }
 
-export async function saveStoreFile(path: string, data: StoreData): Promise<void> {
-  const parent = dirname(path)
-  await mkdir(parent, { recursive: true })
-  // A unique temp name per write: a save that overlaps another one (timer + flush) must not share a file.
-  const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`
-  try {
-    await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
-    await rename(tmpPath, path)
-  } catch (error) {
-    await rm(tmpPath, { force: true }).catch(() => undefined)
-    throw error
+/**
+ * Serializes saves inside this process: two overlapping saves (timer + flush) file-by-file must never
+ * rename over each other. The public function still returns ITS OWN promise, so callers keep their error.
+ */
+let saveChain: Promise<void> = Promise.resolve()
+
+/** Windows can transiently lock a just-replaced file (indexer/AV); a rename retry keeps a save from failing. */
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  let lastError: unknown = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await rename(from, to)
+      return
+    } catch (error) {
+      lastError = error
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') throw error
+      await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)))
+    }
   }
+  throw lastError
+}
+
+export async function saveStoreFile(path: string, data: StoreData): Promise<void> {
+  const run = async (): Promise<void> => {
+    const parent = dirname(path)
+    await mkdir(parent, { recursive: true })
+    // A unique temp name per write: a save that overlaps another one (timer + flush) must not share a file.
+    const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`
+    try {
+      await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
+      await renameWithRetry(tmpPath, path)
+    } catch (error) {
+      await rm(tmpPath, { force: true }).catch(() => undefined)
+      throw error
+    }
+  }
+  const next = saveChain.then(run)
+  saveChain = next.then(() => undefined, () => undefined)
+  return next
 }
 
 export interface DebouncedSaverDeps {

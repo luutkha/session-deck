@@ -34,6 +34,7 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 ## Storage
 - **A `readFile` error is not corruption.** Treating every error as bad JSON renamed the store and returned an empty one, which the next debounced save wrote over the real file. Only `JSON.parse` / shape failures may be quarantined; EPERM/EBUSY/EIO must stop startup with the file untouched. Keep a `.bak` from the last successful load.
 - **A fixed `.tmp` name plus async saves can race.** A timer write and a `flush()` could write the same temp file at once. Serialize saves and use a unique temp name per write.
+- **Windows can throw EPERM on the atomic rename when saves overlap or an indexer/AV holds the target for a moment.** `saveStoreFile` now serializes all saves through one in-process chain and retries the rename on EPERM/EBUSY/EACCES (3 tries); the parallel full suite hit this once in `persistence.test.ts` and it is a real transient, not just test noise.
 
 ## Tests and tooling
 - Vitest cannot import files under the OS temp dir; create test dirs under `process.cwd()`. Turn fake timers on only after the dynamic import.

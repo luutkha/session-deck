@@ -1,0 +1,99 @@
+# Plan: Working indicator on session tabs
+
+Status: proposed — waiting for "go". No code changed yet.
+Date: 2026-10-25
+User request (2026-10-25): "currently, when session is working, there are no icon in session tab showing it still working."
+
+## 1. Goal
+
+While an agent turn is running, the session's **tab** shows a live spinner (Orca-style), so one
+glance at the tab bar tells the user which sessions are busy. Today the tab can only show
+attention (bell), sleeping or the run state (green dot / red dot), never "working".
+
+## 2. What exists already (verified in source)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| `RuntimeState.activity` already carries exactly this state: `'working' \| 'needs-input' \| 'finished'` | `src/shared/types.ts:128-129` | **No new data, no IPC, no main-process change.** The runtime event already reaches the renderer. |
+| The sidebar card and the Hub card already read and display `runtime.activity` | `src/renderer/Sidebar/SessionCard.tsx:108-110`, `src/renderer/hub/HubCard.tsx:127` | Precedent for what "working" means in the UI and how it is styled. |
+| Tabs are built once, from `SessionRun` + attention only | `src/renderer/shell/tabStatus.ts:4-15,55-80` (`TabModel`, `buildTabModels`) | The model simply does not pass `activity` through to the tab. |
+| Tab rendering priority today: bell → sleeping moon → status dot | `src/renderer/shell/Tab.tsx:102-124` | The working icon slots into this chain, after bell/moon and before the dot. |
+| Attention wins over run state by design | `tabStatus.ts:43-51` (`tabIndicatorFor`) | Must stay: a session that needs you is more important than one that is busy. |
+| `lucide-react` is already a dependency and `LoaderCircle`/spinners are used elsewhere | `package.json`, hub/sidebar | No new icon dependency. |
+| Hook/activity can be driven in an e2e without a real agent turn | `scripts/e2e-bell.cjs:36` posts `/hook/<id>/UserPromptSubmit` with the app's own token | Real-app test of "working" is cheap and model-free. |
+
+## 3. Design
+
+### 3.1 Pure mapping — `tabStatus.ts`
+
+- `TabModel` gains `readonly activity?: SessionActivity | null` (filled in `buildTabModels`
+  from `state?.activity`).
+- Replace the flat `TabIndicator` with a discriminated `TabVisual`:
+  `{ kind: 'attention' | 'sleeping' | 'working' | 'idle' | 'exited' | 'unknown', ... }`
+  evaluated in this order:
+  1. `attention !== null` → attention (unchanged)
+  2. `sleeping === true` → moon (unchanged)
+  3. `activity === 'working'` → **spinner**
+  4. `activity === 'needs-input'` and attention is null (an OpenCode question that raised no
+     permission hook) → amber pulsing dot, label "Waiting for input"
+  5. `run === 'running'` → green dot (unchanged)
+  6. `run === 'exited'` → red dot (unchanged)
+  7. `run === null` → muted dot (unchanged)
+- Keep `tabIndicatorFor` as a thin wrapper so existing tests and callers do not churn.
+
+### 3.2 Tab rendering — `Tab.tsx`
+
+- Replace the hard-coded status-dot branch with a small `TabStatusIcon` component:
+  - working → `<LoaderCircle size={12} className="animate-spin text-muted-foreground" aria-label="Working" />`
+    (spinner reads better than a pulsing dot in a 180 px tab; aria-label is the e2e anchor
+    and the screen-reader text).
+  - needs-input → same amber class family as the attention bell (`--attn-idle`) with `animate-pulse`.
+  - everything else → the existing dot exactly as today.
+- Spinner colour uses `text-muted-foreground` (not amber) so "busy" never competes visually
+  with "needs you".
+- If a working tab is also marked unread (`attention === 'unread'`), the unread bell wins
+  (existing priority rule, unchanged).
+
+### 3.3 Scope
+
+- Tabs only (tab bar and Code-mode tab bar share `TabBar`/`Tab`).
+- Sidebar/Hub already show working; no change.
+- No state, no persistence, no new settings.
+
+## 4. Files touched
+
+- `src/renderer/shell/tabStatus.ts` (+ `tabStatus.test.ts`: activity precedence, working wins
+  over the green dot, attention still wins, sleeping still wins, needs-input fallback)
+- `src/renderer/shell/Tab.tsx` (icon component)
+- `scripts/e2e-tab-working.cjs` (new, modelled on `e2e-bell.cjs`)
+- Docs: `HANDOFF.md` small note under the tabs section; no `DECISIONS.md` entry needed
+  (visual completion of the existing tab status contract) unless the user wants one.
+
+## 5. Verification (W04)
+
+- Unit: `buildTabModels` carries `activity`; `tabIndicatorFor`/`TabVisual` precedence table.
+- Real-app e2e `scripts/e2e-tab-working.cjs`:
+  1. Launch, create/open two real sessions.
+  2. POST `/hook/<id>/UserPromptSubmit` (as `e2e-bell.cjs` does) → assert that tab shows the
+     spinning icon (`aria-label="Working"`, `animate-spin`) and no bell.
+  3. POST `/hook/<id>/Stop` → assert the spinner is replaced (bell "Finished" per D22).
+  4. Clear the bell (context menu / mark read via CDP) → green dot returns.
+  5. Attention regression: POST `/hook/<id>/Notification` → bell still wins over any dot.
+- Screenshot of a tab bar with one working tab, for the Orca look check (D02).
+
+## 6. Risks
+
+- Spinner in every busy tab = noise? Tabs are small and the spinner is muted; this matches
+  Orca and the sidebar already does the same.
+- `animate-spin` + WebGL terminals: pure CSS on the tab, no effect on the terminal renderer.
+- Screen-reader churn: aria-label only (no live region), so a busy loop is not announced.
+
+## 7. Out of scope
+
+- Window title / taskbar "working" indicator (attention flash logic stays as is).
+- Per-tab progress/tool detail (only working vs not).
+
+## 8. Effort
+
+Tiny: one pure mapping change, one icon branch, one e2e. Fits in the renderer-polish batch;
+one worker brief (W01), verified with unit + real-app e2e, then commit.

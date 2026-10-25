@@ -1,5 +1,6 @@
-// Maps a session's run state and attention reason to the dot shown on its tab, and builds the tab models.
-import type { AgentKind, AttentionReason, Id, RuntimeState, Session, SessionRun } from '../../shared/types'
+// Maps a session's run state, attention reason, sleep flag and activity to the icon shown on its tab,
+// and builds the tab models.
+import type { AgentKind, AttentionReason, Id, RuntimeState, Session, SessionActivity, SessionRun } from '../../shared/types'
 
 export interface TabModel {
   readonly id: Id
@@ -8,6 +9,8 @@ export interface TabModel {
   readonly attention: AttentionReason | null
   /** True while the session is asleep (its process is stopped; opening it resumes it). */
   readonly sleeping?: boolean
+  /** What the agent is doing right now (working / needs-input / finished); absent = unknown. */
+  readonly activity?: SessionActivity | null
   /** Which agent the session runs; present only for opencode (claude tabs stay unmarked). */
   readonly agent?: AgentKind
   /** True while Remote Control is active for the running session. */
@@ -51,6 +54,32 @@ export function tabIndicatorFor(
   return run === null ? UNKNOWN_INDICATOR : RUN_INDICATORS[run]
 }
 
+/** What the tab shows next to the title (working indicator plan): attention > sleeping > working > … */
+export type TabVisual =
+  | { readonly kind: 'attention'; readonly reason: AttentionReason }
+  | { readonly kind: 'sleeping' }
+  | { readonly kind: 'working' }
+  | { readonly kind: 'needs-input' }
+  | { readonly kind: 'dot'; readonly indicator: TabIndicator }
+
+/**
+ * The icon precedence for a tab: a session that needs you wins, then sleep, then the live "working"
+ * spinner (the point of the feature), then an unanswered needs-input (an OpenCode question that raised no
+ * permission hook), then the plain run-state dot exactly as before.
+ */
+export function tabVisualFor(input: {
+  readonly run: SessionRun | null
+  readonly attention: AttentionReason | null
+  readonly sleeping?: boolean
+  readonly activity?: SessionActivity | null
+}): TabVisual {
+  if (input.attention !== null) return { kind: 'attention', reason: input.attention }
+  if (input.sleeping === true) return { kind: 'sleeping' }
+  if (input.activity === 'working') return { kind: 'working' }
+  if (input.activity === 'needs-input') return { kind: 'needs-input' }
+  return { kind: 'dot', indicator: tabIndicatorFor(input.run, null) }
+}
+
 /** The open tabs in their order, joined with the session name and runtime state. Unknown ids are skipped. */
 export function buildTabModels(
   openIds: readonly Id[],
@@ -71,6 +100,7 @@ export function buildTabModels(
       title: session.name,
       run: state?.run ?? null,
       attention: state?.attention ?? null,
+      ...(state?.activity === undefined || state.activity === null ? {} : { activity: state.activity }),
       ...(sleeping ? { sleeping: true } : {}),
       ...(state?.remoteControl === true ? { remote: true } : {}),
       ...(session.agent === 'opencode' ? { agent: 'opencode' as const } : {})
