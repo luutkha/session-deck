@@ -57,4 +57,17 @@ async function launchApp({ port, userData, exePath } = {}) {
   return { evaluate, send, kill, userData: dataDir, logFile: log, pid: app.pid }
 }
 
-module.exports = { ROOT, sleep, strip, waitFor, makeChecker, launchApp }
+/**
+ * Stops a possibly running OpenCode background service ("opencode service stop"). SessionDeck injects its plugin
+ * environment per process: a service spawned by foreign callers never sees it, so any `opencode` run that attaches
+ * to a stale service silently skips the plugins. The e2e suites neutralize the service first, so `opencode run`
+ * children spawned in this test run cold-start their own service and inherit this run's environment. Best effort:
+ * if OpenCode is not installed the suites would fail anyway.
+ */
+function stopOpencodeService() {
+  try {
+    execSync('opencode service stop', { stdio: 'ignore' })
+  } catch { /* nothing running or opencode missing */ }
+}
+
+module.exports = { ROOT, sleep, strip, waitFor, makeChecker, launchApp, stopOpencodeService }

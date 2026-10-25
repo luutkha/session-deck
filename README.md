@@ -41,6 +41,7 @@ Requires Node 22+, Windows (primary target), and the `claude` CLI on PATH.
 | `npm run e2e:notes` | notes + checklist through the UI and across a restart, and REAL plan usage / model / context / cost from a live Claude turn (sends one tiny prompt) |
 | `npm run e2e:usage-refresh` | the reload button: consent dialog (Cancel = no request), then ONE real request to Anthropic's usage endpoint with the local Claude login |
 | `npm run e2e:resume` | kills the app, relaunches it, checks the same conversation returns |
+| `npm run e2e:codemode` | Code mode: real New worktree dialog, git branch + linked worktree on disk, Shell in the worktree, Changes + diff, pop out/dock, restart |
 | `node scripts/e2e-visual.cjs` | screenshots every UI state into `scripts/visual/` for visual review |
 
 ## Layout

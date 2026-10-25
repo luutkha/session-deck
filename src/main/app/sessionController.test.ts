@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { Id, Session, StoreData, AttentionReason } from '../../shared/types'
 import { SessionStore } from '../store'
 import { createSessionController } from './sessionController'
+import { createActiveSessions } from './activeSessions'
 import { PtyManager, type StartOptions } from '../pty/PtyManager'
 import type { AttentionService } from '../attention/AttentionService'
 import { createRuntimeRegistry } from './runtimeRegistry'
@@ -266,9 +267,10 @@ function setupController(initialSessions: Session[] = []) {
   const userDataDir = tempDir()
   createdDirs.push(userDataDir)
 
-  const controller = createSessionController({ store, pty, attention, runtime, sendPtyData, userDataDir })
+  const activeSessions = createActiveSessions()
+  const controller = createSessionController({ store, pty, attention, runtime, sendPtyData, userDataDir, activeSessions })
 
-  return { controller, store, pty, attention, runtime, sendPtyData, saved, userDataDir }
+  return { controller, store, pty, attention, runtime, sendPtyData, saved, userDataDir, activeSessions }
 }
 
 function readErrorLog(dir: string): string {
@@ -277,6 +279,30 @@ function readErrorLog(dir: string): string {
 }
 
 describe('sessionController', () => {
+  it('removeSession clears the per-window on-screen entry of the removed session', () => {
+    const { controller, activeSessions } = setupController()
+    const session = controller.createSession({ cwd: tempDir() })
+    activeSessions.set('main', session.id)
+    activeSessions.set('code', session.id)
+
+    controller.removeSession(session.id)
+
+    expect(activeSessions.all()).toEqual([])
+  })
+
+  it('removeSession leaves other sessions on screen', () => {
+    const { controller, activeSessions } = setupController()
+    const one = controller.createSession({ cwd: tempDir() })
+    const two = controller.createSession({ cwd: tempDir() })
+    activeSessions.set('main', one.id)
+    activeSessions.set('code', two.id)
+
+    controller.removeSession(one.id)
+
+    expect(activeSessions.get('main')).toBeNull()
+    expect(activeSessions.get('code')).toBe(two.id)
+  })
+
   it('createSession uses --session-id for new sessions', () => {
     const { controller, pty } = setupController()
     const session = controller.createSession({ cwd: tempDir() })

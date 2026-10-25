@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { cleanupTempDirs, makeRepo } from './testRepo'
-import { GIT_MAX_BYTES, GIT_TIMEOUT_MS, GitError, runGit } from './gitRunner'
+import { GIT_MAX_BYTES, GIT_TIMEOUT_MS, GitError, gitEnv, runGit } from './gitRunner'
 
 describe('runGit', () => {
   let repo = ''
@@ -12,6 +12,13 @@ describe('runGit', () => {
 
   afterAll(() => {
     cleanupTempDirs()
+  })
+
+  it('runs git without prompting and with English messages', () => {
+    expect(gitEnv().GIT_TERMINAL_PROMPT).toBe('0')
+    expect(gitEnv().LC_ALL).toBe('C')
+    // Everything else of the app's environment is inherited.
+    expect(gitEnv().PATH).toBe(process.env.PATH)
   })
 
   it('returns stdout and exit code 0 for a successful command', async () => {

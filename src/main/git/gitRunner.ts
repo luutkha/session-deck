@@ -39,6 +39,14 @@ interface ExecFailure {
   readonly killed?: boolean
 }
 
+/**
+ * The environment git runs in: inherits the app's, but never prompts (GIT_TERMINAL_PROMPT) and speaks English
+ * (LC_ALL=C) so the failureMessage can parse "fatal:"/"error:" lines on a non-English Windows.
+ */
+export function gitEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }
+}
+
 /** Maps an execFile failure that is not a plain exit code to a short user-facing message. */
 function startFailureMessage(error: ExecFailure, subcommand: string): string | null {
   if (error.code === 'ENOENT') return NOT_FOUND_MESSAGE
@@ -77,7 +85,7 @@ export const runGit: GitRun = (args, options) =>
         timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
         maxBuffer: options.maxBytes ?? GIT_MAX_BYTES,
         encoding: 'utf8',
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        env: gitEnv()
       },
       (error, stdout, stderr) => {
         const failure = error as ExecFailure | null

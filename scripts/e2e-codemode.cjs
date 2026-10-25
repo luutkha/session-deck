@@ -79,7 +79,9 @@ async function main() {
 
     // ---- repos
     const added = await ev(`window.api.addRepo(${js(path.join(repo, 'src'))})`)
-    t.check('adding a SUBFOLDER adds the repo top level', added.path.toLowerCase() === repo.toLowerCase() && added.name === 'my-app', js(added))
+    // git reports the repo top level as a REAL path: the 8.3 short name from os.tmpdir() comes back long.
+    const real = (p) => { try { return fs.realpathSync.native(p).toLowerCase() } catch { return String(p).toLowerCase() } }
+    t.check('adding a SUBFOLDER adds the repo top level', real(added.path) === real(repo) && added.name === 'my-app', js(added))
     const again = await ev(`window.api.addRepo(${js(repo)})`)
     t.check('adding the same repo again returns the same repo', again.id === added.id)
     const plainErr = await ev(`window.api.addRepo(${js(plain)}).then(() => 'no error', (e) => String(e.message))`)
@@ -156,6 +158,27 @@ async function main() {
     t.check('a Code session needing you shows a badge on the Code switch while in Ops', badge === '1', String(badge))
     await shot(app, 'ops-with-badge')
 
+    // ---- back to Code mode for the worktree row checks
+    await click('[data-mode-switch] [data-mode="code"]')
+    await waitFor(() => ev('document.querySelector("[data-ui-mode]")?.dataset.uiMode === "code"'), 4000, 200)
+
+    // ---- the worktree row "+" opens the New session dialog and starts a second session in the worktree
+    // (review fix A: even after the dialog session was closed, the worktree can gain another session)
+    await ev(`window.api.closeSession(${js(firstSession.id)})`)
+    await sleep(400)
+    await click(`[data-worktree-id="${wt?.id}"] [aria-label="New session in this worktree"]`)
+    const wsDialog = await waitFor(() => ev('!!document.querySelector("[data-testid=new-worktree-session-dialog]")'), 4000, 200)
+    t.check('the worktree row + opens the New session dialog', !!wsDialog)
+    await sleep(300)
+    await ev('[...document.querySelectorAll("[data-testid=new-worktree-session-dialog] button[type=submit]")][0].click()')
+    const extra = await waitFor(async () => {
+      const d = (await ev('window.api.getStore()')).data
+      return d.sessions.find((s) => s.worktreeId === wt.id && s.id !== firstSession.id && s.id !== shell.id) ?? null
+    }, 15000, 300)
+    t.check('the dialog starts a session inside the worktree', !!extra && extra.cwd.toLowerCase() === wt.path.toLowerCase(), js(extra))
+    const wsDialogClosed = await waitFor(() => ev('!document.querySelector("[data-testid=new-worktree-session-dialog]")'), 4000, 200)
+    t.check('the New session dialog closes after the session starts', !!wsDialogClosed)
+
     // ---- pop out the Code window and dock it back
     await click('[data-mode-switch] [data-mode="code"]')
     await waitFor(() => ev('document.querySelector("[data-ui-mode]")?.dataset.uiMode === "code"'), 4000, 200)
@@ -178,7 +201,7 @@ async function main() {
     app = await launchApp({ port: PORT, userData })
     await sleep(1500)
     const after = (await app.evaluate('window.api.getStore()')).data
-    t.check('after a restart the repo, worktree and its sessions are still there', after.repos?.length === 1 && after.worktrees?.length === 1 && after.sessions.filter((s) => s.worktreeId === wt.id).length === 2)
+    t.check('after a restart the repo, worktree and its sessions are still there', after.repos?.length === 1 && after.worktrees?.length === 1 && after.sessions.filter((s) => s.worktreeId === wt.id).length === 3)
     const modeAfter = await waitFor(() => app.evaluate('document.querySelector("[data-ui-mode]")?.dataset.uiMode ?? null'), 6000, 200)
     t.check('the main window comes back in Code mode', modeAfter === 'code', String(modeAfter))
 

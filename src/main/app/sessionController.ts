@@ -1,4 +1,5 @@
 import type { AttentionReason, HookEvent, Id, Session, CreateSessionInput, ShellKind } from '../../shared/types'
+import type { ActiveSessions } from './activeSessions'
 import { SessionStore } from '../store'
 import { PtyManager, type StartOptions } from '../pty/PtyManager'
 import type { AttentionService } from '../attention'
@@ -29,6 +30,8 @@ export interface SessionControllerDeps {
   readonly sendPtyData: (id: Id, data: string, seq: number) => void
   /** Directory of main-errors.log (see errorLog.ts). */
   readonly userDataDir: string
+  /** Optional: the per-window "session on screen" map (index.ts). A removed session must not stay on screen. */
+  readonly activeSessions?: Pick<ActiveSessions, 'remove'>
   /**
    * Called once per turn when a Claude session's screen shows Claude's usage-limit message. Only armed by a
    * UserPromptSubmit hook event in the running process, so a resumed session that redraws an old message is ignored.
@@ -327,6 +330,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     if (activeId === id) {
       activeId = null
     }
+    // The removed session must not stay a window's "on screen" id (a ghost feeding isSessionOnScreen/sleep checks).
+    deps.activeSessions?.remove(id)
   }
 
   /** Removes every session of a worktree, then the worktree. Unknown id = nothing to remove. */

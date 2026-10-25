@@ -60,6 +60,31 @@ describe('createActiveSessions', () => {
     expect(active.all()).toEqual(['a'])
   })
 
+  it('remove drops the session from every role, leaving others on screen', () => {
+    const active = createActiveSessions()
+    active.set('main', 'a')
+    active.set('code', 'b')
+    active.remove('a')
+    expect(active.get('main')).toBeNull()
+    expect(active.get('code')).toBe('b')
+    expect(active.all()).toEqual(['b'])
+  })
+
+  it('remove of two windows showing the same session clears both', () => {
+    const active = createActiveSessions()
+    active.set('main', 'a')
+    active.set('code', 'a')
+    active.remove('a')
+    expect(active.all()).toEqual([])
+  })
+
+  it('remove of an unknown id changes nothing', () => {
+    const active = createActiveSessions()
+    active.set('main', 'a')
+    active.remove('missing')
+    expect(active.get('main')).toBe('a')
+  })
+
   it('all returns a snapshot that later changes do not mutate', () => {
     const active = createActiveSessions()
     active.set('main', 'a')

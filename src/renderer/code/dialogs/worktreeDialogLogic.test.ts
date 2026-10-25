@@ -7,6 +7,7 @@ import {
   validateSessionName,
   validateWorktreeName,
   worktreePathHint,
+  worktreeSessionInput,
   SESSION_NAME_MAX
 } from './worktreeDialogLogic'
 
@@ -99,6 +100,31 @@ describe('sessionNamePlaceholder', () => {
     expect(sessionNamePlaceholder('claude')).toBe('Claude Code')
     expect(sessionNamePlaceholder('opencode')).toBe('OpenCode')
     expect(sessionNamePlaceholder('shell')).toBe('Shell')
+  })
+})
+
+describe('worktreeSessionInput', () => {
+  const worktree = { id: 'wt-1', path: 'D:\\wt\\my-app\\fix-login' }
+
+  it('runs the session inside the worktree and binds it to it', () => {
+    expect(worktreeSessionInput(worktree, 'claude')).toEqual({
+      cwd: worktree.path,
+      worktreeId: 'wt-1',
+      agent: 'claude'
+    })
+  })
+
+  it('sends no model for Claude or Shell, even when one is kept in the state', () => {
+    expect(worktreeSessionInput(worktree, 'shell', undefined)).not.toHaveProperty('model')
+  })
+
+  it('passes the OpenCode model through', () => {
+    expect(worktreeSessionInput(worktree, 'opencode', 'opencode/deepseek-v4')).toEqual({
+      cwd: worktree.path,
+      worktreeId: 'wt-1',
+      agent: 'opencode',
+      model: 'opencode/deepseek-v4'
+    })
   })
 })
 

@@ -137,6 +137,16 @@ E2E: `scripts/e2e-palette.cjs` (16 checks, real key presses).
 - Changes tab (side panel, Code sessions only): files vs merge-base(base, HEAD) incl. uncommitted and untracked, unified diff per file; counts on the worktree row. Refreshed: after a Stop hook in that worktree, on open, every 10 s while the panel shows, every 30 s for row counts, and pushed to all windows whenever a recompute differs.
 - Shared across modes: quota, autopilot, sleep, sounds (main window plays), notifications (a click opens the session in the window/mode that owns it), away summary (main window).
 - Built by OpenCode workers (git, store/shell, windows, Changes UI, Code sidebar; the mode shell was half done when the Go plan cap hit) and finished by the orchestrator (`App.tsx`, `mode/ModeWorkspace.tsx`, `useWorkspaceCommands.ts`, `WorkspaceDialogs.tsx`, `app/codeWiring.ts`, `index.ts`).
-- E2E: `npm run e2e:codemode` (31 checks: real dialog, git branch + linked worktree on disk, Shell writes in the worktree, Changes + diff, path outside the list refused, Ops/Code separation + badge, pop out / dock with a second CDP target, restart, remove keeps files).
+- E2E: `npm run e2e:codemode` (34 checks: real dialog, git branch + linked worktree on disk, Shell writes in the worktree, Changes + diff, path outside the list refused, Ops/Code separation + badge, worktree-row "+", pop out / dock with a second CDP target, restart, remove keeps files).
 - PENDING: read-only review on a different model family (deepseek-v4-pro, `-Agent plan`) was blocked by the OpenCode Go cap on 2026-10-22; the user chose to wait and run it when capacity is back.
 - Known gaps: Claude asks "trust this folder" once per new worktree (not bypassed); the idle-sleep timer only spares the session on screen in the focused window; Windows reserved names (con, nul...) as worktree names are not mapped; no commit/merge/PR/delete-from-disk (not chosen for v1).
+
+## Code mode review fixes (2026-10-25, D31)
+Review fixes on the D31 feature, all unit-tested (new `codeWiring.test.ts`) and e2e-extended:
+- **"New session in this worktree" dialog is real** (`renderer/code/dialogs/NewWorktreeSessionDialog.tsx`): agent + model only (reuses `SessionAgentFields`), the path hint comes from `worktreeDialogLogic.worktreeSessionInput()` (pure, tested), busy state, Enter submits once, errors show inline. The worktree-row "+" opens it.
+- **Rollback of a stranded worktree** (`codeWiring.createWorktree` catch): if the first session does not start, the worktree is removed from the store again (`store.removeWorktree` + hub forget) and the error says the files stay on disk. Nothing is deleted from disk.
+- **git in English, no prompts** (`gitRunner.gitEnv()`): every git call sets `LC_ALL=C` (stderr parsing stays language-independent) and `GIT_TERMINAL_PROMPT=0`. Tested in `gitRunner.test.ts`.
+- **Drive-root repos** (`addRepo`): `path.basename(root)` is empty for `D:\`; falls back to `repoFolderName(root)` so the worktrees path stays valid.
+- **No ghost "on screen" ids** (`ActiveSessions.remove(id)`): removing a session also clears it from every window role (`sessionController` dep `activeSessions.remove`, optional for tests, wired in `index.ts`). Tested in `activeSessions.test.ts` + `sessionController.test.ts`.
+- `e2e-codemode.cjs`: the "+"-dialog path is exercised (3 sessions in the worktree after the restart check), restart count updated accordingly.
+

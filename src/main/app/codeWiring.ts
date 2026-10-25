@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { CreateWorktreeResult, FileDiff, HookEvent, Id, Repo, RepoBranches, Worktree, WorktreeChanges } from '../../shared/types'
 import { IPC } from '../../shared/ipc'
 import type { SessionStore } from '../store'
-import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, readWorktreeChanges, resolveRepoRoot, validateWorktreeName } from '../git'
+import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, readWorktreeChanges, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
 import { asCreateWorktreeInput, assertBoolean, assertId, assertNonEmptyString } from './ipcValidation'
 import type { SessionController } from './sessionController'
 
@@ -29,6 +29,10 @@ export interface CodeWiringDeps {
 /** Code mode (D31): repos, worktrees and their changes, wired to the store, the controller and IPC. */
 export interface CodeWiring {
   registerIpc(): void
+  /** Adds a repo (also reachable from the createWorktree/addRepo tests). */
+  addRepo(rawFolder: unknown): Promise<Repo>
+  /** Creates a branch + worktree and starts the first session in it (also reachable from createWorktree tests). */
+  createWorktree(raw: unknown): Promise<CreateWorktreeResult>
   /** A turn ended in some session: refresh the changes of its worktree and push them to the windows. */
   onHookEvent(event: HookEvent): void
   shutdown(): void
@@ -90,7 +94,8 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
   async function addRepo(rawFolder: unknown): Promise<Repo> {
     const folder = assertNonEmptyString(rawFolder, 'folder', MAX_PATH_LENGTH)
     const root = await resolveRepoRoot(folder)
-    return store.addRepo({ name: path.basename(root), path: root })
+    // A drive root (D:\) has no basename; the worktrees folder still needs a usable name.
+    return store.addRepo({ name: path.basename(root) || repoFolderName(root), path: root })
   }
 
   async function createWorktree(raw: unknown): Promise<CreateWorktreeResult> {
@@ -109,8 +114,14 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
       })
       return { worktree, session }
     } catch (error) {
+      // Its session never started, so the worktree has no sessions: remove it again instead of leaving a
+      // sessionless one (before Fix B there was no way back once the row button had no open session).
+      store.removeWorktree(worktree.id)
+      forget(worktree.id)
       const reason = error instanceof Error ? error.message : String(error)
-      throw new Error(`The worktree was created, but its session could not start: ${reason}`)
+      throw new Error(
+        `The worktree could not be created: its session did not start (${reason}). Nothing was kept — files stay on disk.`
+      )
     }
   }
 
@@ -153,6 +164,8 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
 
   return {
     registerIpc,
+    addRepo,
+    createWorktree,
     onHookEvent: (event) => {
       if (event.event !== 'Stop') return
       const worktreeId = store.get().sessions.find((s) => s.id === event.sessionId)?.worktreeId

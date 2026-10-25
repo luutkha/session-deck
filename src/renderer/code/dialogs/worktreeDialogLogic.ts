@@ -1,5 +1,5 @@
 // Pure rules for the Code mode dialogs (name checks, base branch default, path hint, agent and model). No React.
-import { WORKTREE_NAME_MAX, type AgentKind } from '../../../shared/types'
+import { WORKTREE_NAME_MAX, type AgentKind, type CreateSessionInput, type Worktree } from '../../../shared/types'
 import { validateOpenCodeModel } from '../../Sidebar/dialogLogic'
 
 /** Session names follow the Ops rule (validateName in Sidebar/inlineEditValidation). */
@@ -74,6 +74,24 @@ export function worktreePathHint(worktreesRoot: string, repoName: string, name: 
 export function sessionNamePlaceholder(agent: AgentKind): string {
   const choice = AGENT_CHOICES.find((candidate): boolean => candidate.value === agent)
   return choice?.label ?? 'Session'
+}
+
+/**
+ * The createSession input for a session in an existing worktree: it always runs inside the worktree folder
+ * (main ignores `cwd` anyway) and is bound to the worktree. `model` is the checked value from checkModel,
+ * undefined for anything but OpenCode.
+ */
+export function worktreeSessionInput(
+  worktree: Pick<Worktree, 'id' | 'path'>,
+  agent: AgentKind,
+  model?: string
+): CreateSessionInput {
+  return {
+    cwd: worktree.path,
+    worktreeId: worktree.id,
+    agent,
+    ...(model !== undefined ? { model } : {})
+  }
 }
 
 export type ModelCheck =

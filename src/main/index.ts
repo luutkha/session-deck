@@ -277,6 +277,7 @@ if (!gotTheLock) {
       pty,
       attention,
       runtime,
+      activeSessions,
       sendPtyData: (id, data, seq) => {
         sleepScheduler.touch(id)
         sendToWindow(IPC.evPtyData, id, data, seq)

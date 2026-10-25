@@ -8,6 +8,8 @@ export interface ActiveSessions {
   /** Distinct session ids on screen across all roles (no nulls, no duplicates). */
   all(): readonly Id[]
   clearRole(role: WindowRole): void
+  /** Removes the id from every role (a removed session must not stay "on screen"). */
+  remove(id: Id): void
 }
 
 export function createActiveSessions(): ActiveSessions {
@@ -29,6 +31,11 @@ export function createActiveSessions(): ActiveSessions {
     },
     clearRole(role) {
       byRole.delete(role)
+    },
+    remove(id) {
+      for (const [role, shown] of byRole) {
+        if (shown === id) byRole.delete(role)
+      }
     }
   }
 }
