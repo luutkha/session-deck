@@ -1,7 +1,7 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
   AppSettings, ChecklistItem, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
-  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, WindowState, WindowRole
+  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole
 } from './types'
 
 export const IPC = {
@@ -64,6 +64,7 @@ export const IPC = {
   worktreeSetCollapsed: 'worktree:setCollapsed', // (worktreeId, collapsed)
   worktreeChanges: 'worktree:changes', // (worktreeId) -> WorktreeChanges (recomputed now)
   worktreeFileDiff: 'worktree:fileDiff', // (worktreeId, path) -> FileDiff; path must be one of the current changed files
+  filePreviewRead: 'file:previewRead', // (worktreeId, path) -> FilePreview; renderable files of the worktree (Code mode)
   windowGetState: 'window:getState', // -> WindowState
   windowPopOutCode: 'window:popOutCode', // opens (or focuses) the separate Code window
   windowDockCode: 'window:dockCode', // closes the Code window; Code mode returns to the main window's switch
@@ -167,6 +168,8 @@ export interface Api {
   setWorktreeCollapsed(worktreeId: Id, collapsed: boolean): Promise<void>
   getWorktreeChanges(worktreeId: Id): Promise<WorktreeChanges>
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff>
+  /** Rendered preview of one worktree file (rich previews, Code mode): image base64 or markdown/text. */
+  getWorktreeFilePreview(worktreeId: Id, path: string): Promise<FilePreview>
   getWindowState(): Promise<WindowState>
   popOutCode(): Promise<void>
   dockCode(): Promise<void>

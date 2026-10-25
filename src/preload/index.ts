@@ -29,6 +29,7 @@ import type {
   CreateWorktreeResult,
   WorktreeChanges,
   FileDiff,
+  FilePreview,
   WindowState,
   WindowRole
 } from '../shared/types'
@@ -323,6 +324,10 @@ const api: Api = {
 
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff> {
     return ipcRenderer.invoke(IPC.worktreeFileDiff, worktreeId, path)
+  },
+
+  getWorktreeFilePreview(worktreeId: Id, path: string): Promise<FilePreview> {
+    return ipcRenderer.invoke(IPC.filePreviewRead, worktreeId, path)
   },
 
   getWindowState(): Promise<WindowState> {

@@ -19,6 +19,9 @@ import {
 } from './annotations'
 import { useWorktreeChanges, type WorktreeChangesResult } from './useWorktreeChanges'
 import { useWorktreeFileDiff } from './useWorktreeFileDiff'
+import { useWorktreeFilePreview } from './useWorktreeFilePreview'
+import { PreviewView } from './PreviewView'
+import { isPreviewable } from './preview'
 
 export interface ChangesPanelProps {
   readonly worktreeId: Id
@@ -92,11 +95,60 @@ interface PanelHeaderProps {
   readonly selectedPath: string | null
   readonly loading: boolean
   readonly commentCount: number
+  /** Previewable file selected: the header shows the Diff | Preview segmented toggle (rich previews). */
+  readonly previewable: boolean
+  readonly viewMode: 'diff' | 'preview'
+  readonly onViewMode: (mode: 'diff' | 'preview') => void
   readonly onBack: () => void
   readonly onRefresh: () => void
 }
 
-function PanelHeader({ title, selectedPath, loading, commentCount, onBack, onRefresh }: PanelHeaderProps): ReactElement {
+const DIFF_TOGGLE_LABEL = 'Show the diff'
+const PREVIEW_TOGGLE_LABEL = 'Show the rendered preview'
+
+/** The segmented Diff | Preview toggle of a previewable file (default Diff, like the Orca look). */
+function ViewModeToggle({
+  viewMode,
+  onViewMode
+}: Pick<PanelHeaderProps, 'viewMode' | 'onViewMode'>): ReactElement {
+  return (
+    <div
+      role="group"
+      aria-label="Diff or preview"
+      className="flex shrink-0 items-center rounded-md border border-border p-0.5"
+    >
+      {([['diff', DIFF_TOGGLE_LABEL, 'Diff'], ['preview', PREVIEW_TOGGLE_LABEL, 'Preview']] as const).map(
+        ([mode, label, text]) => (
+          <Button
+            key={mode}
+            type="button"
+            variant={viewMode === mode ? 'secondary' : 'ghost'}
+            size="xs"
+            aria-pressed={viewMode === mode}
+            aria-label={label}
+            data-preview-mode={mode}
+            className="text-[11px]"
+            onClick={(): void => onViewMode(mode)}
+          >
+            {text}
+          </Button>
+        )
+      )}
+    </div>
+  )
+}
+
+function PanelHeader({
+  title,
+  selectedPath,
+  loading,
+  commentCount,
+  previewable,
+  viewMode,
+  onViewMode,
+  onBack,
+  onRefresh
+}: PanelHeaderProps): ReactElement {
   return (
     <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
       {selectedPath === null ? (
@@ -118,7 +170,10 @@ function PanelHeader({ title, selectedPath, loading, commentCount, onBack, onRef
           <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{selectedPath}</span>
         </div>
       )}
-      <RefreshButton loading={loading} onRefresh={onRefresh} />
+      <div className="flex shrink-0 items-center gap-1">
+        {selectedPath !== null && previewable ? <ViewModeToggle viewMode={viewMode} onViewMode={onViewMode} /> : null}
+        <RefreshButton loading={loading} onRefresh={onRefresh} />
+      </div>
     </div>
   )
 }
@@ -235,9 +290,13 @@ export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProp
   const [annotations, setAnnotations] = useState<readonly DiffAnnotation[]>((): readonly DiffAnnotation[] =>
     readStoredAnnotations(worktreeId)
   )
+  // Rich previews: the render toggle exists only for previewable files; review (Diff) stays the default.
+  const [viewMode, setViewMode] = useState<'diff' | 'preview'>('diff')
   const storedPath = selection !== null && selection.worktreeId === worktreeId ? selection.path : null
   const selectedPath = isStillChanged(list.changes, storedPath) ? storedPath : null
   const diff = useWorktreeFileDiff(worktreeId, selectedPath, list.changes?.computedAt ?? null)
+  const previewable = selectedPath !== null && isPreviewable(selectedPath)
+  const preview = useWorktreeFilePreview(worktreeId, previewable ? selectedPath : null, viewMode === 'preview', list.changes?.computedAt ?? null)
   const stale =
     annotations.length > 0 &&
     list.changes !== null &&
@@ -248,6 +307,11 @@ export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProp
       setSelection(null)
     }
   }, [storedPath, list.changes])
+
+  // The preview choice is per file: a different file reviews as a diff first again.
+  useEffect((): void => {
+    setViewMode('diff')
+  }, [selectedPath])
 
   function update(next: readonly DiffAnnotation[]): void {
     setAnnotations(next)
@@ -266,6 +330,9 @@ export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProp
           selectedPath={selectedPath}
           loading={list.loading}
           commentCount={commentCount}
+          previewable={previewable}
+          viewMode={viewMode}
+          onViewMode={setViewMode}
           onBack={(): void => setSelection(null)}
           onRefresh={list.refresh}
         />
@@ -273,6 +340,13 @@ export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProp
           <ChangesBody
             list={list}
             onSelect={(path: string): void => setSelection({ worktreeId, path })}
+          />
+        ) : viewMode === 'preview' && previewable ? (
+          <PreviewView
+            preview={preview.preview}
+            loading={preview.loading}
+            error={preview.error}
+            sessionId={target?.sessionId ?? ''}
           />
         ) : (
           <DiffView

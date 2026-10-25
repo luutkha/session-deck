@@ -208,6 +208,24 @@ export interface FileDiff {
 export const CHANGES_MAX_FILES = 500
 export const DIFF_MAX_BYTES = 512 * 1024
 
+/** Rendered preview of one worktree file (Code mode, rich previews): image or text/markdown. */
+export interface FilePreview {
+  readonly worktreeId: Id
+  readonly path: string
+  readonly kind: 'image' | 'markdown' | 'text'
+  /** image: the bytes as a base64 data-URL payload (mime included in the renderer's src). */
+  readonly base64: string
+  /** markdown/text: the decoded content (capped; truncated says so). */
+  readonly content: string
+  readonly mime: string
+  /** True when the file exceeded its size cap and was cut (markdown/text only). */
+  readonly truncated: boolean
+}
+
+/** Size caps of a rendered preview (server-side, previewRead.ts). */
+export const PREVIEW_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+export const PREVIEW_TEXT_MAX_BYTES = 500 * 1024
+
 /** Which windows are open. The Code mode either lives in the main window (switch) or in its own window. */
 export interface WindowState {
   readonly codePoppedOut: boolean

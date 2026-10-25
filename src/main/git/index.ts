@@ -8,3 +8,4 @@ export type { CreatedGitWorktree, CreateGitWorktreeInput } from './worktreeCreat
 export { diffBase, readWorktreeChanges } from './worktreeChanges'
 export type { WorktreeRef } from './worktreeChanges'
 export { readFileDiff } from './worktreeFileDiff'
+export { previewKindFor, readWorktreePreview } from './previewRead'

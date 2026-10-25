@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
 import path from 'node:path'
-import type { CreateWorktreeResult, FileDiff, HookEvent, Id, Repo, RepoBranches, Worktree, WorktreeChanges } from '../../shared/types'
+import type { CreateWorktreeResult, FileDiff, FilePreview, HookEvent, Id, Repo, RepoBranches, Worktree, WorktreeChanges } from '../../shared/types'
 import { IPC } from '../../shared/ipc'
 import type { SessionStore } from '../store'
-import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, readWorktreeChanges, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
+import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, readWorktreeChanges, readWorktreePreview, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
 import { asCreateWorktreeInput, assertBoolean, assertId, assertNonEmptyString } from './ipcValidation'
 import type { SessionController } from './sessionController'
 
@@ -132,6 +132,12 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     return readFileDiff(worktree, filePath, current)
   }
 
+  async function filePreview(rawId: unknown, rawPath: unknown): Promise<FilePreview> {
+    const worktree = worktreeOrThrow(assertId(rawId, 'worktree id'))
+    const filePath = assertNonEmptyString(rawPath, 'file path', MAX_PATH_LENGTH)
+    return readWorktreePreview(worktree, filePath)
+  }
+
   function registerIpc(): void {
     ipcMain.handle(IPC.repoAdd, (_event, raw: unknown) => addRepo(raw))
     ipcMain.handle(IPC.repoRemove, (_event, rawId: unknown): void => {
@@ -160,6 +166,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
       return computeChanges(worktreeOrThrow(assertId(rawId, 'worktree id')))
     })
     ipcMain.handle(IPC.worktreeFileDiff, (_event, rawId: unknown, rawPath: unknown) => fileDiff(rawId, rawPath))
+    ipcMain.handle(IPC.filePreviewRead, (_event, rawId: unknown, rawPath: unknown) => filePreview(rawId, rawPath))
   }
 
   return {

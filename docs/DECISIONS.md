@@ -125,6 +125,9 @@ Asked "do we have auto continue when the quota reset after a session hit limit?"
 **D34 · 2026-10-25 · Annotate AI diffs — comments ship to the agent, Code-change mode only** · active
 "write plan for 1. => but this should only active for code-change-mode only." (choice 1 = Orca's "Annotate AI Diffs": review a changed file, comment per diff line, send the comments back to the agent without leaving the app). The Code-mode-only guard is the user's condition, kept literally: the annotation UI lives only where the Changes tab lives (`NotesPanel` renders `ChangesPanel` for worktree sessions only) — an Ops session has no Changes tab and no annotation UI. v1 scope: no threads/replies, no PR review (PRs were left out in D31), no auto-wake on send.
 
+**D35 · 2026-10-25 · Rich previews — rendered Markdown and images of worktree files, Code mode only** · active
+Orca's "Rich repo previews", v1 scope per plan (the user approved the queue): a Diff | Preview toggle in the Changes panel for renderable changed files — images (png/jpg/gif/webp/bmp; svg excluded: scriptable) and Markdown (marked + DOMPurify, sanitized; links open through the app's open pipeline, never the window). A new additive IPC reads the file in main with the path resolved (and realpath-checked) inside the worktree and sizes capped (5 MB images, 500 KB text, cut marked). PDFs and a repo-wide file browser are out of v1.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

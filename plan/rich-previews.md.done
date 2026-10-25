@@ -1,0 +1,97 @@
+# Plan: Rich previews — read Markdown and images of a worktree without leaving SessionDeck (Orca feature)
+
+Status: proposed — waiting for "go". No code changed yet.
+Date: 2026-10-25
+User request (2026-10-25): plans for "1." (annotate diffs) and "for 4." — Orca's "Rich repo previews: Preview Markdown, images, PDFs, and repo docs in the workspace."
+
+## 0. Scope
+
+**Code mode only**, like the annotate-diffs plan: the preview lives in the Changes side panel
+context (the only place worktree files are listed today). Ops mode has no file browser, so a
+global preview command is deliberately out — with "Preview" anchored to files the user is
+already looking at in a diff, it stays small and useful.
+
+## 1. Goal
+
+Open a changed file in the Changes panel and, for a rendered file type, see the rendered
+content instead of (or next to) the diff:
+- **Images** (png/jpg/gif/webp/svg? — svg only with care, see §3.3) rendered at fit-width;
+- **Markdown** (.md/.markdown) rendered with headings, lists, code blocks, links, tables later.
+PDF is planned for a later phase and NOT in v1 (heavy, big attack surface for little value).
+
+## 2. What exists already (verified in source)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| Side panel tabs Notes \| Changes \| Activity; Changes shows file list → per-file `FileDiff` | `src/renderer/notes/NotesPanel.tsx`, `changes/ChangesPanel.tsx` | The preview entry point is one toggle inside an existing view — no new navigation. |
+| Git service reads files with `execFile('git')` and caps sizes (`DIFF_MAX_BYTES`, truncation flags are already part of `FileDiff`) | `src/main/git/*`, `src/shared/types.ts` | Same pattern for a capped file read: `execFile`-style IPC + byte cap, never raw fs from the renderer. |
+| Renderer never touches the disk directly; every IPC entry is validated | `src/preload`, `src/main/ipcValidation.ts`, DESIGN rules ("the single Todo-UI file") | Preview must go through a new validated IPC, not `file://` in the renderer (Electron discourages renderer file access; `webSecurity` must stay on). |
+| Markdown/preview primitives from Orca we can port | `reference/orca` (per D02, `components/ui/*`) | Whatever Orca's own md preview/styling uses can be copied for look consistency. |
+
+## 3. Design
+
+### 3.1 New IPC (additive, contract change on purpose — CLAUDE.md rule)
+
+- `IPC.filePreviewRead` → `src/main/git/previewRead.ts`:
+  args `{ worktreeId, path }`; main resolves the path **inside that worktree's root** and
+  rejects anything else (same discipline as `worktreeFileDiff`, which already refuses paths
+  outside the list). Cap at 5 MB (images) / 500 KB (markdown) with a `truncated` flag.
+- Returns, by kind:
+  - image → `{ kind: 'image', mime, base64 }` — renderer shows `<img src="data:...">`; base64
+    keeps the renderer away from the disk entirely;
+  - text/markdown → `{ kind: 'markdown' | 'text', content, truncated }`.
+- Validation + size cap in `ipcValidation.ts`/`settingsValidation`-style; unknown worktree or
+  traversal (`..`, absolute, symlink escape via resolved path check) → error string, same idiom
+  as existing git IPC errors.
+
+### 3.2 Renderer
+
+- `changes/preview.ts` — pure: `previewKindFor(path)` (extension → 'image' | 'markdown' | null)
+  + `isPreviewable`.
+- `changes/PreviewView.tsx` — `ScrollArea`, Orca spacing; image view (max-w-full, centered,
+  checkerboard background dark-theme-safe); error and "file too large / truncated" notices
+  styled like `PanelMessage`/`DiffView` notices.
+- `changes/MarkdownView.tsx` — v1 keeps the dependency list tight: render with `marked` +
+  `dompurify` (sanitizer is non-negotiable for markdown ← untrusted content), wrapped once, with
+  a small CSS layer mapped to the Orca theme tokens (headings/links/code blocks reuse existing
+  token colors — no invented colors, D02). Links open externally through the existing `links`
+  open pipeline (D12), never navigate the window (`will-navigate` guard stays).
+- Entry: in `ChangesPanel`, when the selected file is previewable, the header gains a segmented
+  toggle **Diff | Preview** (shadcn, mirrors the Orca look); default **Diff** (review first),
+  preview state resets on file change. Count/refresh behaviour unchanged.
+
+### 3.3 Safety notes
+
+- `svg` **excluded in v1** (scriptable by design); bmp/gif/webp/png/jpg in.
+- Markdown sanitized with DOMPurify (marked alone is not enough); no raw HTML passthrough.
+- Cap + validation server-side (main), not just UI-side.
+
+## 4. Files touched
+
+- `src/shared/ipc.ts` + `src/preload/index.ts` + `src/shared/types.ts` (additive: channel, api method, `FilePreview` type + defaults) — the one deliberate contract change
+- New: `src/main/git/previewRead.ts` (+ test with a real temp worktree, mirroring `worktreeChanges.test.ts`)
+- New renderer: `changes/preview.ts` (+ test), `PreviewView.tsx`, `MarkdownView.tsx`; edits in `ChangesPanel.tsx` (toggle + wiring)
+- deps: `marked`, `dompurify` (+ `@types/dompurify` if needed) — versions matched from `reference/orca/package.json` per D02 §10 where available
+- `docs/CODEMAP.md` (new files), `HANDOFF.md` (feature section), `docs/DECISIONS.md` D-entry
+
+## 5. Verification (W04)
+
+- Unit: `previewKindFor` table, message/parse fallback for the new IPC in the store/validation tests, main path-resolution rejects traversal (test with real temp dirs).
+- Real-app e2e `scripts/e2e-preview.cjs` (modelled on `e2e-codemode.cjs`): real worktree, add a `.md` and a `.png` change → Diff shows by default → toggle Preview → markdown renders (heading text assertable in DOM) → image renders as data URL → a file > cap shows truncation notice → a path-traversal request is refused (direct IPC call) → Ops session: no preview toggle exists (scope rule).
+- Screenshot check against the Orca look per D02 (visual e2e adds the preview state).
+
+## 6. Risks
+
+- New IPC = new validation surface — mitigated by reusing the existing validation idiom, path must resolve inside the worktree, sizes capped; no `file://` in the renderer.
+- Markdown styling creep — ship with a fixed token-mapped stylesheet; no arbitrary classes.
+- Truncated markdown may render partial blocks — acceptable, labelled.
+
+## 7. Out of scope
+
+- PDF, SVG, Office docs, repo-wide file browser (that is Orca's whole file explorer, much bigger).
+- Editing files (viewer only; editing would clash with the agent working in the worktree).
+- Ops mode.
+
+## 8. Effort
+
+Small-medium: one additive IPC + two small views + one e2e. One worker brief; Claude plans, verifies (unit + real-app e2e + screenshot), commits.
