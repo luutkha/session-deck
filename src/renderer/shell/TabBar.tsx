@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactElement } from 'react'
-import { Columns2, LayoutDashboard, NotebookPen, PanelLeft, Plus } from 'lucide-react'
+import { Columns2, LayoutDashboard, LayoutGrid, NotebookPen, PanelLeft, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -28,6 +28,13 @@ export interface TabBarSplit {
   readonly onOpenToSide: (id: Id) => void
 }
 
+/** Grid-view controls (D32): the preset menu opens the grid; the current preset is marked. */
+export interface TabBarGrid {
+  readonly active: boolean
+  readonly preset: string | null
+  readonly onOpenGrid: (preset: string) => void
+}
+
 export interface TabBarProps {
   readonly tabs: readonly TabModel[]
   readonly activeId: Id | null
@@ -47,6 +54,8 @@ export interface TabBarProps {
   readonly notesBadge?: string | null
   /** Split-view controls (hidden when undefined). */
   readonly split?: TabBarSplit
+  /** Grid-view controls (hidden when undefined) — D32. */
+  readonly grid?: TabBarGrid
   /** Read-only tabs for the OpenCode workers of the active session (hidden when undefined or empty). */
   readonly workers?: WorkerTabsProps
 }
@@ -153,6 +162,45 @@ export function TabBar(props: TabBarProps): ReactElement {
               Notes and checklist
             </TooltipContent>
           </Tooltip>
+        </div>
+      )}
+      {props.grid !== undefined && (
+        <div className="app-no-drag flex shrink-0 items-center px-0.5">
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className={cn(
+                      'text-muted-foreground',
+                      props.grid.active && 'bg-accent text-foreground'
+                    )}
+                    aria-label="Grid view"
+                    aria-pressed={props.grid.active}
+                  >
+                    <LayoutGrid size={14} aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={6}>
+                Grid view
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end">
+              {(['1x1', '2x1', '1x2', '2x2', '2x3', '3x2'] as const).map((preset) => (
+                <DropdownMenuItem
+                  key={preset}
+                  data-grid-preset={preset}
+                  disabled={props.grid?.preset === preset && props.grid?.active === true}
+                  onSelect={(): void => props.grid?.onOpenGrid(preset)}
+                >
+                  {preset}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
       {props.split !== undefined && (

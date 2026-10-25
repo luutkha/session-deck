@@ -1,4 +1,4 @@
-// Tabs, split layout, Hub/terminal view, worker tabs and notes for one mode's workspace.
+// Tabs, split layout, grid view, Hub/terminal view, worker tabs and notes for one mode's workspace.
 // Every key is mode-scoped (modeStorageKeys), so Ops and Code keep separate tabs and layouts.
 import { useCallback, useEffect, useState } from 'react'
 import type { Id, Session } from '../../shared/types'
@@ -6,6 +6,8 @@ import type { SessionActions } from '../state/useSessionStore'
 import { useOpenTabs, type OpenTabsApi } from '../shell/useOpenTabs'
 import { usePersistedBoolean } from '../shell/usePersistedBoolean'
 import { useSplitLayout, type SplitLayoutApi } from '../split/useSplitLayout'
+import { useGridLayout, type GridLayoutApi } from '../grid/useGridLayout'
+import { cellIndexFor } from '../grid/gridLogic'
 import { useWorkers, type WorkersApi } from '../workers/useWorkers'
 import type { ModeStorageKeys } from './modeLogic'
 import { readStoredView, storeView, type MainView } from './viewPref'
@@ -27,6 +29,8 @@ export interface WorkspaceNavOptions {
 export interface WorkspaceNav {
   readonly tabs: OpenTabsApi
   readonly split: SplitLayoutApi
+  /** The mode's grid (D32): preset + cell assignments, remembered per mode. */
+  readonly grid: GridLayoutApi
   readonly workers: WorkersApi
   readonly view: MainView
   readonly setView: (view: MainView) => void
@@ -64,6 +68,7 @@ export function useWorkspaceNav(options: WorkspaceNavOptions): WorkspaceNav {
   const tabs = useOpenTabs(sessions, actions, keys.tabs)
   const { activeId, ids } = tabs
   const split = useSplitLayout(ids, activeId, keys.split)
+  const grid = useGridLayout(ids, activeId, keys.grid)
   const workers = useWorkers(activeId)
   const [view, setViewState] = useState<MainView>((): MainView => readStoredView(keys.view))
   const [notesOpen, setNotesOpen] = usePersistedBoolean(keys.notes, false)
@@ -74,10 +79,22 @@ export function useWorkspaceNav(options: WorkspaceNavOptions): WorkspaceNav {
     workers.select(null) // every other target (a session, the Hub) leaves the worker view
   }, [keys.view, workers.select])
 
+  // Selecting/activating a session behaves per view: from the grid it focuses the session's cell
+  // (and only records activeId) instead of forcing the terminal view; everywhere else the terminal
+  // view comes back (Hub behaviour unchanged).
   const selectSession = useCallback((id: Id): void => {
-    setView('terminal')
+    setViewState((current: MainView): MainView => {
+      if (current === 'grid') {
+        const index = cellIndexFor(grid.layout, id)
+        if (index !== null) grid.focusCell(index)
+        return current
+      }
+      storeView(keys.view, 'terminal')
+      workers.select(null)
+      return 'terminal'
+    })
     tabs.select(id)
-  }, [setView, tabs.select])
+  }, [grid, keys.view, tabs.select, workers.select])
 
   const reopenSession = useCallback((id: Id): void => {
     setView('terminal')
@@ -85,10 +102,19 @@ export function useWorkspaceNav(options: WorkspaceNavOptions): WorkspaceNav {
   }, [setView, tabs.reopen])
 
   const activateTab = useCallback((id: Id): void => {
-    setView('terminal')
-    split.showInPane(id)
+    setViewState((current: MainView): MainView => {
+      if (current === 'grid') {
+        const index = cellIndexFor(grid.layout, id)
+        if (index !== null) grid.focusCell(index)
+        return current
+      }
+      split.showInPane(id)
+      storeView(keys.view, 'terminal')
+      workers.select(null)
+      return 'terminal'
+    })
     tabs.activate(id)
-  }, [setView, split.showInPane, tabs.activate])
+  }, [grid, keys.view, split, tabs.activate, workers.select])
 
   const openCreated = useCallback((sessionId: Id): void => {
     setView('terminal')
@@ -103,6 +129,7 @@ export function useWorkspaceNav(options: WorkspaceNavOptions): WorkspaceNav {
   return {
     tabs,
     split,
+    grid,
     workers,
     view,
     setView,

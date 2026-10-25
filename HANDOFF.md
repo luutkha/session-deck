@@ -126,6 +126,17 @@ Orca's "Rich repo previews" for v1 scope: open a CHANGED file in the Changes pan
 - Out of scope (v1): PDF, SVG, Office docs, a repo-wide file browser, editing.
 - E2E: `npm run e2e:preview` (12 checks: real worktree + real .md/.png/oversized .md → Diff default → sanitized heading renders → per-file reset → image data URL → truncation note → traversal refused by main → no toggle for non-previewable/All-files → Ops has none).
 
+## Grid view (D32, 2026-10-25)
+See several sessions at once: a preset grid of REAL interactive terminals (`1x1 · 2x1 · 1x2 · 2x2 · 2x3 · 3x2` — columns x rows, up to 6 cells). Code and Ops each keep their own grid (per-mode storage keys, like split).
+- Pure: `src/renderer/grid/gridLogic.ts` — preset shapes, `normalizeGrid` (closed/unknown ids → empty cells, duplicates keep the first, never auto-fills), `setCell` (assigning an already-visible session MOVES it; the cell's occupant takes the moved session's old cell — a SWAP, no duplicates), `cellIndexFor`, overflow helpers (the ids a shrink pushes out are kept in memory and restored when a bigger preset fits them), `parseGrid/serializeGrid` (malformed → null). Storage `sessiondeck.grid.v1` (+ `.code` per mode).
+- State: `useGridLayout.ts` (reducer exported + tested): sync with the open tabs/active session, preset changes with the overflow rule, `setCell`/`clearCell`/`focusCell`.
+- UI: `GridView.tsx` (CSS grid from the preset; each cell is a `TerminalPane` — same xterm lifecycle), `GridCellHeader.tsx` (status dot, a self-contained session picker — no portal/overlay — that MOVES the picked session in, unassign ×; native buttons so keyboard and clicks always work), empty cells show "Pick a session" (no auto-fill). Picking a session also opens its tab (cells only hold live sessions).
+- One xterm per session across BOTH layouts: `useTerminalPanes` is hoisted into `ModeWorkspace` and handed to `TerminalWorkspace` and `GridView` (the split workspace accepts the shared registry; it still owns one when none is passed, e.g. the legacy `TerminalHost`).
+- Entry: the **Grid ▾** menu next to the Split control in the tab bar (preset menu), and the command palette's "Open grid view". Focus follows the cell (`activeId`), so typing/attention/sleep "on screen" semantics are unchanged; selecting a session (sidebar, tray, notification) from the grid focuses its cell and STAYS in the grid.
+- Explicitly NOT in v1: draggable dividers (uniform cells per preset), auto-fill, a keyboard shortcut for the grid, grids spanning both modes.
+- E2E: `npm run e2e:grid` (9 checks: real Grid ▾ menu → 2x2, assign two sessions through the cell pickers, both terminals live (pty echo), picking an assigned session swaps, preset 2x2→3x2→1x1→2x2 keeps/restores assignments, graceful restart restores preset + cells). Split/tabs regressions re-run: `e2e` 20/20, `e2e:foldertabs` 3/3, `e2e:codemode` 34/34.
+- Visual: the `e2e-visual` `grid-2x2` state is NOT added yet; the behaviour is covered by `e2e:grid`, the look stays a manual check (`src/renderer/grid/MANUAL_TEST.md`).
+
 ## Hub opens at the busiest status (D24)
 New settings section `hub` (`AppSettings.hub.scrollToBusiest`, default true; validated in `main/store/settings.ts` and `main/app/settingsValidation.ts`). `busiestColumnIndex` in `hub/hubLogic.ts` (tests); `HubView` scrolls its board (`data-hub-board`) once on mount, left-aligning that column unless it is already fully visible. Switch: Settings > General. E2E: `scripts/e2e-hubscroll.cjs` (7 checks).
 

@@ -9,6 +9,7 @@ export interface PaletteHandlers {
   readonly reopenSession: (id: Id) => void
   readonly newSession: () => void
   readonly openHub: () => void
+  readonly openGrid: () => void
   readonly openSettings: () => void
   readonly showAwaySummary: () => void
   readonly setStatus: (id: Id, statusId: Id) => void | Promise<void>
@@ -55,6 +56,8 @@ function runSessionCommand(
       return attempt(command, () => handlers.newSession())
     case 'open-hub':
       return attempt(command, () => handlers.openHub())
+    case 'open-grid':
+      return attempt(command, () => handlers.openGrid())
     case 'open-settings':
       return attempt(command, () => handlers.openSettings())
     case 'show-away-summary':

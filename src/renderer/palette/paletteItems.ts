@@ -3,7 +3,7 @@
 import type { Id, RuntimeState, Session, StatusDef, UiMode, WindowRole } from '../../shared/types'
 
 export type PaletteGroup = 'Sessions' | 'Actions' | 'This session'
-export type PaletteView = 'terminal' | 'hub'
+export type PaletteView = 'terminal' | 'grid' | 'hub'
 
 /** What an item does, as plain data. Executed by runPaletteCommand. */
 export type PaletteCommand =
@@ -11,6 +11,7 @@ export type PaletteCommand =
   | { readonly kind: 'reopen-session'; readonly id: Id }
   | { readonly kind: 'new-session' }
   | { readonly kind: 'open-hub' }
+  | { readonly kind: 'open-grid' }
   | { readonly kind: 'open-settings' }
   | { readonly kind: 'show-away-summary' }
   | { readonly kind: 'sleep'; readonly id: Id }
@@ -308,6 +309,16 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
       detail: 'Board of sessions by status',
       keywords: 'board kanban status columns',
       run: { kind: 'open-hub' }
+    })
+  }
+  if (view !== 'grid') {
+    items.push({
+      id: 'action:open-grid',
+      group: 'Actions',
+      label: 'Open grid view',
+      detail: 'See several sessions at once (1x1 to 3x2)',
+      keywords: 'grid layout panes multiple',
+      run: { kind: 'open-grid' }
     })
   }
   items.push({

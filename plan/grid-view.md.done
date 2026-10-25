@@ -1,0 +1,185 @@
+# Plan: Grid view — see many sessions at one time (D32 proposal)
+
+## Status: proposed, waiting approval — decisions in §3.4 CONFIRMED by the user (D32): interactive cells · move-on-duplicate · uniform cell sizes · picker with no auto-fill
+Date: 2026-10-25
+Request (user, 2026-10-25): "view many session one time. by choose view with 1x1, 2x1, 1x2, 2x2 or 2x3, 3x2. each sub-window i want can choose session i want to see."
+
+## 1. Goal
+
+A **grid view** of terminals: the user picks a preset layout
+(`1x1, 2x1, 1x2, 2x2, 2x3, 3x2` — up to 6 panes) and assigns a session to every
+sub-window. Each cell is a **real, interactive terminal** of that session (not a
+read-only mirror like the OpenCode worker tabs). Cells are chosen independently,
+so the user can watch 2–6 sessions live on one screen.
+
+## 2. What the current code already gives us (verified in source)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| Split panes are renderer-only: pure logic + reducer hook + `TerminalWorkspace` renders panes from `layout.paneIds` | `src/renderer/split/splitLogic.ts`, `useSplitLayout.ts`, `src/renderer/Terminal/TerminalWorkspace.tsx` | The grid needs **no main-process change and no shared-contract change** — same freedom as split. |
+| One xterm per session, mounted for the session's whole life, hidden when not visible; live data is ONE subscription dispatched by id | `useTerminalPanes.ts` | 6 cells can coexist; writing to hidden/inactive cells keeps flowing. |
+| WebGL renderer with a context-loss fallback | `paneFactory.ts` | 6 WebGL xterm instances is below Chromium's context budget (~16); safe. |
+| Panes are created lazily the first time a session becomes visible; `fitPanes`/refit on layout change is already event-driven | `useTerminalPanes.ts`, `TerminalWorkspace.tsx` | Showing a session in a 2nd cell and grid→smaller presets just work. |
+| Per-mode storage keys (Ops vs Code keep separate tabs/split/views) | `mode/modeLogic.ts`, `useWorkspaceNav.ts`, `viewPref.ts` | Ops and Code get independent grids, matching D31 practice. |
+| `TerminalPane` takes `handleViewportRef`/`visible`/`multi`/`onFocus` as props and renders its header via `SplitPaneHeader` | `TerminalPane.tsx`, `SplitPaneHeader.tsx` | Grid cells can reuse `TerminalPane` with a new header variant. |
+
+Hard limits that must be respected:
+- `MAX_PANES = 4` in split — the grid is its own layout type with its own max (6), split stays untouched.
+- `useTerminalPanes` keys panes by session id — a session can occupy **at most one cell** (same rule as split dedupes).
+- A Closed session has no running pty; cells hold **open sessions only** (reopen first from the sidebar).
+
+## 3. Design
+
+### 3.1 New folder `src/renderer/grid/`
+
+**`gridLogic.ts`** (pure, no React/DOM/IPC — same discipline as `splitLogic.ts`):
+
+```ts
+export type GridPreset = '1x1' | '2x1' | '1x2' | '2x2' | '2x3' | '3x2'
+export interface GridLayout {
+  preset: GridPreset
+  cells: readonly (Id | null)[]   // row-major; length = rows * cols
+}
+export const GRID_MAX_CELLS = 6
+```
+
+Pure functions: `presetShape(preset) → {rows, cols}`,
+`presetLayout(preset)`, `normalizeGrid(layout, openIds)` (drops dead/duplicate
+ids, keeps `null` = empty cell, shrinks nothing), `setCell(layout, index, id|null)`
+(clears the id from its previous cell — no duplicates),
+`focusCells/indexFor(focusedPane)` helpers,
+`parseGrid/serializeGrid` (malformed stored JSON → `null`, same fallback
+pattern as `splitLogic.parseLayout`).
+Storage key: `sessiondeck.grid.v1` (+ `.code` suffix per mode, like split).
+
+**`useGridLayout.ts`** — reducer + persistence hook, mirroring `useSplitLayout`:
+persist on layout change, `sync` with open ids + activeId, actions `setPreset`,
+`setCell`, `clearCell`, `focusCell(index)`.
+
+**`GridView.tsx`** — CSS grid (`grid-template-columns/rows` from the preset,
+gap = existing split-divider width for the Orca look). Renders `TerminalPane`
+per cell (same component → same xterm lifecycle), plus for empty cells a
+`GridCellEmpty` with a session picker. All cells share the pane registry
+passed down from the workspace (below).
+
+**`GridCellHeader.tsx`** — grid variant of `SplitPaneHeader`: session name
+(dropdown listing open sessions: name + status + attention bell — click swaps
+the cell's session), restart button, unassign (× clears the cell).
+Right-click context menu: same picker + "close session" (match existing pane menu).
+
+### 3.2 Where it lives: a fourth view (`MainView 'grid'`)
+
+Recommended over "grid-as-split-mode": zero interference with split state
+(4-pane row split is preserved while the user works in the grid, and comes back
+when they switch back), and `viewPref` already persists a per-mode `MainView`.
+
+- `mode/viewPref.ts`: `MainView` gains `'grid'`.
+- `useWorkspaceNav.ts`: exposes `grid: GridApi` (`useGridLayout`, keys from
+  `modeStorageKeys`), passes grid cells instead of `split.layout.paneIds` as the
+  visible ids; `selectSession`/`activateTab` inside grid view focus the session's
+  cell (and just record activeId) instead of forcing the terminal view.
+- `TerminalWorkspace` and `GridView` share ONE `useTerminalPanes` instance:
+  hoist that hook call up into `ModeWorkspace.tsx` (or a small shared wrapper)
+  and pass `{panesRef, handleViewportRef, fitPanes, focusPane, createdIds}` down
+  to whichever layout is rendered. This keeps "one xterm per session" true even
+  when the user flips between split and grid during a session.
+- `shell/tab bar`: a view group next to the existing split buttons:
+  **Grid ▾** (preset menu: 1x1 · 2x1 · 1x2 · 2x2 · 2x3 · 3x2). Selecting a
+  preset switches `view → 'grid'`; "Tabs" / "Split right/down" return to
+  terminal; Hub unchanged.
+- Focus behaviour (attention, typing target, sleep "on screen" semantics): the
+  focused cell's session becomes `activeId` (`window.api.clearAttention` +
+  `session:setActive` already follow it). Typing goes to the focused cell only.
+- Focus requests (tray/notification/away summary): if the session sits in a
+  grid cell, focus that cell and stay in grid; otherwise the existing
+  "switch to terminal view" path is used.
+
+### 3.3 Empty cells (fewer open sessions than the preset)
+
+- Never auto-scan or auto-fill: the cell shows "Pick a session" — a searchable
+  picker of open sessions (Orca `command` primitive, same feel as the palette),
+  filtered by the mode, bellumbled first, keyboard navigable, recent sessions
+  first (reuse the palette's `paletteFilter` ranking).
+- Changing the preset to a larger one keeps existing assignments and adds empty
+  cells; shrinking trims from the end but **keeps a shrinking-safe assignment
+  list** only if all truncated cells fit elsewhere — otherwise it keeps the ids
+  in a hidden `overflow` so switching back to the bigger preset restores them.
+  (Recommendation: keep `overflow` in memory only, not persisted.)
+
+### 3.4 Scoping, decisions to confirm
+
+| # | Question | Recommendation |
+|---|---|---|
+| D-a | Grid cells are fully interactive terminals (yes) vs read-only mirrors | Interactive — that is the point vs worker tabs. Yes for all 6 cells. |
+| D-b | A session may appear in at most one cell at a time | Yes — one xterm per session is an existing invariant. |
+| D-c | Cells hold open sessions only (Closed must be reopened first) | Yes for v1. |
+| D-d | Cell sizes are uniform per grid (no draggable dividers) | Yes for v1; presets are the user's chosen shape. Resize can be a later request. |
+| D-e | Extra keyboard shortcut (e.g. Ctrl+Shift+G toggles grid) | Skip for v1; the view button + command palette are enough. Palette item "Open grid view" only. |
+| D-f | Per-mode grid (Ops and Code remember separate grids) | Yes — matches D31 storage-key practice. |
+
+## 4. Files touched
+
+New: `src/renderer/grid/gridLogic.ts` · `gridLogic.test.ts` ·
+`useGridLayout.ts` · `useGridLayout.test.ts` · `GridView.tsx` ·
+`GridCellHeader.tsx` · `GridCellEmpty.tsx` · `Terminal/grid-testable.ts` helpers
+if hoisting needs them · `scripts/e2e-grid.cjs`.
+
+Changed (small): `mode/viewPref.ts` (add `'grid'`) · `mode/useWorkspaceNav.ts`
+(grid API + view switch) · `mode/ModeWorkspace.tsx` (hoist `useTerminalPanes`,
+pass registry to both workspaces) · `Terminal/TerminalWorkspace.tsx`
+(accept the registry, keep behaviour identical when it owns it) ·
+`shell` view buttons (Grid ▾ preset control) · `palette/paletteItems.ts`
+("Open grid view") + `runCommand.ts` · `MANUAL_TEST.md` (grid section).
+
+No changes: `src/shared/**`, `src/main/**`, `src/preload/**` — the IPC contract
+is untouched (split proved this class of feature is renderer-only).
+
+## 5. Verification (project rules W04/W06 apply)
+
+- Unit (Vitest): presets/shape math, `normalizeGrid` (dead id, duplicate,
+  malformed JSON), `setCell` no-duplicate invariant, overflow restore,
+  `useGridLayout` reducer transitions, `viewPref` round-trip with `'grid'`.
+- E2E against the real built app (`scripts/e2e-grid.cjs`), animated with CDP like
+  the other suites:
+  1. open 3 real sessions (same as `e2e.cjs` setup) → choose 2x2 → two panes
+     auto-inhabit via picker; sessions **assigned but not auto-magic** — assert
+     empty cell shows the picker;
+  2. pick sessions in cells through the real dropdown; assert both terminals
+     render text by **pixel check** (a hard-kill of the earlier "black screen"
+     myth — check pixels, not only data);
+  3. click a cell → it is focused (visual ring) and typing lands in `claude`
+     (echo check through the store/pty); attention clears on focus;
+  4. duplicate guard: picking an already-visible session moves it (swap) instead
+     of duplicating;
+  5. switch preset 2x2 → 3x2 → 1x1 → 2x2: assignments survive where they fit;
+  6. per-mode: Ops grid ≠ Code grid (set them differently, switch modes);
+  7. restart the app (`window.api.quitApp()` — the W11-safe path): grid preset +
+     cell assignments come back;
+  8. closing one session empties its cell, shows the picker, no crash.
+- Visual: extend `scripts/e2e-visual.cjs` with a `grid-2x2` state; compare the
+  screenshot against the Orca hero for the divider/gap look.
+- Code mode spot-check: grid inside a Code-mode workspace on a worktree session.
+
+## 6. Risks / known edges
+
+- **One-xterm hoisting** is the only structural change (moving a hook up a
+  level); regression risk is split/tab switching — covered by re-running
+  `e2e` + `e2e:close` after it.
+- Very small cells (3x2 in a 720p window) make `fit` shrink the font/cols; that
+  is correct behaviour, but check min-rows in the visual pass.
+- 6 panes × statusLine + pty data flood: no new subscription is created
+  (one `onPtyData` total), so no new flood risk vs 4 split panes.
+- Grid + split share `activeId`; a hidden split pane's session can be focused by
+  the tab bar in terminal view after returning — same as today.
+
+## 7. Sequence
+
+1. `gridLogic.ts` + tests (pure, no UI risk).
+2. `useGridLayout.ts` + `viewPref` + tests.
+3. Hoist `useTerminalPanes` into `ModeWorkspace`, re-point `TerminalWorkspace` —
+   run existing split e2e suites, confirm green.
+4. `GridView` + cell header/empty + view button + palette item; wire into
+   `useWorkspaceNav`.
+5. `scripts/e2e-grid.cjs` green; visual screenshot pass.
+6. Update MANUAL_TEST, CODEMAP, HANDOFF; add D32 to DECISIONS.md once the user
+   answers 3.4; commit (conventional commit, `feature: grid view`).

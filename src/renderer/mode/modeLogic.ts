@@ -4,6 +4,7 @@ import type { Id, RuntimeState, Session, StoreData, UiMode, WindowRole } from '.
 import { needsYouItems } from '../attention/needsYou'
 import { OPEN_TABS_STORAGE_KEY } from '../shell/openTabsLogic'
 import { SPLIT_STORAGE_KEY } from '../split/splitLogic'
+import { GRID_STORAGE_KEY } from '../grid/gridLogic'
 import { SIDE_PANEL_TAB_KEY } from '../timeline/sidePanelTab'
 
 export const MODE_STORAGE_KEY = 'sessiondeck.mode.v1'
@@ -18,6 +19,7 @@ export type NeedsYouCounts = Readonly<Record<UiMode, number>>
 export interface ModeStorageKeys {
   readonly tabs: string
   readonly split: string
+  readonly grid: string
   readonly view: string
   readonly notes: string
   readonly sidePanel: string
@@ -46,6 +48,7 @@ export function modeStorageKeys(mode: UiMode): ModeStorageKeys {
   return {
     tabs: storageKeyFor(OPEN_TABS_STORAGE_KEY, mode),
     split: storageKeyFor(SPLIT_STORAGE_KEY, mode),
+    grid: storageKeyFor(GRID_STORAGE_KEY, mode),
     view: storageKeyFor(VIEW_STORAGE_KEY, mode),
     notes: storageKeyFor(NOTES_STORAGE_KEY, mode),
     sidePanel: storageKeyFor(SIDE_PANEL_TAB_KEY, mode)

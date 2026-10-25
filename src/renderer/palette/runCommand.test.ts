@@ -15,6 +15,7 @@ function fakeHandlers(): PaletteHandlers {
     reopenSession: vi.fn(),
     newSession: vi.fn(),
     openHub: vi.fn(),
+    openGrid: vi.fn(),
     openSettings: vi.fn(),
     showAwaySummary: vi.fn(),
     setStatus: vi.fn(),
@@ -68,6 +69,11 @@ describe('runPaletteCommand: session and view commands', () => {
   it('opens the Hub for open-hub', () => {
     runPaletteCommand({ kind: 'open-hub' }, handlers, api)
     expect(handlers.openHub).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the grid view for open-grid', () => {
+    runPaletteCommand({ kind: 'open-grid' }, handlers, api)
+    expect(handlers.openGrid).toHaveBeenCalledTimes(1)
   })
 
   it('opens Settings for open-settings', () => {

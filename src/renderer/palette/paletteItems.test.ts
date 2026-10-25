@@ -156,6 +156,7 @@ describe('buildPaletteItems: sessions group', () => {
     expect(labels(buildPaletteItems(input()))).toEqual([
       'New session',
       'Open Hub',
+      'Open grid view',
       'Open Settings',
       'Show "While you were away"',
       'Switch to Code mode',
@@ -172,6 +173,7 @@ describe('buildPaletteItems: actions group', () => {
     expect(items.map((item: PaletteItem): string => item.label)).toEqual([
       'New session',
       'Open Hub',
+      'Open grid view',
       'Open Settings',
       'Show "While you were away"',
       'Switch to Code mode',

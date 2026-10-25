@@ -90,6 +90,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       reopenSession: nav.reopenSession,
       newSession: () => openNew(),
       openHub: (): void => nav.setView('hub'),
+      openGrid: (): void => nav.setView('grid'),
       openSettings: (): void => setSettingsSection('general'),
       showAwaySummary: input.onShowAwaySummary,
       setStatus: (id, statusId): void | Promise<void> => actions.setSessionStatus(id, statusId),

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, type ReactElement } from 'react'
 import type { AttentionReason, Id, RuntimeState, SessionRun } from '../../shared/types'
 import type { SplitLayout } from '../split/splitLogic'
-import { restartPane, useTerminalPanes, type TerminalPaneHandle } from './useTerminalPanes'
+import { restartPane, useTerminalPanes, type TerminalPaneHandle, type TerminalPanesApi } from './useTerminalPanes'
 import { SplitDivider } from './SplitDivider'
 import { TerminalPane } from './TerminalPane'
 import '@xterm/xterm/css/xterm.css'
@@ -19,17 +19,21 @@ export interface TerminalWorkspaceProps {
   readonly onClosePane: (id: Id) => void
   readonly onResize: (dividerIndex: number, delta: number) => void
   readonly onEqualize: () => void
+  /**
+   * A pane registry owned UP the tree (D32: the grid and the split layout share one xterm per session).
+   * When absent the workspace owns its own registry, exactly as before.
+   */
+  readonly panes?: TerminalPanesApi
 }
 
 export function TerminalWorkspace(props: TerminalWorkspaceProps): ReactElement {
   const { sessionIds, layout, activeId, runtime, names, onFocusPane, onClosePane, onResize, onEqualize } =
     props
   const visibleIds = layout.paneIds
-  const { panesRef, createdIds, handleViewportRef, fitPanes, focusPane } = useTerminalPanes(
-    visibleIds,
-    sessionIds,
-    runtime
-  )
+  // The registry may be owned up the tree (D32: split + grid share one xterm per session). The owned
+  // hook still runs (hooks rules) but stays idle: no visible ids means it creates nothing.
+  const owned = useTerminalPanes(props.panes !== undefined ? [] : visibleIds, sessionIds, runtime)
+  const { panesRef, createdIds, handleViewportRef, fitPanes, focusPane } = props.panes ?? owned
 
   const layoutKey = `${layout.direction}:${layout.paneIds.join('|')}:${layout.sizes
     .map((size: number): string => size.toFixed(4))

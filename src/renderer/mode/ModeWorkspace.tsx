@@ -4,6 +4,9 @@ import { useMemo, type ReactElement } from 'react'
 import { Sidebar } from '../Sidebar'
 import { useLastRuntimeChange } from '../Sidebar/useLastRuntimeChange'
 import { CodeSidebar } from '../code/sidebar/CodeSidebar'
+import { GridView } from '../grid/GridView'
+import { useTerminalPanes } from '../Terminal/useTerminalPanes'
+import type { GridPreset } from '../grid/gridLogic'
 import { HubView } from '../hub/HubView'
 import { NotesPanel } from '../notes'
 import { progress } from '../notes/checklistLogic'
@@ -92,6 +95,15 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const tabModels = useMemo(() => buildTabModels(barIds, sessions ?? [], runtime), [barIds, sessions, runtime])
   const needsYou = useMemo(() => needsYouItems(sessions ?? [], runtime), [sessions, runtime])
   const activeState = activeId === null ? undefined : runtime.get(activeId)
+  // One xterm per session across BOTH layouts (D32): the pane registry is owned here and handed to the
+  // split workspace and the grid view. Visible ids follow the current view (split panes or grid cells).
+  const panes = useTerminalPanes(
+    view === 'grid'
+      ? nav.grid.layout.cells.filter((id): id is Id => id !== null)
+      : split.layout.paneIds,
+    ids,
+    runtime
+  )
   const checklist = progress(activeSession?.checklist ?? [])
   const notesBadge = checklist.total > 0 ? `${checklist.done}/${checklist.total}` : null
   const loaded = data !== null
@@ -167,6 +179,14 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
             notesOpen={nav.notesOpen}
             notesBadge={notesBadge}
             workers={{ workers: workers.visible, selectedId: workers.selected?.id ?? null, onSelect: workers.select, onDismiss: workers.dismiss }}
+            grid={{
+              active: view === 'grid',
+              preset: view === 'grid' ? nav.grid.layout.preset : null,
+              onOpenGrid: (preset: string): void => {
+                nav.grid.setPreset(preset as GridPreset)
+                nav.setView('grid')
+              }
+            }}
             split={{
               active: split.split,
               canSplit: split.canSplit,
@@ -186,6 +206,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   activeId={view === 'hub' ? null : activeId}
                   runtime={runtime}
                   names={paneNames}
+                  panes={panes}
                   onFocusPane={nav.activateTab}
                   onClosePane={split.removePane}
                   onResize={split.resize}
@@ -208,6 +229,24 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                     onReopen={nav.reopenSession}
                     sessionUsage={sessionUsage}
                     scrollToBusiest={settings.hub.scrollToBusiest}
+                  />
+                </div>
+              ) : null}
+              {loaded && view === 'grid' && data !== null && workers.selected === null ? (
+                <div className="absolute inset-0 z-10 bg-black">
+                  <GridView
+                    grid={nav.grid.layout}
+                    sessions={sessions ?? []}
+                    activeId={activeId}
+                    runtime={runtime}
+                    names={paneNames}
+                    panes={panes}
+                    onFocusCell={nav.grid.focusCell}
+                    onPickCell={(index: number, id: Id | null): void => {
+                      // Picking a session shows it: its tab opens too (cells only hold live sessions).
+                      if (id !== null) tabs.open(id)
+                      nav.grid.setCell(index, id)
+                    }}
                   />
                 </div>
               ) : null}

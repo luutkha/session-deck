@@ -1,9 +1,16 @@
 // One pane: an optional slim header (multi-pane only), the xterm viewport and
 // the exited overlay. Panes are never unmounted; invisible ones use display:none.
-import type { MouseEvent, ReactElement } from 'react'
+import type { ReactNode, MouseEvent, ReactElement } from 'react'
 import type { AttentionReason, Id, SessionRun } from '../../shared/types'
 import { cn } from '@/lib/utils'
 import { SplitPaneHeader } from './SplitPaneHeader'
+
+/** Grid placement (D32): the cell's row-major index inside the preset shape. */
+export interface PaneGridPlacement {
+  readonly index: number
+  readonly cols: number
+  readonly rows: number
+}
 
 export interface TerminalPaneProps {
   readonly id: Id
@@ -20,6 +27,12 @@ export interface TerminalPaneProps {
   readonly onClose: (id: Id) => void
   readonly onRestart: (id: Id) => void
   readonly handleViewportRef: (element: HTMLDivElement | null) => void
+  /** Grid mode (D32): the pane is placed by grid-area instead of flex+order. */
+  readonly grid?: PaneGridPlacement
+  /** Grid mode: the cell index, as a DOM hook for tests and styling (`data-grid-cell`). */
+  readonly cellIndex?: number
+  /** Grid cells render their own header (session picker, unassign); flex panes keep SplitPaneHeader. */
+  readonly header?: ReactNode
 }
 
 function exitLabel(exitCode: number | null): string {
@@ -29,6 +42,10 @@ function exitLabel(exitCode: number | null): string {
 export function TerminalPane(props: TerminalPaneProps): ReactElement {
   const { id, name, run, attention, exitCode, visible, multi, active, size, order } = props
   const exited = run === 'exited'
+  const inGrid = props.grid !== undefined
+  const placementStyle = inGrid && props.grid !== undefined
+    ? { gridColumn: (props.grid.index % props.grid.cols) + 1, gridRow: Math.floor(props.grid.index / props.grid.cols) + 1 }
+    : undefined
 
   const handleMouseDown = (event: MouseEvent<HTMLDivElement>): void => {
     if (visible && event.button === 0) {
@@ -43,10 +60,13 @@ export function TerminalPane(props: TerminalPaneProps): ReactElement {
         !visible && 'terminal-pane--hidden',
         multi && active && 'terminal-pane--active'
       )}
-      style={visible ? { flex: `${size} 1 0`, order } : undefined}
+      data-grid-cell={props.cellIndex === undefined ? undefined : String(props.cellIndex)}
+      style={visible ? (placementStyle ?? { flex: `${size} 1 0`, order }) : undefined}
       onMouseDownCapture={handleMouseDown}
     >
-      {multi ? (
+      {props.header !== undefined ? (
+        props.header
+      ) : multi ? (
         <SplitPaneHeader
           name={name}
           run={run}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { RuntimeState, Session, StoreData } from '../../shared/types'
 import { OPEN_TABS_STORAGE_KEY } from '../shell/openTabsLogic'
 import { SPLIT_STORAGE_KEY } from '../split/splitLogic'
+import { GRID_STORAGE_KEY } from '../grid/gridLogic'
 import { SIDE_PANEL_TAB_KEY } from '../timeline/sidePanelTab'
 import {
   DEFAULT_MODE,
@@ -113,6 +114,7 @@ describe('modeStorageKeys', () => {
     expect(modeStorageKeys('ops')).toEqual({
       tabs: OPEN_TABS_STORAGE_KEY,
       split: SPLIT_STORAGE_KEY,
+      grid: GRID_STORAGE_KEY,
       view: VIEW_STORAGE_KEY,
       notes: NOTES_STORAGE_KEY,
       sidePanel: SIDE_PANEL_TAB_KEY
