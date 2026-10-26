@@ -29,7 +29,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 - `state/`: `useSessionStore.ts` (store + runtime from main, `actions`), `selectors.ts` (grouping, workspaces, filters), `formatTime.ts`.
 - `Sidebar/`: session list, groups, workspaces, status view, Closed section, context menus, New session dialog (`dialogLogic.ts`).
 - `shell/`: tab bar, status bar, title bar, empty state, tab shortcuts, user-activity reporter.
-- `Terminal/`: xterm panes, split workspace, keymap (paste, right click), link detection, file drop.
+- `Terminal/`: xterm panes, split workspace, keymap (paste, right click), terminal search (Ctrl+Shift+F), link detection, file drop.
 - `split/`: split layout logic. `hub/`: Hub board by status. `notes/`: notes and checklist panel.
 - `attention/`: bell icon, Needs you list. `palette/`: command palette (Ctrl+K / Ctrl+Shift+K).
 - `code/`: Code mode UI. `sidebar/` (repo > worktree > sessions tree, `codeTree.ts` pure), `dialogs/` (New worktree, New session in a worktree), `changes/` (Changes panel, `parseUnifiedDiff.ts`, `DiffView`, `useWorktreeChanges` + `useWorktreeChangeCounts`, per-line diff comments `annotations.ts` sent to the session via ptyWrite, rich previews: Diff | Preview toggle, `preview.ts` + `PreviewView.tsx` + `MarkdownView.tsx` + `useWorktreeFilePreview.ts`).

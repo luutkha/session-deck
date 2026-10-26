@@ -1,4 +1,4 @@
-# SessionDeck handoff (updated 2026-10-25)
+# SessionDeck handoff (updated 2026-10-26)
 
 This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Feature tree + matrices (rules, code path, tests): `docs/FEATURES.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
 
@@ -6,6 +6,14 @@ This file = current state of the code. Decisions the user made: `docs/DECISIONS.
 
 Verification at the end of this round: 2,769 unit tests (170 files; 1 environment-dependent skip), strict typecheck clean, build clean, and these suites against the REAL built app (CDP):
 `npm run e2e` (18: window shown, create/rename/status, real claude in a PTY, hooks -> attention, COLOUR present even with NO_COLOR in the launcher, close) · `e2e:close` (9: close/reopen/instant reopen/remove) · `e2e:resume` (6: kill app, relaunch, same conversation returns) · `e2e:dialogs` (9: New session + Statuses dialogs through real typing/clicks, unsafe args rejected) · `e2e:robust` (6: late/bogus IPC does not freeze main, malformed createSession rejected, last change saved on graceful quit). Visual review: `node scripts/e2e-visual.cjs` -> `scripts/visual/*.png` (11 states; compare with `reference/orca/docs/assets/readme-hero.jpg`).
+
+## Terminal search + scrollbar cleanup (2026-10-26, D41)
+- **One provider per pane.** `paneFactory.buildTerminalView` loads `@xterm/addon-search` and exposes it as `TerminalView.searchAddon`; nothing is shared between panes.
+- **Shortcut.** Ctrl+Shift+F anywhere in the terminal/grid view (`useTerminalSearch`'s window capture listener, like the palette; an open dialog still wins). `keymap.ts` returns `search` for it, so a terminal that sees the key never sends `^F`; plain Ctrl+F still reaches the program (readline forward-char).
+- **Bar.** A small Orca-style widget in the bottom-right (`TerminalSearchBar`, the `Input` primitive, `Terminal.css`) with a match count (`3/12`, `No matches`). Typing searches as you go: every match is highlighted and the active one in orange. Enter / Shift+Enter cycle, Esc closes, clears the decorations and gives the keyboard back to the terminal.
+- **Scope (v1).** It searches the pane that was active when the bar opened — one visible pane. Switching tabs or leaving the terminal/grid view closes it; the search never retargets another split pane.
+- **Scrollbar.** The Windows WebKit arrow buttons on `.xterm-viewport` are hidden with a scoped `::-webkit-scrollbar-button { display: none }`; the existing Orca thumb colours are unchanged.
+- **Verification.** `searchLogic.test.ts` (10) plus two `keymap.test.ts` cases; `npm run e2e:termview` presses the real keys in the built app: Ctrl+Shift+F focuses the bar, a typed query shows `1/4`, Enter / Shift+Enter cycle, a stale query says "No matches", Esc returns focus to the xterm textarea, and the built CSS contains the scrollbar rule (15/15).
 
 ## Usage bars for both agents (2026-10-25, D37)
 - **Two provider groups.** `UsageState.accounts` is the display list (Claude first, then `opencode-go`); `UsageState.account` stays the Claude account and is still the ONLY input of the autopilot, quota guard and toasts (D30 untouched). `AccountUsage` gained `provider?` (absent = claude, so old data still reads) and `monthly?` (Go only). Main omits `accounts` when it is empty, which keeps the legacy `{account,sessions}` shape for Claude-only users.

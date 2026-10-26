@@ -131,6 +131,17 @@ describe('decideKeyAction: new-session shortcut', () => {
   })
 })
 
+describe('decideKeyAction: terminal search shortcut', () => {
+  it('swallows Ctrl+Shift+F so ^F never reaches the program', () => {
+    expect(decideKeyAction(key({ key: 'F', ctrlKey: true, shiftKey: true }), false)).toBe('search')
+    expect(decideKeyAction(key({ key: 'f', ctrlKey: true, shiftKey: true }), true)).toBe('search')
+  })
+
+  it('still passes plain Ctrl+F to the program (readline forward-char)', () => {
+    expect(decideKeyAction(key({ key: 'f', ctrlKey: true }), false)).toBe('allow')
+  })
+})
+
 describe('isRightButton', () => {
   it('is true only for the right mouse button', () => {
     expect(isRightButton(2)).toBe(true)

@@ -46,7 +46,7 @@ Requires Node 22+, Windows (primary target), and the `claude` CLI on PATH.
 | `npm run e2e:annotate` | diff annotations (Code mode): comment on a diff line, restart (draft survives), send the comments into the real session terminal; disabled for Shell and sleeping sessions |
 | `npm run e2e:preview` | rich previews (Code mode): Diff \| Preview toggle — sanitized markdown, image data URL, truncation note, traversal refused |
 | `npm run e2e:grid` | grid view (D32): Grid ▾ presets, cell pickers (swap on duplicate), preset shrink/restore, typing lands in the cell, restart restores |
-| `npm run e2e:termview` | terminal comfort: Ctrl+=/Ctrl+0/Ctrl+wheel zoom (pty width shrinks live), Settings > Terminal scrollback, restart keeps the zoom |
+| `npm run e2e:termview` | terminal comfort: Ctrl+=/Ctrl+0/Ctrl+wheel zoom (pty width shrinks live), Ctrl+Shift+F search (query, count, cycle, Esc) + no scrollbar arrows, Settings > Terminal scrollback, restart keeps the zoom |
 | `npm run e2e:tab-working` | tab working indicator: spinner while a hook-driven turn runs, bell wins after Stop, dot returns when cleared |
 | `npm run e2e:timeline-prompt` | OpenCode parity: the plugin's prompt + statusline bodies reach the timeline, Activity tab, away summary, usage chip and Hub card |
 | `npm run e2e:usage-both` | multi-provider quota bars: Claude + OpenCode Go groups, Month for Go, the settings toggle, unusable Go payloads |

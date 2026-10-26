@@ -19,7 +19,15 @@ export interface KeyInfo {
   readonly metaKey: boolean
 }
 
-export type KeyDecision = 'copy' | 'paste' | 'allow' | 'app-shortcut' | 'zoom-in' | 'zoom-out' | 'zoom-reset'
+export type KeyDecision =
+  | 'copy'
+  | 'paste'
+  | 'allow'
+  | 'app-shortcut'
+  | 'search'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-reset'
 
 export type ContextMenuDecision = 'copy' | 'paste'
 
@@ -58,6 +66,11 @@ export function decideKeyAction(event: KeyInfo, hasSelection: boolean): KeyDecis
   // event bubble to the window-level handler.
   if (event.ctrlKey && event.shiftKey && key === 'n') {
     return 'app-shortcut'
+  }
+  // Ctrl+Shift+F opens terminal search. The window-level handler opens it (capture phase); swallowing the key here
+  // keeps a ^F from reaching the program when the terminal itself sees the event first.
+  if (event.ctrlKey && event.shiftKey && key === 'f') {
+    return 'search'
   }
   // Terminal comfort: Ctrl+= (and its Shift variant, i.e. '+'), Ctrl+- and Ctrl+0 zoom every pane.
   if (event.ctrlKey && (key === '=' || key === '+')) {

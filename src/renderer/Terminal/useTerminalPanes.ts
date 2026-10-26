@@ -111,6 +111,8 @@ export interface TerminalPanesApi {
 export interface TerminalPanesOptions {
   readonly termView?: TermView
   readonly onZoom?: (action: ZoomAction) => void
+  /** Ctrl+Shift+F inside a pane: the owner opens its search bar for the active pane (W3). */
+  readonly onSearch?: () => void
 }
 
 /**
@@ -146,7 +148,11 @@ export function useTerminalPanes(
       }
       const pane: TerminalPaneHandle = {
         id,
-        view: buildTerminalView(id, { termView: optionsRef.current.termView, onZoom: optionsRef.current.onZoom }),
+        view: buildTerminalView(id, {
+          termView: optionsRef.current.termView,
+          onZoom: optionsRef.current.onZoom,
+          onSearch: optionsRef.current.onSearch
+        }),
         gate: new SeqGate(),
         lastRun: runtime.get(id)?.run ?? null,
         opened: false,

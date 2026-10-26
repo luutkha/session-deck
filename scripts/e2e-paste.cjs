@@ -31,13 +31,23 @@ async function pasteCount(app, name, probe, claudeArgs) {
 async function main() {
   const t = makeChecker()
   let app
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-paste-'))
+  // realpathSync.native: on Windows os.tmpdir() can be the 8.3 short form (KHALT_~1); `~` is not a safe claude arg
+  // and the settings file path is passed as one, so resolve the long path first.
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'sd-paste-')))
   try {
     // Flag settings only affect this test session; `/tui fullscreen` would write the user's real settings.json.
     const settings = path.join(dir, 'tui-fullscreen.json')
     fs.writeFileSync(settings, JSON.stringify({ tui: 'fullscreen' }))
     app = await launchApp({ port: 9391 })
     await sleep(1500)
+
+    // The paste probes need a working OS clipboard. In some remote/headless Windows sessions the clipboard API
+    // returns an empty string (and even PowerShell's Get-Clipboard fails), so report a real SKIP instead of a red run.
+    const clipboardWorks = await app.evaluate(`navigator.clipboard.writeText('sessiondeck-clipboard-probe').then(() => navigator.clipboard.readText()).then((text) => text === 'sessiondeck-clipboard-probe', () => false)`)
+    if (!clipboardWorks) {
+      console.log('SKIP  the OS clipboard is unavailable in this session (write/read stays empty); the paste probes cannot run.')
+      return
+    }
 
     const normal = await pasteCount(app, 'paste normal', 'PASTEPROBE', [])
     t.check('normal UI: right-click pastes exactly once', normal.shown === 1, JSON.stringify(normal))

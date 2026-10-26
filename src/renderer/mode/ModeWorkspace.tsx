@@ -1,11 +1,13 @@
 // One mode's workspace (D31): sidebar, tab bar, terminals, Hub, worker view, side panel, status bar, dialogs and palette.
 // Ops and Code each get their own instance (App mounts one at a time, keyed by mode) with mode-scoped storage keys.
-import { useEffect, useMemo, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, type ReactElement } from 'react'
 import { Sidebar } from '../Sidebar'
 import { useLastRuntimeChange } from '../Sidebar/useLastRuntimeChange'
 import { CodeSidebar } from '../code/sidebar/CodeSidebar'
 import { GridView } from '../grid/GridView'
 import { useTerminalPanes } from '../Terminal/useTerminalPanes'
+import { useTerminalSearch } from '../Terminal/useTerminalSearch'
+import { TerminalSearchBar } from '../Terminal/TerminalSearchBar'
 import { useTermView } from '../Terminal/useTermView'
 import { applyTerminalFontSize } from '../Terminal/paneFactory'
 import type { GridPreset } from '../grid/gridLogic'
@@ -99,14 +101,27 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const activeState = activeId === null ? undefined : runtime.get(activeId)
   // Terminal comfort: the app-wide zoom/scrollback profile; zoom changes apply live to every mounted pane.
   const termViewApi = useTermView()
+  // Ctrl+Shift+F inside an xterm pane goes through the pane's key handler; the ref bridges it to the hook below
+  // (the hook needs the pane registry, which is created here).
+  const openSearchRef = useRef<() => void>(() => undefined)
   const panes = useTerminalPanes(
     view === 'grid'
       ? nav.grid.layout.cells.filter((id): id is Id => id !== null)
       : split.layout.paneIds,
     ids,
     runtime,
-    { termView: termViewApi.termView, onZoom: termViewApi.zoom }
+    {
+      termView: termViewApi.termView,
+      onZoom: termViewApi.zoom,
+      onSearch: (): void => openSearchRef.current()
+    }
   )
+  // Search belongs to the terminal and grid views, and not to the worker overlay.
+  const searchEnabled = (view === 'terminal' || view === 'grid') && workers.selected === null
+  const search = useTerminalSearch(panes, activeId, searchEnabled)
+  useEffect((): void => {
+    openSearchRef.current = search.open
+  }, [search.open])
   useEffect((): void => {
     for (const pane of panes.panesRef.current.values()) {
       if (pane.opened) {
@@ -271,6 +286,16 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                     ? <EmptyState onNewSession={(): void => commands.openNewWorktree()} {...CODE_EMPTY} />
                     : <EmptyState onNewSession={(): void => commands.openNew()} />}
                 </div>
+              ) : null}
+              {search.active ? (
+                <TerminalSearchBar
+                  query={search.query}
+                  label={search.label}
+                  inputRef={search.inputRef}
+                  onQueryChange={search.setQuery}
+                  onKeyDown={search.handleKeyDown}
+                  onClose={search.close}
+                />
               ) : null}
             </div>
             {nav.notesOpen && view === 'terminal' && activeSession !== null ? (

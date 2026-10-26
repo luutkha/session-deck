@@ -151,6 +151,14 @@ Hardening W5 of `plan/hardening-round.md`. `isSessionOnScreen` used to compare t
 - after the Code window docked/closed, its role kept the last id forever (nothing cleared it), so that session was never slept and its notices were always suppressed.
 Rules now: `onScreenSessionIds()` is `new Set(activeSessions.all())` and `isSessionOnScreen(id)` is a membership test; the sleep scheduler depends on `getOnScreenSessionIds` and `pickSessionsToSleep` takes `onScreenSessionIds: ReadonlySet<Id>` (2 new unit tests). `windows.onStateChange` clears the Code role whenever `codePoppedOut` is false, so a docked/closed window cannot leave a ghost. The app-wide sleep-all rule is deliberately unchanged: it sleeps the session on screen too (D26). E2E `e2e:sleep` now drives the real UI: a worktree session is opened in the popped-out Code window, a background Ops session sleeps while it keeps running, then docking + switching the main window to Ops makes it sleep on the next tick.
 
+**D41 · 2026-10-26 · Terminal search on Ctrl+Shift+F, visible pane only** · active
+Hardening W3 of `plan/hardening-round.md`.
+- `@xterm/addon-search` 0.16 is loaded in `paneFactory` per pane (`TerminalView.searchAddon`), so the scrollback of one session is never searched through another.
+- **Ctrl+Shift+F, not Ctrl+F**: Ctrl+F is readline forward-char and must reach the program. The shortcut is a window capture listener (the Ctrl+Shift+K palette precedent) and `keymap.ts` also swallows it so `^F` cannot leak; dialogs still take precedence.
+- The bar lives in `ModeWorkspace` (bottom-right of the terminal area) and is enabled for the terminal and grid views only. It captures the pane id when opened: switching tabs/view closes it instead of moving the search to a pane the user did not choose. v1 is visible pane only, no all-panes search.
+- Enter / Shift+Enter cycle, Esc closes, clears decorations and refocuses the xterm textarea. The counter needs the addon's `decorations` option — without it `onDidChangeResults` never reports counts.
+- Scrollbar arrow buttons (Windows' default WebKit styling) are hidden with a scoped `::-webkit-scrollbar-button` rule; the theme thumb colours stay.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

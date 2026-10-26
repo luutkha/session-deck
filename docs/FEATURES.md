@@ -69,7 +69,8 @@ SessionDeck
 │   ├── TRM-8  Grid view (up to 6)
 │   ├── TRM-9  Exited overlay + restart
 │   ├── TRM-10 Terminal colours (NO_COLOR)
-│   └── TRM-11 Scrollback / reattach replay
+│   ├── TRM-11 Scrollback / reattach replay
+│   └── TRM-12 Terminal search (Ctrl+Shift+F)
 ├── NAV  Sidebar & organisation
 │   ├── NAV-1  Session cards and run/agent indicators
 │   ├── NAV-2  Search and status filter
@@ -249,6 +250,7 @@ SessionDeck
 | TRM-9 | Exited overlay + restart | Shipped | Process exits | Overlay shows the exit code; Restart starts a new process; no typing into an exited session (main rejects it). | `renderer/Terminal/TerminalPane.tsx`; `main/app/sessionController.ts` | `sessionController.test.ts`; e2e `e2e:robust` |
 | TRM-10 | Terminal colours | Shipped | Any Claude session | The launcher strips inherited `NO_COLOR` so Claude keeps colour even when SessionDeck was started from a colourless shell. | `main/pty/launch.ts` | `launch.test.ts`; e2e `e2e.cjs` |
 | TRM-11 | Scrollback / reattach replay | Shipped | Switch tabs, split, sleep/wake, app restart | Ring buffer replays recent output on reattach; `PtyReplay.seq` marks the last included chunk; hidden panes keep their xterm and scrollback. | `main/pty/RingBuffer.ts`; `renderer/Terminal/useTerminalPanes.ts`, `seqGate.ts` | `RingBuffer.test.ts`, `seqGate.test.ts` |
+| TRM-12 | Terminal search | Shipped | `Ctrl+Shift+F` (terminal + grid view) | One `@xterm/addon-search` provider per pane; the bar searches the pane that was active when it opened (visible pane only, v1) and closes on a tab/view change. Typing highlights all matches and the active one; count shows `n/total` or "No matches"; `Enter` / `Shift+Enter` cycle; `Esc` closes, clears decorations and refocuses the terminal. Plain `Ctrl+F` still reaches the program. The scrollbar arrow buttons are hidden, thumb colours unchanged. | `renderer/Terminal/paneFactory.ts` → `searchAddon`; `useTerminalSearch.ts`; `searchLogic.ts`; `TerminalSearchBar.tsx`; `keymap.ts`; `Terminal.css` | `searchLogic.test.ts`, `keymap.test.ts`; e2e `e2e:termview` |
 
 ### 2.3 NAV — Sidebar & organisation
 
@@ -535,6 +537,7 @@ SessionDeck
 | `Ctrl+K` | Command palette | Outside terminal and text inputs | PAL-1 |
 | `Ctrl+Shift+K` | Command palette | Anywhere except over a dialog | PAL-1 |
 | `Ctrl+C` / `Ctrl+Shift+C` / `Ctrl+V` | Copy / copy / paste | Terminal | TRM-3 |
+| `Ctrl+Shift+F` | Find in the terminal (visible pane) | Terminal / grid view | TRM-12 |
 | `↑` / `↓`, `Enter`, `Delete` | Sidebar navigation | Sidebar focused | NAV-9 |
 | `←` / `→` or `↑` / `↓`, `Enter` | Resize / equalise a split divider | Divider focused | TRM-7 |
 
@@ -598,6 +601,7 @@ SessionDeck
 | `e2e-paste.cjs` | TRM-3/4 | Right-click pastes once in both UIs |
 | `e2e-imagepaste.cjs` | TRM-4 | Image paste + file drop |
 | `e2e-links.cjs` | TRM-5 | Link hover targets |
+| `e2e-termview.cjs` | TRM-12 | Real Ctrl+Shift+F keys, query/count/cycling/Esc, built scrollbar rule (plus zoom + scrollback) |
 | `e2e-checklist-draft.cjs` | NTS-5 | Draft survives session switch |
 | `e2e-workers.cjs` | WRK-1..4 | Real plugin → hook → hub → tabs |
 | `e2e-lastfolder.cjs` | SES-1 | Last folder remembered |

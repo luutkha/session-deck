@@ -44,6 +44,25 @@ described.
   terminal repopulates from the replay buffer, and live output afterwards
   continues exactly once (no duplicated tail).
 
+## Search
+
+- [ ] **Ctrl+Shift+F opens search.** The bar appears bottom-right with the
+      input focused; the terminal did not receive `^F` (the program is not
+      disturbed). Plain Ctrl+F still goes to the program (readline forward-char).
+- [ ] **Query + count.** Type a word that occurs twice in the visible buffer:
+      both occurrences are highlighted, the active one differently, and the
+      counter reads `1/2`. `Enter` moves to `2/2`; `Shift+Enter` goes back to
+      `1/2`.
+- [ ] **No matches.** Replace the query with nonsense: the counter says
+      "No matches" and no highlight remains.
+- [ ] **Esc closes.** The bar disappears, the highlights are cleared and the
+      caret is back in the terminal (typing goes to the pty).
+- [ ] **One pane only.** With a split or after switching tabs, open search:
+      it searches the pane that was active when it opened; switching tabs
+      closes the bar instead of searching another pane.
+- [ ] **Scrollbar.** The terminal scrollbar has no arrow buttons at either end;
+      the thumb keeps the thin Orca colour and hover behaviour.
+
 ## Input, copy, paste
 
 - [ ] **Typing** goes to the pty immediately (no lag); arrows/Home/End work in

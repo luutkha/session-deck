@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { SearchAddon } from '@xterm/addon-search'
 import type { Id } from '../../shared/types'
 import { terminalOptionsFor } from './terminalOptions'
 import { DEFAULT_TERM_VIEW, fontSizeFor, type TermView } from './termView'
@@ -25,10 +26,14 @@ export type ZoomAction = 'in' | 'out' | 'reset'
 export interface TerminalView {
   readonly term: Terminal
   readonly fitAddon: FitAddon
+  /** One search provider per pane (W3): searches this pane's buffer only. */
+  readonly searchAddon: SearchAddon
   webgl: WebglAddon | null
   fitFrame: number | null
   /** Set by the workspace that owns the terminal profile; absent = zoom shortcuts do nothing. */
   onZoom: ((action: ZoomAction) => void) | null
+  /** Set by the workspace so Ctrl+Shift+F can open the search bar; absent = swallowed but no bar. */
+  onSearch: (() => void) | null
   /** The container the terminal was opened into (for live refits); set by openTerminalView. */
   openedElement: HTMLElement | null
 }
@@ -107,6 +112,9 @@ function attachKeyHandling(view: TerminalView): void {
         return false
       case 'app-shortcut':
         return false
+      case 'search':
+        view.onSearch?.()
+        return false
       case 'zoom-in':
         view.onZoom?.('in')
         return false
@@ -130,12 +138,19 @@ function attachKeyHandling(view: TerminalView): void {
  */
 export function buildTerminalView(
   id: Id,
-  options: { readonly termView?: TermView; readonly onZoom?: (action: ZoomAction) => void } = {}
+  options: {
+    readonly termView?: TermView
+    readonly onZoom?: (action: ZoomAction) => void
+    readonly onSearch?: () => void
+  } = {}
 ): TerminalView {
   const term = new Terminal(terminalOptionsFor(options.termView ?? DEFAULT_TERM_VIEW))
 
   const fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
+
+  const searchAddon = new SearchAddon()
+  term.loadAddon(searchAddon)
 
   term.loadAddon(new Unicode11Addon())
   term.unicode.activeVersion = '11'
@@ -155,9 +170,11 @@ export function buildTerminalView(
   const view: TerminalView = {
     term,
     fitAddon,
+    searchAddon,
     webgl: null,
     fitFrame: null,
     onZoom: options.onZoom ?? null,
+    onSearch: options.onSearch ?? null,
     openedElement: null
   }
   attachKeyHandling(view)

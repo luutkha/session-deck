@@ -30,6 +30,9 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 ## Electron / xterm / Windows
 - `ready-to-show` did not fire with the hidden title bar; the window is shown explicitly.
 - **"On screen" is per window role, and a closed window must clear its role.** Comparing against the focused role misses the other window, and leaving the role set after the window closes makes that session permanently "visible" (never slept, never pings). Read the union of all roles for visibility, and clear a role in the window-state change that reports it gone.
+- **xterm search only reports match counts with decorations on.** `@xterm/addon-search`'s `onDidChangeResults` stays silent unless the search passes the `decorations` option; a counter built without it always reads 0. One addon searches one `Terminal`, so "search the visible pane" means capturing the pane id when the bar opens — a tab switch must close the bar, not silently retarget another pane.
+- **`os.tmpdir()` can be an 8.3 short path.** On this machine it is `C:\Users\KHALT_~1\...`; the Claude arg allow-list rejects `~`, so an e2e that passes a temp file as `--settings` must resolve the directory with `fs.realpathSync.native` first (the plain `realpathSync` keeps the short name).
+- **The OS clipboard can be dead even though the app runs.** In this remote/headless Windows session `Get-Clipboard` itself errors and `navigator.clipboard.readText()` stays empty while `writeText` resolves — clipboard e2es must preflight write+read and report SKIP, not FAIL.
 - Radix `Slot` forwards `onContextMenu` into child props; components must accept and spread it.
 - Typing into an exited session used to throw in main and freeze the app behind a native dialog; main logs errors to `<userData>/main-errors.log` instead.
 - A hard kill loses localStorage writes Chromium has not committed; e2e restarts use `window.api.quitApp()`.
