@@ -12,7 +12,8 @@ const SETTINGS: QuotaSettings = {
   notifyOnReset: true,
   criticalAction: 'ask',
   resetAction: 'ask',
-  continueOnWake: false
+  continueOnWake: false,
+  showOpencodeGo: true
 }
 
 const dirs: string[] = []

@@ -24,8 +24,8 @@ async function main() {
     app = await launchApp({ port: 9372 })
     await sleep(1500)
 
-    const waiting = await waitFor(async () => /waiting for a Claude turn/i.test(await bodyText(app)), 8000)
-    t.check('with no data the status bar says it is waiting for a Claude turn', !!waiting)
+    const waiting = await waitFor(async () => /waiting for a turn/i.test(await bodyText(app)), 8000)
+    t.check('with no data the status bar says it is waiting for a turn', !!waiting)
     const hasButton = await app.evaluate(`!!${byLabel('Refresh usage')}`)
     t.check('the reload button is there even before any usage data exists', hasButton)
 

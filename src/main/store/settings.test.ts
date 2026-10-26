@@ -39,7 +39,8 @@ describe('parseStoredSettings / parseStoreData settings', () => {
         notifyOnReset: false,
         criticalAction: 'sleep' as const,
         resetAction: 'wake' as const,
-        continueOnWake: true
+        continueOnWake: true,
+        showOpencodeGo: false
       },
       sleep: { enabled: true, afterMinutes: 15, allEnabled: false, allAfterMinutes: 60 },
       agents: { defaultAgent: 'claude' as const, opencodeModel: '' },
@@ -86,7 +87,8 @@ describe('parseStoredSettings / parseStoreData settings', () => {
         notifyOnReset: true,
         criticalAction: 'sleep',
         resetAction: 'wake',
-        continueOnWake: true
+        continueOnWake: true,
+        showOpencodeGo: true
       })
     })
 
@@ -134,6 +136,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
     expect(parseStoredSettings({ quota: { criticalAction: 'shout' } }, STATUSES)).toBeUndefined()
     expect(parseStoredSettings({ quota: { resetAction: 'auto' } }, STATUSES)).toBeUndefined()
     expect(parseStoredSettings({ quota: { continueOnWake: 'yes' } }, STATUSES)).toBeUndefined()
+    expect(parseStoredSettings({ quota: { showOpencodeGo: 'yes' } }, STATUSES)).toBeUndefined()
   })
 
   it('settings saved before the hub section existed get scrollToBusiest on', () => {

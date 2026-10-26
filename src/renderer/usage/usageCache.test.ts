@@ -1,87 +1,121 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountUsage } from '../../shared/types'
-import { parseCachedAccountUsage, serializeAccountUsage } from './usageCache'
+import { parseCachedAccounts, serializeAccounts } from './usageCache'
 
 const valid: AccountUsage = {
+  provider: 'claude',
   fiveHour: { usedPercentage: 38, resetsAt: 1_700_000_000 },
   sevenDay: { usedPercentage: 72, resetsAt: null },
   updatedAt: 1_700_000_000_000
 }
 
-describe('parseCachedAccountUsage', () => {
+const go: AccountUsage = {
+  provider: 'opencode-go',
+  fiveHour: { usedPercentage: 7, resetsAt: 1_700_000_000 },
+  sevenDay: { usedPercentage: 3, resetsAt: null },
+  monthly: { usedPercentage: 1, resetsAt: 1_700_300_000 },
+  updatedAt: 1_700_000_100_000
+}
+
+describe('parseCachedAccounts', () => {
   it('returns null for null input', () => {
-    expect(parseCachedAccountUsage(null)).toBeNull()
+    expect(parseCachedAccounts(null)).toBeNull()
   })
 
   it('returns null for corrupt JSON', () => {
-    expect(parseCachedAccountUsage('{not json')).toBeNull()
-    expect(parseCachedAccountUsage('')).toBeNull()
+    expect(parseCachedAccounts('{not json')).toBeNull()
+    expect(parseCachedAccounts('')).toBeNull()
   })
 
   it('returns null for non-object payloads', () => {
-    expect(parseCachedAccountUsage('42')).toBeNull()
-    expect(parseCachedAccountUsage('"hi"')).toBeNull()
-    expect(parseCachedAccountUsage('[]')).toBeNull()
-    expect(parseCachedAccountUsage('null')).toBeNull()
+    expect(parseCachedAccounts('42')).toBeNull()
+    expect(parseCachedAccounts('"hi"')).toBeNull()
+    expect(parseCachedAccounts('null')).toBeNull()
+    expect(parseCachedAccounts('[]')).toBeNull()
   })
 
-  it('round-trips valid data', () => {
-    expect(parseCachedAccountUsage(serializeAccountUsage(valid))).toEqual(valid)
+  it('round-trips the multi-provider list', () => {
+    expect(parseCachedAccounts(serializeAccounts([valid, go]))).toEqual([valid, go])
   })
 
-  it('accepts null windows', () => {
-    const payload = JSON.stringify({ fiveHour: null, sevenDay: null, updatedAt: 1 })
-    expect(parseCachedAccountUsage(payload)).toEqual({ fiveHour: null, sevenDay: null, updatedAt: 1 })
+  it('reads the legacy single-account cache as one Claude row', () => {
+    const legacy = { fiveHour: valid.fiveHour, sevenDay: valid.sevenDay, updatedAt: valid.updatedAt }
+    expect(parseCachedAccounts(JSON.stringify(legacy))).toEqual([legacy])
   })
 
-  it('treats missing windows as null', () => {
+  it('keeps an explicit provider supplied by a newer cache', () => {
+    expect(parseCachedAccounts(JSON.stringify(valid))).toEqual([valid])
+  })
+
+  it('drops duplicate providers (first wins) and keeps the surviving order', () => {
+    const secondClaude = { ...valid, updatedAt: 2 }
+    const parsed = parseCachedAccounts(JSON.stringify([valid, go, secondClaude]))
+    expect(parsed).toEqual([valid, go])
+  })
+
+  it('skips corrupt entries but keeps the usable ones', () => {
+    const parsed = parseCachedAccounts(JSON.stringify([{ nope: true }, valid, 42, go]))
+    expect(parsed).toEqual([valid, go])
+  })
+
+  it('returns null when every entry is corrupt', () => {
+    expect(parseCachedAccounts(JSON.stringify([{ updatedAt: 'x' }, null]))).toBeNull()
+  })
+
+  it('treats missing windows as null (legacy rows)', () => {
     const payload = JSON.stringify({ updatedAt: 1 })
-    expect(parseCachedAccountUsage(payload)).toEqual({ fiveHour: null, sevenDay: null, updatedAt: 1 })
+    expect(parseCachedAccounts(payload)).toEqual([{ fiveHour: null, sevenDay: null, updatedAt: 1 }])
   })
 
-  it('returns null when updatedAt is missing or wrong type', () => {
-    expect(parseCachedAccountUsage(JSON.stringify({ fiveHour: null, sevenDay: null }))).toBeNull()
+  it('returns null for an account whose updatedAt is missing or wrong type', () => {
+    expect(parseCachedAccounts(JSON.stringify({ fiveHour: null, sevenDay: null }))).toBeNull()
     expect(
-      parseCachedAccountUsage(JSON.stringify({ fiveHour: null, sevenDay: null, updatedAt: 'x' }))
+      parseCachedAccounts(JSON.stringify({ fiveHour: null, sevenDay: null, updatedAt: 'x' }))
     ).toBeNull()
     expect(
-      parseCachedAccountUsage(
-        JSON.stringify({ fiveHour: null, sevenDay: null, updatedAt: Number.NaN })
-      )
+      parseCachedAccounts(JSON.stringify({ fiveHour: null, sevenDay: null, updatedAt: Number.NaN }))
     ).toBeNull()
+  })
+
+  it('returns null for an unknown provider', () => {
+    expect(parseCachedAccounts(JSON.stringify({ ...valid, provider: 'deepseek' }))).toBeNull()
   })
 
   it('returns null for malformed windows', () => {
     expect(
-      parseCachedAccountUsage(
-        JSON.stringify({ fiveHour: { usedPercentage: 'x', resetsAt: null }, updatedAt: 1 })
-      )
+      parseCachedAccounts(JSON.stringify({ fiveHour: { usedPercentage: 'x', resetsAt: null }, updatedAt: 1 }))
     ).toBeNull()
     expect(
-      parseCachedAccountUsage(
-        JSON.stringify({ fiveHour: { usedPercentage: 1, resetsAt: 'x' }, updatedAt: 1 })
-      )
+      parseCachedAccounts(JSON.stringify({ fiveHour: { usedPercentage: 1, resetsAt: 'x' }, updatedAt: 1 }))
     ).toBeNull()
+    expect(parseCachedAccounts(JSON.stringify({ fiveHour: 5, updatedAt: 1 }))).toBeNull()
     expect(
-      parseCachedAccountUsage(JSON.stringify({ fiveHour: 5, updatedAt: 1 }))
+      parseCachedAccounts(JSON.stringify({ provider: 'opencode-go', monthly: [], updatedAt: 1 }))
     ).toBeNull()
   })
 
   it('clamps out-of-range percentages', () => {
-    const parsed = parseCachedAccountUsage(
+    const parsed = parseCachedAccounts(
       JSON.stringify({
         fiveHour: { usedPercentage: 150, resetsAt: null },
         sevenDay: { usedPercentage: -20, resetsAt: null },
         updatedAt: 1
       })
     )
-    expect(parsed?.fiveHour?.usedPercentage).toBe(100)
-    expect(parsed?.sevenDay?.usedPercentage).toBe(0)
+    expect(parsed?.[0].fiveHour?.usedPercentage).toBe(100)
+    expect(parsed?.[0].sevenDay?.usedPercentage).toBe(0)
+  })
+
+  it('keeps a Go monthly window (and omits a null one)', () => {
+    const parsed = parseCachedAccounts(serializeAccounts([go]))
+    expect(parsed?.[0].monthly).toEqual(go.monthly)
+    const withoutMonthly = { ...go, monthly: null }
+    expect(parseCachedAccounts(serializeAccounts([withoutMonthly]))?.[0].monthly).toBeUndefined()
   })
 })
 
-describe('serializeAccountUsage', () => {
+describe('serializeAccounts', () => {
   it('produces JSON the parser round-trips', () => {
-    expect(serializeAccountUsage(valid)).toBe(JSON.stringify(valid))
+    expect(serializeAccounts([valid, go])).toBe(JSON.stringify([valid, go]))
   })
 })

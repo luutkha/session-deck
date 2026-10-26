@@ -1,12 +1,16 @@
-import type { SessionUsage, UsageWindow } from '../../shared/types'
+import type { SessionUsage, UsageProvider, UsageWindow } from '../../shared/types'
 
 /** Account windows as read from one payload (the caller adds updatedAt). */
 export interface ParsedAccountWindows {
   readonly fiveHour: UsageWindow | null
   readonly sevenDay: UsageWindow | null
+  /** OpenCode Go only; absent/null for a Claude payload. */
+  readonly monthly?: UsageWindow | null
 }
 
 export interface ParsedStatusLine {
+  /** Which account these windows belong to ('claude' when the payload carries no known source). */
+  readonly provider: UsageProvider
   /** null when the payload carried no usable rate_limits. */
   readonly account: ParsedAccountWindows | null
   readonly session: Omit<SessionUsage, 'sessionId'>
@@ -79,12 +83,20 @@ export function parseStatusLine(payload: unknown, now: number): ParsedStatusLine
   const cost = asObject(root.cost)
   const context = asObject(root.context_window)
   const limits = asObject(root.rate_limits)
+  const provider: UsageProvider = root.source === 'opencode-go' ? 'opencode-go' : 'claude'
 
   const fiveHour = limits ? parseWindow(limits.five_hour) : null
   const sevenDay = limits ? parseWindow(limits.seven_day) : null
-  const account = fiveHour === null && sevenDay === null ? null : { fiveHour, sevenDay }
+  const monthly = provider === 'opencode-go' && limits ? parseWindow(limits.monthly) : null
+  const account =
+    fiveHour === null && sevenDay === null && monthly === null
+      ? null
+      : provider === 'opencode-go'
+        ? { fiveHour, sevenDay, monthly }
+        : { fiveHour, sevenDay }
 
   return {
+    provider,
     account,
     session: {
       model: model ? readText(model.display_name) : null,

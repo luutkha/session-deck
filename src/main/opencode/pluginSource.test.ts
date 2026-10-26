@@ -2,7 +2,16 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { PLUGIN_DIR_NAME, PLUGIN_USAGE_THROTTLE_MS, PLUGIN_FETCH_TIMEOUT_MS, MAX_PLUGIN_NOTICE_LENGTH, MAX_PLUGIN_PROMPT_LENGTH, buildOpencodePluginSource } from './pluginSource'
+import {
+  OPENCODE_GO_USAGE_URL,
+  PLUGIN_DIR_NAME,
+  PLUGIN_GO_USAGE_THROTTLE_MS,
+  PLUGIN_USAGE_THROTTLE_MS,
+  PLUGIN_FETCH_TIMEOUT_MS,
+  MAX_PLUGIN_NOTICE_LENGTH,
+  MAX_PLUGIN_PROMPT_LENGTH,
+  buildOpencodePluginSource
+} from './pluginSource'
 
 interface FetchCall {
   readonly url: string
@@ -75,8 +84,9 @@ function createFeed(): Instance['feed'] {
 }
 
 const settle = async (): Promise<void> => {
-  // Enough microtask ticks for: stream delivery -> for-await continuation -> the ordered fetch chain.
-  for (let i = 0; i < 8; i++) await Promise.resolve()
+  // Enough microtask ticks for: stream delivery -> for-await continuation -> the ordered fetch chain
+  // (the Go allowance adds the credential resolve + JSON parse awaits on top).
+  for (let i = 0; i < 16; i++) await Promise.resolve()
 }
 
 function stubPluginEnv(env: Record<string, string | undefined>): void {
@@ -133,15 +143,17 @@ afterEach(() => {
 /** Starts a fresh plugin instance (its own subscription); returns the feed and posts fetch calls sent since. */
 async function instance(
   env: Record<string, string | undefined> = BASE_ENV,
-  modelApi?: { list: () => Promise<unknown> }
+  modelApi?: { list: () => Promise<unknown> },
+  extra: { readonly integration?: unknown; readonly keepFetch?: boolean } = {}
 ): Promise<Instance> {
   stubPluginEnv(env)
   const feed = createFeed()
   const context: Record<string, unknown> = { location: { directory: 'C:\\proj' }, event: { subscribe: async () => feed } }
   if (modelApi !== undefined) context.model = modelApi
+  if (extra.integration !== undefined) context.integration = extra.integration
   const cleanup = await pluginModule.setup(context)
   await settle()
-  captureFetch()
+  if (extra.keepFetch !== true) captureFetch()
   return { feed, cleanup: cleanup ?? null }
 }
 
@@ -657,6 +669,200 @@ describe('opencode plugin cost / statusline tracking', () => {
     const zero = await send(plugin, ev('session.usage.updated', usageUpdate(0)))
     expect(zero).toHaveLength(1)
     expect(JSON.parse(zero[0].init.body).cost).toEqual({ total_cost_usd: 0 })
+  })
+})
+
+describe('opencode plugin OpenCode Go allowance (display-only quota bars)', () => {
+  const GO_BODY = {
+    usage: {
+      rolling: { status: 'ok', percent: 7, resetsAt: '2026-10-13T10:00:00Z' },
+      weekly: { status: 'ok', percent: 3, resetsAt: '2026-10-20T10:00:00Z' },
+      monthly: { status: 'ok', percent: 1, resetsAt: '2026-11-01T00:00:00Z' }
+    }
+  }
+
+  /** The v2 credential API surface we verified: active(id) -> ConnectionInfo, resolve(conn) -> CredentialValue. */
+  function credentials(value: unknown): {
+    integration: unknown
+    asked: string[]
+    resolveCalls: () => number
+  } {
+    const asked: string[] = []
+    let resolved = 0
+    return {
+      asked,
+      resolveCalls: () => resolved,
+      integration: {
+        connection: {
+          active: async (id: string) => {
+            asked.push(id)
+            return value === null ? undefined : { type: 'credential', id: 'cred-1', label: 'Go', method: 'key' }
+          },
+          resolve: async () => {
+            resolved += 1
+            return value ?? undefined
+          }
+        }
+      }
+    }
+  }
+
+  /** A fetch that answers the Go endpoint with `body`/`status` and every app post with 204. */
+  function installGoFetch(body: unknown, status = 200): FetchCall[] {
+    const calls: FetchCall[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+        calls.push({
+          url: String(url),
+          init: { method: init?.method ?? 'GET', headers: init?.headers ?? {}, body: init?.body ?? '' }
+        })
+        if (String(url) === OPENCODE_GO_USAGE_URL) {
+          return Promise.resolve({
+            status,
+            ok: status >= 200 && status < 300,
+            json: async () => {
+              if (status >= 400) throw new Error('no body')
+              return body
+            }
+          })
+        }
+        return Promise.resolve({ status: 204 })
+      })
+    )
+    return calls
+  }
+
+  const goGets = (calls: readonly FetchCall[]): FetchCall[] => calls.filter((c) => c.url === OPENCODE_GO_USAGE_URL)
+  const statusPosts = (calls: readonly FetchCall[]): FetchCall[] => calls.filter((c) => c.url.includes('/statusline/'))
+
+  it('posts the Go windows once at setup, with the OAuth access token as the bearer', async () => {
+    const calls = installGoFetch(GO_BODY)
+    const creds = credentials({ type: 'oauth', methodID: 'go', refresh: 'r', access: 'oauth-access-token', expires: 1 })
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+
+    expect(creds.asked).toEqual(['opencode-go'])
+    expect(creds.resolveCalls()).toBe(1)
+    const gets = goGets(calls)
+    expect(gets).toHaveLength(1)
+    expect(gets[0].init.method).toBe('GET')
+    expect(gets[0].init.headers.authorization).toBe('Bearer oauth-access-token')
+    expect(gets[0].init.headers.accept).toBe('application/json')
+
+    const posts = statusPosts(calls)
+    expect(posts).toHaveLength(1)
+    expect(posts[0].url).toBe('http://127.0.0.1:4123/statusline/deck-sess')
+    expect(JSON.parse(posts[0].init.body)).toEqual({
+      source: 'opencode-go',
+      rate_limits: {
+        five_hour: { used_percentage: 7, resets_at: '2026-10-13T10:00:00Z' },
+        seven_day: { used_percentage: 3, resets_at: '2026-10-20T10:00:00Z' },
+        monthly: { used_percentage: 1, resets_at: '2026-11-01T00:00:00Z' }
+      },
+      proc: PROC
+    })
+    // The key never reaches the app.
+    expect(posts[0].init.body).not.toContain('oauth-access-token')
+  })
+
+  it('accepts a plain API key credential', async () => {
+    const calls = installGoFetch(GO_BODY)
+    const creds = credentials({ type: 'key', key: 'sk-go-secret' })
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+    expect(goGets(calls)[0].init.headers.authorization).toBe('Bearer sk-go-secret')
+    expect(statusPosts(calls)[0].init.body).not.toContain('sk-go-secret')
+  })
+
+  it('posts nothing when OpenCode has no Go connection (other providers are silent)', async () => {
+    const calls = installGoFetch(GO_BODY)
+    const creds = credentials(null)
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+    expect(creds.asked).toEqual(['opencode-go'])
+    expect(creds.resolveCalls()).toBe(0)
+    expect(goGets(calls)).toHaveLength(0)
+    expect(statusPosts(calls)).toHaveLength(0)
+  })
+
+  it('posts nothing without the v2 connection API (no fake fallback)', async () => {
+    const calls = installGoFetch(GO_BODY)
+    await instance(BASE_ENV, undefined, { integration: { connection: {} }, keepFetch: true })
+    expect(goGets(calls)).toHaveLength(0)
+    expect(statusPosts(calls)).toHaveLength(0)
+  })
+
+  it('posts nothing on 401 and 429', async () => {
+    for (const status of [401, 429]) {
+      const calls = installGoFetch(GO_BODY, status)
+      const creds = credentials({ type: 'key', key: 'k' })
+      await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+      expect(goGets(calls)).toHaveLength(1)
+      expect(statusPosts(calls)).toHaveLength(0)
+    }
+  })
+
+  it('posts nothing when the endpoint is unreachable', async () => {
+    const calls: FetchCall[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+        calls.push({ url: String(url), init: { method: init?.method ?? 'GET', headers: init?.headers ?? {}, body: init?.body ?? '' } })
+        if (String(url) === OPENCODE_GO_USAGE_URL) return Promise.reject(new Error('offline'))
+        return Promise.resolve({ status: 204 })
+      })
+    )
+    const creds = credentials({ type: 'key', key: 'k' })
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+    expect(goGets(calls)).toHaveLength(1)
+    expect(statusPosts(calls)).toHaveLength(0)
+  })
+
+  it('posts nothing when no window is usable (status error, missing percent, bad body)', async () => {
+    const bodies: unknown[] = [
+      { usage: { rolling: { status: 'error', percent: 7 }, weekly: { percent: 'x' } } },
+      { usage: {} },
+      null,
+      'nope'
+    ]
+    for (const body of bodies) {
+      const calls = installGoFetch(body)
+      const creds = credentials({ type: 'key', key: 'k' })
+      await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+      expect(statusPosts(calls)).toHaveLength(0)
+    }
+  })
+
+  it('sends only the windows the endpoint reported (monthly-only body)', async () => {
+    const calls = installGoFetch({ usage: { monthly: { status: 'ok', percent: 12 } } })
+    const creds = credentials({ type: 'key', key: 'k' })
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+    const body = JSON.parse(statusPosts(calls)[0].init.body)
+    expect(body.rate_limits).toEqual({ monthly: { used_percentage: 12, resets_at: null } })
+  })
+
+  it('refreshes after a turn ends, throttled to once per 5 minutes', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    try {
+      const calls = installGoFetch(GO_BODY)
+      const creds = credentials({ type: 'key', key: 'k' })
+      const plugin = await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+      expect(goGets(calls)).toHaveLength(1)
+
+      // One second later a turn ends: inside the 5-minute window, no second request.
+      vi.advanceTimersByTime(PLUGIN_USAGE_THROTTLE_MS)
+      await send(plugin, ev('session.execution.started', {}))
+      await send(plugin, ev('session.execution.succeeded', {}))
+      expect(goGets(calls)).toHaveLength(1)
+
+      // After the window a turn end refreshes the bars.
+      vi.advanceTimersByTime(PLUGIN_GO_USAGE_THROTTLE_MS)
+      await send(plugin, ev('session.execution.started', {}))
+      await send(plugin, ev('session.execution.succeeded', {}))
+      expect(goGets(calls)).toHaveLength(2)
+      expect(statusPosts(calls)).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

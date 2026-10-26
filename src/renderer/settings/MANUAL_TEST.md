@@ -144,6 +144,15 @@ close (X) button, and clicking the backdrop all close the dialog.
       both values in one patch; the error clears.
 - [ ] **Explanation.** The muted line "Alerts use the sound chosen under Sound >
       Quota warning and a desktop notification when enabled." shows below.
+- [ ] **OpenCode Go switch.** "Show OpenCode Go usage" (`quota.showOpencodeGo`,
+      default on) hides/shows the Go group in the status bar immediately, with
+      no restart and no OpenCode session restart. Turning it back on shows no
+      Go bars until fresh Go data arrives.
+- [ ] **Two-provider bars.** With both accounts known, the status bar shows a
+      "Claude" group and a "Go" group (Claude first); Go also has a "Month"
+      bar. With Claude alone there is NO provider label (unchanged look).
+      Hovering still shows the reset countdowns; the Claude bars keep feeding
+      the quota alerts (the Go numbers never raise one).
 
 ## Statuses section
 

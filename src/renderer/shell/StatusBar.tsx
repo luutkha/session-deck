@@ -30,6 +30,8 @@ export interface StatusBarProps {
     readonly consented?: boolean
     readonly grantConsent?: () => void
     readonly pace?: { readonly fiveHour: string; readonly sevenDay: string }
+    /** Show the OpenCode Go account group (Settings > Quota). Absent = shown. */
+    readonly showOpencodeGo?: boolean
   }
   /** Session whose model/context/cost is shown. */
   readonly activeSessionId?: Id | null
@@ -81,6 +83,7 @@ export function StatusBar(props: StatusBarProps): ReactElement {
             consented={usage.consented}
             grantConsent={usage.grantConsent}
             pace={usage.pace}
+            showOpencodeGo={usage.showOpencodeGo}
           />
         ) : null}
         {needsYou.length > 0 ? (

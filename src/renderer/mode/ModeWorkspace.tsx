@@ -301,7 +301,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
               refreshError: usage.refreshError,
               consented: usage.consented,
               grantConsent: usage.grantConsent,
-              pace: usage.pace
+              pace: usage.pace,
+              showOpencodeGo: settings.quota.showOpencodeGo
             }}
             activeSessionId={view === 'hub' ? null : activeId}
           />

@@ -1,4 +1,12 @@
-import type { Id, SessionUsage, UsageRefreshError, UsageState, UsageWindow } from '../../shared/types'
+import type {
+  AccountUsage,
+  Id,
+  SessionUsage,
+  UsageProvider,
+  UsageRefreshError,
+  UsageState,
+  UsageWindow
+} from '../../shared/types'
 
 export type UsageLevel = 'ok' | 'warn' | 'high'
 
@@ -90,6 +98,36 @@ export function sessionUsageFor(state: UsageState, sessionId: Id | null): Sessio
   return state.sessions.find((session) => session.sessionId === sessionId) ?? null
 }
 
+/** Provider of an account row; legacy rows without one are Claude. */
+export function providerOf(account: AccountUsage): UsageProvider {
+  return account.provider ?? 'claude'
+}
+
+/** Status-bar label: "Claude" or "Go". */
+export function providerLabel(provider: UsageProvider): string {
+  return provider === 'opencode-go' ? 'Go' : 'Claude'
+}
+
+/** An account row is shown only when it has at least one window. */
+export function accountHasData(account: AccountUsage): boolean {
+  return account.fiveHour !== null || account.sevenDay !== null || (account.monthly ?? null) !== null
+}
+
+const PROVIDER_ORDER: readonly UsageProvider[] = ['claude', 'opencode-go']
+
+/** Every displayable account, Claude first then Go. Legacy state (no list) reads as one Claude row. */
+export function accountsForDisplay(state: UsageState): readonly AccountUsage[] {
+  const list = state.accounts !== undefined ? state.accounts : state.account !== null ? [state.account] : []
+  const byProvider = new Map<UsageProvider, AccountUsage>()
+  for (const account of list) {
+    const provider = providerOf(account)
+    if (accountHasData(account) && !byProvider.has(provider)) byProvider.set(provider, account)
+  }
+  return PROVIDER_ORDER.map((provider) => byProvider.get(provider)).filter(
+    (account): account is AccountUsage => account !== undefined
+  )
+}
+
 /** Short "time since" label, e.g. "3m ago", "2h ago", "3d ago", "just now". */
 export function formatAgo(nowMs: number, thenMs: number): string {
   if (!Number.isFinite(nowMs) || !Number.isFinite(thenMs)) return ''
@@ -121,16 +159,42 @@ export function describeWindow(
 
 /**
  * Applies an update from main to what is on screen. Main starts empty after a restart (it only learns plan usage
- * from Claude's next turn), so an update WITHOUT account usage must not erase the last known numbers; the
+ * from the next turn), so an update that carries no Claude row must not erase the last known Claude numbers; the
  * per-session list always comes from the update.
+ *
+ * A missing Go row is NOT retained: main drops it on purpose when the settings toggle is off. The status bar also
+ * filters Go by the same setting, so a disabled provider can never reappear from the cache. A provider present in
+ * the update always replaces its cached row.
  */
 export function mergeUsageState(previous: UsageState, next: UsageState): UsageState {
-  return { account: next.account ?? previous.account, sessions: next.sessions }
+  const accounts = mergeAccounts(previous, next)
+  const claudeFromAccounts = accounts?.find((account) => providerOf(account) === 'claude') ?? null
+  const account = next.account ?? claudeFromAccounts ?? (next.accounts === undefined ? previous.account : null)
+  return accounts === undefined
+    ? { account, sessions: next.sessions }
+    : { account, accounts, sessions: next.sessions }
+}
+
+/** Per-provider merge: fresh rows win; a missing Claude row keeps its cached value (main restarted empty). */
+function mergeAccounts(
+  previous: UsageState,
+  next: UsageState
+): readonly AccountUsage[] | undefined {
+  if (next.accounts === undefined) return previous.accounts
+  const fresh = accountsForDisplay({ account: null, accounts: next.accounts, sessions: [] })
+  // Claude is always supported, so an update that omits it only means main has not seen a Claude turn yet.
+  // Go is optional and its absence is how main enforces the settings toggle, so it is never retained.
+  const retainsClaude = !fresh.some((account) => providerOf(account) === 'claude')
+  const kept = retainsClaude
+    ? (previous.accounts ?? []).filter((account) => providerOf(account) === 'claude' && accountHasData(account))
+    : []
+  if (kept.length === 0) return fresh
+  return accountsForDisplay({ account: null, accounts: [...fresh, ...kept], sessions: [] })
 }
 
 /** An update is "fresh" for the account bars only when it actually carries account usage. */
 export function carriesFreshAccount(next: UsageState): boolean {
-  return next.account !== null
+  return next.account !== null || next.accounts !== undefined
 }
 
 const RESETS_IN_PREFIX = 'resets in '

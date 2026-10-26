@@ -1,4 +1,4 @@
-import type { AccountUsage, SessionUsage, UsageState, UsageWindow } from '../../shared/types'
+import type { AccountUsage, SessionUsage, UsageProvider, UsageState, UsageWindow } from '../../shared/types'
 import { parseStatusLine, type ParsedAccountWindows } from './statusLineParser'
 
 export interface UsageServiceDeps {
@@ -13,6 +13,11 @@ export interface UsageService {
    * are identical: an explicit refresh is a freshness signal (clears "stale", lets the UI show it worked).
    */
   ingestAccount(account: ParsedAccountWindows): void
+  /**
+   * Shows or hides the OpenCode Go bars. Disabling drops the entry at once (the next Go payload is ignored);
+   * enabling waits for the next payload. The Claude account is never affected.
+   */
+  setOpencodeGoEnabled(enabled: boolean): void
   /** Drops a session's entry (e.g. when the session is removed). */
   forget(sessionId: string): void
   getState(): UsageState
@@ -28,8 +33,23 @@ function sameWindow(a: UsageWindow | null, b: UsageWindow | null): boolean {
 }
 
 /** Compares the windows only; updatedAt is bookkeeping, not a change. */
-function sameAccountWindows(a: ParsedAccountWindows, b: ParsedAccountWindows): boolean {
-  return sameWindow(a.fiveHour, b.fiveHour) && sameWindow(a.sevenDay, b.sevenDay)
+function sameAccountWindows(a: AccountUsage, b: ParsedAccountWindows): boolean {
+  return (
+    sameWindow(a.fiveHour, b.fiveHour) &&
+    sameWindow(a.sevenDay, b.sevenDay) &&
+    sameWindow(a.monthly ?? null, b.monthly ?? null)
+  )
+}
+
+function hasAnyWindow(windows: ParsedAccountWindows): boolean {
+  return windows.fiveHour !== null || windows.sevenDay !== null || (windows.monthly ?? null) !== null
+}
+
+function toAccount(provider: UsageProvider, windows: ParsedAccountWindows, updatedAt: number): AccountUsage {
+  if (provider === 'opencode-go') {
+    return { provider, fiveHour: windows.fiveHour, sevenDay: windows.sevenDay, monthly: windows.monthly ?? null, updatedAt }
+  }
+  return { provider, fiveHour: windows.fiveHour, sevenDay: windows.sevenDay, updatedAt }
 }
 
 function sameSessionData(a: SessionUsage, b: SessionUsage): boolean {
@@ -63,11 +83,31 @@ function upsertSession(list: readonly SessionUsage[], entry: SessionUsage): read
 export function createUsageService(deps: UsageServiceDeps = {}): UsageService {
   const now = deps.now ?? (() => Date.now())
   let state: UsageState = EMPTY_STATE
+  let claude: AccountUsage | null = null
+  let opencodeGo: AccountUsage | null = null
+  let goEnabled = true
   const subscribers = new Set<(state: UsageState) => void>()
 
-  function commit(account: AccountUsage | null, sessions: readonly SessionUsage[]): void {
-    if (account === state.account && sessions === state.sessions) return
-    state = { account, sessions }
+  /** Claude first, then Go; undefined when neither has data (keeps the legacy state shape). */
+  function displayAccounts(): readonly AccountUsage[] | undefined {
+    const list: AccountUsage[] = []
+    if (claude !== null) list.push(claude)
+    if (opencodeGo !== null) list.push(opencodeGo)
+    return list.length === 0 ? undefined : list
+  }
+
+  /** Element-wise identity: entries are only replaced when their windows change. */
+  function sameAccounts(a: readonly AccountUsage[] | undefined, b: readonly AccountUsage[] | undefined): boolean {
+    if (a === b) return true
+    if (a === undefined || b === undefined || a.length !== b.length) return false
+    return a.every((entry, index) => entry === b[index])
+  }
+
+  function commit(sessions: readonly SessionUsage[]): void {
+    const candidate = displayAccounts()
+    const accounts = sameAccounts(candidate, state.accounts) ? state.accounts : candidate
+    if (claude === state.account && accounts === state.accounts && sessions === state.sessions) return
+    state = accounts === undefined ? { account: claude, sessions } : { account: claude, accounts, sessions }
     for (const callback of subscribers) {
       callback(state)
     }
@@ -79,27 +119,43 @@ export function createUsageService(deps: UsageServiceDeps = {}): UsageService {
 
       const timestamp = now()
       const parsed = parseStatusLine(payload, timestamp)
+      const windows = parsed.account
 
-      let account = state.account
-      if (parsed.account !== null && (account === null || !sameAccountWindows(account, parsed.account))) {
-        account = { fiveHour: parsed.account.fiveHour, sevenDay: parsed.account.sevenDay, updatedAt: timestamp }
+      if (windows !== null && hasAnyWindow(windows)) {
+        if (parsed.provider === 'opencode-go') {
+          if (goEnabled && (opencodeGo === null || !sameAccountWindows(opencodeGo, windows))) {
+            opencodeGo = toAccount('opencode-go', windows, timestamp)
+          }
+        } else if (claude === null || !sameAccountWindows(claude, windows)) {
+          claude = toAccount('claude', windows, timestamp)
+        }
       }
 
       const sessions = hasSessionData(parsed.session)
         ? upsertSession(state.sessions, { sessionId, ...parsed.session })
         : state.sessions
 
-      commit(account, sessions)
+      commit(sessions)
     },
 
     ingestAccount(account: ParsedAccountWindows): void {
       const timestamp = now()
-      commit({ fiveHour: account.fiveHour, sevenDay: account.sevenDay, updatedAt: timestamp }, state.sessions)
+      claude = toAccount('claude', account, timestamp)
+      commit(state.sessions)
+    },
+
+    setOpencodeGoEnabled(enabled: boolean): void {
+      if (enabled === goEnabled) return
+      goEnabled = enabled
+      if (!enabled && opencodeGo !== null) {
+        opencodeGo = null
+        commit(state.sessions)
+      }
     },
 
     forget(sessionId: string): void {
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return
-      commit(state.account, state.sessions.filter((s) => s.sessionId !== sessionId))
+      commit(state.sessions.filter((s) => s.sessionId !== sessionId))
     },
 
     getState(): UsageState {

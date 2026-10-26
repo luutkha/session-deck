@@ -30,10 +30,12 @@ describe('UsageService', () => {
   it('stores account usage from a payload with rate_limits', () => {
     service.ingest('s1', rateLimits(38, 34))
     expect(service.getState().account).toEqual({
+      provider: 'claude',
       fiveHour: { usedPercentage: 38, resetsAt: 1000 },
       sevenDay: { usedPercentage: 34, resetsAt: 2000 },
       updatedAt: 1000
     })
+    expect(service.getState().accounts).toEqual([service.getState().account])
     expect(emitted).toHaveLength(1)
   })
 
@@ -50,6 +52,7 @@ describe('UsageService', () => {
     clock = 3000
     service.ingest('s2', rateLimits(50, 60))
     expect(service.getState().account).toEqual({
+      provider: 'claude',
       fiveHour: { usedPercentage: 50, resetsAt: 1000 },
       sevenDay: { usedPercentage: 60, resetsAt: 2000 },
       updatedAt: 3000
@@ -151,7 +154,7 @@ describe('UsageService', () => {
 
     it('sets the account usage stamped with the current time and emits once', () => {
       service.ingestAccount(windows)
-      expect(service.getState().account).toEqual({ ...windows, updatedAt: 1000 })
+      expect(service.getState().account).toEqual({ provider: 'claude', ...windows, updatedAt: 1000 })
       expect(emitted).toHaveLength(1)
     })
 
@@ -175,6 +178,7 @@ describe('UsageService', () => {
       service.ingestAccount({ fiveHour: { usedPercentage: 41, resetsAt: 1000 }, sevenDay: windows.sevenDay })
       expect(emitted).toHaveLength(2)
       expect(service.getState().account).toEqual({
+        provider: 'claude',
         fiveHour: { usedPercentage: 41, resetsAt: 1000 },
         sevenDay: windows.sevenDay,
         updatedAt: 6000
@@ -185,6 +189,93 @@ describe('UsageService', () => {
       service.ingestAccount({ fiveHour: null, sevenDay: windows.sevenDay })
       expect(service.getState().account?.fiveHour).toBeNull()
       expect(service.getState().account?.sevenDay).toEqual(windows.sevenDay)
+    })
+  })
+
+  describe('OpenCode Go provider (display only; account stays Claude)', () => {
+    function goRateLimits(fiveHour: number, sevenDay: number, monthly: number): Record<string, unknown> {
+      return {
+        source: 'opencode-go',
+        rate_limits: {
+          five_hour: { used_percentage: fiveHour, resets_at: 1000 },
+          seven_day: { used_percentage: sevenDay, resets_at: 2000 },
+          monthly: { used_percentage: monthly, resets_at: 3000 }
+        }
+      }
+    }
+
+    it('keeps the two providers independent and lists Claude first', () => {
+      service.ingest('s1', rateLimits(38, 34))
+      clock = 2000
+      service.ingest('s1', { ...goRateLimits(7, 3, 1), cost: { total_cost_usd: 0.2 } })
+      const state = service.getState()
+      expect(state.account).toEqual({
+        provider: 'claude',
+        fiveHour: { usedPercentage: 38, resetsAt: 1000 },
+        sevenDay: { usedPercentage: 34, resetsAt: 2000 },
+        updatedAt: 1000
+      })
+      expect(state.accounts).toEqual([
+        state.account,
+        {
+          provider: 'opencode-go',
+          fiveHour: { usedPercentage: 7, resetsAt: 1000 },
+          sevenDay: { usedPercentage: 3, resetsAt: 2000 },
+          monthly: { usedPercentage: 1, resetsAt: 3000 },
+          updatedAt: 2000
+        }
+      ])
+      // The same payload still carries the session cost.
+      expect(state.sessions[0].costUsd).toBe(0.2)
+    })
+
+    it('a Go payload alone leaves the Claude account null (autopilot sees no Claude data)', () => {
+      service.ingest('s1', goRateLimits(7, 3, 1))
+      expect(service.getState().account).toBeNull()
+      expect(service.getState().accounts?.map((a) => a.provider)).toEqual(['opencode-go'])
+    })
+
+    it('a Go payload never overwrites the Claude windows, and Claude never overwrites Go', () => {
+      service.ingest('s1', goRateLimits(7, 3, 1))
+      service.ingest('s1', rateLimits(80, 70))
+      service.ingest('s1', goRateLimits(9, 4, 2))
+      const byProvider = new Map((service.getState().accounts ?? []).map((a) => [a.provider, a]))
+      expect(byProvider.get('claude')?.fiveHour?.usedPercentage).toBe(80)
+      expect(byProvider.get('opencode-go')?.fiveHour?.usedPercentage).toBe(9)
+      expect(service.getState().account?.fiveHour?.usedPercentage).toBe(80)
+    })
+
+    it('identical Go windows do not emit and keep the old updatedAt', () => {
+      service.ingest('s1', goRateLimits(7, 3, 1))
+      clock = 9000
+      service.ingest('s1', goRateLimits(7, 3, 1))
+      expect(emitted).toHaveLength(1)
+      expect(service.getState().accounts?.[0].updatedAt).toBe(1000)
+    })
+
+    it('disabling Go drops the entry at once; later Go payloads are ignored; re-enabling waits for data', () => {
+      service.ingest('s1', rateLimits(38, 34))
+      service.ingest('s1', goRateLimits(7, 3, 1))
+      const before = emitted.length
+
+      service.setOpencodeGoEnabled(false)
+      expect(emitted).toHaveLength(before + 1)
+      expect(service.getState().accounts?.map((a) => a.provider)).toEqual(['claude'])
+      expect(service.getState().account?.fiveHour?.usedPercentage).toBe(38)
+
+      service.ingest('s1', goRateLimits(50, 40, 30))
+      expect(service.getState().accounts?.map((a) => a.provider)).toEqual(['claude'])
+
+      service.setOpencodeGoEnabled(true)
+      expect(service.getState().accounts?.map((a) => a.provider)).toEqual(['claude'])
+      service.ingest('s1', goRateLimits(50, 40, 30))
+      expect(service.getState().accounts?.map((a) => a.provider)).toEqual(['claude', 'opencode-go'])
+    })
+
+    it('a Go payload with no usable window adds nothing and does not emit', () => {
+      service.ingest('s1', { source: 'opencode-go', rate_limits: { five_hour: { used_percentage: 'x' } } })
+      expect(emitted).toHaveLength(0)
+      expect(service.getState()).toEqual({ account: null, sessions: [] })
     })
   })
 })

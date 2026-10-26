@@ -9,7 +9,7 @@ import {
   type QuotaGuardDeps
 } from './quotaGuard'
 
-const SETTINGS: QuotaSettings = { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'ask', resetAction: 'ask', continueOnWake: false }
+const SETTINGS: QuotaSettings = { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'ask', resetAction: 'ask', continueOnWake: false, showOpencodeGo: true }
 const NOW_SEC = 1_700_000_000
 const R1 = NOW_SEC + 3600
 const R2 = R1 + 18000

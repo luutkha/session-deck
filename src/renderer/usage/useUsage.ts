@@ -8,7 +8,7 @@ import {
   parseConsent,
   serializeConsent
 } from './usageLogic'
-import { parseCachedAccountUsage, serializeAccountUsage } from './usageCache'
+import { parseCachedAccounts, serializeAccounts } from './usageCache'
 import {
   appendSample,
   formatPace,
@@ -58,19 +58,19 @@ export interface UseUsageResult {
 
 const EMPTY_STATE: UsageState = { account: null, sessions: [] }
 
-function loadCachedAccount(): AccountUsage | null {
+function loadCachedAccounts(): readonly AccountUsage[] | null {
   try {
     if (typeof localStorage === 'undefined') return null
-    return parseCachedAccountUsage(localStorage.getItem(USAGE_CACHE_KEY))
+    return parseCachedAccounts(localStorage.getItem(USAGE_CACHE_KEY))
   } catch {
     return null
   }
 }
 
-function saveCachedAccount(account: AccountUsage): void {
+function saveCachedAccounts(accounts: readonly AccountUsage[]): void {
   try {
     if (typeof localStorage === 'undefined') return
-    localStorage.setItem(USAGE_CACHE_KEY, serializeAccountUsage(account))
+    localStorage.setItem(USAGE_CACHE_KEY, serializeAccounts(accounts))
   } catch {
     // Persistence is best-effort; a full/blocked store must not break rendering.
   }
@@ -119,8 +119,10 @@ function saveHistory(history: readonly PaceSample[]): void {
  */
 export function useUsage(): UseUsageResult {
   const [state, setState] = useState<UsageState>(() => {
-    const account = loadCachedAccount()
-    return account === null ? EMPTY_STATE : { account, sessions: [] }
+    const accounts = loadCachedAccounts()
+    if (accounts === null) return EMPTY_STATE
+    const account = accounts.find((entry) => entry.provider !== 'opencode-go') ?? null
+    return { account, accounts, sessions: [] }
   })
   const [fresh, setFresh] = useState<boolean>(false)
   const [now, setNow] = useState<number>(() => Date.now())
@@ -140,7 +142,6 @@ export function useUsage(): UseUsageResult {
       if (carriesFreshAccount(next)) setFresh(true)
       const account = next.account
       if (account !== null) {
-        saveCachedAccount(account)
         setHistory((previous) => {
           const updated = appendSample(
             previous,
@@ -178,6 +179,11 @@ export function useUsage(): UseUsageResult {
       clearInterval(timer)
     }
   }, [])
+
+  // Persist exactly what the bar shows: a provider main does not know yet (after a restart) must survive a reload.
+  useEffect((): void => {
+    if (state.accounts !== undefined) saveCachedAccounts(state.accounts)
+  }, [state.accounts])
 
   useEffect((): (() => void) | undefined => {
     if (refreshError === null) return undefined

@@ -17,7 +17,8 @@ const SETTINGS: QuotaSettings = {
   notifyOnReset: true,
   criticalAction: 'ask',
   resetAction: 'ask',
-  continueOnWake: false
+  continueOnWake: false,
+  showOpencodeGo: true
 }
 const CRITICAL: QuotaAlert = { window: 'fiveHour', kind: 'critical', percent: 96, resetsAt: RESET_SEC }
 const RESET: QuotaAlert = { window: 'fiveHour', kind: 'reset', percent: 0, resetsAt: null }

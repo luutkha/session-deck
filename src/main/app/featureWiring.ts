@@ -128,6 +128,16 @@ export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
 
   wireSessionEnds(store, runtime, timeline)
   wireRemovals(store, timeline, autopilot)
+  // Go bars are display-only: main enforces the toggle, so a disabled provider drops at once and later
+  // Go payloads are ignored without restarting any OpenCode session.
+  usage.setOpencodeGoEnabled(store.getSettings().quota.showOpencodeGo)
+  const unwatchGoSetting = store.subscribe(() => {
+    try {
+      usage.setOpencodeGoEnabled(store.getSettings().quota.showOpencodeGo)
+    } catch (error) {
+      onError('usage provider setting', error)
+    }
+  })
   // Turn costs settle from statusLine updates; a newer 5-hour reset time can arrive the same way.
   usage.onChange((state) => {
     for (const entry of state.sessions) timeline.onCostChanged(entry.sessionId)
@@ -167,6 +177,7 @@ export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
       })
     },
     shutdown: async () => {
+      unwatchGoSetting()
       autopilot.stop()
       await timeline.flush()
     }

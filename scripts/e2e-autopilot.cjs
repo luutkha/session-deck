@@ -54,7 +54,8 @@ async function main() {
     await sleep(500)
     t.check('three sessions running, one of them working', (await running(idle.id)) && (await running(busy.id)) && (await running(kept.id)) && (await runtimeOf(busy.id))?.activity === 'working')
 
-    // ---------- 1) ask mode
+    // ---------- 1) ask mode (explicit: D33 made the shipped defaults hands-off)
+    await app.evaluate(`window.api.updateSettings({ quota: { criticalAction: 'ask', resetAction: 'ask' } })`)
     const resetA = Math.floor(Date.now() / 1000) + RESET_IN_SEC
     t.check('a statusLine with 96% is accepted', (await usage(96, resetA)) === 204)
     const offer = await waitFor(() => app.evaluate(`${toastButton('sleep')}?.innerText ?? null`), 8000, 200)

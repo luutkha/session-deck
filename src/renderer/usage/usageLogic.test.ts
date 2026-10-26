@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { SessionUsage, UsageRefreshError, UsageRefreshErrorKind, UsageState } from '../../shared/types'
+import type { AccountUsage, SessionUsage, UsageRefreshError, UsageRefreshErrorKind, UsageState } from '../../shared/types'
 import {
+  accountHasData,
+  accountsForDisplay,
   carriesFreshAccount,
   mergeUsageState,
   describeRefreshError,
@@ -12,6 +14,8 @@ import {
   formatResetsIn,
   isStale,
   parseConsent,
+  providerLabel,
+  providerOf,
   refreshCooldownLeftMs,
   serializeConsent,
   sessionUsageFor,
@@ -208,6 +212,50 @@ describe('describeWindow', () => {
   })
 })
 
+describe('provider helpers (Claude + OpenCode Go)', () => {
+  const claude: AccountUsage = {
+    provider: 'claude',
+    fiveHour: { usedPercentage: 38, resetsAt: 1000 },
+    sevenDay: { usedPercentage: 34, resetsAt: 2000 },
+    updatedAt: 5
+  }
+  const go: AccountUsage = {
+    provider: 'opencode-go',
+    fiveHour: { usedPercentage: 7, resetsAt: 1000 },
+    sevenDay: { usedPercentage: 3, resetsAt: 2000 },
+    monthly: { usedPercentage: 1, resetsAt: 3000 },
+    updatedAt: 6
+  }
+  const legacy: AccountUsage = { fiveHour: null, sevenDay: null, updatedAt: 7 }
+
+  it('treats a row without a provider as Claude', () => {
+    expect(providerOf(legacy)).toBe('claude')
+    expect(providerOf(go)).toBe('opencode-go')
+  })
+
+  it('labels the groups for the status bar', () => {
+    expect(providerLabel('claude')).toBe('Claude')
+    expect(providerLabel('opencode-go')).toBe('Go')
+  })
+
+  it('requires at least one window (including monthly) for a row to be displayable', () => {
+    expect(accountHasData(legacy)).toBe(false)
+    expect(accountHasData({ ...go, fiveHour: null, sevenDay: null, monthly: null })).toBe(false)
+    expect(accountHasData({ ...go, fiveHour: null, sevenDay: null })).toBe(true)
+    expect(accountHasData(claude)).toBe(true)
+  })
+
+  it('reads legacy state (no list) as a single Claude row and orders Claude first', () => {
+    expect(accountsForDisplay({ account: claude, sessions: [] })).toEqual([claude])
+    expect(accountsForDisplay({ account: claude, accounts: [go, claude], sessions: [] })).toEqual([claude, go])
+  })
+
+  it('drops empty rows and duplicate providers', () => {
+    const state: UsageState = { account: null, accounts: [legacy, go, { ...go, updatedAt: 9 }], sessions: [] }
+    expect(accountsForDisplay(state)).toEqual([go])
+  })
+})
+
 describe('mergeUsageState', () => {
   const account = { fiveHour: { usedPercentage: 38, resetsAt: 1000 }, sevenDay: null, updatedAt: 5 }
   const session = { sessionId: 's1', model: 'Sonnet 5.5', contextPercent: 5, costUsd: 0.1, effort: null, updatedAt: 6 }
@@ -230,6 +278,56 @@ describe('mergeUsageState', () => {
   it('only counts an update as fresh when it carries account usage', () => {
     expect(carriesFreshAccount({ account, sessions: [] })).toBe(true)
     expect(carriesFreshAccount({ account: null, sessions: [session] })).toBe(false)
+  })
+
+  const goAccount = {
+    provider: 'opencode-go' as const,
+    fiveHour: { usedPercentage: 7, resetsAt: 1000 },
+    sevenDay: null,
+    monthly: null,
+    updatedAt: 7
+  }
+
+  it('keeps a cached Claude row when main only knows about Go right after a restart', () => {
+    const merged = mergeUsageState(
+      { account, accounts: [account], sessions: [] },
+      { account: null, accounts: [goAccount], sessions: [session] }
+    )
+    expect(merged.accounts).toEqual([account, goAccount])
+    expect(merged.account).toBe(account)
+    expect(merged.sessions).toEqual([session])
+  })
+
+  it('replaces a cached row when the update carries that provider', () => {
+    const newer = { ...account, updatedAt: 9 }
+    const merged = mergeUsageState(
+      { account, accounts: [account], sessions: [] },
+      { account: newer, accounts: [newer], sessions: [] }
+    )
+    expect(merged.accounts).toEqual([newer])
+    expect(merged.account).toBe(newer)
+  })
+
+  it('drops a cached Go row when main stops reporting it (the settings toggle)', () => {
+    const merged = mergeUsageState(
+      { account: null, accounts: [goAccount], sessions: [] },
+      { account, accounts: [account], sessions: [] }
+    )
+    expect(merged.accounts).toEqual([account])
+    expect(merged.account).toBe(account)
+  })
+
+  it('counts an accounts-only update as fresh', () => {
+    expect(carriesFreshAccount({ account: null, accounts: [goAccount], sessions: [] })).toBe(true)
+  })
+
+  it('keeps the cached list exactly when the update has no list at all', () => {
+    const merged = mergeUsageState(
+      { account, accounts: [account, goAccount], sessions: [] },
+      { account: null, sessions: [session] }
+    )
+    expect(merged.accounts).toEqual([account, goAccount])
+    expect(merged.account).toBe(account)
   })
 })
 

@@ -1,0 +1,189 @@
+# Plan: Quota bars for both agents — Claude and OpenCode Go
+
+Status: proposed — waiting for "go". No code changed yet.
+Date: 2026-10-25
+User request (2026-10-25): "the quota bar only display for claude code, i want it display both, like Orca do."
+
+## 1. Goal
+
+The status bar currently shows the 5-hour / weekly account windows only after a **Claude**
+turn reported them (Claude's statusLine). With only OpenCode sessions open it degrades to
+"Usage: waiting for a Claude turn". This plan makes the bar area show one group **per signed-in
+provider**:
+
+```
+Claude  5h ▓▓▓░░ 42%    Week ▓▓░░░ 31%
+Go      5h ▓░░░░ 7%     Week ▓░░░░ 3%    Month ▓░░░░ 1%
+```
+
+OpenCode Go exposes rolling (5h), weekly and monthly windows — the same shape Orca shows for
+Claude and Codex, extended to the OpenCode side. When the user's OpenCode provider has no usage
+endpoint (plain DeepSeek/OpenAI key, etc.) **no Go bars render** — no fake or zeroed bar.
+
+## 2. What exists already (verified in source + upstream)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| `UsageState.account` holds five-hour + 7-day windows from Claude's statusLine | `src/shared/types.ts:241-265`, `src/main/usage/statusLineParser.ts:75-96` | The shape is already provider-neutral enough; only the "one account" storage is the limit. |
+| The OpenCode plugin already posts **per-session model + total cost** to the app's `/statusline/<id>` (throttled ≥1 s) | `src/main/opencode/pluginSource.ts:26-28,114-124,169-183` | Explains why OpenCode sessions already show a model/cost chip but never account bars. The plugin is the natural place to also report the Go allowance. |
+| The plugin is written by the app into a package dir and configured via `OPENCODE_CONFIG_CONTENT`; it has the app's endpoint/token in env | `src/main/opencode/writePlugin.ts`, `pluginEnv.ts` | A new payload field needs no new channel, no new credential handling in main. |
+| The plugin context is an OpenCode server client with the credential API; OpenCode v2 stores the **OpenCode Go key** there (legacy fallback `~/.local/share/opencode/auth.json`) | OpenCode v2 plugin docs (context = server client); community plugin `@and7ey/opencode-go-usage` reads `client.credential.list()` / `integrationID 'opencode-go'` | The key does not have to be read from disk by SessionDeck. |
+| OpenCode Go usage endpoint (used by the console + that community plugin): `GET https://opencode.ai/zen/go/v1/usage`, `Authorization: Bearer <go key>` → `{"usage":{"rolling":{"status":"ok","percent":7,"resetsAt":"..."},"weekly":{...},"monthly":{...}}}` | upstream README of `@and7ey/opencode-go-usage` | Concrete, verified endpoint; percentages are whole numbers, `resetsAt` is ISO. |
+| `parseResetsAt` already accepts ISO strings → epoch seconds | `statusLineParser.ts:45-61` | No new date parsing. |
+| The app's per-session chip reads `sessions[]` by id and has no agent filter | `usageLogic.sessionUsageFor`, `UsageChips.tsx:108-162` | OpenCode sessions already get a chip; only the account group is missing. |
+| Quota autopilot/toasts read `usage.account` only | `src/main/quota/autopilotPolicy.ts:77-78` (`futureFiveHourReset`), `featureWiring.ts:84` | Keeping `account` = Claude keeps the whole D30 automation Claude-only with **zero behavioural change**. |
+| The renderer caches the last account in localStorage | `src/renderer/usage/usageCache.ts`, `USAGE_CACHE_KEY` | Must learn the multi-account shape without breaking existing caches. |
+| e2e can inject statusLine bodies straight into the app | `scripts/e2e-autopilot.cjs:35`, `scripts/e2e-handsfree.cjs:160` | The whole Go path can be tested without opencode.ai or a real key. |
+
+## 3. Design
+
+### 3.1 Contract (additive, on purpose)
+
+```ts
+// src/shared/types.ts
+export type UsageProvider = 'claude' | 'opencode-go'
+
+export interface AccountUsage {
+  readonly provider?: UsageProvider      // absent on cached/legacy data => 'claude'
+  readonly fiveHour: UsageWindow | null
+  readonly sevenDay: UsageWindow | null
+  readonly monthly?: UsageWindow | null  // OpenCode Go only
+  readonly updatedAt: number
+}
+
+export interface UsageState {
+  /** Unchanged meaning: the Claude account. Autopilot/toasts keep reading exactly this. */
+  readonly account: AccountUsage | null
+  /** New: every provider with data, for display only. May omit `account`'s clone. */
+  readonly accounts?: readonly AccountUsage[]
+  readonly sessions: readonly SessionUsage[]
+}
+```
+
+`account` stays the Claude entry forever in v1 — that is what protects D30 behaviour.
+
+### 3.2 OpenCode plugin reports the Go allowance
+
+- In `pluginSource.ts`, add `syncUsageAccount()`:
+  - resolve the key: `context.credential.list()` → `integrationID 'opencode-go'`, fall back to
+    `process.env`/legacy auth file only if the API is unavailable;
+  - `fetch('https://opencode.ai/zen/go/v1/usage', { headers: { authorization: 'Bearer ' + key } })`
+    with the existing 2 s timeout + try/catch style (never throw, never block the turn);
+  - throttle to once per 5 minutes (and once right after a turn ends, so the bar is current
+    when you look at it), plus once at setup;
+  - normalize to the app's existing payload shape and POST to `/statusline/<sessionId>`:
+    ```json
+    { "source": "opencode-go",
+      "rate_limits": { "five_hour": { "used_percentage": 7, "resets_at": "<ISO>" },
+                       "seven_day": { ... }, "monthly": { ... } },
+      "proc": 1234 }
+    ```
+  - the key never leaves the plugin, never reaches the app, is never logged.
+- Any failure (not signed in, 401, 429, offline, other provider) → **post nothing** (the bar
+  goes stale/disappears instead of lying).
+
+### 3.3 Main: provider-aware usage storage
+
+- `parseStatusLine` (pure): read optional `source` (`'opencode-go'` else Claude) and optional
+  `rate_limits.monthly`; return `{ provider, account, session }`.
+- `UsageService`:
+  - keep a `Map<UsageProvider, AccountUsage>`; `ingest` updates the entry for the payload's
+    provider (with the same "same windows, keep updatedAt" comparison);
+  - `ingestAccount` (manual Claude refresh) keeps writing the Claude entry;
+  - `getState()` returns `account` = Claude entry (compat) and `accounts` = both entries
+    (order: claude, opencode-go), only entries with at least one non-null window;
+  - notify only on real change (same reference discipline).
+- Renderer `useUsage`/cache: `usageCache.ts` gains `accounts`; an old cached single account
+  parses as `[{...old, provider: 'claude'}]`. Stale becomes per-account (`updatedAt` + 10 min
+  freshness rule reused from `usageLogic.isStale`).
+
+### 3.4 UI — `UsageChips.tsx`
+
+- Render one labeled group per account that has data:
+  - label chip `Claude` / `Go` (tiny, `text-muted-foreground`, same casing as status bar text);
+  - windows: 5h (`5h`), Week, and **Month for Go**;
+  - existing `WindowChip` reused as-is, incl. tooltips, percent, colour thresholds and a
+    per-account `stale` opacity;
+  - pace text stays Claude-only in v1 (see §7) — Go shows percent + reset tooltip.
+- The "Usage: waiting for a Claude turn" chip becomes "Usage: waiting for a turn" and only
+  renders when **no** account has data. Claude-only users see no visual change except the
+  optional `Claude` label (hide labels when there is exactly one account).
+- Keep the session chip, the quota-held chip and the refresh button order.
+
+### 3.5 Settings
+
+New section under **Settings > Quota** (or General):
+- "Show OpenCode Go usage" toggle, default **ON** (the user asked for this feature; it appears
+  only when a Go credential exists). Off = no Go fetch in the plugin, no Go bars.
+- Help line stating that the key stays in OpenCode and the request goes only to
+  `opencode.ai/zen/go/v1/usage`.
+
+The plugin reads the setting through the app? The plugin cannot read settings; instead the app
+passes an env flag to OpenCode when the setting is off (like `workerPluginEnv` does), or the
+plugin always reports and the main `UsageService` ignores `source: 'opencode-go'` when disabled.
+Choose the latter: **filter in main** (store setting checked in `featureWiring`/service deps) —
+simplest, revocable live, no plugin restart. Include the toggle in the plan's e2e.
+
+## 4. Files touched
+
+- `src/shared/types.ts` (UsageProvider, `monthly`, `accounts`, settings toggle) + settings validation/defaults
+- `src/main/usage/statusLineParser.ts` (+ tests), `UsageService.ts` (+ tests)
+- `src/main/opencode/pluginSource.ts` (+ its `pluginSource.test.ts`: key lookup fallback, throttle, payload shape, silent failure) and the plugin source test harness
+- `src/renderer/usage/usageCache.ts` (+ test: old-shape cache), `usageLogic.ts` (per-account stale helper + tests), `UsageChips.tsx`
+- `src/renderer/settings/` — Quota page toggle
+- New e2e `scripts/e2e-usage-both.cjs`
+- Docs: `HANDOFF.md` (usage section), `docs/DECISIONS.md` D-entry (provider-aware usage + Go bars; user asked on 2026-10-25), `docs/CODEMAP.md` if a file is added
+
+## 5. Verification (W04)
+
+- Unit:
+  - parser: `source: 'opencode-go'` + rolling/weekly/monthly (ISO resetsAt), missing/garbage
+    fields, unknown source falls back to Claude, monthly absent for Claude;
+  - service: two providers stay independent, a Go payload never overwrites Claude windows,
+    `account` stays Claude, `accounts` ordering, no-op on identical windows;
+  - plugin: key from credential API, legacy fallback, 401/429/offline → no post, throttle
+    respected, payload shape;
+  - renderer: per-account stale, cache round-trip incl. the old single-account file.
+- Real-app e2e `scripts/e2e-usage-both.cjs` (pattern of `e2e-autopilot.cjs`):
+  1. Fake Claude statusLine (`rate_limits` 5h/week) → Claude bars render with the `Claude` label.
+  2. Fake `/statusline/<id>` with `{source:'opencode-go', rate_limits:{five_hour, seven_day, monthly}}`
+     → **Go group appears next to Claude's, including Month**, without hiding Claude's bars.
+  3. Read a bell/clear to confirm nothing else changed; assert the Claude 5h number is unchanged
+     by the Go payload (no cross-contamination).
+  4. Disable the setting → Go bars disappear, Claude stays.
+  5. Go payload with `status: 'error'`/no percent → no Go bars, no crash.
+  6. Optional real check: on a machine with OpenCode Go signed in, run one OpenCode turn and
+     confirm the Go bars populate (this is the only step that needs the real endpoint; skipped
+     with an explicit note if no Go key, never silently).
+- Screenshot of the status bar in both states for the Orca look check (D02).
+
+## 6. Risks / safety
+
+- **Unofficial endpoint**: `zen/go/v1/usage` is what the console and community plugins use, but
+  it is not a public SLA. Treated as best-effort: any non-2xx/shape change hides the bars, never
+  breaks usage display or the autopilot.
+- **Credential handling**: the key stays inside the OpenCode plugin process; SessionDeck never
+  receives, stores or logs it. Only a percentage/window payload crosses the local host.
+- **D30 isolation**: quota guard, autopilot and toasts read `account` (Claude) and are untouched.
+  Go bars are display-only in v1 — deliberately not wired into auto-sleep/continue yet.
+- **Bar width**: 5 bars + labels could crowd the status bar; labels hide when one account and
+  the Go group collapses on narrow windows (existing status-bar overflow behaviour). Verify at
+  ~1000 px.
+- **Privacy**: outbound request only when Go is signed in and the toggle is on; documented.
+
+## 7. Out of scope (v1)
+
+- Quota autopilot / toasts / sleep policy driven by OpenCode Go windows (natural follow-up;
+  needs its own decision because the window semantics differ: rolling 20%, weekly 50%,
+  monthly 100% of a model-specific allowance).
+- Other providers (DeepSeek balance, Copilot, OpenRouter): no endpoint, no bars.
+- OpenCode **context %** in the session chip (needs the model's context limit; separate small
+  task).
+- Account switching (Orca's hot-swap) — not requested.
+- Monthly pace forecasting for Go: percentages only, reset time in the tooltip.
+
+## 8. Effort
+
+Medium-small: parser/service are small and pure; the plugin addition is ~40 lines; the renderer
+change is one component. Two worker briefs max (W01), Claude plans, verifies unit + real-app e2e,
+updates docs, commits per feature.

@@ -3,11 +3,15 @@ import type { Id, SessionUsage, UsageState, UsageWindow } from '../../shared/typ
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import {
+  accountsForDisplay,
   describeWindow,
   formatAgo,
   formatContext,
   formatCost,
   formatPercent,
+  isStale,
+  providerLabel,
+  providerOf,
   sessionUsageFor,
   usageLevel,
   type UsageLevel
@@ -32,10 +36,12 @@ export interface UsageChipsProps {
   readonly grantConsent?: () => void
   /** Burn-rate hints per window. When absent, no pace text renders. */
   readonly pace?: { readonly fiveHour: string; readonly sevenDay: string }
+  /** Show the OpenCode Go group (settings toggle). Absent = shown. */
+  readonly showOpencodeGo?: boolean
 }
 
-const WAITING_LABEL = 'Usage: waiting for a Claude turn'
-const WAITING_TOOLTIP = 'Claude Code reports usage after each turn.'
+const WAITING_LABEL = 'Usage: waiting for a turn'
+const WAITING_TOOLTIP = 'Claude Code and OpenCode Go report usage after a turn.'
 
 function fillClass(level: UsageLevel): string {
   if (level === 'high') return 'bg-[var(--destructive)]'
@@ -176,47 +182,90 @@ function WaitingChip(): ReactElement {
   )
 }
 
-/** Compact status-bar chips: plan-window usage + active session model/context/cost. */
+/** Compact status-bar chips: plan-window usage per provider + active session model/context/cost. */
 export function UsageChips(props: UsageChipsProps): ReactElement {
-  const { state, activeSessionId, stale, now, onRefresh, refreshing, refreshError, consented, grantConsent, pace } =
-    props
-  const account = state.account
-  const hasAccountData =
-    account !== null && (account.fiveHour !== null || account.sevenDay !== null)
+  const {
+    state,
+    activeSessionId,
+    stale,
+    now,
+    onRefresh,
+    refreshing,
+    refreshError,
+    consented,
+    grantConsent,
+    pace,
+    showOpencodeGo
+  } = props
+  const accounts = accountsForDisplay(state).filter(
+    (account) => (showOpencodeGo ?? true) || providerOf(account) !== 'opencode-go'
+  )
+  const showProviderLabels = accounts.length > 1
   const session = sessionUsageFor(state, activeSessionId)
   const autopilot = useQuotaAutopilot()
 
   return (
     <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-      {hasAccountData && account !== null ? (
-        <>
-          {account.fiveHour !== null ? (
-            <WindowChip
-              label="5h"
-              longLabel="5-hour window"
-              window={account.fiveHour}
-              now={now}
-              updatedAt={account.updatedAt}
-              stale={stale}
-              pace={pace?.fiveHour ?? ''}
-              showInlinePace={true}
-            />
-          ) : null}
-          {account.sevenDay !== null ? (
-            <WindowChip
-              label="Week"
-              longLabel="7-day window"
-              window={account.sevenDay}
-              now={now}
-              updatedAt={account.updatedAt}
-              stale={stale}
-              pace={pace?.sevenDay ?? ''}
-              showInlinePace={false}
-            />
-          ) : null}
-        </>
-      ) : (
+      {accounts.length === 0 ? (
         <WaitingChip />
+      ) : (
+        accounts.map((account) => {
+          const provider = providerOf(account)
+          const label = providerLabel(provider)
+          const go = provider === 'opencode-go'
+          const accountStale = go ? isStale(account.updatedAt, now) : stale
+          return (
+            <div
+              key={provider}
+              role="group"
+              aria-label={`${label} plan usage`}
+              data-account={provider}
+              className="flex shrink-0 items-center gap-2"
+            >
+              {showProviderLabels ? (
+                <span className="text-muted-foreground/80" aria-hidden="true">
+                  {label}
+                </span>
+              ) : null}
+              {account.fiveHour !== null ? (
+                <WindowChip
+                  label="5h"
+                  longLabel={go ? '5-hour rolling window' : '5-hour window'}
+                  window={account.fiveHour}
+                  now={now}
+                  updatedAt={account.updatedAt}
+                  stale={accountStale}
+                  pace={go ? '' : (pace?.fiveHour ?? '')}
+                  showInlinePace={!go}
+                />
+              ) : null}
+              {account.sevenDay !== null ? (
+                <WindowChip
+                  label="Week"
+                  longLabel="7-day window"
+                  window={account.sevenDay}
+                  now={now}
+                  updatedAt={account.updatedAt}
+                  stale={accountStale}
+                  pace={go ? '' : (pace?.sevenDay ?? '')}
+                  showInlinePace={false}
+                />
+              ) : null}
+              {account.monthly != null ? (
+                <WindowChip
+                  label="Month"
+                  longLabel="monthly window"
+                  window={account.monthly}
+                  now={now}
+                  updatedAt={account.updatedAt}
+                  stale={accountStale}
+                  pace=""
+                  showInlinePace={false}
+                />
+              ) : null}
+            </div>
+          )
+        })
       )}
       {session !== null ? <SessionChip session={session} now={now} /> : null}
       {isHeldVisible(autopilot) ? <QuotaHeldChip state={autopilot} /> : null}

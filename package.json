@@ -49,6 +49,7 @@
     "e2e:termview": "node scripts/e2e-termview.cjs",
     "e2e:tab-working": "node scripts/e2e-tab-working.cjs",
     "e2e:timeline-prompt": "node scripts/e2e-timeline-prompt.cjs",
+    "e2e:usage-both": "node scripts/e2e-usage-both.cjs",
     "e2e:remote": "node scripts/e2e-remote.cjs",
     "e2e:links": "node scripts/e2e-links.cjs",
     "e2e:opencode": "node scripts/e2e-opencode.cjs",

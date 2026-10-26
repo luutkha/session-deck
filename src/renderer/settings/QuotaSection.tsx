@@ -253,6 +253,26 @@ export function QuotaSection({ settings, actions }: QuotaSectionProps): ReactEle
 
       <QuotaAutopilotFields quota={quota} onPatch={(patch: SettingsPatch): void => void applyPatch(patch)} />
 
+      <Separator />
+
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="quota-show-opencode-go" className="text-[13px] font-medium text-foreground">
+          Show OpenCode Go usage
+        </Label>
+        <Switch
+          id="quota-show-opencode-go"
+          checked={quota.showOpencodeGo}
+          onCheckedChange={(checked: boolean): void =>
+            void applyPatch({ quota: { showOpencodeGo: checked } })
+          }
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        The OpenCode plugin reads the Go allowance from opencode.ai/zen/go/v1/usage. Your Go key stays
+        inside OpenCode and never reaches SessionDeck; without a Go login no bars appear.
+      </p>
+
       {error !== null ? (
         <p role="alert" className="text-xs text-destructive">
           {error}

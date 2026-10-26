@@ -123,6 +123,59 @@ describe('parseStatusLine', () => {
       expect(result.account).toBeNull()
     }
   })
+
+  it('defaults to the Claude provider and never reads a monthly window from it', () => {
+    const result = parseStatusLine(
+      { ...SAMPLE, rate_limits: { ...SAMPLE.rate_limits, monthly: { used_percentage: 5, resets_at: 1 } } },
+      1
+    )
+    expect(result.provider).toBe('claude')
+    expect(result.account?.monthly).toBeUndefined()
+    expect(result.account).not.toHaveProperty('monthly')
+  })
+
+  it('falls back to Claude for an unknown source', () => {
+    expect(parseStatusLine({ ...SAMPLE, source: 'something-else' }, 1).provider).toBe('claude')
+    expect(parseStatusLine({ ...SAMPLE, source: 7 }, 1).provider).toBe('claude')
+    expect(parseStatusLine({ ...SAMPLE, source: 'opencode-go' }, 1).provider).toBe('opencode-go')
+  })
+
+  it('reads the OpenCode Go windows, including the monthly one and ISO reset times', () => {
+    const result = parseStatusLine(
+      {
+        source: 'opencode-go',
+        rate_limits: {
+          five_hour: { used_percentage: 7, resets_at: '2026-10-13T10:00:00Z' },
+          seven_day: { used_percentage: 3, resets_at: '2026-10-20T10:00:00Z' },
+          monthly: { used_percentage: 1, resets_at: '2026-11-01T00:00:00Z' }
+        }
+      },
+      1
+    )
+    expect(result.provider).toBe('opencode-go')
+    expect(result.account).toEqual({
+      fiveHour: { usedPercentage: 7, resetsAt: Date.parse('2026-10-13T10:00:00Z') / 1000 },
+      sevenDay: { usedPercentage: 3, resetsAt: Date.parse('2026-10-20T10:00:00Z') / 1000 },
+      monthly: { usedPercentage: 1, resetsAt: Date.parse('2026-11-01T00:00:00Z') / 1000 }
+    })
+  })
+
+  it('keeps a Go account whose only usable window is monthly', () => {
+    const result = parseStatusLine(
+      { source: 'opencode-go', rate_limits: { monthly: { used_percentage: 12 } } },
+      1
+    )
+    expect(result.account).toEqual({ fiveHour: null, sevenDay: null, monthly: { usedPercentage: 12, resetsAt: null } })
+  })
+
+  it('returns a null Go account when its rate_limits are unusable', () => {
+    const result = parseStatusLine(
+      { source: 'opencode-go', rate_limits: { five_hour: { used_percentage: 'x' }, monthly: [] } },
+      1
+    )
+    expect(result.provider).toBe('opencode-go')
+    expect(result.account).toBeNull()
+  })
 })
 
 describe('clampPercent', () => {

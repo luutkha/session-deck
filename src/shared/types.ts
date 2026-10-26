@@ -261,10 +261,17 @@ export interface UsageWindow {
   readonly resetsAt: number | null // epoch SECONDS when the window resets
 }
 
+/** Which provider an account row belongs to. Absent on legacy data = 'claude'. */
+export type UsageProvider = 'claude' | 'opencode-go'
+
 /** Account-level plan usage; identical for every session of the same account. */
 export interface AccountUsage {
+  /** Absent on cached/legacy data, which is always Claude. */
+  readonly provider?: UsageProvider
   readonly fiveHour: UsageWindow | null
   readonly sevenDay: UsageWindow | null
+  /** OpenCode Go only (a rolling 30-day allowance). Absent/null for Claude. */
+  readonly monthly?: UsageWindow | null
   readonly updatedAt: number // epoch ms of the last statusLine update that carried it
 }
 
@@ -278,7 +285,10 @@ export interface SessionUsage {
 }
 
 export interface UsageState {
+  /** The Claude account. Quota autopilot/toasts read exactly this (D30 stays Claude-only). */
   readonly account: AccountUsage | null
+  /** Every provider with data, Claude first, for display only. Absent = legacy single account. */
+  readonly accounts?: readonly AccountUsage[]
   readonly sessions: readonly SessionUsage[]
 }
 
@@ -361,6 +371,8 @@ export interface QuotaSettings {
   readonly resetAction: QuotaResetAction
   /** On wake after a reset, type "continue" into sessions whose turn was cut off by the usage limit. */
   readonly continueOnWake: boolean
+  /** Show the OpenCode Go usage bars (the plugin asks zen/go/v1/usage; the key never reaches the app). */
+  readonly showOpencodeGo: boolean
 }
 
 /** ask = the critical toast offers "Sleep idle sessions"; sleep = do it automatically; nothing = only warn. */
@@ -411,7 +423,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoStatus: { enabled: true, working: 'working', needsInput: 'waiting', finished: 'review' },
   tray: { closeToTray: true, desktopNotifications: true, notifyOnlyWhenUnfocused: true },
   // Hands-off defaults (D33): sleep idle sessions at the critical level, wake + continue after the reset, no asking.
-  quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true },
+  quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true, showOpencodeGo: true },
   sleep: { enabled: false, afterMinutes: 30, allEnabled: false, allAfterMinutes: 60 },
   agents: { defaultAgent: 'claude', opencodeModel: '' },
   hub: { scrollToBusiest: true },

@@ -31,6 +31,11 @@
  *   v1) is attached to that turn's UserPromptSubmit body as {prompt}, exactly like the Claude hook.
  * - The model catalog (context.model.list(), cached at setup) supplies the context-window limit and the
  *   display name; context % uses the LATEST step's prompt tokens, never the cumulative session totals.
+ * - The OpenCode Go allowance (5-hour rolling / weekly / monthly windows) is read from
+ *   https://opencode.ai/zen/go/v1/usage with the credential resolved through the v2 connection API, then
+ *   POSTed as {source:'opencode-go', rate_limits:{five_hour, seven_day, monthly}} — at setup and after a
+ *   turn ends, at most once per 5 minutes. The Go key never leaves this process and is never logged; any
+ *   failure (no login, 401/429, offline, unusable body) posts nothing at all.
  *
  * The handler must NEVER throw and NEVER block (fire-and-forget fetch with a 2 s timeout, every error swallowed
  * because the app may already be gone) and does nothing when SESSIONDECK_PORT is missing.
@@ -50,6 +55,12 @@ export const MAX_PLUGIN_PROMPT_LENGTH = 200
 
 /** Minimum seconds between two /statusline POSTs for one session. */
 export const PLUGIN_USAGE_THROTTLE_MS = 1000
+
+/** Minimum time between two OpenCode Go allowance requests from one plugin instance (5 minutes). */
+export const PLUGIN_GO_USAGE_THROTTLE_MS = 5 * 60 * 1000
+
+/** The OpenCode Go allowance endpoint (unofficial; best effort, any failure posts nothing). */
+export const OPENCODE_GO_USAGE_URL = 'https://opencode.ai/zen/go/v1/usage'
 
 /** Fetch timeout for every plugin request (the app may be gone; never hang). */
 export const PLUGIN_FETCH_TIMEOUT_MS = 2000
@@ -238,6 +249,96 @@ export function buildOpencodePluginSource(): string {
       } catch (error) {}
     }
 
+    var goUsageLastAt = 0
+    var goUsageInFlight = false
+
+    /** CredentialValue (v2: {type:'key',key} | {type:'oauth',access}) -> bearer string; never logged. */
+    function credentialToken(value) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+      var raw = null
+      if (value.type === 'key' && typeof value.key === 'string') raw = value.key
+      else if (value.type === 'oauth' && typeof value.access === 'string') raw = value.access
+      else return null
+      var trimmed = raw.trim()
+      return trimmed.length === 0 ? null : trimmed
+    }
+
+    /**
+     * The signed-in OpenCode Go credential, read from the plugin context (v2.1.4: credential only exposes
+     * activate; the connection API is context.integration.connection.active + resolve). The key stays in
+     * this process and is never stored, posted or logged. Any failure reads as "not signed in".
+     */
+    async function goCredentialToken() {
+      try {
+        var integration = context && context.integration ? context.integration : null
+        if (!integration || !integration.connection) return null
+        if (typeof integration.connection.active !== 'function') return null
+        if (typeof integration.connection.resolve !== 'function') return null
+        var connection = await integration.connection.active('opencode-go')
+        if (!connection || typeof connection !== 'object') return null
+        return credentialToken(await integration.connection.resolve(connection))
+      } catch (error) {
+        return null
+      }
+    }
+
+    /** One Go window in the statusline shape (percent + resets_at as sent by the endpoint). */
+    function goWindow(value) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+      if (typeof value.status === 'string' && value.status.length > 0 && value.status !== 'ok') return null
+      var percent = value.percent
+      if (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 0 || percent > 100) return null
+      var resets = typeof value.resetsAt === 'string' || typeof value.resetsAt === 'number' ? value.resetsAt : null
+      return { used_percentage: percent, resets_at: resets }
+    }
+
+    /** GET /usage body -> the app's existing statusline payload; null when no window is usable. */
+    function goUsagePayload(json) {
+      var root = json && typeof json === 'object' && !Array.isArray(json) ? json : null
+      var usage = root && root.usage && typeof root.usage === 'object' && !Array.isArray(root.usage) ? root.usage : null
+      if (!usage) return null
+      var fiveHour = goWindow(usage.rolling)
+      var sevenDay = goWindow(usage.weekly)
+      var monthly = goWindow(usage.monthly)
+      if (fiveHour === null && sevenDay === null && monthly === null) return null
+      var limits = {}
+      if (fiveHour !== null) limits.five_hour = fiveHour
+      if (sevenDay !== null) limits.seven_day = sevenDay
+      if (monthly !== null) limits.monthly = monthly
+      return { source: 'opencode-go', rate_limits: limits, proc: proc }
+    }
+
+    /**
+     * Reports the OpenCode Go allowance as a statusline body (display only; the app's autopilot still reads
+     * Claude's account). Called at setup and after a turn ends, at most once per 5 minutes. Any failure
+     * (not signed in, 401/429, offline, unusable body) posts NOTHING: stale or absent bars, never fake ones.
+     */
+    async function syncUsageAccount(force) {
+      if (goUsageInFlight) return
+      var now = Date.now()
+      if (!force && now - goUsageLastAt < ${PLUGIN_GO_USAGE_THROTTLE_MS}) return
+      goUsageInFlight = true
+      goUsageLastAt = now
+      try {
+        var token = await goCredentialToken()
+        if (token === null) return
+        var response = await fetch('${OPENCODE_GO_USAGE_URL}', {
+          method: 'GET',
+          headers: { authorization: 'Bearer ' + token, accept: 'application/json' },
+          signal: AbortSignal.timeout(${PLUGIN_FETCH_TIMEOUT_MS})
+        })
+        if (!response) return
+        if (response.ok === false) return
+        if (typeof response.status === 'number' && (response.status < 200 || response.status >= 300)) return
+        var json = typeof response.json === 'function' ? await response.json() : null
+        var payload = goUsagePayload(json)
+        if (payload !== null) post('/statusline/' + encodeURIComponent(sessionId), payload)
+      } catch (error) {
+      } finally {
+        goUsageInFlight = false
+      }
+    }
+
     function handleEvent(event) {
       try {
         if (!event || typeof event.type !== 'string') return
@@ -334,10 +435,14 @@ export function buildOpencodePluginSource(): string {
         // A prompt queued mid-turn belongs to no announced turn: never attach it to a later one.
         pendingPrompt = null
         postHook('Stop')
+        // The bar should be current when the user looks after a turn; throttled to once per 5 min.
+        void syncUsageAccount(false)
       } catch (error) {}
     }
 
     void loadModelCatalog()
+    // First Go allowance as soon as the session starts (silent when OpenCode has no Go login).
+    void syncUsageAccount(true)
 
     void (async function () {
       try {
