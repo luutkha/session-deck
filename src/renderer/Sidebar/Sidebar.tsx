@@ -1,6 +1,6 @@
 import { Settings, Tag } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
-import type { Id, RuntimeState, StoreData } from '../../shared/types'
+import type { Id, RuntimeState, Session, StoreData } from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
 import {
   countByStatus,
@@ -12,10 +12,13 @@ import {
   flatSessionIds,
   groupByStatus,
   groupedSessions,
+  isClosed,
   pruneStatusFilter,
   splitClosed
 } from '../state/selectors'
+import { useMultiSelect } from '../state/useMultiSelect'
 import { computeDrop, type DragItem, type DropOver } from '../state/dropTarget'
+import { BulkActionBar } from '../components/BulkActionBar'
 import { Button } from '../components/ui/button'
 import { ScrollArea } from '../components/ui/scroll-area'
 import { Separator } from '../components/ui/separator'
@@ -93,6 +96,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
   const [statusCollapsed, setStatusCollapsed] = useState<StatusCollapsedMap>(readStatusCollapsed)
   const [showWorkspaces, setShowWorkspaces] = useState<boolean>(readShowWorkspaces)
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState<StatusCollapsedMap>(readWorkspaceCollapsed)
+  const [bulkBusy, setBulkBusy] = useState(false)
   const [now, setNow] = useState<number>(Date.now)
 
   useEffect((): (() => void) => {
@@ -215,6 +219,89 @@ export function Sidebar(props: SidebarProps): ReactElement {
     onSelect(id)
   }, [closedSessions, onSelect])
 
+  // W4 bulk selection: Ctrl/Cmd+click toggles without opening, Shift+click ranges over flatIds,
+  // a plain click opens and clears, Esc clears. Actions always apply in flatIds order.
+  const multi = useMultiSelect(flatIds, handleSelect)
+  const selectedSessions = useMemo(
+    (): readonly Session[] => multi.selectedIds
+      .map((id): Session | undefined => data.sessions.find((session): boolean => session.id === id))
+      .filter((session): session is Session => session !== undefined && !isClosed(session)),
+    [multi.selectedIds, data.sessions]
+  )
+  const { sleepIds, wakeIds } = useMemo((): { readonly sleepIds: readonly Id[]; readonly wakeIds: readonly Id[] } => {
+    const sleep: Id[] = []
+    const wake: Id[] = []
+    for (const session of selectedSessions) {
+      const state = runtime.get(session.id)
+      if (state?.sleeping === true) {
+        wake.push(session.id)
+      } else if (state?.run === 'running') {
+        sleep.push(session.id)
+      }
+    }
+    return { sleepIds: sleep, wakeIds: wake }
+  }, [selectedSessions, runtime])
+
+  /** Same failure policy as the one-at-a-time paths: the store banner reports it, the loop continues. */
+  const runBulk = useCallback(async (
+    ids: readonly Id[],
+    run: (id: Id) => Promise<unknown>
+  ): Promise<void> => {
+    if (ids.length === 0) return
+    setBulkBusy(true)
+    try {
+      for (const id of ids) {
+        try {
+          await run(id)
+        } catch {
+          // actions.* already stored the message in lastError (ErrorBanner); a failing item must not stop the rest.
+        }
+      }
+    } finally {
+      setBulkBusy(false)
+    }
+  }, [])
+
+  const bulkSleep = useCallback((): void => {
+    void runBulk(sleepIds, (id): Promise<void> => window.api.sleepSession(id))
+  }, [runBulk, sleepIds])
+
+  const bulkWake = useCallback((): void => {
+    void runBulk(wakeIds, (id): Promise<void> => {
+      onSelect(id)
+      return Promise.resolve()
+    })
+  }, [runBulk, wakeIds, onSelect])
+
+  const bulkSetStatus = useCallback((statusId: Id | null): void => {
+    void runBulk(multi.selectedIds, (id): Promise<void> => actions.setSessionStatus(id, statusId))
+  }, [runBulk, multi.selectedIds, actions])
+
+  const bulkMoveToGroup = useCallback((groupId: Id | null): void => {
+    const ids = multi.selectedIds
+    if (ids.length === 0) return
+    void (async (): Promise<void> => {
+      setBulkBusy(true)
+      // Append to the target group in view order; the index has to advance locally because the
+      // `data` prop in this closure still describes the state before the loop.
+      let index = data.sessions.filter((session): boolean => session.groupId === groupId).length
+      try {
+        for (const id of ids) {
+          const session = data.sessions.find((candidate): boolean => candidate.id === id)
+          if (session === undefined || session.groupId === groupId) continue
+          try {
+            await actions.moveSession(id, groupId, index)
+            index += 1
+          } catch {
+            // Reported by the store; keep moving the remaining sessions.
+          }
+        }
+      } finally {
+        setBulkBusy(false)
+      }
+    })()
+  }, [actions, data.sessions, multi.selectedIds])
+
   const handleStartRenameSession = useCallback((id: Id): void => {
     setRenamingSessionId(id)
     setRenamingGroupId(null)
@@ -330,6 +417,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
           statusCollapsed={statusCollapsed}
           showWorkspaces={showWorkspaces}
           workspaceCollapsed={workspaceCollapsed}
+          selectedIds={multi.selection.ids}
           onToggleWorkspace={toggleWorkspaceCollapsed}
           onNewSessionInFolder={newSessionInFolder}
           groupSections={groupSections}
@@ -337,7 +425,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
           onListKeyDown={handleListKeyDown}
           onToggleGroupCollapsed={toggleGroupCollapsed}
           onToggleStatusCollapsed={toggleStatusCollapsed}
-          onSelect={handleSelect}
+          onSelect={multi.handleClick}
           onStartRenameSession={handleStartRenameSession}
           onRenameSession={renameSession}
           onCancelRename={handleCancelRename}
@@ -375,6 +463,23 @@ export function Sidebar(props: SidebarProps): ReactElement {
           onResume={onReopen}
           onRequestDelete={requestRemoveClosedSession}
         />
+      )}
+      {selectedSessions.length > 0 && (
+        <div className="shrink-0 px-2 pb-1">
+          <BulkActionBar
+            count={selectedSessions.length}
+            sleepCount={sleepIds.length}
+            wakeCount={wakeIds.length}
+            statuses={data.statuses}
+            groups={data.groups}
+            busy={bulkBusy}
+            onSleep={bulkSleep}
+            onWake={bulkWake}
+            onSetStatus={bulkSetStatus}
+            onMoveToGroup={bulkMoveToGroup}
+            onClear={multi.clear}
+          />
+        </div>
       )}
       <div className="flex shrink-0 items-center gap-1 border-t border-sidebar-border px-2 py-1.5">
         <Tooltip>

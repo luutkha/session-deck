@@ -1,6 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react'
 import type { Id, RuntimeState, StoreData } from '../../shared/types'
 import type { DropOver, DragItem } from '../state/dropTarget'
+import type { SelectClickModifiers } from '../state/multiSelect'
 import type { Section, StatusSection as StatusSectionData } from '../state/selectors'
 import type { GroupBy, StatusCollapsedMap } from './sidebarPrefs'
 import { GroupSection } from './GroupSection'
@@ -20,6 +21,8 @@ export interface SessionListProps {
   readonly statusCollapsed: StatusCollapsedMap
   readonly showWorkspaces: boolean
   readonly workspaceCollapsed: StatusCollapsedMap
+  /** W4: ids in the bulk selection (Ctrl/Shift+click), rendered with the selected style. */
+  readonly selectedIds: ReadonlySet<Id>
   readonly onToggleWorkspace: (collapseKey: string, collapsed: boolean) => void
   readonly onNewSessionInFolder: (groupId: Id | null, folder: string) => void
   readonly groupSections: readonly Section[]
@@ -27,7 +30,7 @@ export interface SessionListProps {
   readonly onListKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void
   readonly onToggleGroupCollapsed: (groupId: Id) => void
   readonly onToggleStatusCollapsed: (sectionKey: string, collapsed: boolean) => void
-  readonly onSelect: (id: Id) => void
+  readonly onSelect: (id: Id, modifiers?: SelectClickModifiers) => void
   readonly onStartRenameSession: (id: Id) => void
   readonly onRenameSession: (id: Id, name: string) => void
   readonly onCancelRename: () => void
@@ -53,6 +56,7 @@ export function SessionList(props: SessionListProps): ReactElement {
     <div
       role="tree"
       aria-label="Sessions"
+      aria-multiselectable={true}
       tabIndex={0}
       onKeyDown={props.onListKeyDown}
       className="flex flex-col gap-0.5 outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
@@ -77,6 +81,7 @@ export function SessionList(props: SessionListProps): ReactElement {
               draggableGroupHeader={section.group !== null}
               showWorkspaces={props.showWorkspaces}
               workspaceCollapsed={props.workspaceCollapsed}
+              selectedIds={props.selectedIds}
               onToggleWorkspace={props.onToggleWorkspace}
               onNewSessionInFolder={props.onNewSessionInFolder}
               onToggleCollapsed={props.onToggleGroupCollapsed}
@@ -119,6 +124,7 @@ export function SessionList(props: SessionListProps): ReactElement {
               dropOver={props.dropOver}
               collapsed={props.statusCollapsed.get(section.key) ?? false}
               draggableSessions={true}
+              selectedIds={props.selectedIds}
               onToggleCollapsed={(): void =>
                 props.onToggleStatusCollapsed(
                   section.key,

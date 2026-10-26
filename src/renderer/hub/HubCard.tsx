@@ -6,6 +6,7 @@ import {
 } from 'react'
 import { Moon } from 'lucide-react'
 import type { Id, RuntimeState, Session, SessionActivity, SessionUsage } from '../../shared/types'
+import type { SelectClickModifiers } from '../state/multiSelect'
 import { activityDetail, activityLabel, isSleeping, relativeTime } from '../state/formatTime'
 import { AgentBadge, sessionAgent } from '../components/AgentBadge'
 import { Badge } from '../components/ui/badge'
@@ -31,7 +32,9 @@ export interface HubCardOwnProps {
   /** Per-session usage (cost/context/model). When absent, no usage chip renders. */
   readonly usage?: SessionUsage
   readonly draggable: boolean
-  readonly onOpen: (id: Id) => void
+  /** W4: part of the bulk selection (Ctrl/Shift+click); independent of the active session. */
+  readonly selected?: boolean
+  readonly onOpen: (id: Id, modifiers?: SelectClickModifiers) => void
   readonly onDragStart: (id: Id) => void
   readonly onDragEnd: () => void
   /** Receives the real DOM event: a Radix ContextMenuTrigger (asChild) injects its handler through this prop. */
@@ -116,6 +119,7 @@ export function HubCard(props: HubCardProps): ReactElement {
     groupName,
     usage,
     draggable,
+    selected = false,
     onOpen,
     onDragStart,
     onDragEnd,
@@ -139,6 +143,7 @@ export function HubCard(props: HubCardProps): ReactElement {
     active
       ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground shadow-sm'
       : 'hover:bg-worktree-sidebar-accent/50',
+    selected && 'ring-1 ring-inset ring-primary/60 bg-worktree-sidebar-accent/60',
     sleeping && 'opacity-60'
   )
 
@@ -148,9 +153,14 @@ export function HubCard(props: HubCardProps): ReactElement {
       role="button"
       tabIndex={0}
       aria-current={active ? 'true' : undefined}
+      data-selected={selected ? 'true' : undefined}
       aria-label={`Open session ${session.name}`}
       draggable={draggable}
-      onClick={(): void => onOpen(session.id)}
+      onClick={(event): void => onOpen(session.id, {
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey
+      })}
       onKeyDown={(event): void => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()

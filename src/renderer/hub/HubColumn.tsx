@@ -1,6 +1,7 @@
 import { type DragEvent as ReactDragEvent, type ReactElement } from 'react'
 import { Plus } from 'lucide-react'
 import type { Id, RuntimeState, Session, SessionUsage, StatusDef, StoreData } from '../../shared/types'
+import type { SelectClickModifiers } from '../state/multiSelect'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { ScrollArea } from '../components/ui/scroll-area'
@@ -21,7 +22,8 @@ export interface HubColumnProps {
   readonly activeId: Id | null
   readonly draggedSessionId: Id | null
   readonly isDropTarget: boolean
-  readonly onOpen: (id: Id) => void
+  readonly selectedIds: ReadonlySet<Id>
+  readonly onOpen: (id: Id, modifiers?: SelectClickModifiers) => void
   readonly onSetStatus: (id: Id, statusId: Id | null) => void
   readonly onNewSession: (statusId: Id | null) => void
   readonly onDragStartSession: (id: Id) => void
@@ -43,6 +45,7 @@ export function HubColumn(props: HubColumnProps): ReactElement {
     activeId,
     draggedSessionId,
     isDropTarget,
+    selectedIds,
     onOpen,
     onSetStatus,
     onNewSession,
@@ -158,6 +161,7 @@ export function HubColumn(props: HubColumnProps): ReactElement {
                   now={now}
                   groupName={groupNameFor(session.groupId, data)}
                   draggable={true}
+                  selected={selectedIds.has(session.id)}
                   onOpen={onOpen}
                   onDragStart={onDragStartSession}
                   onDragEnd={onDragEndSession}

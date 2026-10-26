@@ -159,6 +159,15 @@ Hardening W3 of `plan/hardening-round.md`.
 - Enter / Shift+Enter cycle, Esc closes, clears decorations and refocuses the xterm textarea. The counter needs the addon's `decorations` option — without it `onDidChangeResults` never reports counts.
 - Scrollbar arrow buttons (Windows' default WebKit styling) are hidden with a scoped `::-webkit-scrollbar-button` rule; the theme thumb colours stay.
 
+**D42 · 2026-10-26 · Bulk select sessions and act on them from the sidebar and Hub** · active
+Hardening W4 of `plan/hardening-round.md`.
+- **Rules are pure, not React.** `renderer/state/multiSelect.ts` owns plain/Ctrl/Shift click semantics, `Esc`, pruning to the visible order and view-ordered output; `useMultiSelect` is the shared React shell. Both views pass their own order (sidebar `flatSessionIds`, Hub board order), so collapsed groups, workspaces, search and status filters all behave like the screen.
+- **Plain click opens and clears** (it only sets the range anchor). Ctrl/Cmd+click toggles without changing the active session; Shift+click replaces the set with the visible range. A Ctrl+click on an empty set first includes the plain-clicked anchor, matching Explorer (found by `e2e:bulk`, not by unit tests).
+- **v1 actions:** Sleep, Wake, Set status, Move to group, Clear. No Close/Remove: destructive bulk actions stay one-at-a-time. Wake opens the session because `wakeSession` is main-only.
+- **Application order and failures:** sequentially in view order (never click order), one try/catch per item; the store banner reports failures and the loop continues. The selection survives the action, so the user can chain another one or clear with `Esc`.
+- **Two independent selections:** the sidebar and the Hub each own their state; selecting in one never changes the other. The Hub rows use the same modifiers and bar, so the board is not a second, weaker UI.
+- Rejected: drag-to-select rectangles, a "select all" shortcut and bulk close (offer again if the user asks).
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

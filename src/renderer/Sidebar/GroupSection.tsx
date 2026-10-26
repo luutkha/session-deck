@@ -1,6 +1,7 @@
 import { type DragEvent as ReactDragEvent, type ReactElement } from 'react'
 import type { Group, Id, RuntimeState, Session, StoreData } from '../../shared/types'
 import type { DragItem, DropOver } from '../state/dropTarget'
+import type { SelectClickModifiers } from '../state/multiSelect'
 import { attentionClass, resolveDropPosition } from './uiLogic'
 import { DropHereHint, SectionHeader } from './SectionHeader'
 import { GroupContextMenu } from './GroupContextMenu'
@@ -28,10 +29,11 @@ export interface GroupSectionProps {
   readonly draggableGroupHeader: boolean
   readonly showWorkspaces: boolean
   readonly workspaceCollapsed: ReadonlyMap<string, boolean>
+  readonly selectedIds: ReadonlySet<Id>
   readonly onToggleWorkspace: (collapseKey: string, collapsed: boolean) => void
   readonly onNewSessionInFolder: (groupId: Id | null, folder: string) => void
   readonly onToggleCollapsed: (groupId: Id) => void
-  readonly onSelect: (id: Id) => void
+  readonly onSelect: (id: Id, modifiers?: SelectClickModifiers) => void
   readonly onStartRenameSession: (id: Id) => void
   readonly onRenameSession: (id: Id, name: string) => void
   readonly onCancelRename: () => void
@@ -58,6 +60,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     renamingGroupId, renamingSessionId, drag, dropOver,
     groupBy, draggableSessions, draggableGroupHeader,
     showWorkspaces, workspaceCollapsed, onToggleWorkspace, onNewSessionInFolder,
+    selectedIds,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
     onStartRenameGroup, onRenameGroup, onCloseSession, onSetSessionStatus,
     onMoveSession, onCreateGroupAndMove, onRequestRemoveSession, onRemoveGroup,
@@ -235,6 +238,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         }
         draggable={draggableSessions}
         dragOver={dropOverForSession}
+        selected={selectedIds.has(session.id)}
         onSelect={onSelect}
         onStartRename={onStartRenameSession}
         onCommitRename={onRenameSession}

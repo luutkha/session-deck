@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Plus, Search, Tag } from 'lucide-react'
 import type { Id, RuntimeState, SessionUsage, StoreData } from '../../shared/types'
+import { BulkActionBar } from '../components/BulkActionBar'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { TooltipProvider } from '../components/ui/tooltip'
+import { useMultiSelect } from '../state/useMultiSelect'
 import { formatCost } from '../usage/usageLogic'
 import { HubColumn } from './HubColumn'
 import {
@@ -25,6 +27,9 @@ export interface HubViewProps {
   readonly sessionUsage?: ReadonlyMap<Id, SessionUsage>
   readonly onOpenSession: (id: Id) => void
   readonly onSetStatus: (id: Id, statusId: Id | null) => void
+  /** W4 bulk actions: the board needs the same per-session operations as the sidebar. */
+  readonly onSleepSession: (id: Id) => Promise<void>
+  readonly onMoveSession: (id: Id, groupId: Id | null, index: number) => Promise<void>
   readonly onNewSession: (statusId: Id | null) => void
   readonly onEditStatuses: () => void
   readonly onReopen: (id: Id) => void
@@ -57,6 +62,8 @@ export function HubView(props: HubViewProps): ReactElement {
     sessionUsage,
     onOpenSession,
     onSetStatus,
+    onSleepSession,
+    onMoveSession,
     onNewSession,
     onEditStatuses,
     onReopen,
@@ -92,6 +99,88 @@ export function HubView(props: HubViewProps): ReactElement {
   const closed = useMemo(() => closedSessions(data), [data])
   const usage = sessionUsage ?? EMPTY_USAGE
   const total = useMemo(() => totalCost(data.sessions, usage), [data.sessions, usage])
+
+  // W4 bulk selection over the board order (No status first, then status columns, activity order).
+  const hubOrder = useMemo(
+    (): readonly Id[] => columns.flatMap((column): readonly Id[] => column.sessions.map((session) => session.id)),
+    [columns]
+  )
+  const multi = useMultiSelect(hubOrder, onOpenSession)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const { sleepIds, wakeIds } = useMemo((): { readonly sleepIds: readonly Id[]; readonly wakeIds: readonly Id[] } => {
+    const sleep: Id[] = []
+    const wake: Id[] = []
+    for (const id of multi.selectedIds) {
+      const state = runtime.get(id)
+      if (state?.sleeping === true) {
+        wake.push(id)
+      } else if (state?.run === 'running') {
+        sleep.push(id)
+      }
+    }
+    return { sleepIds: sleep, wakeIds: wake }
+  }, [multi.selectedIds, runtime])
+
+  /** Same failure policy as the per-card actions: the store banner reports it and the loop continues. */
+  const runBulk = useCallback(async (
+    ids: readonly Id[],
+    run: (id: Id) => Promise<unknown>
+  ): Promise<void> => {
+    if (ids.length === 0) return
+    setBulkBusy(true)
+    try {
+      for (const id of ids) {
+        try {
+          await run(id)
+        } catch {
+          // Already recorded in the store's lastError by the action wrapper.
+        }
+      }
+    } finally {
+      setBulkBusy(false)
+    }
+  }, [])
+
+  const bulkSleep = useCallback((): void => {
+    void runBulk(sleepIds, onSleepSession)
+  }, [runBulk, sleepIds, onSleepSession])
+
+  const bulkWake = useCallback((): void => {
+    void runBulk(wakeIds, (id): Promise<void> => {
+      onOpenSession(id)
+      return Promise.resolve()
+    })
+  }, [runBulk, wakeIds, onOpenSession])
+
+  const bulkSetStatus = useCallback((statusId: Id | null): void => {
+    void runBulk(multi.selectedIds, (id): Promise<void> => {
+      onSetStatus(id, statusId)
+      return Promise.resolve()
+    })
+  }, [runBulk, multi.selectedIds, onSetStatus])
+
+  const bulkMoveToGroup = useCallback((groupId: Id | null): void => {
+    const ids = multi.selectedIds
+    if (ids.length === 0) return
+    void (async (): Promise<void> => {
+      setBulkBusy(true)
+      let index = data.sessions.filter((session): boolean => session.groupId === groupId).length
+      try {
+        for (const id of ids) {
+          const session = data.sessions.find((candidate): boolean => candidate.id === id)
+          if (session === undefined || session.groupId === groupId) continue
+          try {
+            await onMoveSession(id, groupId, index)
+            index += 1
+          } catch {
+            // Keep moving the remaining sessions.
+          }
+        }
+      } finally {
+        setBulkBusy(false)
+      }
+    })()
+  }, [data.sessions, multi.selectedIds, onMoveSession])
 
   const handleDragStartSession = useCallback((id: Id): void => {
     setDraggedSessionId(id)
@@ -188,7 +277,8 @@ export function HubView(props: HubViewProps): ReactElement {
                 activeId={activeId}
                 draggedSessionId={draggedSessionId}
                 isDropTarget={dropTarget !== null && dropTarget.statusId === statusId}
-                onOpen={onOpenSession}
+                selectedIds={multi.selection.ids}
+                onOpen={multi.handleClick}
                 onSetStatus={onSetStatus}
                 onNewSession={onNewSession}
                 onDragStartSession={handleDragStartSession}
@@ -200,6 +290,24 @@ export function HubView(props: HubViewProps): ReactElement {
             )
           })}
         </div>
+
+        {multi.selectedIds.length > 0 && (
+          <div className="shrink-0 border-t border-border px-3 py-2">
+            <BulkActionBar
+              count={multi.selectedIds.length}
+              sleepCount={sleepIds.length}
+              wakeCount={wakeIds.length}
+              statuses={data.statuses}
+              groups={data.groups}
+              busy={bulkBusy}
+              onSleep={bulkSleep}
+              onWake={bulkWake}
+              onSetStatus={bulkSetStatus}
+              onMoveToGroup={bulkMoveToGroup}
+              onClear={multi.clear}
+            />
+          </div>
+        )}
 
         {closed.length > 0 && (
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">

@@ -1,6 +1,7 @@
 import { type DragEvent as ReactDragEvent, type ReactElement } from 'react'
 import type { Id, RuntimeState, Session, StoreData } from '../../shared/types'
 import type { DragItem, DropOver } from '../state/dropTarget'
+import type { SelectClickModifiers } from '../state/multiSelect'
 import { DropHereHint, SectionHeader } from './SectionHeader'
 import { SessionCard } from './SessionCard'
 import { SessionContextMenu } from './SessionContextMenu'
@@ -23,8 +24,9 @@ export interface StatusSectionProps {
   readonly dropOver: DropOver | null
   readonly collapsed: boolean
   readonly draggableSessions: boolean
+  readonly selectedIds: ReadonlySet<Id>
   readonly onToggleCollapsed: () => void
-  readonly onSelect: (id: Id) => void
+  readonly onSelect: (id: Id, modifiers?: SelectClickModifiers) => void
   readonly onStartRenameSession: (id: Id) => void
   readonly onRenameSession: (id: Id, name: string) => void
   readonly onCancelRename: () => void
@@ -43,6 +45,7 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
   const {
     sectionKey, label, statusId, color, sessions, data, runtime, lastChange, now,
     activeId, renamingSessionId, drag, dropOver, collapsed, draggableSessions,
+    selectedIds,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
     onCloseSession, onSetSessionStatus, onMoveSession, onCreateGroupAndMove,
     onRequestRemoveSession, onDragStartSession, onDragOverSession, onDropItem, onDragEnd
@@ -118,6 +121,7 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
                 }
                 draggable={draggableSessions}
                 dragOver={dropOverForSession}
+                selected={selectedIds.has(session.id)}
                 onSelect={onSelect}
                 onStartRename={onStartRenameSession}
                 onCommitRename={onRenameSession}

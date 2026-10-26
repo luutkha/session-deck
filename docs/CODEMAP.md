@@ -26,11 +26,11 @@ Where things live. One line per folder, plus the files you usually need. Feature
 ## Renderer (`src/renderer/`)
 - `App.tsx`: window shell (store, usage, mode, focus requests, quota toast; sound and away summary in the main window only).
 - `mode/`: Ops | Code (D31). `ModeWorkspace.tsx` (one mode's whole layout, mounted per mode), `useWorkspaceNav.ts` (tabs/split/view per mode), `useWorkspaceCommands.ts` (dialogs, palette, shortcut), `WorkspaceDialogs.tsx`, `ModeTitleBar.tsx` + `ModeSwitch.tsx`, `useUiMode.ts` (stored mode, pop out / dock), `modeLogic.ts` (filter by mode, mode-scoped storage keys).
-- `state/`: `useSessionStore.ts` (store + runtime from main, `actions`), `selectors.ts` (grouping, workspaces, filters), `formatTime.ts`.
+- `state/`: `useSessionStore.ts` (store + runtime from main, `actions`), `selectors.ts` (grouping, workspaces, filters), `multiSelect.ts` + `useMultiSelect.ts` (bulk-selection rules, shared by the sidebar and the Hub), `formatTime.ts`.
 - `Sidebar/`: session list, groups, workspaces, status view, Closed section, context menus, New session dialog (`dialogLogic.ts`).
 - `shell/`: tab bar, status bar, title bar, empty state, tab shortcuts, user-activity reporter.
 - `Terminal/`: xterm panes, split workspace, keymap (paste, right click), terminal search (Ctrl+Shift+F), link detection, file drop.
-- `split/`: split layout logic. `hub/`: Hub board by status. `notes/`: notes and checklist panel.
+- `split/`: split layout logic. `hub/`: Hub board by status. `notes/`: notes and checklist panel. `components/BulkActionBar.tsx`: the floating bar shared by the sidebar and the Hub.
 - `attention/`: bell icon, Needs you list. `palette/`: command palette (Ctrl+K / Ctrl+Shift+K).
 - `code/`: Code mode UI. `sidebar/` (repo > worktree > sessions tree, `codeTree.ts` pure), `dialogs/` (New worktree, New session in a worktree), `changes/` (Changes panel, `parseUnifiedDiff.ts`, `DiffView`, `useWorktreeChanges` + `useWorktreeChangeCounts`, per-line diff comments `annotations.ts` sent to the session via ptyWrite, rich previews: Diff | Preview toggle, `preview.ts` + `PreviewView.tsx` + `MarkdownView.tsx` + `useWorktreeFilePreview.ts`).
 - `timeline/`: Activity tab (`ActivityList`, `useTimeline`), "While you were away" dialog (`AwayDialog`, `useAwaySummary`), formatting (`timelineFormat.ts`), side-panel tab pref.

@@ -44,6 +44,28 @@ behaves exactly as described.
 - [ ] **Group actions button.** Hover a header: the "⋯" button appears; clicking
   it opens the same menu anchored to the button.
 
+## Bulk selection (sidebar and Hub)
+
+- [ ] **Ctrl+click.** Click one session, then Ctrl+click another: the bar says
+  "2 selected", both rows show the selected ring, and the active tab does NOT
+  change. Esc clears the bar without opening anything.
+- [ ] **Shift+click.** After a Ctrl+click, Shift+click a later row: the range
+  replaces the selection in the order shown on screen (collapsed groups and
+  filtered-out sessions are skipped). The anchor stays put, so Shift+clicking
+  again grows/shrinks the range from the same start.
+- [ ] **Esc.** Clears the selection unless a dialog, an open menu, a text input
+  or the terminal has focus.
+- [ ] **Sleep / Wake.** With two running sessions selected, Sleep disables itself
+  and enables Wake; only the selected sessions sleep. Wake opens the sessions
+  (one tab each), it does not resume them invisibly.
+- [ ] **Set status / Move to group.** Both menus apply their choice to every
+  selected session and leave the bar in place for a second action.
+- [ ] **No closed sessions.** Closed rows never join the selection.
+- [ ] **Hub parity.** The Hub cards follow the same Ctrl/Shift/Esc rules and show
+  their own bar; selecting in the Hub does not select in the sidebar.
+- [ ] **Drag and drop still works.** Dragging a card while nothing is selected
+  reorders it exactly as before.
+
 ## Sessions
 
 - [ ] **Select.** Click a session row: active session switches, the row is

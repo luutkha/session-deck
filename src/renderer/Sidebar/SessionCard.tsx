@@ -1,6 +1,7 @@
 import { Moon, X } from 'lucide-react'
 import { type HTMLAttributes, type ReactElement, type ReactNode, type MouseEvent, type Ref } from 'react'
 import type { AttentionReason, Id, RuntimeState, Session, SessionActivity, StatusDef } from '../../shared/types'
+import type { SelectClickModifiers } from '../state/multiSelect'
 import { activityDetail, activityLabel, isSleeping, relativeTime } from '../state/formatTime'
 import { AgentBadge, sessionAgent } from '../components/AgentBadge'
 import { Badge } from '../components/ui/badge'
@@ -49,7 +50,10 @@ export interface SessionCardOwnProps {
   readonly indicatorClass: string
   readonly draggable: boolean
   readonly dragOver: 'before' | 'after' | 'inside' | null
-  readonly onSelect: (id: Id) => void
+  /** W4: part of the bulk selection (Ctrl/Shift+click); independent of the active session. */
+  readonly selected?: boolean
+  /** The optional modifiers let the sidebar distinguish plain / Ctrl / Shift clicks (W4). */
+  readonly onSelect: (id: Id, modifiers?: SelectClickModifiers) => void
   readonly onStartRename: (id: Id) => void
   readonly onCommitRename: (id: Id, name: string) => void
   readonly onCancelRename: () => void
@@ -77,7 +81,7 @@ export function SessionCard(props: SessionCardProps): ReactElement {
     session, status, active, runtime, lastChange, now, renaming,
     groupBadge, showGroupBadge, attention,
     showIndicator, indicatorAriaLabel, indicatorClass,
-    draggable, dragOver,
+    draggable, dragOver, selected = false,
     onSelect, onStartRename, onCommitRename, onCancelRename, onClose, onContextMenu,
     onDragStart, onDragOverItem, onDropItem, onDragEnd, contextMenuTrigger,
     ...rest
@@ -92,6 +96,9 @@ export function SessionCard(props: SessionCardProps): ReactElement {
     classes.push('border border-transparent bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground shadow-sm')
   } else {
     classes.push('border border-transparent hover:bg-worktree-sidebar-accent/50')
+  }
+  if (selected) {
+    classes.push('ring-1 ring-inset ring-primary/60 bg-worktree-sidebar-accent/60')
   }
   if (sleeping) {
     classes.push('opacity-60')
@@ -115,10 +122,15 @@ export function SessionCard(props: SessionCardProps): ReactElement {
     <div
       {...rest}
       role="treeitem"
-      aria-selected={active}
+      aria-selected={active || selected}
+      data-selected={selected ? 'true' : undefined}
       tabIndex={-1}
       draggable={draggable && !renaming}
-      onClick={(): void => onSelect(session.id)}
+      onClick={(event): void => onSelect(session.id, {
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey
+      })}
       onDoubleClick={(): void => onStartRename(session.id)}
       onKeyDown={(event): void => {
         if (event.key === 'Enter') {

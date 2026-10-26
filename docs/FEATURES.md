@@ -1,7 +1,7 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` — *why* a feature exists and what the user chose (D01–D32).
+> - `docs/DECISIONS.md` — *why* a feature exists and what the user chose (D01–D42).
 > - `HANDOFF.md` — the narrative state of each feature, including known gaps.
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
@@ -81,7 +81,8 @@ SessionDeck
 │   ├── NAV-7  Inline rename
 │   ├── NAV-8  Context menus
 │   ├── NAV-9  Keyboard navigation
-│   └── NAV-10 Status view
+│   ├── NAV-10 Status view
+│   └── NAV-11 Bulk selection and actions (sidebar + Hub)
 ├── ATT  Attention & alerts
 │   ├── ATT-1  Claude hook pipeline
 │   ├── ATT-2  Attention reasons and priority
@@ -266,6 +267,7 @@ SessionDeck
 | NAV-8 | Context menus | Shipped | Right-click a card / group | Session: rename, status submenu, move to group, new group + move, sleep/wake, keep awake, mark read/unread, close, remove. Group: rename, new session, delete. Menus clamp to the viewport. | `renderer/Sidebar/SessionContextMenu.tsx`, `GroupContextMenu.tsx`, `uiLogic.ts` → `clampMenuPosition` | `uiLogic.test.ts` |
 | NAV-9 | Keyboard navigation | Shipped | Sidebar focused | `↑`/`↓` roving selection, `Enter` opens, `F2` renames, `Delete` asks to remove; typing in inputs and open dialogs suppress global shortcuts. | `renderer/Sidebar/useSidebarKeyboard.ts`; `Sidebar/uiLogic.ts` → `moveFocus`, `shouldHandleGlobalShortcut` | `uiLogic.test.ts` |
 | NAV-10 | Status view | Shipped | Group-by = Status | Read-only grouping by status; no workspace buckets; drag between sections changes status (same as Hub). | `renderer/state/selectors.ts`; `Sidebar/Sidebar.tsx` | `selectors.test.ts` |
+| NAV-11 | Bulk selection and actions | Shipped | Sidebar / Hub with Ctrl / Shift / Esc | Plain click opens and clears (sets the range anchor); Ctrl/Cmd+click toggles without opening; Shift+click replaces with the visible range; Esc clears unless a dialog/menu/input/xterm has focus. Ids are pruned to the visible order; actions apply in view order, sequentially, one try/catch each (store banner reports failures) and the selection survives. Actions: Sleep, Wake (opens), Set status, Move to group, Clear. Closed sessions never select; sidebar and Hub selections are independent. | `renderer/state/multiSelect.ts`, `useMultiSelect.ts`; `components/BulkActionBar.tsx`; `Sidebar/Sidebar.tsx`, `SessionCard.tsx`; `hub/HubView.tsx`, `HubCard.tsx` | `multiSelect.test.ts`; e2e `e2e:bulk` |
 
 ### 2.4 ATT — Attention & alerts
 
@@ -539,6 +541,8 @@ SessionDeck
 | `Ctrl+C` / `Ctrl+Shift+C` / `Ctrl+V` | Copy / copy / paste | Terminal | TRM-3 |
 | `Ctrl+Shift+F` | Find in the terminal (visible pane) | Terminal / grid view | TRM-12 |
 | `↑` / `↓`, `Enter`, `Delete` | Sidebar navigation | Sidebar focused | NAV-9 |
+| `Ctrl+click` / `Shift+click` | Toggle / range-select sessions (without opening) | Sidebar cards / Hub cards | NAV-11 |
+| `Esc` | Clear the bulk selection | Sidebar / Hub, unless a dialog, menu, input or terminal has focus | NAV-11 |
 | `←` / `→` or `↑` / `↓`, `Enter` | Resize / equalise a split divider | Divider focused | TRM-7 |
 
 ### 3.6 Settings keys
@@ -579,6 +583,7 @@ SessionDeck
 | `e2e-bell.cjs` | ATT-2/3/4, SES-13 | Bell on card/tab/Hub, mark read/unread, real background turn |
 | `e2e-hub.cjs` | HUB-1/2/3, ATT-5, SET-1 | Hub columns, drag status, settings, sound pipeline |
 | `e2e-hubscroll.cjs` | HUB-6 | Busiest-column scroll |
+| `e2e-bulk.cjs` | NAV-11, HUB-3 | Real Ctrl/Shift/Esc selection, bulk sleep/status/group in the sidebar and Hub, DnD regression |
 | `e2e-g1.cjs` | AUT-1, TRM-7, ATT-9, SET-1 | Auto status, split, settings, close-to-tray |
 | `e2e-notes-usage.cjs` | NTS-1/2, USE-2 | Notes/checklist across restart + real usage |
 | `e2e-usage-refresh.cjs` | USE-4 | Consent, one real endpoint request |

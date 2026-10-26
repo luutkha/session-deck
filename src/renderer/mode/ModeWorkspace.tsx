@@ -249,6 +249,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                     activeId={activeId}
                     onOpenSession={nav.selectSession}
                     onSetStatus={(id, statusId): void => { void actions.setSessionStatus(id, statusId) }}
+                    onSleepSession={(id): Promise<void> => window.api.sleepSession(id)}
+                    onMoveSession={(id, groupId, index): Promise<void> => actions.moveSession(id, groupId, index)}
                     onNewSession={commands.openNewInStatus}
                     onEditStatuses={editStatuses}
                     onReopen={nav.reopenSession}
