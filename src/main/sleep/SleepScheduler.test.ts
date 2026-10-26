@@ -15,6 +15,7 @@ interface Harness {
   setSessions(value: ReadonlyArray<{ id: Id; closedAt?: number }>): void
   setRuntime(value: ReadonlyMap<Id, RuntimeState>): void
   setActive(id: Id | null): void
+  setOnScreen(ids: readonly Id[]): void
 }
 
 function runtimeRunning(ids: readonly Id[]): ReadonlyMap<Id, RuntimeState> {
@@ -28,7 +29,7 @@ function harness(): Harness {
   let settings: SleepSettings = { enabled: true, afterMinutes: 1, allEnabled: false, allAfterMinutes: 60 }
   let sessions: ReadonlyArray<{ id: Id; closedAt?: number }> = []
   let runtime: ReadonlyMap<Id, RuntimeState> = new Map()
-  let active: Id | null = null
+  let onScreen: Id[] = []
   const slept: Id[] = []
   const errors: Array<readonly [string, unknown]> = []
   let callback: (() => void) | null = null
@@ -40,7 +41,7 @@ function harness(): Harness {
     getSettings: () => settings,
     getSessions: () => sessions,
     getRuntime: () => runtime,
-    getActiveSessionId: () => active,
+    getOnScreenSessionIds: () => new Set(onScreen),
     sleepSession: (id) => {
       slept.push(id)
     },
@@ -80,7 +81,10 @@ function harness(): Harness {
       runtime = value
     },
     setActive: (id) => {
-      active = id
+      onScreen = id === null ? [] : [id]
+    },
+    setOnScreen: (ids) => {
+      onScreen = [...ids]
     }
   }
 }
@@ -101,7 +105,7 @@ describe('createSleepScheduler', () => {
       getSettings: () => ({ enabled: false, afterMinutes: 1, allEnabled: false, allAfterMinutes: 60 }),
       getSessions: () => [],
       getRuntime: () => new Map(),
-      getActiveSessionId: () => null,
+      getOnScreenSessionIds: () => new Set(),
       sleepSession: () => {},
       now: () => 0,
       onError: () => {},
@@ -191,6 +195,19 @@ describe('createSleepScheduler', () => {
     expect(h.slept).toEqual([])
   })
 
+  it('does not sleep the sessions visible in either window', () => {
+    const h = harness()
+    h.setSessions([{ id: 'main' }, { id: 'code' }, { id: 'idle' }])
+    h.setRuntime(runtimeRunning(['main', 'code', 'idle']))
+    h.setOnScreen(['main', 'code'])
+    h.scheduler.start()
+
+    h.setNow(10_000 + 60_000)
+    h.tick()
+
+    expect(h.slept).toEqual(['idle'])
+  })
+
   it('does not read closed or non-running sessions', () => {
     const h = harness()
     h.setSessions([{ id: 'closed', closedAt: 5 }, { id: 'idle' }])
@@ -217,7 +234,7 @@ describe('createSleepScheduler', () => {
           ['a', { sessionId: 'a', run: 'running', exitCode: null, attention: null, activity: 'finished' }],
           ['b', { sessionId: 'b', run: 'running', exitCode: null, attention: null, activity: 'finished' }]
         ]),
-      getActiveSessionId: () => null,
+      getOnScreenSessionIds: () => new Set(),
       sleepSession: (id) => {
         if (id === 'a') throw new Error('boom')
         slept.push(id)
@@ -304,7 +321,7 @@ describe('createSleepScheduler', () => {
       getSettings: () => ({ enabled: false, afterMinutes: 1, allEnabled: true, allAfterMinutes: 1 }),
       getSessions: () => [{ id: 'a' }, { id: 'b' }],
       getRuntime: () => runtimeRunning(['a', 'b']),
-      getActiveSessionId: () => null,
+      getOnScreenSessionIds: () => new Set(),
       sleepSession: (id) => {
         if (id === 'a') throw new Error('boom')
         slept.push(id)
@@ -342,7 +359,7 @@ describe('createSleepScheduler', () => {
       }),
       getSessions: () => [{ id: 'a' }],
       getRuntime: () => runtimeRunning(['a']),
-      getActiveSessionId: () => null,
+      getOnScreenSessionIds: () => new Set(),
       sleepSession: (id) => {
         slept.push(id)
       },
@@ -379,7 +396,7 @@ describe('createSleepScheduler', () => {
       }),
       getSessions: () => [{ id: 'a' }],
       getRuntime: () => runtimeRunning(['a']),
-      getActiveSessionId: () => null,
+      getOnScreenSessionIds: () => new Set(),
       sleepSession: (id) => {
         slept.push(id)
       },
@@ -409,7 +426,7 @@ describe('createSleepScheduler', () => {
       },
       getSessions: () => [],
       getRuntime: () => new Map(),
-      getActiveSessionId: () => null,
+      getOnScreenSessionIds: () => new Set(),
       sleepSession: () => {},
       now: () => 0,
       onError: (where, error) => errors.push([where, error]),

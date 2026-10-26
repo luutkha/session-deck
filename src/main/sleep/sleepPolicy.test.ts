@@ -40,7 +40,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ enabled: false }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a')),
       lastTouchAt: touches([['a', NOW - 60 * 60_000]])
@@ -52,7 +52,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 30 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { activity: 'finished' })),
       lastTouchAt: touches([['a', NOW - 30 * 60_000]])
@@ -64,7 +64,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 30 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a'), open('b')),
       runtime: runtimeOf(
         state('a', { activity: 'finished', remoteControl: true }),
@@ -79,7 +79,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 30 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { activity: 'finished' })),
       lastTouchAt: touches([['a', NOW - 30 * 60_000 + 1]])
@@ -91,7 +91,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings(),
-      activeSessionId: 'a',
+      onScreenSessionIds: new Set(['a']),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a')),
       lastTouchAt: touches([['a', 0]])
@@ -99,11 +99,23 @@ describe('pickSessionsToSleep', () => {
     expect(picked).toEqual([])
   })
 
+  it('never picks a session on screen in any open window (two windows)', () => {
+    const picked = pickSessionsToSleep({
+      nowMs: NOW,
+      settings: settings(),
+      onScreenSessionIds: new Set(['a', 'b']),
+      sessions: sessions(open('a'), open('b'), open('c')),
+      runtime: runtimeOf(state('a'), state('b'), state('c')),
+      lastTouchAt: touches([['a', 0], ['b', 0], ['c', 0]])
+    })
+    expect(picked).toEqual(['c'])
+  })
+
   it('never picks a closed session', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings(),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions({ id: 'a', closed: true }),
       runtime: runtimeOf(state('a')),
       lastTouchAt: touches([['a', 0]])
@@ -115,7 +127,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings(),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { run: 'exited' })),
       lastTouchAt: touches([['a', 0]])
@@ -127,7 +139,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings(),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { run: 'exited', sleeping: true })),
       lastTouchAt: touches([['a', 0]])
@@ -139,7 +151,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings(),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(),
       lastTouchAt: touches([['a', 0]])
@@ -152,7 +164,7 @@ describe('pickSessionsToSleep', () => {
       const picked = pickSessionsToSleep({
         nowMs: NOW,
         settings: settings(),
-        activeSessionId: null,
+        onScreenSessionIds: new Set(),
         sessions: sessions(open('a')),
         runtime: runtimeOf(state('a', { activity })),
         lastTouchAt: touches([['a', 0]])
@@ -166,7 +178,7 @@ describe('pickSessionsToSleep', () => {
       const picked = pickSessionsToSleep({
         nowMs: NOW,
         settings: settings(),
-        activeSessionId: null,
+        onScreenSessionIds: new Set(),
         sessions: sessions(open('a')),
         runtime: runtimeOf(state('a', { activity: activity as SessionActivity | null })),
         lastTouchAt: touches([['a', 0]])
@@ -179,7 +191,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings(),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { attention: 'permission' })),
       lastTouchAt: touches([['a', 0]])
@@ -191,7 +203,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings(),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { activity: 'finished', activityAt: 0 })),
       lastTouchAt: touches([])
@@ -203,7 +215,7 @@ describe('pickSessionsToSleep', () => {
     const recentActivity = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 30 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { activity: 'finished', activityAt: NOW - 1000 })),
       lastTouchAt: touches([['a', 0]])
@@ -213,7 +225,7 @@ describe('pickSessionsToSleep', () => {
     const oldActivity = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 30 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { activity: 'finished', activityAt: 0 })),
       lastTouchAt: touches([['a', NOW - 30 * 60_000]])
@@ -225,7 +237,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 0 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { activity: 'finished' })),
       lastTouchAt: touches([['a', NOW - MIN_SLEEP_MINUTES * 60_000]])
@@ -237,7 +249,7 @@ describe('pickSessionsToSleep', () => {
     const justAboveMax = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 999_999 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { activity: 'finished' })),
       lastTouchAt: touches([['a', NOW - (MAX_SLEEP_MINUTES * 60_000 - 1)]])
@@ -247,7 +259,7 @@ describe('pickSessionsToSleep', () => {
     const atMax = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 999_999 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions(open('a')),
       runtime: runtimeOf(state('a', { activity: 'finished' })),
       lastTouchAt: touches([['a', NOW - MAX_SLEEP_MINUTES * 60_000]])
@@ -259,7 +271,7 @@ describe('pickSessionsToSleep', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings(),
-      activeSessionId: 'b',
+      onScreenSessionIds: new Set(['b']),
       sessions: sessions(open('a'), open('b'), open('c')),
       runtime: runtimeOf(state('a', { activity: 'finished' }), state('b'), state('c', { activity: 'working' })),
       lastTouchAt: touches([['a', 0], ['b', 0], ['c', 0]])
@@ -273,7 +285,7 @@ describe('pickSessionsToSleep (keep awake)', () => {
     const picked = pickSessionsToSleep({
       nowMs: NOW,
       settings: settings({ afterMinutes: 30 }),
-      activeSessionId: null,
+      onScreenSessionIds: new Set(),
       sessions: sessions({ id: 'a', closed: false, keepAwake: true }, open('b')),
       runtime: runtimeOf(state('a', { activity: 'finished' }), state('b', { activity: 'finished' })),
       lastTouchAt: touches([['a', NOW - 90 * 60_000], ['b', NOW - 90 * 60_000]])

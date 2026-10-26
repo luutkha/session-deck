@@ -145,6 +145,12 @@ Hardening W2 of `plan/hardening-round.md`, three changes that add no UI:
 - **Reset dedup is per window.** The 30-minute dedup that drops a guard copy of a reset the autopilot timer already handled applies to the five-hour window only; a weekly reset arriving inside that window is still delivered (it changes no autopilot state, so it cannot disturb the hold). Locked by a unit test and by `e2e:autopilot` (weekly critical at 99% sleeps the idle session with no click, the 5-hour reset wakes it, then a weekly reset inside the dedup window still shows a toast).
 The `continue` retry/notification item of the plan is already shipped by `hands-free-quota.md.done` (D33), so it was skipped instead of built twice.
 
+**D40 · 2026-10-26 · "On screen" means every open window, not the focused one** · active
+Hardening W5 of `plan/hardening-round.md`. `isSessionOnScreen` used to compare the id with `activeSessions.get(windows.focusedRole())`, so with Code popped out:
+- the Code window's session looked background while the user was reading it → the idle timer could sleep it, and its bell/desktop notice could fire;
+- after the Code window docked/closed, its role kept the last id forever (nothing cleared it), so that session was never slept and its notices were always suppressed.
+Rules now: `onScreenSessionIds()` is `new Set(activeSessions.all())` and `isSessionOnScreen(id)` is a membership test; the sleep scheduler depends on `getOnScreenSessionIds` and `pickSessionsToSleep` takes `onScreenSessionIds: ReadonlySet<Id>` (2 new unit tests). `windows.onStateChange` clears the Code role whenever `codePoppedOut` is false, so a docked/closed window cannot leave a ghost. The app-wide sleep-all rule is deliberately unchanged: it sleeps the session on screen too (D26). E2E `e2e:sleep` now drives the real UI: a worktree session is opened in the popped-out Code window, a background Ops session sleeps while it keeps running, then docking + switching the main window to Ops makes it sleep on the next tick.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

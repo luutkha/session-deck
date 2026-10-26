@@ -12,7 +12,8 @@ export interface SleepPolicySession {
 export interface SleepPolicyInput {
   readonly nowMs: number
   readonly settings: SleepSettings
-  readonly activeSessionId: Id | null
+  /** Every session the user can see right now (one per open window; empty when no window is open). */
+  readonly onScreenSessionIds: ReadonlySet<Id>
   readonly sessions: readonly SleepPolicySession[]
   readonly runtime: ReadonlyMap<Id, RuntimeState>
   readonly lastTouchAt: ReadonlyMap<Id, number>
@@ -24,13 +25,13 @@ function clampAfterMinutes(afterMinutes: number): number {
 
 /**
  * Pure idle rule: which running sessions may be put to sleep right now.
- * A session is picked only when sleep is enabled, it is open and running, it is not already asleep, it is not the
- * active session, its activity is neither 'working' nor 'needs-input' (finished or unknown), no attention is pending,
- * and it has been untouched for at least `afterMinutes` (clamped to MIN/MAX_SLEEP_MINUTES). A session with no
- * recorded touch is treated as just touched (never idle).
+ * A session is picked only when sleep is enabled, it is open and running, it is not already asleep, it is not on
+ * screen in ANY open window, its activity is neither 'working' nor 'needs-input' (finished or unknown), no attention
+ * is pending, and it has been untouched for at least `afterMinutes` (clamped to MIN/MAX_SLEEP_MINUTES). A session
+ * with no recorded touch is treated as just touched (never idle).
  */
 export function pickSessionsToSleep(input: SleepPolicyInput): Id[] {
-  const { nowMs, settings, activeSessionId, sessions, runtime, lastTouchAt } = input
+  const { nowMs, settings, onScreenSessionIds, sessions, runtime, lastTouchAt } = input
   if (!settings.enabled) return []
 
   const thresholdMs = clampAfterMinutes(settings.afterMinutes) * 60_000
@@ -38,7 +39,7 @@ export function pickSessionsToSleep(input: SleepPolicyInput): Id[] {
 
   for (const session of sessions) {
     if (session.closed) continue
-    if (session.id === activeSessionId) continue
+    if (onScreenSessionIds.has(session.id)) continue
     if (session.keepAwake === true) continue
 
     const state = runtime.get(session.id)

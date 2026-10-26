@@ -121,6 +121,7 @@ if (!gotTheLock) {
     })
 
     const saver = createDebouncedSaver(storePath, SAVER_DELAY_MS)
+    const activeSessions = createActiveSessions()
 
     // Code mode (D31): the main window, plus the Code window while it is popped out. Events go to both.
     const windows = createWindowRegistry<BrowserWindow>({
@@ -130,11 +131,14 @@ if (!gotTheLock) {
         role,
         parent: mainWindow ?? undefined
       }).window,
-      onStateChange: (state) => windows.broadcast(IPC.evWindowState, state),
+      onStateChange: (state) => {
+        // A docked/closed Code window must not keep its last session "on screen" (attention + sleep checks).
+        if (!state.codePoppedOut) activeSessions.clearRole('code')
+        windows.broadcast(IPC.evWindowState, state)
+      },
       onError
     })
     codeWindowFocused = () => windows.code()?.isFocused() === true
-    const activeSessions = createActiveSessions()
 
     /** Notification / tray click: a Code session opens in the Code window when it is popped out, else in the main window. */
     function focusSession(id: string): void {
@@ -262,10 +266,14 @@ if (!gotTheLock) {
       return controller.getActiveSessionId()
     }
 
-    /** The session the user is looking at right now (in the focused window): its bell still shows, but it never pings. */
+    /** Every session visible in an OPEN window: main and Code can show different sessions. */
+    function onScreenSessionIds(): ReadonlySet<string> {
+      return new Set(activeSessions.all())
+    }
+
+    /** A session the user can see right now (in any open window): its bell still shows, but it never pings. */
     function isSessionOnScreen(id: string): boolean {
-      const role = windows.focusedRole()
-      return role !== null && activeSessions.get(role) === id
+      return onScreenSessionIds().has(id)
     }
 
     // Idle sessions are put to sleep (Claude process stopped, conversation kept) when Settings > Sleep is on.
@@ -274,7 +282,7 @@ if (!gotTheLock) {
       // Shell sessions (Code mode) often run a dev server: never slept automatically (a manual Sleep still works).
       getSessions: () => store.get().sessions.map((s) => (s.agent === 'shell' ? { ...s, keepAwake: true } : s)),
       getRuntime: () => new Map(runtime.snapshot().map((state) => [state.sessionId, state])),
-      getActiveSessionId: () => activeSessions.get(windows.focusedRole() ?? 'main') ?? activeSessionId(),
+      getOnScreenSessionIds: onScreenSessionIds,
       sleepSession: (id) => controller.sleepSession(id),
       now: () => Date.now(),
       onError

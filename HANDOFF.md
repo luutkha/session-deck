@@ -179,6 +179,13 @@ Settings > Automation > "Sleep everything when idle" (`SleepSettings.allEnabled`
 - Window hidden in the tray = no input = counts as away.
 - E2E: `scripts/e2e-sleepall.cjs` (12 checks, ~4 min: real switch click, real key press postpones, all sleep incl. the one on screen, Keep awake stays running, wake works). `e2e-sleep.cjs` still passes.
 
+## On-screen sessions across windows (D40)
+The sleep timer and the attention checks used to spare only the session on screen in the **focused** window (`windows.focusedRole()`), so with Code popped out the other window's session looked background and could be slept while the user was reading it.
+- `activeSessions` is now read as a whole: `onScreenSessionIds()` = `new Set(activeSessions.all())` (every role with a session), and `isSessionOnScreen(id)` is a membership test. `SleepScheduler` depends on `getOnScreenSessionIds` (was `getActiveSessionId`); `pickSessionsToSleep` takes `onScreenSessionIds: ReadonlySet<Id>`.
+- Docking or closing the Code window clears its role (`onStateChange` → `activeSessions.clearRole('code')` when `!state.codePoppedOut`). Nothing cleared it before, so a closed Code window left a ghost "on screen" id that blocked sleep and silenced attention forever.
+- The app-wide rule is unchanged: sleep-all still sleeps the on-screen session by design (D26).
+- E2E: `e2e-sleep.cjs` gained a two-window phase (real worktree, real pop out, second CDP target): while the Code window shows a session, a background Ops session sleeps and the Code session keeps running; after docking and switching to Ops, the next tick sleeps it too.
+
 ## Sleeping keeps the bell (D27)
 `sleepSession` calls `AttentionService.suspend(id)` (drops idle timers only) instead of `forget`, and `runtimeRegistry.markSleeping` keeps `attention` + `attentionAt`. So a sleeping card, tab and the "Needs you" list keep the bell until the user opens the session or marks it read. Close and remove still forget it. E2E: `scripts/e2e-sleepbell.cjs` (10 checks, real Stop hook).
 
@@ -213,7 +220,7 @@ E2E: `scripts/e2e-palette.cjs` (16 checks, real key presses).
 - Built by OpenCode workers (git, store/shell, windows, Changes UI, Code sidebar; the mode shell was half done when the Go plan cap hit) and finished by the orchestrator (`App.tsx`, `mode/ModeWorkspace.tsx`, `useWorkspaceCommands.ts`, `WorkspaceDialogs.tsx`, `app/codeWiring.ts`, `index.ts`).
 - E2E: `npm run e2e:codemode` (34 checks: real dialog, git branch + linked worktree on disk, Shell writes in the worktree, Changes + diff, path outside the list refused, Ops/Code separation + badge, worktree-row "+", pop out / dock with a second CDP target, restart, remove keeps files).
 - PENDING: read-only review on a different model family (deepseek-v4-pro, `-Agent plan`) was blocked by the OpenCode Go cap on 2026-10-22; the user chose to wait and run it when capacity is back.
-- Known gaps: Claude asks "trust this folder" once per new worktree (not bypassed); the idle-sleep timer only spares the session on screen in the focused window; Windows reserved names (con, nul...) as worktree names are not mapped; no commit/merge/PR/delete-from-disk (not chosen for v1).
+- Known gaps: Claude asks "trust this folder" once per new worktree (not bypassed); Windows reserved names (con, nul...) as worktree names are not mapped; no commit/merge/PR/delete-from-disk (not chosen for v1).
 
 ## Code mode review fixes (2026-10-25, D31)
 Review fixes on the D31 feature, all unit-tested (new `codeWiring.test.ts`) and e2e-extended:

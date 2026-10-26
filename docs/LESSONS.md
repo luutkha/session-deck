@@ -29,6 +29,7 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 
 ## Electron / xterm / Windows
 - `ready-to-show` did not fire with the hidden title bar; the window is shown explicitly.
+- **"On screen" is per window role, and a closed window must clear its role.** Comparing against the focused role misses the other window, and leaving the role set after the window closes makes that session permanently "visible" (never slept, never pings). Read the union of all roles for visibility, and clear a role in the window-state change that reports it gone.
 - Radix `Slot` forwards `onContextMenu` into child props; components must accept and spread it.
 - Typing into an exited session used to throw in main and freeze the app behind a native dialog; main logs errors to `<userData>/main-errors.log` instead.
 - A hard kill loses localStorage writes Chromium has not committed; e2e restarts use `window.api.quitApp()`.

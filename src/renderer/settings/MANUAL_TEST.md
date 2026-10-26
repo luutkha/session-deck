@@ -127,6 +127,12 @@ close (X) button, and clicking the backdrop all close the dialog.
 - [ ] **Helper text.** The muted line "Stops the Claude process of a session that
       has been idle (no output, not working, not waiting for you) to free memory
       and CPU. Open it again and the same conversation resumes." shows below.
+- [ ] **Two windows.** Set "Sleep after" to 1 minute, put a worktree session in
+      the popped-out Code window and leave another idle session in the Ops list.
+      When the timer fires the Ops session sleeps, but the session shown in the
+      Code window keeps running. Dock the Code window and switch the main window
+      to Ops: the next tick sleeps that session too (a docked Code window must not
+      keep its last session "on screen").
 
 ## Quota section
 

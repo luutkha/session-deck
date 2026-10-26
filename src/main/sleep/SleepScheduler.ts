@@ -19,7 +19,8 @@ export interface SleepSchedulerDeps {
   readonly getSettings: () => SleepSettings
   readonly getSessions: () => readonly SleepSchedulerSession[]
   readonly getRuntime: () => ReadonlyMap<Id, RuntimeState>
-  readonly getActiveSessionId: () => Id | null
+  /** Every session visible in an open window (main and Code can show different ones). */
+  readonly getOnScreenSessionIds: () => ReadonlySet<Id>
   /** Puts one session to sleep; never expected to touch the scheduler's own state. */
   readonly sleepSession: (id: Id) => void
   readonly now: () => number
@@ -48,7 +49,7 @@ export const CHECK_EVERY_MS = 30_000
 interface CheckSnapshot {
   readonly nowMs: number
   readonly settings: SleepSettings
-  readonly activeSessionId: Id | null
+  readonly onScreenSessionIds: ReadonlySet<Id>
   readonly sessions: readonly SleepPolicySession[]
   readonly runtime: ReadonlyMap<Id, RuntimeState>
 }
@@ -63,7 +64,7 @@ export function createSleepScheduler(deps: SleepSchedulerDeps): SleepScheduler {
     getSettings,
     getSessions,
     getRuntime,
-    getActiveSessionId,
+    getOnScreenSessionIds,
     sleepSession,
     now,
     onError,
@@ -81,7 +82,7 @@ export function createSleepScheduler(deps: SleepSchedulerDeps): SleepScheduler {
     return {
       nowMs: now(),
       settings: getSettings(),
-      activeSessionId: getActiveSessionId(),
+      onScreenSessionIds: getOnScreenSessionIds(),
       sessions: getSessions().map((s) => ({ id: s.id, closed: s.closedAt !== undefined, keepAwake: s.keepAwake === true })),
       runtime: getRuntime()
     }
