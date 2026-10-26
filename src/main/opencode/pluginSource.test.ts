@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { PLUGIN_DIR_NAME, PLUGIN_USAGE_THROTTLE_MS, PLUGIN_FETCH_TIMEOUT_MS, MAX_PLUGIN_NOTICE_LENGTH, buildOpencodePluginSource } from './pluginSource'
+import { PLUGIN_DIR_NAME, PLUGIN_USAGE_THROTTLE_MS, PLUGIN_FETCH_TIMEOUT_MS, MAX_PLUGIN_NOTICE_LENGTH, MAX_PLUGIN_PROMPT_LENGTH, buildOpencodePluginSource } from './pluginSource'
 
 interface FetchCall {
   readonly url: string
@@ -131,10 +131,15 @@ afterEach(() => {
 })
 
 /** Starts a fresh plugin instance (its own subscription); returns the feed and posts fetch calls sent since. */
-async function instance(env: Record<string, string | undefined> = BASE_ENV): Promise<Instance> {
+async function instance(
+  env: Record<string, string | undefined> = BASE_ENV,
+  modelApi?: { list: () => Promise<unknown> }
+): Promise<Instance> {
   stubPluginEnv(env)
   const feed = createFeed()
-  const cleanup = await pluginModule.setup({ location: { directory: 'C:\\proj' }, event: { subscribe: async () => feed } })
+  const context: Record<string, unknown> = { location: { directory: 'C:\\proj' }, event: { subscribe: async () => feed } }
+  if (modelApi !== undefined) context.model = modelApi
+  const cleanup = await pluginModule.setup(context)
   await settle()
   captureFetch()
   return { feed, cleanup: cleanup ?? null }
@@ -328,6 +333,231 @@ describe('opencode plugin event mapping (all posts carry the token header and JS
     expect(await send(plugin, ev('session.updated', { sessionID: 'ses_x' }))).toHaveLength(0)
     expect(await send(plugin, ev('message.part.updated', { part: {} }))).toHaveLength(0)
     expect(await send(plugin, ev('session.diff', { diff: [] }))).toHaveLength(0)
+  })
+})
+
+describe('opencode plugin prompt text (D29 parity with Claude turns)', () => {
+  /** The real v2 shape recorded from a live turn (see scripts/probe-opencode-context.cjs). */
+  const inboxEnqueued = (text: string): unknown => ({
+    sessionID: 'ses_abcdef12345678TOP',
+    inboxID: 'msg_inbox1',
+    item: { type: 'user', payload: { text, files: [], agents: [] }, delivery: 'steer' }
+  })
+
+  it('attaches the v2 inbox prompt to the next UserPromptSubmit, exactly once', async () => {
+    const plugin = await instance()
+    await send(plugin, ev('session.inbox.enqueued', inboxEnqueued('fix the failing test')))
+    const calls = await send(plugin, ev('session.execution.started', { sessionID: 'ses_x' }))
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('http://127.0.0.1:4123/hook/deck-sess/UserPromptSubmit')
+    expect(JSON.parse(calls[0].init.body)).toEqual({ prompt: 'fix the failing test', proc: PROC })
+
+    // The next turn has no captured prompt: an empty body (never the previous text).
+    await send(plugin, ev('session.execution.succeeded', { sessionID: 'ses_x' }))
+    const before = fetchCalls.length
+    await send(plugin, ev('session.execution.started', { sessionID: 'ses_x' }))
+    const nextTurn = callsSince(before).filter((c) => c.url.endsWith('/UserPromptSubmit'))
+    expect(nextTurn).toHaveLength(1)
+    expect(JSON.parse(nextTurn[0].init.body)).toEqual({ proc: PROC })
+  })
+
+  it('also works when the busy status arrives before the inbox event in the same turn', async () => {
+    const plugin = await instance()
+    const start = await send(plugin, ev('session.status', { status: { type: 'busy' } }))
+    expect(JSON.parse(start[0].init.body)).toEqual({ proc: PROC })
+    // A prompt recorded mid-turn is never attached to the NEXT turn (it was part of this one).
+    await send(plugin, ev('session.inbox.enqueued', inboxEnqueued('steer this')))
+    await send(plugin, ev('session.idle', {}))
+    const before = fetchCalls.length
+    await send(plugin, ev('session.status', { status: { type: 'busy' } }))
+    const next = callsSince(before).filter((c) => c.url.endsWith('/UserPromptSubmit'))
+    expect(JSON.parse(next[0].init.body)).toEqual({ proc: PROC })
+  })
+
+  it('clips a long prompt to 200 characters', async () => {
+    const plugin = await instance()
+    await send(plugin, ev('session.inbox.enqueued', inboxEnqueued('x'.repeat(500))))
+    const calls = await send(plugin, ev('session.execution.started', {}))
+    expect((JSON.parse(calls[0].init.body).prompt as string)).toHaveLength(MAX_PLUGIN_PROMPT_LENGTH)
+  })
+
+  it('never posts an empty prompt field', async () => {
+    const plugin = await instance()
+    await send(plugin, ev('session.inbox.enqueued', inboxEnqueued('   ')))
+    const calls = await send(plugin, ev('session.execution.started', {}))
+    expect(JSON.parse(calls[0].init.body)).toEqual({ proc: PROC })
+  })
+
+  it('reads a v1 user message from its text parts', async () => {
+    const plugin = await instance()
+    await send(plugin, evProps('message.updated', {
+      sessionID: 'ses_x',
+      info: { id: 'msg_u', role: 'user', parts: [{ type: 'text', text: 'hello' }, { type: 'text', text: 'world' }] }
+    }))
+    const calls = await send(plugin, ev('session.status', { status: { type: 'busy' } }))
+    expect(JSON.parse(calls[0].init.body)).toEqual({ prompt: 'hello world', proc: PROC })
+  })
+
+  it('an assistant message never yields a prompt', async () => {
+    const plugin = await instance()
+    await send(plugin, evProps('message.updated', {
+      sessionID: 'ses_x',
+      info: { id: 'msg_a', role: 'assistant', cost: 0.1, parts: [{ type: 'text', text: 'assistant words' }] }
+    }))
+    // The assistant update posted its cost, not a prompt.
+    const all = captureFetch(false)
+    expect(all.some((c) => c.url.endsWith('/UserPromptSubmit'))).toBe(false)
+    const calls = await send(plugin, ev('session.execution.started', {}))
+    expect(JSON.parse(calls[0].init.body)).toEqual({ proc: PROC })
+  })
+
+  it('the prompt is only ever attached to UserPromptSubmit (not Stop or Notification)', async () => {
+    const plugin = await instance()
+    await send(plugin, ev('session.inbox.enqueued', inboxEnqueued('do the thing')))
+    await send(plugin, ev('session.execution.started', {}))
+    await send(plugin, ev('permission.asked', { action: 'bash', metadata: { command: 'rm -rf build' } }))
+    await send(plugin, ev('session.execution.succeeded', {}))
+    for (const call of captureFetch(false)) {
+      if (call.url.endsWith('/UserPromptSubmit')) continue
+      expect(JSON.parse(call.init.body).prompt).toBeUndefined()
+    }
+  })
+})
+
+describe('opencode plugin context window (D29 parity with Claude usage chip)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** The real v2 catalog entry shape (id, display name, limit.context). */
+  const catalog = (): { list: () => Promise<unknown> } => ({
+    list: async () => [
+      { id: 'model-a', name: 'Model A', limit: { context: 200_000, output: 64_000 } },
+      { id: 'model-b', name: 'Model B', limit: { context: 0 } }
+    ]
+  })
+
+  const stepStarted = (id = 'model-a'): unknown => ({ sessionID: 'ses_x', model: { id, providerID: 'p' } })
+  const stepEnded = (input: number, read = 0, write = 0): unknown => ({
+    sessionID: 'ses_x',
+    cost: 0.1,
+    tokens: { input, output: 3, reasoning: 0, cache: { read, write } }
+  })
+  const usage = (cost: number, tokens: unknown = {}): unknown => ({ sessionID: 'ses_x', cost, tokens })
+
+  it('posts used_percentage from the latest step tokens and the model limit', async () => {
+    const plugin = await instance(BASE_ENV, catalog())
+    await send(plugin, ev('session.step.started', stepStarted()))
+    await send(plugin, ev('session.step.ended', stepEnded(60_000, 30_000, 0)))
+    const calls = await send(plugin, ev('session.usage.updated', usage(0.1)))
+    expect(calls).toHaveLength(1)
+    expect(JSON.parse(calls[0].init.body)).toEqual({
+      cost: { total_cost_usd: 0.1 },
+      model: { display_name: 'Model A' },
+      context_window: { used_percentage: 45 },
+      proc: PROC
+    })
+  })
+
+  it('never uses the cumulative session totals, only the latest step', async () => {
+    const plugin = await instance(BASE_ENV, catalog())
+    await send(plugin, ev('session.step.started', stepStarted()))
+    await send(plugin, ev('session.step.ended', stepEnded(20_000)))
+    const first = await send(plugin, ev('session.usage.updated', usage(0.1, { input: 190_000, cache: { read: 0, write: 0 } })))
+    expect(JSON.parse(first[0].init.body).context_window).toEqual({ used_percentage: 10 })
+
+    vi.advanceTimersByTime(PLUGIN_USAGE_THROTTLE_MS)
+    await send(plugin, ev('session.step.ended', stepEnded(50_000)))
+    const second = await send(plugin, ev('session.usage.updated', usage(0.2, { input: 200_000, cache: { read: 0, write: 0 } })))
+    expect(JSON.parse(second[0].init.body).context_window).toEqual({ used_percentage: 25 })
+  })
+
+  it('rounds the percentage', async () => {
+    const plugin = await instance(BASE_ENV, catalog())
+    await send(plugin, ev('session.step.started', stepStarted()))
+    await send(plugin, ev('session.step.ended', stepEnded(1_000)))
+    const calls = await send(plugin, ev('session.usage.updated', usage(0.1)))
+    expect(JSON.parse(calls[0].init.body).context_window).toEqual({ used_percentage: 1 })
+  })
+
+  it('omits the field when the model limit is missing, zero, or unknown', async () => {
+    const plugin = await instance(BASE_ENV, catalog())
+    // Unknown model.
+    await send(plugin, ev('session.step.started', stepStarted('model-unknown')))
+    await send(plugin, ev('session.step.ended', stepEnded(50_000)))
+    const unknown = await send(plugin, ev('session.usage.updated', usage(0.1)))
+    expect(JSON.parse(unknown[0].init.body).context_window).toBeUndefined()
+
+    // Known model with a non-positive limit.
+    vi.advanceTimersByTime(PLUGIN_USAGE_THROTTLE_MS)
+    await send(plugin, ev('session.step.started', stepStarted('model-b')))
+    const zero = await send(plugin, ev('session.usage.updated', usage(0.2)))
+    expect(JSON.parse(zero[0].init.body).context_window).toBeUndefined()
+
+    // No step tokens at all yet.
+    vi.advanceTimersByTime(PLUGIN_USAGE_THROTTLE_MS)
+    const none = await instance(BASE_ENV, catalog())
+    const calls = await send(none, ev('session.usage.updated', usage(0.3)))
+    expect(JSON.parse(calls[0].init.body).context_window).toBeUndefined()
+  })
+
+  it('a failing model catalog leaves cost and the model id exactly as before', async () => {
+    const plugin = await instance(BASE_ENV, { list: async () => { throw new Error('catalog down') } })
+    await send(plugin, ev('session.step.started', stepStarted()))
+    await send(plugin, ev('session.step.ended', stepEnded(50_000)))
+    const calls = await send(plugin, ev('session.usage.updated', usage(0.1)))
+    expect(JSON.parse(calls[0].init.body)).toEqual({
+      cost: { total_cost_usd: 0.1 },
+      model: { display_name: 'model-a' },
+      proc: PROC
+    })
+  })
+
+  it('does not let the throttle swallow the richer post after the cost-only one (recorded event order)', async () => {
+    const plugin = await instance(BASE_ENV, catalog())
+    // The real v2 turn posts a cost-only session.usage.updated BEFORE step.started/ended.
+    const early = await send(plugin, ev('session.usage.updated', usage(0.0001)))
+    expect(JSON.parse(early[0].init.body).context_window).toBeUndefined()
+    await send(plugin, ev('session.step.started', stepStarted()))
+    await send(plugin, ev('session.step.ended', stepEnded(20_000)))
+    const richer = await send(plugin, ev('session.usage.updated', usage(0.0001)))
+    expect(richer).toHaveLength(1)
+    expect(JSON.parse(richer[0].init.body)).toEqual({
+      cost: { total_cost_usd: 0.0001 },
+      model: { display_name: 'Model A' },
+      context_window: { used_percentage: 10 },
+      proc: PROC
+    })
+  })
+
+  it('keeps the context percentage on later cost-only updates (no flicker to null)', async () => {
+    const plugin = await instance(BASE_ENV, catalog())
+    await send(plugin, ev('session.step.started', stepStarted()))
+    await send(plugin, ev('session.step.ended', stepEnded(40_000)))
+    await send(plugin, ev('session.usage.updated', usage(0.1)))
+    vi.advanceTimersByTime(PLUGIN_USAGE_THROTTLE_MS)
+    const later = await send(plugin, ev('session.usage.updated', usage(0.2)))
+    expect(JSON.parse(later[0].init.body).context_window).toEqual({ used_percentage: 20 })
+  })
+
+  it('a v1 assistant message with tokens also feeds the percentage', async () => {
+    const plugin = await instance(BASE_ENV, catalog())
+    const calls = await send(plugin, evProps('message.updated', {
+      sessionID: 'ses_x',
+      info: {
+        id: 'msg_a',
+        role: 'assistant',
+        cost: 0.3,
+        modelID: 'model-a',
+        tokens: { input: 10_000, output: 5, cache: { read: 10_000, write: 0 } }
+      }
+    }))
+    expect(JSON.parse(calls[0].init.body).context_window).toEqual({ used_percentage: 10 })
   })
 })
 

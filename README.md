@@ -48,6 +48,7 @@ Requires Node 22+, Windows (primary target), and the `claude` CLI on PATH.
 | `npm run e2e:grid` | grid view (D32): Grid ▾ presets, cell pickers (swap on duplicate), preset shrink/restore, typing lands in the cell, restart restores |
 | `npm run e2e:termview` | terminal comfort: Ctrl+=/Ctrl+0/Ctrl+wheel zoom (pty width shrinks live), Settings > Terminal scrollback, restart keeps the zoom |
 | `npm run e2e:tab-working` | tab working indicator: spinner while a hook-driven turn runs, bell wins after Stop, dot returns when cleared |
+| `npm run e2e:timeline-prompt` | OpenCode parity: the plugin's prompt + statusline bodies reach the timeline, Activity tab, away summary, usage chip and Hub card |
 | `npm run e2e:opencode` | real `opencode` on a free model: TUI, hooks/status, sleep + wake with `-s`, image paste, no self worker-tab |
 | `npm run e2e:opencode-workers` | worker tabs of an OpenCode session: child events build a tab, child session-plugin events never touch the parent |
 | `npm run e2e:handsfree` | hands-off quota autopilot (D33): fresh hands-off defaults, old-store boot migration, critical level sleeps with no toast, reset wakes + types "continue" into a real Claude TUI that was cut off by the limit; ask-mode still exists (runs one real "continue" turn) |

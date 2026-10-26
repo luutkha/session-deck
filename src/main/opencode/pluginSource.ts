@@ -25,7 +25,12 @@
  *   text of the permission request.
  * - session.usage.updated (v2, per-session totals {cost, tokens}) and message.updated of assistant
  *   messages (v1) -> per-message/session cost tracking and a throttled (>= 1 s apart) POST
- *   /statusline/<id> {"model":{"display_name": ...},"cost":{"total_cost_usd": <cost>}}.
+ *   /statusline/<id> {"model":{"display_name": ...},"cost":{"total_cost_usd": <cost>},
+ *   "context_window":{"used_percentage": <0..100>}}.
+ * - The user's prompt text (session.inbox.enqueued item.payload.text in v2, the user message parts in
+ *   v1) is attached to that turn's UserPromptSubmit body as {prompt}, exactly like the Claude hook.
+ * - The model catalog (context.model.list(), cached at setup) supplies the context-window limit and the
+ *   display name; context % uses the LATEST step's prompt tokens, never the cumulative session totals.
  *
  * The handler must NEVER throw and NEVER block (fire-and-forget fetch with a 2 s timeout, every error swallowed
  * because the app may already be gone) and does nothing when SESSIONDECK_PORT is missing.
@@ -39,6 +44,9 @@ export const PLUGIN_PACKAGE_VERSION = '1.0.0'
 
 /** Max characters of a Notification message the plugin sends. */
 export const MAX_PLUGIN_NOTICE_LENGTH = 200
+
+/** Max characters of the user prompt the plugin forwards (the hook server clamps again). */
+export const MAX_PLUGIN_PROMPT_LENGTH = 200
 
 /** Minimum seconds between two /statusline POSTs for one session. */
 export const PLUGIN_USAGE_THROTTLE_MS = 1000
@@ -61,7 +69,16 @@ export function buildOpencodePluginSource(): string {
     var stopPosted = false
     var currentModel = ''
     var lastUsagePost = 0
+    /** What the last statusline post carried, so a richer follow-up is not lost to the 1 s throttle. */
+    var lastPostedModel = null
+    var lastPostedPercent = null
     var stopped = false
+    var pendingPrompt = null
+    /** Prompt tokens of the latest step (input + cache read/write): the context used, not the running total. */
+    var lastPromptTokens = null
+    /** modelId -> { limit: context window size | null, name: display name | null }; null until listed. */
+    var modelCatalog = null
+    var catalogLoading = false
 
     function post(path, body) {
       try {
@@ -90,6 +107,91 @@ export function buildOpencodePluginSource(): string {
       return trimmed
     }
 
+    /** The prompt as posted: trimmed, capped, or null (never an empty prompt field). */
+    function clampPrompt(text) {
+      if (typeof text !== 'string') return null
+      var trimmed = text.trim()
+      if (trimmed.length === 0) return null
+      if (trimmed.length > ${MAX_PLUGIN_PROMPT_LENGTH}) return trimmed.slice(0, ${MAX_PLUGIN_PROMPT_LENGTH})
+      return trimmed
+    }
+
+    /** v2: session.inbox.enqueued carries the user text under item.payload.text. */
+    function promptFromInbox(data) {
+      var item = data && typeof data.item === 'object' ? data.item : null
+      if (!item || Array.isArray(item)) return null
+      if (typeof item.type === 'string' && item.type !== 'user') return null
+      var payload = item.payload && typeof item.payload === 'object' ? item.payload : null
+      if (!payload || Array.isArray(payload)) return null
+      return clampPrompt(payload.text)
+    }
+
+    /** v1: a user message's parts carry the text (type \"text\"). */
+    function promptFromParts(parts) {
+      if (!Array.isArray(parts)) return null
+      var texts = []
+      for (var i = 0; i < parts.length; i++) {
+        var part = parts[i]
+        if (part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string') {
+          texts.push(part.text)
+        }
+      }
+      return texts.length === 0 ? null : clampPrompt(texts.join(' '))
+    }
+
+    /** Prompt tokens of one message/step: input + cache read + write (the context the model saw). */
+    function promptTokensOf(tokens) {
+      if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return null
+      var input = tokens.input
+      if (typeof input !== 'number' || !Number.isFinite(input) || input < 0) return null
+      var cache = tokens.cache && typeof tokens.cache === 'object' && !Array.isArray(tokens.cache) ? tokens.cache : null
+      var read = cache !== null && typeof cache.read === 'number' && Number.isFinite(cache.read) && cache.read >= 0 ? cache.read : 0
+      var write = cache !== null && typeof cache.write === 'number' && Number.isFinite(cache.write) && cache.write >= 0 ? cache.write : 0
+      return input + read + write
+    }
+
+    /** Lists the model catalog once (display names + context limits); every failure is swallowed. */
+    async function loadModelCatalog() {
+      if (catalogLoading) return
+      try {
+        var model = context && context.model ? context.model : null
+        if (!model || typeof model.list !== 'function') return
+        catalogLoading = true
+        var result = await model.list()
+        var list = Array.isArray(result) ? result : (result && Array.isArray(result.data) ? result.data : [])
+        var next = {}
+        for (var i = 0; i < list.length; i++) {
+          var entry = list[i]
+          if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || entry.id.length === 0) continue
+          var limit = entry.limit && typeof entry.limit === 'object' && typeof entry.limit.context === 'number' && Number.isFinite(entry.limit.context) && entry.limit.context > 0 ? entry.limit.context : null
+          var name = typeof entry.name === 'string' && entry.name.trim().length > 0 ? entry.name.trim() : null
+          next[entry.id] = { limit: limit, name: name }
+        }
+        modelCatalog = next
+      } catch (error) {
+      } finally {
+        catalogLoading = false
+      }
+    }
+
+    function displayNameFor(modelId) {
+      if (typeof modelId === 'string' && modelId.length > 0 && modelCatalog !== null && modelCatalog[modelId] && typeof modelCatalog[modelId].name === 'string') {
+        return modelCatalog[modelId].name
+      }
+      return typeof modelId === 'string' && modelId.length > 0 ? modelId : null
+    }
+
+    /** The latest step's prompt tokens as a percentage of the model's context window; null when unknown. */
+    function contextPercentFor(modelId) {
+      if (lastPromptTokens === null || modelCatalog === null) return null
+      if (typeof modelId !== 'string' || modelId.length === 0) return null
+      var entry = modelCatalog[modelId]
+      if (!entry || typeof entry.limit !== 'number' || !Number.isFinite(entry.limit) || entry.limit <= 0) return null
+      var percent = Math.round((lastPromptTokens / entry.limit) * 100)
+      if (!Number.isFinite(percent)) return null
+      return Math.min(100, Math.max(0, percent))
+    }
+
     function permissionText(data) {
       var tool = null
       if (typeof data.action === 'string' && data.action.trim().length > 0) tool = data.action.trim()
@@ -113,13 +215,26 @@ export function buildOpencodePluginSource(): string {
 
     function syncUsage(cost, modelId) {
       try {
+        var resolved = typeof modelId === 'string' && modelId.length > 0 ? modelId : currentModel
+        var display = displayNameFor(resolved)
+        var percent = contextPercentFor(resolved)
         var now = Date.now()
-        if (now - lastUsagePost < ${PLUGIN_USAGE_THROTTLE_MS}) return
+        // v2 posts a cost-only session.usage.updated BEFORE the step's model/tokens exist (recorded order).
+        // The throttle must not swallow the richer post that follows it, or the chip stays model/context-less.
+        var richer = display !== lastPostedModel || percent !== lastPostedPercent
+        if (!richer && now - lastUsagePost < ${PLUGIN_USAGE_THROTTLE_MS}) return
         lastUsagePost = now
+        lastPostedModel = display
+        lastPostedPercent = percent
         var body = { cost: { total_cost_usd: cost } }
-        if (typeof modelId === 'string' && modelId.length > 0) body.model = { display_name: modelId }
+        if (display !== null) body.model = { display_name: display }
+        if (percent !== null) body.context_window = { used_percentage: percent }
         body.proc = proc
         post('/statusline/' + encodeURIComponent(sessionId), body)
+        // A model we have not catalogued yet (fresh install/new model): refresh once for the next post.
+        if (modelCatalog !== null && typeof resolved === 'string' && resolved.length > 0 && !modelCatalog[resolved]) {
+          void loadModelCatalog()
+        }
       } catch (error) {}
     }
 
@@ -143,17 +258,19 @@ export function buildOpencodePluginSource(): string {
           var status = data.status
           var busy = !!(status && typeof status === 'object' && status.type === 'busy')
           if (busy && !work) {
-            postHook('UserPromptSubmit')
-            stopPosted = false
+            startTurn()
           }
           work = busy
         } else if (event.type === 'session.execution.started') {
           // v2 'run' emits this instead of session.status busy.
           if (!work) {
-            postHook('UserPromptSubmit')
-            stopPosted = false
+            startTurn()
           }
           work = true
+        } else if (event.type === 'session.inbox.enqueued') {
+          // v2: the user's prompt text, recorded for the next UserPromptSubmit (the busy event may come first).
+          var enqueued = promptFromInbox(data)
+          if (enqueued !== null) pendingPrompt = enqueued
         } else if (event.type === 'session.execution.succeeded' || event.type === 'session.execution.failed' || event.type === 'session.execution.interrupted') {
           postStop()
           work = false
@@ -172,10 +289,22 @@ export function buildOpencodePluginSource(): string {
         } else if (event.type === 'session.step.started') {
           var model = (data.model && typeof data.model === 'object' && typeof data.model.id === 'string') ? data.model.id : null
           if (model !== null) currentModel = model
+        } else if (event.type === 'session.step.ended') {
+          // v2: per-step tokens. Context is THIS step's prompt, never the cumulative session totals.
+          var stepTokens = promptTokensOf(data.tokens)
+          if (stepTokens !== null) lastPromptTokens = stepTokens
         } else if (event.type === 'message.updated') {
-          // v1 fallback: per-message cost tracking.
+          // v1 fallback: user messages carry the prompt; assistant ones carry cost and per-message tokens.
           var info = data.info
-          if (!info || typeof info !== 'object' || info.role !== 'assistant') return
+          if (!info || typeof info !== 'object') return
+          if (info.role === 'user') {
+            var userPrompt = promptFromParts(info.parts)
+            if (userPrompt !== null) pendingPrompt = userPrompt
+            return
+          }
+          if (info.role !== 'assistant') return
+          var messageTokens = promptTokensOf(info.tokens)
+          if (messageTokens !== null) lastPromptTokens = messageTokens
           if (
             typeof info.id === 'string' && info.id.length > 0 &&
             typeof info.cost === 'number' && Number.isFinite(info.cost) && info.cost >= 0
@@ -186,15 +315,29 @@ export function buildOpencodePluginSource(): string {
       } catch (error) {}
     }
 
+    // One UserPromptSubmit per turn, carrying the prompt captured since the last turn (when known).
+    function startTurn() {
+      try {
+        var body = pendingPrompt === null ? undefined : { prompt: pendingPrompt }
+        pendingPrompt = null
+        stopPosted = false
+        postHook('UserPromptSubmit', body)
+      } catch (error) {}
+    }
+
     // The app treats Stop as the settle signal of a turn: post at most one per turn no matter which of the
     // idle/execution-end variants this OpenCode version emits.
     function postStop() {
       try {
         if (stopPosted) return
         stopPosted = true
+        // A prompt queued mid-turn belongs to no announced turn: never attach it to a later one.
+        pendingPrompt = null
         postHook('Stop')
       } catch (error) {}
     }
+
+    void loadModelCatalog()
 
     void (async function () {
       try {

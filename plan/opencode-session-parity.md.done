@@ -1,0 +1,146 @@
+# Plan: OpenCode session parity — prompt text in the timeline, context % in the usage chip
+
+Status: proposed — waiting for "go". No code changed yet.
+Date: 2026-10-25
+User request (2026-10-25): plans for #1 ("OpenCode turns have no prompt text in the timeline / away summary") and #2 ("OpenCode sessions have no context %").
+
+Both workstreams share one file (`src/main/opencode/pluginSource.ts`), one parser contract that
+already exists, and one test harness — hence one plan, two independently shippable parts.
+
+## 1. Goals
+
+**A. Prompt text** — an OpenCode turn should appear in the Activity panel and in "While you were
+away" with what the user actually asked, like Claude turns do, instead of a blank prompt.
+
+**B. Context %** — the session usage chip (and the Hub card's context warning) should show how
+full the context window is for OpenCode sessions too, using the same `contextPercent` field
+Claude already fills.
+
+## 2. What exists already (verified in source)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| `UserPromptSubmit` already carries an optional `prompt`; the hook server collapses whitespace, trims and cuts to `TIMELINE_PROMPT_MAX` code points | `HookServer.ts:96-112,312-317` | **No contract change**: the plugin only has to put text into the body it already posts. |
+| The timeline stores that prompt and the away summary reads timeline turns | `timelineService.ts` (`startPrompt`), `awaySummary` | Both features get the fix for free. |
+| The OpenCode plugin posts `UserPromptSubmit` with **no body** | `pluginSource.ts` (work-start branches, ~142-156) | This is the documented root cause ("OpenCode sends none -> ''", HANDOFF:135). |
+| `SessionUsage.contextPercent` + `parseStatusLine`'s `context_window.used_percentage` already exist | `statusLineParser.ts:89-95`, `types.ts:253-259` | The plugin can fill the existing field; the renderer needs **no change** for the chip itself. |
+| OpenCode reports per-session usage as `tokens: { input, output, reasoning, cache: { read, write } }` (running totals) | `pluginSource.test.ts:344-349` (real v2 shape) | Context = the **latest step's** prompt tokens, not the cumulative session totals — see §3.B. |
+| Assistant `message.updated` (v1) already feeds cost; its `info` also carries per-message tokens | `pluginSource.ts:176-183` | The per-message token source for context % exists in v1; v2 needs the spike below. |
+| The plugin context is an OpenCode server client; `ctx.model.list()` returns models with `limit.context` and a display `name` | OpenCode v2 plugin docs ("the plugin context is essentially an OpenCode server client", `Models` domain) | No new HTTP endpoint: the model limit is one cached call at setup. |
+| The Hub card already colours the context value (`usageLevel`) and shows it only when non-null | `HubCard.tsx:83-86` | Same field powers the Hub once it is filled. |
+| Current chip shows the raw model id (`big-pickle`) because the plugin sends `model.id` | `pluginSource.ts:120`, test at 353-362 | Optional cosmetic bonus of the same model lookup (§3.B.4). |
+
+## 3. Design
+
+### 3.A Prompt text
+
+1. **Capture** the user prompt inside the plugin, before/at the busy transition:
+   - v1: `message.updated` with a **user** message → text from `info.parts` (`type: 'text'`);
+     user messages are currently ignored (only assistant ones are read for cost).
+   - v2: whichever user-message event the recorded fixture shows (spike, §3.C) — likely the
+     prompt is present on the execution start event. Store it in `pendingPrompt`.
+2. **Attach** it to the next `UserPromptSubmit` body: `postHook('UserPromptSubmit', { prompt: text })`
+   — exactly the field Claude sends. Clear `pendingPrompt` after posting so a later turn with no
+   capture cannot inherit an old prompt.
+3. **Clamp** to 200 chars in the plugin (defence in depth; the server clamps again) and never
+   post an empty prompt field.
+4. **Fallback** (no capture available): keep posting an empty body. Nothing regresses; the row
+   just stays anonymous as today. No fabricated text such as "<OpenCode prompt>".
+
+No app-side change is needed: `promptField` already normalizes and caps, and the timeline and
+away summary already display whatever arrives.
+
+### 3.B Context %
+
+1. **Model limit cache**: at `setup`, call `context.model.list()` once (guarded, swallowed on
+   error) and keep `modelId -> { limitContext, name }`. Refresh lazily if an unknown model shows
+   up (bounded: one retry per turn, never a loop).
+2. **Per-step tokens** (not cumulative): take the **latest assistant message's**
+   `tokens.input + tokens.cache.read + tokens.cache.write` as the context used. This is the same
+   denominator Claude's statusLine implies. Never use the cumulative `session.usage.updated`
+   totals for the percentage — they grow every turn and would show a false 100% near the end of
+   a long session.
+3. **Payload**: extend the existing `/statusline/<id>` body with
+   `context_window: { used_percentage: <0..100, rounded>` (same shape Claude sends). Omit the
+   field entirely when the model limit is unknown, the token count is missing, or the limit is
+   not a positive finite number — no "% of nothing".
+4. **Bonus (same lookup, ~2 lines)**: send `model.display_name` from the model catalog `name`
+   when known, falling back to the id as today, so the chip reads like Claude's ("DeepSeek V4.1
+   Flash" vs `deepseek-v4.1-flash`). Confirm the catalog has a `name` in the spike; drop the
+   bonus if it does not.
+5. **Staleness**: context is a point-in-time value; the existing `updatedAt` on `SessionUsage`
+   already carries it, so no new staleness logic.
+
+### 3.C Spike (timeboxed, part of W-A; ~30-60 min)
+
+The only real uncertainty is v2 event shapes:
+- run **one** real OpenCode turn with a temporary event-type/field dump in the plugin (local
+  only, removed before commit);
+- record the fixture for: user prompt text location, per-message token location, execution
+  start ordering (does the prompt arrive before or after the busy event?);
+- add the recorded fixtures to `pluginSource.test.ts` and delete the dump.
+If v2 exposes no prompt text at all, W-A ships v1 only and the v2 fallback stays as §3.A.4 —
+state that in the report instead of inventing a source. W-B then ships only if per-message
+tokens are reachable; otherwise its kill criterion applies (§7).
+
+## 4. Files touched
+
+- `src/main/opencode/pluginSource.ts` (prompt capture + `pendingPrompt`; model catalog cache;
+  context field in the statusline body; model display name bonus)
+- `src/main/opencode/pluginSource.test.ts` (recorded fixtures, prompt on UserPromptSubmit,
+  clamping, assistant messages ignored, context math, missing limit → omitted, catalog failure
+  → no context)
+- No `types.ts` / `ipc.ts` / preload change — both fields already exist and are already parsed
+- Docs: `HANDOFF.md` (OpenCode section: prompt text + context), `docs/CODEMAP.md` only if the
+  plugin gains a helper module (it should not); no DECISIONS entry needed (completion of D29/D31
+  parity, not a new policy) unless the user wants one
+
+## 5. Verification (W04)
+
+- Unit (plugin harness with fake events, the existing pattern):
+  - user message text → next `UserPromptSubmit` body has exactly that `prompt`; a second turn
+    without capture has no prompt; >200 chars is clipped; assistant message never yields a
+    prompt; a prompt is never attached to `Stop`/`Notification`.
+  - context: `{ input: 60k, cache: { read: 30k, write: 0 } }` + limit 200k → 45%; limit missing →
+    field omitted; cumulative totals are **not** used (feed growing totals, assert the value
+    follows the latest message, not the sum); 0/negative limit → omitted.
+  - catalog failure → plugin still posts cost/model-id exactly as today.
+- App-side real e2e `scripts/e2e-timeline-prompt.cjs` (fake hooks, no model cost, pattern of
+  `e2e-autopilot.cjs`): post `UserPromptSubmit` **with** a prompt → the Activity panel row shows
+  it → trigger the away flow → the away summary lists it; then post a statusline with
+  `context_window.used_percentage` → the session chip and Hub card show the %.
+- Real OpenCode smoke (extend `scripts/smoke-workers-real.cjs` style, free model): one real turn
+  → timeline row has a non-empty prompt → usage chip shows a context % (or a logged, explicit
+  "not emitted by this OpenCode version" if the spike showed it is unavailable).
+- Screenshot: Activity panel row + status chip, Orca look (D02).
+
+## 6. Risks
+
+- **Wrong event shape** is the main risk → the spike records real payloads before coding; the
+  fallback never fabricates data.
+- **Cumulative vs per-step tokens** → explicitly forbidden to use cumulative totals (tested).
+- **Privacy**: the prompt text now crosses the same localhost/token channel that already carried
+  permission messages; it is capped and stored only in the timeline (already the product's
+  behaviour for Claude). No new destination.
+- **Plugin payload growth**: a few hundred bytes per turn at most; fetch timeout and
+  fire-and-forget behaviour stay unchanged.
+- **Cost**: one real smoke turn on a free/cheap model per W01.
+
+## 7. Kill criteria
+
+- W-A: if a real OpenCode v2 turn exposes no prompt text anywhere in the event stream, ship v1
+  and document the limitation; do not scrape local session files in this pass.
+- W-B: if per-message token counts are not reachable in v2, ship nothing for v2 (v1 still
+  works) and leave the chip as model + cost. Do not switch to cumulative totals as a substitute.
+
+## 8. Out of scope
+
+- Backfilling prompts for existing timeline rows (the data was never captured).
+- OpenCode subagent turns' prompts (the plugin filters child sessions from attention anyway).
+- Context **forecast**/compaction warnings for OpenCode (a separate idea).
+- Any change to the quota bars plan (`opencode-quota-bars.md`) — independent workstreams.
+
+## 9. Effort
+
+Small: two additions inside one plugin source file + tests, one fake-hook e2e, one free-model
+smoke, docs. One worker brief (W01); Claude plans, verifies, commits.
