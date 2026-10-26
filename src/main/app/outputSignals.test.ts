@@ -1,9 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { detectOutputSignals, stripAnsi, USAGE_LIMIT_PATTERNS } from './outputSignals'
+import { detectOutputSignals, findUsageLimitLine, stripAnsi, USAGE_LIMIT_LINE_MAX, USAGE_LIMIT_PATTERNS } from './outputSignals'
 
 describe('stripAnsi', () => {
   it('removes colour, cursor and OSC sequences', () => {
     expect(stripAnsi('\x1b[33mhi\x1b[39m\x1b[2K\x1b]0;title\x07 there')).toBe('hi there')
+  })
+})
+
+describe('findUsageLimitLine', () => {
+  it('returns the matching line without ANSI codes, trimmed', () => {
+    const chunk = 'Working…\r\n\x1b[33mClaude usage limit reached. Your limit will reset at 5pm.\x1b[0m\r\n'
+    expect(findUsageLimitLine(chunk)).toBe('Claude usage limit reached. Your limit will reset at 5pm.')
+  })
+
+  it('returns null when nothing matches', () => {
+    expect(findUsageLimitLine('Reading src/app.ts\r\nDone.')).toBeNull()
+    expect(findUsageLimitLine('the retry limit reached after three attempts')).toBeNull()
+  })
+
+  it('caps the captured wording', () => {
+    const long = `${'5-hour limit reached ∙ resets 3pm'} ${'x'.repeat(500)}`
+    expect(findUsageLimitLine(long)).toHaveLength(USAGE_LIMIT_LINE_MAX)
+  })
+
+  it('still captures when the match crosses a line break', () => {
+    const chunk = 'You have hit your\nusage limit\n'
+    expect(findUsageLimitLine(chunk)).toBe('You have hit your usage limit')
   })
 })
 

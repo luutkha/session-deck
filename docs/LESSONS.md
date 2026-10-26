@@ -39,6 +39,12 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 
 - **A hook can arrive after the turn it belongs to is already over.** `Stop` and the statusLine cost update are separate requests and both can land after the user has submitted the next prompt. Ending "whatever is running" and charging "whatever is tracked" silently moved the previous turn's ending and cost to the new turn. Keep a queue of superseded turns (`awaitingStop`) and treat the cost baseline as a cursor that only moves when the previous turn is settled; never assume arrival order equals prompt order.
 
+## Quota autopilot
+
+- **`onAlert` used to return early for every non-five-hour window**, which is why a weekly critical never reached `criticalAction`. When adding behaviour per window, check that early return first; the reset path is the only thing that must stay five-hour-only.
+- **The reset dedup is not per window.** `handledResetAt` says "a reset was just handled", not "the five-hour reset was just handled"; a weekly reset landing in those 30 minutes is a different event and must still be notified (it touches no autopilot state, so it is safe).
+- **Limit wording is captured chunk-locally.** Claude's TUI may split the message across writes, so the logged line can start mid-sentence; that is still enough to recognise new wording, but do not expect a full sentence. Log once per process, and only after the `limitArmed` check, or a resumed session redrawing an old message fills the log.
+
 ## Storage
 - **A `readFile` error is not corruption.** Treating every error as bad JSON renamed the store and returned an empty one, which the next debounced save wrote over the real file. Only `JSON.parse` / shape failures may be quarantined; EPERM/EBUSY/EIO must stop startup with the file untouched. Keep a `.bak` from the last successful load.
 - **A fixed `.tmp` name plus async saves can race.** A timer write and a `flush()` could write the same temp file at once. Serialize saves and use a unique temp name per write.

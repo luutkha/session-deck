@@ -11,7 +11,7 @@ import { buildStartOptions, validateCwd } from './startOptions'
 import { STOPPING_ERROR_PREFIX } from './retryWhileStopping'
 import { logMainError } from './errorLog'
 import { activityFromHook, type ActivitySnapshot } from './activity'
-import { detectOutputSignals, stripAnsi } from './outputSignals'
+import { detectOutputSignals, findUsageLimitLine, stripAnsi } from './outputSignals'
 import { createAutoStatusApplier } from '../automation/applyAutoStatus'
 
 const MAX_FALLBACK_ATTEMPTS = 1
@@ -149,7 +149,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     const agent = findSession(id)?.agent
     if (agent === 'opencode' || agent === 'shell') return
     const signals = detectOutputSignals(data)
-    if (signals.usageLimit) reportUsageLimit(id)
+    if (signals.usageLimit) reportUsageLimit(id, data)
     if (signals.remoteControl && runtime.get(id)?.remoteControl !== true) {
       runtime.setRemoteControl(id, true)
       // Remote Control is only useful while the process lives, so pin the session awake. Only on the moment it turns
@@ -164,13 +164,30 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   }
 
   // Once per turn: the limit message stays on screen while the turn is cut off, so later chunks must not repeat it.
-  function reportUsageLimit(id: Id): void {
+  function reportUsageLimit(id: Id, data: string): void {
     if (!limitArmed.has(id)) return
     limitArmed.delete(id)
+    captureUsageLimitWording(data)
     try {
       deps.onUsageLimit?.(id)
     } catch (error) {
       logMainError(userDataDir, 'usage limit report', error)
+    }
+  }
+
+  // The pattern list is known to be incomplete ("wording unverified"), so the first real match of this process is
+  // written to main-errors.log: enough data to add the exact line later, at no risk and without a telemetry channel.
+  let usageLimitWordingLogged = false
+  function captureUsageLimitWording(data: string): void {
+    if (usageLimitWordingLogged) return
+    try {
+      const line = findUsageLimitLine(data)
+      if (line === null) return
+      usageLimitWordingLogged = true
+      logMainError(userDataDir, 'usage limit wording (add to USAGE_LIMIT_PATTERNS if new)', new Error(line))
+    } catch (error) {
+      usageLimitWordingLogged = true
+      logMainError(userDataDir, 'usage limit wording', error)
     }
   }
 

@@ -34,6 +34,32 @@ export function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, '')
 }
 
+/** Longest wording snippet kept for the log; the rest of the line is not useful once the start is known. */
+export const USAGE_LIMIT_LINE_MAX = 200
+
+/** Control characters (the TUI emits \r, \b, cursor moves) would break a log line; collapse them to spaces. */
+function cleanCapturedLine(line: string): string {
+  return line.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The first line of `chunk` that shows Claude's plan-limit message, cleaned and cut to USAGE_LIMIT_LINE_MAX; null
+ * when the chunk has no such line. Used to capture the REAL wording in `main-errors.log`, because the pattern list
+ * is known to be incomplete ("wording unverified").
+ */
+export function findUsageLimitLine(chunk: string): string | null {
+  const text = stripAnsi(chunk)
+  for (const line of text.split(/\r?\n/)) {
+    if (!USAGE_LIMIT_PATTERNS.some((pattern) => pattern.test(line))) continue
+    const cleaned = cleanCapturedLine(line)
+    if (cleaned.length > 0) return cleaned.slice(0, USAGE_LIMIT_LINE_MAX)
+  }
+  // The patterns are whitespace-tolerant and may match across a line break; fall back to the whole chunk.
+  if (!USAGE_LIMIT_PATTERNS.some((pattern) => pattern.test(text))) return null
+  const cleaned = cleanCapturedLine(text)
+  return cleaned.length === 0 ? null : cleaned.slice(0, USAGE_LIMIT_LINE_MAX)
+}
+
 export function detectOutputSignals(chunk: string): OutputSignals {
   const text = stripAnsi(chunk)
   return {

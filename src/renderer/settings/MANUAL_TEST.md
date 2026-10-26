@@ -142,6 +142,13 @@ close (X) button, and clicking the backdrop all close the dialog.
       field, typing 100 in Warn, or setting Critical ≤ Warn).
 - [ ] **Recovery.** Correcting an invalid field makes the pair valid and saves
       both values in one patch; the error clears.
+- [ ] **Autopilot fields.** "At the critical level" (ask / sleep automatically /
+      nothing) applies to the critical level of BOTH plan windows — a weekly
+      critical sleeps idle sessions exactly like a five-hour one (a weekly hold
+      still ends at the next five-hour reset). "When the 5-hour window resets"
+      only covers the five-hour reset; a weekly reset is a notification and never
+      wakes or types "continue". "Type “continue” where a turn was cut off by the
+      limit" stays a plain on/off switch.
 - [ ] **Explanation.** The muted line "Alerts use the sound chosen under Sound >
       Quota warning and a desktop notification when enabled." shows below.
 - [ ] **OpenCode Go switch.** "Show OpenCode Go usage" (`quota.showOpencodeGo`,

@@ -244,10 +244,13 @@ function guardResetAlert(ctx: AutopilotContext, alert: QuotaAlert): QuotaAlert |
   return handleReset(ctx) ?? alert
 }
 
-/** Guard alerts for the 5-hour window get session actions; everything else passes through unchanged. */
+/**
+ * Guard alerts get the session actions: the critical level of EITHER window follows `criticalAction`, and only the
+ * 5-hour reset wakes/offers held sessions (a weekly reset is notification-only: no 7-day holds exist).
+ */
 export function onAlert(ctx: AutopilotContext, alert: QuotaAlert): QuotaAlert | null {
-  if (alert.window !== 'fiveHour') return alert
   if (alert.kind === 'critical') return criticalAlert(ctx, alert)
+  if (alert.window !== 'fiveHour') return alert
   if (alert.kind === 'reset') return guardResetAlert(ctx, alert)
   return alert
 }

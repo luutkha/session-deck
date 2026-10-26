@@ -201,13 +201,26 @@ describe('critical alert', () => {
     expect(w.log.errors[0][0]).toBe('quota autopilot sleep')
   })
 
-  it('passes warnings and seven-day alerts through unchanged', () => {
+  it('passes warnings through unchanged and gives seven-day criticals the same critical policy', () => {
     const w = makeWorld({ settings: { criticalAction: 'sleep' } })
     const warn: QuotaAlert = { window: 'fiveHour', kind: 'warn', percent: 85, resetsAt: RESET_SEC }
     const weekly: QuotaAlert = { window: 'sevenDay', kind: 'critical', percent: 96, resetsAt: null }
     expect(w.autopilot.onAlert(warn)).toEqual(warn)
-    expect(w.autopilot.onAlert(weekly)).toEqual(weekly)
+    expect(w.autopilot.onAlert(weekly)).toEqual({ ...weekly, autoAction: 'slept', sessionIds: ['a', 'b'] })
+    expect(w.log.sleeps).toEqual(['a', 'b'])
+  })
+
+  it('offers the idle sessions for a seven-day critical when the action is ask', () => {
+    const w = makeWorld()
+    const weekly: QuotaAlert = { window: 'sevenDay', kind: 'critical', percent: 96, resetsAt: null }
+    expect(w.autopilot.onAlert(weekly)).toEqual({ ...weekly, sessionIds: ['a', 'b'] })
     expect(w.log.sleeps).toEqual([])
+  })
+
+  it('does not give a seven-day warning a session action', () => {
+    const w = makeWorld()
+    const weekly: QuotaAlert = { window: 'sevenDay', kind: 'warn', percent: 85, resetsAt: null }
+    expect(w.autopilot.onAlert(weekly)).toEqual(weekly)
   })
 })
 
@@ -259,6 +272,23 @@ describe('reset alert', () => {
     w.autopilot.onUsageLimit('a')
     vi.advanceTimersByTime((RESET_SEC * 1000 - NOW_MS) + RESET_GRACE_MS)
     expect(w.autopilot.onAlert(RESET)).toBeNull()
+  })
+
+  it('never lets the 5-hour reset dedup swallow a weekly reset', () => {
+    const w = makeWorld({ settings: { criticalAction: 'sleep', resetAction: 'wake' } })
+    w.autopilot.onAlert(CRITICAL)
+    // The five-hour reset is handled by its own timer; its 30-minute dedup window is now open.
+    vi.advanceTimersByTime((RESET_SEC * 1000 - NOW_MS) + RESET_GRACE_MS)
+    expect(w.log.delivered).toEqual([{ ...RESET, autoAction: 'woke', sessionIds: ['a', 'b'] }])
+    w.log.delivered.splice(0)
+
+    const weeklyReset: QuotaAlert = { window: 'sevenDay', kind: 'reset', percent: 0, resetsAt: null }
+    // Arriving inside the dedup window must still be delivered: it is news about another window, and it is
+    // notification-only (no wake, no continue, no state change).
+    expect(w.autopilot.onAlert(weeklyReset)).toEqual(weeklyReset)
+    expect(w.log.delivered).toEqual([])
+    expect(w.log.wakes).toEqual(['a', 'b'])
+    expect(w.autopilot.getState().sleptForQuota).toEqual([])
   })
 
   it('pings the user (onContinueFailed) when a held session could not be woken at the reset', () => {

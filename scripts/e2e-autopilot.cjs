@@ -3,7 +3,9 @@
 // 1) ask mode: critical toast -> real click "Sleep N idle sessions" -> only the idle one sleeps (busy + Keep awake
 //    stay), held chip shows; the reset timer fires at resets_at with no further usage update -> "Wake" -> it runs.
 // 2) automatic mode: a new window at 97% sleeps it by itself, and the reset wakes it by itself.
-// Takes ~3 min. Run: node scripts/e2e-autopilot.cjs   (E2E_SHOT_DIR=<dir> saves screenshots)
+// 3) weekly critical (99%) follows the same critical policy: the idle session sleeps with NO click, the five-hour
+//    reset still wakes it, and a weekly reset arriving inside the five-hour dedup window is still delivered.
+// Takes ~4 min. Run: node scripts/e2e-autopilot.cjs   (E2E_SHOT_DIR=<dir> saves screenshots)
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -95,6 +97,39 @@ async function main() {
     t.check('automatic: the reset wakes it by itself', !!autoWoke)
     const info = await app.evaluate('[...document.querySelectorAll("[aria-label=\'Quota alerts\'] [role=status]")].map((n) => n.innerText).join(" | ")')
     t.check('automatic: a toast says it woke the session', /Woke 1 session/.test(info), info)
+
+    // ---------- 3) weekly critical gets the same critical policy
+    const resetC = Math.floor(Date.now() / 1000) + 40
+    const weeklyResets = Math.floor(Date.now() / 1000) + 6 * 86400
+    const postBoth = (fivePercent, fiveReset, weekPercent, weekReset) => post(`/statusline/${encodeURIComponent(busy.id)}`, {
+      rate_limits: {
+        five_hour: { used_percentage: fivePercent, resets_at: fiveReset },
+        seven_day: { used_percentage: weekPercent, resets_at: weekReset }
+      }
+    })
+    t.check('a statusLine with the WEEKLY window at 99% is accepted', (await postBoth(20, resetC, 99, weeklyResets)) === 204)
+    const weekSlept = await waitFor(() => asleep(idle.id), 8000, 300)
+    t.check('weekly critical sleeps the idle session with no click', !!weekSlept)
+    t.check('weekly critical leaves busy and Keep-awake running', (await running(busy.id)) && (await running(kept.id)))
+    const weekState = await app.evaluate('window.api.getQuotaAutopilot()')
+    t.check('the weekly sleep is held until the five-hour reset', weekState.sleptForQuota.includes(idle.id) && weekState.resetsAt === resetC, js(weekState))
+    const weekToast = await app.evaluate('[...document.querySelectorAll("[aria-label=\'Quota alerts\'] [role=status]")].map((n) => n.innerText).join(" | ")')
+    t.check('a toast names the weekly critical and the slept session', /Weekly usage is at 99%/.test(weekToast) && /Slept 1 idle session/.test(weekToast), weekToast)
+    await shot('autopilot-weekly-critical')
+
+    // The reset timer (not a usage update) wakes it, then the dedup window of that five-hour reset is open.
+    const weekWoke = await waitFor(() => running(idle.id), 70_000, 1000)
+    t.check('the five-hour reset still wakes the weekly-held session', !!weekWoke)
+    const weeklyNext = weeklyResets + 7 * 86400
+    t.check('a fresh weekly window is accepted', (await postBoth(20, Math.floor(Date.now() / 1000) + 3600, 2, weeklyNext)) === 204)
+    const resetToast = await waitFor(async () => {
+      const text = await app.evaluate('[...document.querySelectorAll("[aria-label=\'Quota alerts\'] [role=status]")].map((n) => n.innerText).join(" | ")')
+      return /Weekly window reset/.test(text) ? text : null
+    }, 8000, 300)
+    t.check('a weekly reset inside the 5-hour dedup window is still notified', !!resetToast, String(resetToast))
+    const afterWeekly = await app.evaluate('window.api.getQuotaAutopilot()')
+    t.check('the weekly reset only notifies: nothing is held or woke', afterWeekly.sleptForQuota.length === 0 && afterWeekly.stoppedAtLimit.length === 0, js(afterWeekly))
+    t.check('the session keeps running after the weekly reset', await running(idle.id))
   } catch (error) {
     t.check('run completed without exception', false, String((error && error.message) || error))
   } finally {

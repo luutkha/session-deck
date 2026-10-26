@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AttentionReason, HookEvent, Id, Session, StoreData } from '../../shared/types'
@@ -126,6 +126,7 @@ interface Harness {
   readonly fake: FakePty
   readonly runtime: RuntimeRegistry
   readonly onUsageLimit: ReturnType<typeof vi.fn>
+  readonly userDataDir: string
 }
 
 function setup(sessions: Session[], withHook = true): Harness {
@@ -133,16 +134,26 @@ function setup(sessions: Session[], withHook = true): Harness {
   const fake = createFakePty()
   const runtime = createRuntimeRegistry()
   const onUsageLimit = vi.fn()
+  const userDataDir = tempDir()
   const controller = createSessionController({
     store,
     pty: fake.pty,
     attention: createFakeAttention(),
     runtime,
     sendPtyData: () => {},
-    userDataDir: tempDir(),
+    userDataDir,
     ...(withHook ? { onUsageLimit } : {})
   })
-  return { controller, fake, runtime, onUsageLimit }
+  return { controller, fake, runtime, onUsageLimit, userDataDir }
+}
+
+/** The entries written by logMainError, or '' when the file does not exist. */
+function errorLog(dir: string): string {
+  try {
+    return readFileSync(join(dir, 'main-errors.log'), 'utf-8')
+  } catch {
+    return ''
+  }
 }
 
 function hook(sessionId: Id, event: HookEvent['event']): HookEvent {
@@ -204,6 +215,26 @@ describe('sessionController usage-limit signal', () => {
   it('keeps working without an onUsageLimit dependency', () => {
     const { fake } = setup([makeSession({ id: 's1' })], false)
     expect(() => fake.fireData('s1', LIMIT_LINE)).not.toThrow()
+  })
+
+  it('captures the real wording in main-errors.log once per process', () => {
+    const { controller, fake, userDataDir } = setup([makeSession({ id: 's1' }), makeSession({ id: 's2' })])
+    controller.handleHookEvent(hook('s1', 'UserPromptSubmit'))
+    fake.fireData('s1', LIMIT_LINE)
+    expect(errorLog(userDataDir)).toContain(LIMIT_LINE)
+
+    // A second session hitting its limit must not append the same kind of line again.
+    controller.handleHookEvent(hook('s2', 'UserPromptSubmit'))
+    fake.fireData('s2', "You've hit your limit · resets 7pm")
+    const log = errorLog(userDataDir)
+    expect(log).toContain(LIMIT_LINE)
+    expect(log).not.toContain("You've hit your limit")
+  })
+
+  it('captures nothing for a limit message of a session with no armed turn', () => {
+    const { fake, userDataDir } = setup([makeSession({ id: 's1' })])
+    fake.fireData('s1', LIMIT_LINE)
+    expect(errorLog(userDataDir)).not.toContain(LIMIT_LINE)
   })
 })
 
