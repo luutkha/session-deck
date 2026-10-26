@@ -5,9 +5,13 @@ import path from 'node:path'
 import type { TimelineTurn } from '../../shared/types'
 import { TIMELINE_MAX_AGE_DAYS, TIMELINE_PROMPT_MAX } from '../../shared/types'
 import {
+  loadTimelineDocument,
   loadTimelineFile,
+  parseTimelineDocument,
   parseTimelineFile,
+  saveTimelineDocument,
   saveTimelineFile,
+  serializeTimelineDocument,
   serializeTimelineFile,
   timelineFilePath
 } from './timelineFile'
@@ -121,6 +125,57 @@ describe('serializeTimelineFile', () => {
 
   it('writes the version field', () => {
     expect(JSON.parse(serializeTimelineFile([]))).toEqual({ version: 1, turns: [] })
+  })
+})
+
+describe('sleep records in the timeline file', () => {
+  it('round-trips sleep records with the turns', () => {
+    const document = {
+      turns: [turn({ id: 'a' })],
+      sleeps: [
+        { sessionId: 's1', at: NOW - 1000 },
+        { sessionId: 's2', at: NOW - 500 }
+      ]
+    }
+    const parsed = parseTimelineDocument(JSON.parse(serializeTimelineDocument(document)), NOW)
+    expect(parsed?.turns.map((t) => t.id)).toEqual(['a'])
+    expect(parsed?.sleeps).toEqual([
+      { sessionId: 's1', at: NOW - 1000 },
+      { sessionId: 's2', at: NOW - 500 }
+    ])
+  })
+
+  it('omits the field when there is nothing to remember', () => {
+    expect(JSON.parse(serializeTimelineDocument({ turns: [], sleeps: [] }))).toEqual({ version: 1, turns: [] })
+  })
+
+  it('keeps the newest sleep per session and drops invalid or old entries', () => {
+    const raw = {
+      version: 1,
+      turns: [],
+      sleeps: [
+        { sessionId: 's1', at: NOW - 2000 },
+        { sessionId: 's1', at: NOW - 1000 },
+        { sessionId: '', at: NOW },
+        { sessionId: 's2', at: 'x' },
+        { sessionId: 's3', at: NOW - (TIMELINE_MAX_AGE_DAYS + 1) * DAY_MS },
+        null,
+        42
+      ]
+    }
+    expect(parseTimelineDocument(raw, NOW)?.sleeps).toEqual([{ sessionId: 's1', at: NOW - 1000 }])
+  })
+
+  it('a missing sleeps field still reads as an empty list (old file)', () => {
+    expect(parseTimelineDocument({ version: 1, turns: [] }, NOW)?.sleeps).toEqual([])
+  })
+
+  it('loads sleeps written by saveTimelineDocument', async () => {
+    const dir = tempDir()
+    const file = path.join(dir, 'timeline.json')
+    await saveTimelineDocument(file, { turns: [], sleeps: [{ sessionId: 's1', at: NOW - 10 }] })
+    const document = await loadTimelineDocument(file, NOW, vi.fn())
+    expect(document.sleeps).toEqual([{ sessionId: 's1', at: NOW - 10 }])
   })
 })
 

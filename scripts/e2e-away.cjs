@@ -62,6 +62,33 @@ async function main() {
     const done = await waitFor(async () => { const r = await app.evaluate(`window.api.getTimeline(${js(a.id)})`); return r[0]?.end === 'finished' && Math.abs((r[0].costUsd ?? -1) - 0.25) < 1e-9 ? r : null }, 5000, 200)
     t.check('Stop ends it as finished with the cost delta ($0.25)', !!done, js(await app.evaluate(`window.api.getTimeline(${js(a.id)})`)))
 
+    // ---- out-of-order follow-up: the late Stop and late cost belong to the OLD turn
+    const c = await mk('away-c')
+    await sleep(1200)
+    await cost(c.id, 0.10)
+    await hook(c.id, 'UserPromptSubmit', { prompt: 'long first turn' })
+    await sleep(600)
+    await cost(c.id, 0.30)
+    await hook(c.id, 'UserPromptSubmit', { prompt: 'quick follow-up' })
+    await sleep(600)
+    // The first turn's final cost arrives after the second prompt.
+    await cost(c.id, 0.55)
+    await hook(c.id, 'Stop')
+    const outOfOrder = await waitFor(async () => {
+      const r = await app.evaluate(`window.api.getTimeline(${js(c.id)})`)
+      return r.length === 2 && r[0].end === null && r[1].end === 'finished' && Math.abs((r[1].costUsd ?? -1) - 0.45) < 1e-9 ? r : null
+    }, 5000, 200)
+    t.check('a late Stop ends the OLD turn and keeps the new one running', !!outOfOrder, js(await app.evaluate(`window.api.getTimeline(${js(c.id)})`)))
+    t.check('the late cost belongs to the old turn, not the new one', !!outOfOrder && outOfOrder[0].costUsd === null && Math.abs(outOfOrder[1].costUsd - 0.45) < 1e-9, js(outOfOrder))
+    const secondStart = outOfOrder?.[0]?.startedAt
+    t.check('the old turn ends at the late Stop arrival, not at the new prompt', !!outOfOrder && outOfOrder[1].endedAt > secondStart, js(outOfOrder?.[1]))
+    await hook(c.id, 'Stop')
+    const settled = await waitFor(async () => {
+      const r = await app.evaluate(`window.api.getTimeline(${js(c.id)})`)
+      return r.every((x) => x.end === 'finished') ? r : null
+    }, 5000, 200)
+    t.check('the new turn then ends normally on its own Stop', !!settled, js(await app.evaluate(`window.api.getTimeline(${js(c.id)})`)))
+
     // ---- Activity tab shows it
     await clickCard('away-a')
     await sleep(800)

@@ -344,9 +344,9 @@ SessionDeck
 
 | ID | Feature | Status | Trigger / entry | Rules (must-know) | Code | Tests |
 |---|---|---|---|---|---|---|
-| TML-1 | Turn recording | Shipped | Hooks | One turn per prompt: `UserPromptSubmit` starts, `Notification` sets `neededYou` (turn continues), `Stop` ends `finished`; sleep / close / exit / limit also end it; prompt from the hook body (max 200 chars; OpenCode's plugin sends the user text from `session.inbox.enqueued`, else `''`). | `main/timeline/timelineService.ts`, `timelineState.ts` | `timelineService.test.ts`, `timelineState.test.ts`, `HookServer.prompt.test.ts`; e2e `e2e:timeline-prompt` |
-| TML-2 | Turn cost and settling | Shipped | Each turn | Turn cost = session cost delta; still settling for 2 min after Stop; never negative; unknown = null. | `main/timeline/timelineService.ts` → `refreshCost` | `timelineService.test.ts` |
-| TML-3 | Timeline persistence | Shipped | Continuous | `<userData>/sessiondeck-timeline.json`; 200 turns/session, 30 days; a turn open at quit comes back `exited`; invalid entries dropped. | `main/timeline/timelineFile.ts` | `timelineFile.test.ts`; e2e `e2e:away` |
+| TML-1 | Turn recording | Shipped | Hooks | One turn per prompt: `UserPromptSubmit` starts, `Notification` sets `neededYou` (turn continues), `Stop` ends `finished`; sleep / close / exit / limit also end it; prompt from the hook body (max 200 chars; OpenCode's plugin sends the user text from `session.inbox.enqueued`, else `''`). A prompt submitted while the previous turn is still open supersedes it (ended `finished` at once) and queues it in `awaitingStop` (FIFO, max 8): a late `Stop` then settles the OLDEST superseded turn, not the one just started. | `main/timeline/timelineService.ts`, `timelineState.ts` | `timelineService.test.ts`, `timelineState.test.ts`, `HookServer.prompt.test.ts`; e2e `e2e:timeline-prompt`, `e2e:away` |
+| TML-2 | Turn cost and settling | Shipped | Each turn | Turn cost = session cost delta; still settling for 2 min after Stop; never negative; unknown = null. The tracked `startCost` is a cursor advanced on every refresh, so increments accumulate and a statusLine arriving after the next prompt still books the old turn's cost on the old turn; after a superseded turn settles, the cursor moves to the next queued turn (else the running one). | `main/timeline/timelineService.ts` → `refreshCost`, `focusCostAfterStop` | `timelineService.test.ts`, `timelineState.test.ts` |
+| TML-3 | Timeline persistence | Shipped | Continuous | `<userData>/sessiondeck-timeline.json`; 200 turns/session, 30 days; sleeps are saved too (`sleeps: [{sessionId, at}]`, newest per session, retention-pruned, absent field still reads) so `lastSleptAt` survives a restart; a turn open at quit comes back `exited`; invalid entries dropped. | `main/timeline/timelineFile.ts` (`parseTimelineDocument` / `loadTimelineDocument` / `saveTimelineDocument`) | `timelineFile.test.ts`, `timelineService.test.ts`; e2e `e2e:away` |
 | TML-4 | Activity tab | Shipped | Side panel > Activity | Per-session turns newest first; prompt, end reason, cost, needed-you marker; refetches on `ev:timeline`. | `renderer/timeline/ActivityList.tsx`, `useTimeline.ts`, `timelineLoad.ts`, `timelineFormat.ts` | `timelineLoad.test.ts`, `timelineFormat.test.ts`; e2e `e2e:away` |
 | TML-5 | Away detection | Shipped | No input for `away.afterMinutes` (default 15, enabled) | Same input signal as sleep-all; coming back after the threshold builds a summary; only non-empty summaries are sent (`ev:awaySummary`) and kept as the last one. | `main/app/userPresence.ts`; `main/app/featureWiring.ts` | `userPresence.test.ts`; e2e `e2e:away` |
 | TML-6 | "While you were away" | Shipped | Return after absence; palette action | Per session: finished turns, needs-you, hit limit, slept, known cost, newest prompt; sorted newest event first; rows open the session; totals; `away:getLast` keeps the last summary of the run. | `main/timeline/awaySummary.ts`; `renderer/timeline/AwayDialog.tsx`, `awayState.ts`, `useAwaySummary.ts` | `awaySummary.test.ts`, `awayState.test.ts`; e2e `e2e:away` |
@@ -513,7 +513,7 @@ SessionDeck
 |---|---|---|
 | `sessiondeck-store.json` | SET-3 | Sessions, groups, statuses, settings, repos, worktrees |
 | `sessiondeck-store.json.bak` | SET-3 | Best-effort copy after a successful load |
-| `sessiondeck-timeline.json` | TML-3 | Turns, 200/session, 30 days |
+| `sessiondeck-timeline.json` | TML-3 | Turns (200/session, 30 days) + last sleep per session |
 | `quota-markers.json` | USE-5 | Alert markers per window instance |
 | `quota-autopilot.json` | USE-7/8 | Held sessions + reset time |
 | `sessiondeck-attention/sessiondeck-worker-plugin/` | WRK-1 | Worker plugin package (package.json + index.mjs) |
@@ -580,7 +580,7 @@ SessionDeck
 | `e2e-notes-usage.cjs` | NTS-1/2, USE-2 | Notes/checklist across restart + real usage |
 | `e2e-usage-refresh.cjs` | USE-4 | Consent, one real endpoint request |
 | `e2e-usage-both.cjs` | USE-1/2/3/12, AGT-2 | Multi-provider bars: Claude alone → + Go (labeled groups, Month), settings toggle off/on, unusable Go payload; real Go endpoint skipped (no Go login on this machine) |
-| `e2e-away.cjs` | TML-1..6 | Activity, away dialog, palette action, restart |
+| `e2e-away.cjs` | TML-1..6 | Activity, away dialog, palette action, restart, out-of-order late Stop/cost |
 | `e2e-timeline-prompt.cjs` | TML-1/4/6, AGT-2, USE-2 | OpenCode plugin bodies: prompt → timeline/Activity/away, context % → chip + Hub card |
 | `e2e-autopilot.cjs` | USE-7/8/9 | Critical sleep, reset wake, automatic mode |
 | `e2e-handsfree.cjs` | USE-11 (+ USE-7/8) | Fresh defaults, old-store boot migration, hands-off critical sleep, no-action reset wake + "continue" into a real TUI, failure-free notices, ask-mode still exists |

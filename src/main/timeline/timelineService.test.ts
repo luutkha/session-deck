@@ -308,16 +308,71 @@ describe('cost of a turn', () => {
     expect(h.service.get('s1')[0].costUsd).toBe(0)
   })
 
-  it('the next turn stops the previous turn from settling', () => {
+  it('a late cost after the next prompt stays on the old turn until its Stop, then the new turn starts from the cursor', () => {
     const h = harness(1)
     prompt(h.service, 's1', 'A')
     h.cost.value = 2
+    h.clock.t += 1000
     prompt(h.service, 's1', 'B')
+    // The old turn's final cost is reported after the new prompt.
+    h.clock.t += 1000
     h.cost.value = 4
     h.service.onCostChanged('s1')
-    const [b, a] = h.service.get('s1')
-    expect(a.costUsd).toBeCloseTo(1)
+    let [b, a] = h.service.get('s1')
+    expect(a.costUsd).toBeCloseTo(3)
+    expect(b.costUsd).toBeNull()
+
+    // A's Stop arrives: it settles A (no new cost) and B becomes the cost target from the current total.
+    h.clock.t += 1000
+    h.service.onHook({ sessionId: 's1', event: 'Stop' })
+    ;[b, a] = h.service.get('s1')
+    expect(a.costUsd).toBeCloseTo(3)
+    expect(b.endedAt).toBeNull()
+    h.cost.value = 6
+    h.service.onCostChanged('s1')
+    ;[b, a] = h.service.get('s1')
+    expect(a.costUsd).toBeCloseTo(3)
     expect(b.costUsd).toBeCloseTo(2)
+  })
+
+  it('a late Stop ends the old turn (not the new one) at the Stop arrival', () => {
+    const h = harness(0)
+    prompt(h.service, 's1', 'A')
+    h.clock.t += 1000
+    const aStarted = h.service.get('s1')[0].startedAt
+    prompt(h.service, 's1', 'B')
+    expect(h.service.get('s1')[0].endedAt).toBeNull()
+    expect(h.service.get('s1')[1].endedAt).toBe(NOW + 1000)
+    h.clock.t += 5000
+    h.service.onHook({ sessionId: 's1', event: 'Stop' })
+    const [b, a] = h.service.get('s1')
+    expect(a.endedAt).toBe(NOW + 6000)
+    expect(a.startedAt).toBe(aStarted)
+    expect(b.endedAt).toBeNull()
+    expect(b.end).toBeNull()
+  })
+
+  it('two out-of-order Stops settle in prompt order and leave the newest turn running', () => {
+    const h = harness(0)
+    prompt(h.service, 's1', 'A')
+    h.clock.t += 1000
+    prompt(h.service, 's1', 'B')
+    h.clock.t += 1000
+    prompt(h.service, 's1', 'C')
+    h.clock.t += 1000
+    h.service.onHook({ sessionId: 's1', event: 'Stop' })
+    let [c, b, a] = h.service.get('s1')
+    expect(a.endedAt).toBe(NOW + 3000)
+    expect(b.endedAt).toBe(NOW + 2000)
+    expect(c.endedAt).toBeNull()
+    h.clock.t += 1000
+    h.service.onHook({ sessionId: 's1', event: 'Stop' })
+    ;[c, b, a] = h.service.get('s1')
+    expect(b.endedAt).toBe(NOW + 4000)
+    expect(c.endedAt).toBeNull()
+    h.clock.t += 1000
+    h.service.onHook({ sessionId: 's1', event: 'Stop' })
+    expect(h.service.get('s1')[0].endedAt).toBe(NOW + 5000)
   })
 
   it('a cost read that throws is reported and the cost becomes null', () => {
@@ -378,6 +433,21 @@ describe('load', () => {
     await h.service.load()
     expect(h.service.get('s1').map((t) => t.prompt)).toEqual(['old'])
     expect(h.onError).not.toHaveBeenCalled()
+  })
+
+  it('a sleep recorded before a restart is still known (away summary input)', async () => {
+    const h = harness()
+    await h.service.load()
+    h.service.onSessionEnded('s1', 'slept')
+    const sleptAt = h.service.lastSleptAt('s1')
+    expect(sleptAt).toBe(NOW)
+    await h.service.flush()
+
+    // A second service instance over the same file (the app was restarted).
+    const restarted = makeService(h.filePath, h.clock, h.cost)
+    await restarted.service.load()
+    expect(restarted.service.lastSleptAt('s1')).toBe(NOW)
+    expect(restarted.onError).not.toHaveBeenCalled()
   })
 
   it('a turn saved while running comes back as exited', async () => {

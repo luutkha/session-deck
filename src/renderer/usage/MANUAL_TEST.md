@@ -12,9 +12,9 @@ Automated coverage: `usageLogic.test.ts`, `usageCache.test.ts` (pure functions).
 
 ## Cases
 
-1. **Waiting state** — Before any Claude turn reports usage, the right cluster shows a
-   muted `Usage: waiting for a Claude turn`. Hovering shows
-   "Claude Code reports usage after each turn."
+1. **Waiting state** — Before any turn reports usage, the right cluster shows a
+   muted `Usage: waiting for a turn`. Hovering shows
+   "Claude Code and OpenCode Go report usage after a turn."
 2. **Account bars** — After a turn, two chips appear: `5h` and `Week`, each a thin
    12px track with a percentage. Colors: <70% primary, 70–89% warning, >=90% destructive.
 3. **Countdown** — Hover a chip; the tooltip reads e.g.
@@ -30,7 +30,7 @@ Automated coverage: `usageLogic.test.ts`, `usageCache.test.ts` (pure functions).
 8. **No `window.api`** — Temporarily delete `window.api` in DevTools and reload: no
    crash, chips show the waiting state, console free of errors.
 9. **Refresh affordance** — A small ghost refresh icon (RefreshCw) sits at the end of the
-   usage cluster. It is also present in the "Usage: waiting for a Claude turn" state, so
+   usage cluster. It is also present in the "Usage: waiting for a turn" state, so
    one click can load numbers with no session turn. Tooltip reads "Refresh usage from
    your Claude account" with a muted second line "Uses the login token Claude Code keeps
    on this machine".

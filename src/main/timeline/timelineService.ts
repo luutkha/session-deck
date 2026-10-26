@@ -1,9 +1,13 @@
 import type { HookEvent, Id, TimelineTurn, TurnEnd } from '../../shared/types'
-import { loadTimelineFile, saveTimelineFile, type TimelineErrorHandler } from './timelineFile'
+import { loadTimelineDocument, saveTimelineDocument, type TimelineErrorHandler, type TimelineSleep } from './timelineFile'
 import {
   allTurns,
+  awaitingStopIds,
+  clearAwaitingStop,
   emptyTimelineState,
+  endAwaitingTurn,
   endRunningTurn,
+  focusCostAfterStop,
   forgetSession,
   markNeededYou,
   recordSleptAt,
@@ -11,6 +15,7 @@ import {
   sessionTurns,
   startTurn,
   stateFromTurns,
+  supersedeRunningTurn,
   type TimelineState
 } from './timelineState'
 
@@ -113,8 +118,9 @@ export function createTimelineService(deps: TimelineServiceDeps): TimelineServic
 
   function persist(): Promise<void> {
     const snapshot = allTurns(state)
+    const sleeps: TimelineSleep[] = [...state.sleptAt.entries()].map(([sessionId, at]) => ({ sessionId, at }))
     saveChain = saveChain
-      .then(() => saveTimelineFile(filePath, snapshot))
+      .then(() => saveTimelineDocument(filePath, { turns: snapshot, sleeps }))
       .catch((error: unknown) => {
         onError('timeline save', error)
       })
@@ -156,7 +162,10 @@ export function createTimelineService(deps: TimelineServiceDeps): TimelineServic
   function startPrompt(event: HookEvent): void {
     const sessionId = event.sessionId
     const at = now()
-    const finishedPrevious = endAndSettle(state, sessionId, 'finished', at)
+    // A prompt submitted while the previous turn is still open supersedes it: it is finalised now but its late Stop
+    // (and the statusLine cost that follows it) must settle THAT turn, not the one just started.
+    const superseded = supersedeRunningTurn(state, sessionId, at)
+    const finishedPrevious = refreshCost(superseded, sessionId, readCost(sessionId), at)
     const startCost = readCost(sessionId)
     const turn: TimelineTurn = {
       id: nextTurnId(sessionTurns(finishedPrevious, sessionId), at),
@@ -172,13 +181,25 @@ export function createTimelineService(deps: TimelineServiceDeps): TimelineServic
     commit(refreshCost(started, sessionId, startCost, at), sessionId)
   }
 
+  /** A Stop belongs to the oldest superseded turn when one is waiting; otherwise to the running turn. */
+  function stop(sessionId: Id): void {
+    const at = now()
+    const cost = readCost(sessionId)
+    const waiting = awaitingStopIds(state, sessionId).length > 0
+    let next = waiting ? endAwaitingTurn(state, sessionId, at) : endRunningTurn(state, sessionId, 'finished', at)
+    next = refreshCost(next, sessionId, cost, at)
+    // The superseded turn is settled; later cost increments belong to the turn started after it.
+    next = waiting ? focusCostAfterStop(next, sessionId) : next
+    commit(next, sessionId)
+  }
+
   function onHook(event: HookEvent): void {
     if (event.event === 'UserPromptSubmit') {
       startPrompt(event)
     } else if (event.event === 'Notification') {
       update(event.sessionId, (current) => markNeededYou(current, event.sessionId))
     } else if (event.event === 'Stop') {
-      update(event.sessionId, (current) => endAndSettle(current, event.sessionId, 'finished', now()))
+      stop(event.sessionId)
     }
   }
 
@@ -187,14 +208,15 @@ export function createTimelineService(deps: TimelineServiceDeps): TimelineServic
       const at = now()
       const ended = endRunningTurn(current, sessionId, end, at)
       const withSleep = end === 'slept' ? recordSleptAt(ended, sessionId, at) : ended
-      return refreshCost(withSleep, sessionId, readCost(sessionId), at)
+      // No Stop for a superseded turn can matter once the session is gone.
+      return clearAwaitingStop(refreshCost(withSleep, sessionId, readCost(sessionId), at), sessionId)
     })
   }
 
   return {
     async load(): Promise<void> {
-      const turns = await loadTimelineFile(filePath, now(), onError)
-      state = stateFromTurns(turns)
+      const document = await loadTimelineDocument(filePath, now(), onError)
+      state = stateFromTurns(document.turns, document.sleeps)
       loaded = true
     },
 
@@ -203,7 +225,10 @@ export function createTimelineService(deps: TimelineServiceDeps): TimelineServic
     onSessionEnded,
 
     onUsageLimit(sessionId: Id): void {
-      update(sessionId, (current) => endAndSettle(current, sessionId, 'limit', now()))
+      update(sessionId, (current) => {
+        const at = now()
+        return clearAwaitingStop(endAndSettle(current, sessionId, 'limit', at), sessionId)
+      })
     },
 
     onCostChanged(sessionId: Id): void {
