@@ -5,14 +5,15 @@ Electron desktop app (an Orca-like, narrower tool) for running and managing many
 ## Read first
 1. `docs/DECISIONS.md`: what the user decided (product and working rules). Do not re-ask or undo these.
 2. `HANDOFF.md`: current state of the code, per feature.
-3. `docs/CODEMAP.md`: which folder and file does what.
-4. `docs/LESSONS.md`: gotchas that already cost time.
-5. `DESIGN.md` (UI must look like Orca), `PLAN.md` (original architecture), `README.md` (run/test).
+3. `docs/FEATURES.md`: the feature tree + matrices — find a feature's rules, code path and tests in one lookup.
+4. `docs/CODEMAP.md`: which folder and file does what.
+5. `docs/LESSONS.md`: gotchas that already cost time.
+6. `DESIGN.md` (UI must look like Orca), `PLAN.md` (original architecture), `README.md` (run/test).
 
 ## Keep the knowledge base current (required)
 - When the user decides something (picks an option, says yes/no to a feature, sets a rule), add it to `docs/DECISIONS.md` in the same turn, with their words.
 - When a bug's cause was not obvious, add it to `docs/LESSONS.md`.
-- When a feature ships, update its section in `HANDOFF.md`.
+- When a feature ships, update its section in `HANDOFF.md` and its row in `docs/FEATURES.md`.
 - When a folder or key file is added, moved or removed, update `docs/CODEMAP.md`.
 - `AGENTS.md` points other agents (OpenCode workers) here; keep it in sync with this list.
 - Commit these docs with the feature.
