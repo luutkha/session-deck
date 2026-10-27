@@ -38,6 +38,11 @@ export function presetShape(preset: GridPreset): GridShape {
   return SHAPES[preset]
 }
 
+function cellCount(preset: GridPreset): number {
+  const { cols, rows } = presetShape(preset)
+  return cols * rows
+}
+
 /** An all-empty grid of the preset's shape. */
 export function presetLayout(preset: GridPreset): GridLayout {
   const { cols, rows } = presetShape(preset)
@@ -46,8 +51,7 @@ export function presetLayout(preset: GridPreset): GridLayout {
 
 /** The cells padded/trimmed to the preset's shape, keeping every existing assignment. */
 export function resizedCells(cells: readonly (Id | null)[], preset: GridPreset): readonly (Id | null)[] {
-  const { cols, rows } = presetShape(preset)
-  const size = cols * rows
+  const size = cellCount(preset)
   const next = Array.from({ length: size }, (__, index): Id | null => cells[index] ?? null)
   return next
 }
@@ -55,6 +59,7 @@ export function resizedCells(cells: readonly (Id | null)[], preset: GridPreset):
 /**
  * Reconciles a stored grid with the sessions that are actually open: closed/unknown ids become empty
  * cells and a duplicate id keeps its FIRST cell. Cells are never re-ordered or auto-filled (D32).
+ * Returns the SAME layout object when no cell changes, so the caller's persist effect can skip.
  */
 export function normalizeGrid(
   layout: GridLayout,
@@ -62,11 +67,17 @@ export function normalizeGrid(
 ): GridLayout {
   const open = new Set<Id>(openIds)
   const seen = new Set<Id>()
+  let changed = layout.cells.length !== cellCount(layout.preset)
   const cells = layout.cells.map((id): Id | null => {
-    if (id === null || !open.has(id) || seen.has(id)) return null
+    if (id === null) return null
+    if (!open.has(id) || seen.has(id)) {
+      changed = true
+      return null
+    }
     seen.add(id)
     return id
   })
+  if (!changed) return layout
   return { preset: layout.preset, cells: resizedCells(cells, layout.preset) }
 }
 
@@ -80,9 +91,7 @@ export function setCell(
   index: number,
   id: Id | null
 ): GridLayout {
-  const { cols, rows } = presetShape(layout.preset)
-  const size = cols * rows
-  if (!Number.isInteger(index) || index < 0 || index >= size) return layout
+  if (!Number.isInteger(index) || index < 0 || index >= cellCount(layout.preset)) return layout
   const cells = resizedCells(layout.cells, layout.preset).slice()
   if (id !== null) {
     const existing = cells.indexOf(id)
@@ -102,24 +111,29 @@ export function cellIndexFor(layout: GridLayout, sessionId: Id | null): number |
 
 /** The ids that no longer fit `preset`'s shape (shrinking): the caller keeps them in the overflow. */
 export function collectOverflow(cells: readonly (Id | null)[], preset: GridPreset): readonly Id[] {
-  const size = presetShape(preset).cols * presetShape(preset).rows
-  return cells.slice(size).filter((id): id is Id => id !== null)
+  return cells.slice(cellCount(preset)).filter((id): id is Id => id !== null)
 }
 
-/** Fills empty cells from the overflow, in order; ids that do not fit stay in the overflow. */
+/**
+ * Fills empty cells from the overflow, in order; ids that do not fit stay in the overflow.
+ * An id already in a cell is skipped AND leaves the overflow (it is placed — D-b, one cell max).
+ */
 export function assignOverflow(
   layout: GridLayout,
   overflow: readonly Id[]
 ): { readonly layout: GridLayout; readonly overflow: readonly Id[] } {
   const cells = resizedCells(layout.cells, layout.preset).slice()
+  const placed = new Set<Id>(cells.filter((id): id is Id => id !== null))
   const kept: Id[] = []
   for (const id of overflow) {
+    if (placed.has(id)) continue
     const free = cells.indexOf(null)
     if (free < 0) {
       kept.push(id)
       continue
     }
     cells[free] = id
+    placed.add(id)
   }
   return { layout: { preset: layout.preset, cells }, overflow: kept }
 }

@@ -11,6 +11,12 @@ describe('gridReducer sync', () => {
     const next = gridReducer(state(layout), { type: 'sync', openIds: ['a'], activeId: 'a' })
     expect(next.layout.cells).toEqual(['a', null])
   })
+  it('keeps the same layout object when the cells do not change', () => {
+    const layout = setCell(setCell(presetLayout('2x1'), 0, 'a'), 1, 'b')
+    const before = state(layout, ['a', 'b'])
+    const next = gridReducer(before, { type: 'sync', openIds: ['a', 'b'], activeId: 'b' })
+    expect(next.layout).toBe(layout)
+  })
   it('activeId just follows (never forces a cell)', () => {
     const layout = presetLayout('1x1')
     const next = gridReducer(state(layout, ['a', 'b'], 'a'), { type: 'sync', openIds: ['a', 'b'], activeId: 'b' })
@@ -43,6 +49,31 @@ describe('gridReducer setPreset', () => {
     const layout = setCell(presetLayout('1x1'), 0, 'a')
     const before = state(layout)
     expect(gridReducer(before, { type: 'setPreset', preset: '1x1' })).toBe(before)
+  })
+  it('never puts the same session in two cells after shrink -> pick -> grow', () => {
+    // Reproduced bug: shrink 2x2 to 1x1, pick an overflow id into the only cell, then grow.
+    const layout = ['a', 'b', 'c', 'd'].reduce<GridState['layout']>(
+      (acc, id, index) => setCell(acc, index, id),
+      presetLayout('2x2')
+    )
+    const shrunk = gridReducer(state(layout), { type: 'setPreset', preset: '1x1' })
+    expect(shrunk.layout.cells).toEqual(['a'])
+    expect(shrunk.overflow).toEqual(['b', 'c', 'd'])
+    const picked = gridReducer(shrunk, { type: 'setCell', index: 0, id: 'b' })
+    const grown = gridReducer(picked, { type: 'setPreset', preset: '2x1' })
+    const placed = grown.layout.cells.filter((id): id is string => id !== null)
+    expect(placed).toEqual(['b', 'c'])
+    expect(new Set(placed).size).toBe(placed.length)
+    expect(grown.overflow).toEqual(['d'])
+  })
+  it('drops overflow ids that are no longer open sessions', () => {
+    const layout = setCell(setCell(presetLayout('2x2'), 0, 'a'), 3, 'b')
+    const shrunk = gridReducer(state(layout, ['a', 'b']), { type: 'setPreset', preset: '1x1' })
+    expect(shrunk.overflow).toEqual(['b'])
+    const closed = gridReducer(shrunk, { type: 'sync', openIds: ['a'], activeId: 'a' })
+    const back = gridReducer(closed, { type: 'setPreset', preset: '2x2' })
+    expect(back.layout.cells).toEqual(['a', null, null, null])
+    expect(back.overflow).toEqual([])
   })
 })
 

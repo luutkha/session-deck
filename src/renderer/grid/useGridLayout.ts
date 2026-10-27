@@ -45,9 +45,15 @@ export function initGridState(
 export function gridReducer(state: GridState, action: GridAction): GridState {
   switch (action.type) {
     case 'sync': {
+      const layout = normalizeGrid(state.layout, action.openIds)
+      // normalizeGrid returns the SAME object when no cell changed: skip the state churn (and the
+      // localStorage write effect that watches state.layout).
+      if (layout === state.layout && action.openIds === state.openIds && action.activeId === state.activeId) {
+        return state
+      }
       return {
         ...state,
-        layout: normalizeGrid(state.layout, action.openIds),
+        layout,
         openIds: action.openIds,
         activeId: action.activeId
       }
@@ -55,7 +61,11 @@ export function gridReducer(state: GridState, action: GridAction): GridState {
     case 'setPreset': {
       if (action.preset === state.layout.preset) return state
       // Shrinking keeps the ids that no longer fit in the overflow; growing restores them first.
-      const overflow = [...state.overflow, ...collectOverflow(state.layout.cells, action.preset)]
+      // Only sessions that are still open may wait there — a closed one must never come back (D-c).
+      const open = new Set<Id>(state.openIds)
+      const overflow = [...state.overflow, ...collectOverflow(state.layout.cells, action.preset)].filter(
+        (id): boolean => open.has(id)
+      )
       const restored = assignOverflow({ preset: action.preset, cells: state.layout.cells }, overflow)
       return { ...state, layout: restored.layout, overflow: restored.overflow }
     }

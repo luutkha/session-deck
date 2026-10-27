@@ -64,6 +64,18 @@ describe('normalizeGrid', () => {
   it('never auto-fills empty cells (D32)', () => {
     expect(normalizeGrid(presetLayout('2x2'), ['a', 'b', 'c']).cells.filter((c) => c !== null)).toHaveLength(0)
   })
+  it('returns the SAME layout object when no cell changes (the storage effect must not re-run)', () => {
+    const layout = { preset: '2x1' as const, cells: ['a', 'b'] }
+    expect(normalizeGrid(layout, ['a', 'b', 'c'])).toBe(layout)
+  })
+  it('returns a new layout object when a cell changes', () => {
+    const layout = { preset: '2x1' as const, cells: ['a', 'b'] }
+    expect(normalizeGrid(layout, ['a'])).not.toBe(layout)
+  })
+  it('returns a new layout object when the cells need padding', () => {
+    const layout = { preset: '2x2' as const, cells: ['a', 'b'] }
+    expect(normalizeGrid(layout, ['a', 'b'])).not.toBe(layout)
+  })
 })
 
 describe('setCell', () => {
@@ -109,6 +121,21 @@ describe('overflow (preset shrink/restore, memory only)', () => {
     const result = assignOverflow({ preset: '2x1', cells: ['a', null] }, ['b', 'c'])
     expect(result.layout.cells).toEqual(['a', 'b'])
     expect(result.overflow).toEqual(['c'])
+  })
+  it('an id already in a cell is skipped and leaves the overflow (never two cells, D-b)', () => {
+    const result = assignOverflow({ preset: '2x1', cells: ['a', null] }, ['a', 'b'])
+    expect(result.layout.cells).toEqual(['a', 'b'])
+    expect(result.overflow).toEqual([])
+  })
+  it('never places the same id in two cells', () => {
+    const result = assignOverflow({ preset: '1x2', cells: [null, null] }, ['a', 'a'])
+    expect(result.layout.cells).toEqual(['a', null])
+    expect(result.overflow).toEqual([])
+  })
+  it('keeps the ids that do not fit, in order', () => {
+    const result = assignOverflow({ preset: '1x1', cells: [null] }, ['a', 'b', 'c'])
+    expect(result.layout.cells).toEqual(['a'])
+    expect(result.overflow).toEqual(['b', 'c'])
   })
   it('an overflowing id can land in a cell later freed', () => {
     const first = assignOverflow({ preset: '2x1', cells: ['a', 'b'] }, ['c'])
