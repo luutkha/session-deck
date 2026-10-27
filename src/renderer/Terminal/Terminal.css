@@ -19,6 +19,14 @@
   overflow: hidden;
 }
 
+/* Grid view (D32): the same workspace lays its panes out as preset cells (columns/rows set inline). */
+.terminal-workspace--grid {
+  display: grid;
+  padding: 0;
+  gap: 1px;
+  background: var(--border);
+}
+
 .terminal-workspace[data-direction='row'] {
   flex-direction: row;
 }

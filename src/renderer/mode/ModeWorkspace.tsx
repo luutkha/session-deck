@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, type ReactElement } from 'react'
 import { Sidebar } from '../Sidebar'
 import { useLastRuntimeChange } from '../Sidebar/useLastRuntimeChange'
 import { CodeSidebar } from '../code/sidebar/CodeSidebar'
-import { GridView } from '../grid/GridView'
 import { useTerminalPanes } from '../Terminal/useTerminalPanes'
 import { useTerminalSearch } from '../Terminal/useTerminalSearch'
 import { TerminalSearchBar } from '../Terminal/TerminalSearchBar'
@@ -16,6 +15,7 @@ import { NotesPanel } from '../notes'
 import { progress } from '../notes/checklistLogic'
 import { CommandPalette } from '../palette/CommandPalette'
 import { TerminalWorkspace } from '../Terminal/TerminalWorkspace'
+import type { TerminalGridMode } from '../grid/GridCells'
 import { WorkerView } from '../workers/WorkerView'
 import { needsYouItems } from '../attention/needsYou'
 import { EmptyState } from '../shell/EmptyState'
@@ -115,6 +115,23 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
       onZoom: termViewApi.zoom,
       onSearch: (): void => openSearchRef.current()
     }
+  )
+  // Grid view: the workspace itself draws the cells (one host per xterm); a worker overlay hides it as before.
+  const gridMode = useMemo(
+    (): TerminalGridMode | undefined =>
+      view === 'grid' && data !== null && workers.selected === null
+        ? {
+            layout: nav.grid.layout,
+            sessions: (sessions ?? []).map((s: Session) => ({ id: s.id, name: s.name })),
+            onFocusCell: nav.grid.focusCell,
+            // Picking a session shows it: its tab opens too (cells only hold live sessions).
+            onPickCell: (index: number, id: Id | null): void => {
+              if (id !== null) tabs.open(id)
+              nav.grid.setCell(index, id)
+            }
+          }
+        : undefined,
+    [view, data, workers.selected, nav.grid, sessions, tabs]
   )
   // Search belongs to the terminal and grid views, and not to the worker overlay.
   const searchEnabled = (view === 'terminal' || view === 'grid') && workers.selected === null
@@ -232,6 +249,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   runtime={runtime}
                   names={paneNames}
                   panes={panes}
+                  grid={gridMode}
                   onFocusPane={nav.activateTab}
                   onClosePane={split.removePane}
                   onResize={split.resize}
@@ -256,24 +274,6 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                     onReopen={nav.reopenSession}
                     sessionUsage={sessionUsage}
                     scrollToBusiest={settings.hub.scrollToBusiest}
-                  />
-                </div>
-              ) : null}
-              {loaded && view === 'grid' && data !== null && workers.selected === null ? (
-                <div className="absolute inset-0 z-10 bg-black">
-                  <GridView
-                    grid={nav.grid.layout}
-                    sessions={sessions ?? []}
-                    activeId={activeId}
-                    runtime={runtime}
-                    names={paneNames}
-                    panes={panes}
-                    onFocusCell={nav.grid.focusCell}
-                    onPickCell={(index: number, id: Id | null): void => {
-                      // Picking a session shows it: its tab opens too (cells only hold live sessions).
-                      if (id !== null) tabs.open(id)
-                      nav.grid.setCell(index, id)
-                    }}
                   />
                 </div>
               ) : null}

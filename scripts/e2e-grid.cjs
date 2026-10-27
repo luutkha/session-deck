@@ -62,7 +62,7 @@ async function main() {
     await sleep(500)
     const gridUp = await waitFor(() => ev('!!document.querySelector(\'[data-testid="grid-view"][data-grid-preset="2x2"]\')'), 5000, 200)
     t.check('the grid opens at 2x2 through the menu', !!gridUp)
-    t.check('empty cells show no terminal and no auto-fill', (await ev('document.querySelectorAll(\'[data-testid="grid-view"] .terminal-pane__viewport\').length')) === 0)
+    t.check('empty cells show no terminal and no auto-fill', (await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')) === 0)
 
     // ---- assign two sessions through the real cell pickers (plain buttons: deterministic)
     const pickCell = async (cellIndex, name) => {
@@ -84,10 +84,18 @@ async function main() {
     await pickCell(0, 'grid-one')
     await pickCell(1, 'grid-two')
     const twoPanes = await waitFor(async () => {
-      const count = await ev('document.querySelectorAll(\'[data-testid="grid-view"] .terminal-pane__viewport\').length')
+      const count = await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')
       return count === 2 ? count : null
     }, 8000, 300)
     t.check('both assigned cells show interactive terminals', !!twoPanes)
+    // The viewport div alone proves nothing: xterm must have actually rendered INTO each cell (a pane opened in a
+    // second host would leave the cell blank).
+    const renderedExpr = `(() => {
+      const views = [...document.querySelectorAll('[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport')]
+      return views.length > 0 && views.every((v) => { const r = v.querySelector('.xterm')?.getBoundingClientRect(); return !!r && r.width > 0 && r.height > 0 })
+    })()`
+    const rendered = await waitFor(() => ev(renderedExpr), 8000, 300)
+    t.check('each assigned cell has a rendered xterm (not an empty viewport)', !!rendered)
 
     // ---- typing lands in the focused cell (echo check through the replay)
     await sleep(1000)
@@ -98,7 +106,7 @@ async function main() {
     // ---- duplicate guard: picking grid-one for cell 1 SWAPS the occupants (no duplicates)
     await pickCell(1, 'grid-one')
     await sleep(500)
-    const panesAfterMove = await ev('document.querySelectorAll(\'[data-testid="grid-view"] .terminal-pane__viewport\').length')
+    const panesAfterMove = await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')
     const firstCellName = await ev(`document.querySelector('[data-grid-cell="0"] [aria-label="Choose the session for this cell"]')?.innerText ?? null`)
     t.check('picking an assigned session swaps the cells (no duplicates)', panesAfterMove === 2 && (firstCellName ?? '').includes('grid-two'), `panes=${String(panesAfterMove)} firstCell=${String(firstCellName)}`)
 
@@ -117,9 +125,9 @@ async function main() {
     await setPreset('3x2')
     t.check('widening keeps assignments (added empty cells)', (await ev('!!document.querySelector(\'[data-testid="grid-view"][data-grid-preset="3x2"]\')')) === true)
     await setPreset('1x1')
-    t.check('shrinking to 1x1 keeps one pane', (await ev('document.querySelectorAll(\'[data-testid="grid-view"] .terminal-pane__viewport\').length')) === 1)
+    t.check('shrinking to 1x1 keeps one pane', (await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')) === 1)
     await setPreset('2x2')
-    t.check('back to 2x2 restores the assignments', (await ev('document.querySelectorAll(\'[data-testid="grid-view"] .terminal-pane__viewport\').length')) >= 2)
+    t.check('back to 2x2 restores the assignments', (await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')) >= 2)
 
     // ---- a graceful restart restores preset + assignments
     await app.evaluate('window.api.quitApp()').catch(() => undefined)
@@ -129,7 +137,7 @@ async function main() {
     app = await launchApp({ port: PORT, userData })
     await sleep(1500)
     const restored = await waitFor(() => ev('!!document.querySelector(\'[data-testid="grid-view"][data-grid-preset="2x2"]\')'), 8000, 300)
-    t.check('the restart restores the grid preset and assignments', !!restored && (await ev('document.querySelectorAll(\'[data-testid="grid-view"] .terminal-pane__viewport\').length')) >= 2)
+    t.check('the restart restores the grid preset and assignments', !!restored && (await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')) >= 2)
   } catch (error) {
     t.check('run completed without exception', false, String(error && error.stack || error))
   } finally {
