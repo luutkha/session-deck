@@ -9,6 +9,8 @@ const { execFileSync } = require('node:child_process')
 const { sleep, waitFor, makeChecker, launchApp } = require('./e2e-lib.cjs')
 
 const PORT = 9449
+const CLEANUP_ATTEMPTS = 6
+const CLEANUP_RETRY_MS = 500
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=e2e', '-c', 'user.email=e2e@example.com', ...args], { cwd, encoding: 'utf8' }).trim()
 
 function makeRepo(root) {
@@ -21,8 +23,24 @@ function makeRepo(root) {
   return repo
 }
 
-// A real 8x8 PNG (transparent).
+// A real, decodable 8x8 PNG (RGB, opaque red): 8 rows of filter byte 0 + 8 red pixels.
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC'
+
+/** Electron/opencode children can hold the temp dir briefly after taskkill; retry instead of crashing the run. */
+async function removeTempDir(dir) {
+  for (let attempt = 0; attempt < CLEANUP_ATTEMPTS; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (attempt === CLEANUP_ATTEMPTS - 1) {
+        process.stderr.write(`temp cleanup skipped: ${error.message}\n`)
+        return
+      }
+      await sleep(CLEANUP_RETRY_MS)
+    }
+  }
+}
 
 async function main() {
   const t = makeChecker()
@@ -108,8 +126,17 @@ async function main() {
     await openFileDiff('shot.png')
     t.check('switching files resets the toggle to Diff', (await ev('document.querySelector(\'[data-preview-mode="preview"]\')?.getAttribute(\'aria-pressed\')')) === 'false')
     await click('[data-preview-mode="preview"]')
-    const imgShown = await waitFor(() => ev('!!document.querySelector(\'[data-testid=preview-image] img[src^="data:image/png;base64,"]\')'), 8000, 300)
-    t.check('the image renders as a data URL', !!imgShown)
+    // The src check alone passes even when CSP blocks the request; the decoded size proves it loaded.
+    const imgShown = await waitFor(async () => {
+      const loaded = await ev(`(() => {
+        const img = document.querySelector('[data-testid=preview-image] img[src^="data:image/png;base64,"]')
+        return img !== null && img.complete === true && img.naturalWidth > 0
+          ? { width: img.naturalWidth, height: img.naturalHeight }
+          : null
+      })()`)
+      return loaded ?? null
+    }, 8000, 300)
+    t.check('the image loads and decodes from its data URL (not blocked by CSP)', !!imgShown, js(imgShown))
 
     // ---- the oversized markdown shows the truncation note
     await backToFiles()
@@ -140,7 +167,7 @@ async function main() {
   } finally {
     if (app) app.kill()
     await sleep(500)
-    fs.rmSync(root, { recursive: true, force: true })
+    await removeTempDir(root)
     process.exit(t.summary() ? 1 : 0)
   }
 }
