@@ -285,6 +285,7 @@ SessionDeck
 | ATT-9 | Close to tray | Shipped | Window close button | Default ON: closing hides the window, sessions keep running; Quit is explicit (tray or Settings > General); a hidden window counts as away for sleep-all. | `main/app/closeToTray.ts`, `quitState.ts` | `closeToTray.test.ts`, `quitState.test.ts`; e2e `e2e:g1` |
 | ATT-10 | Idle-output detector | Shipped (intentional no-op) | — | Only `Stop` and `Notification` hooks ping; the idle-output detector does not raise attention by itself (D11-era decision). Do not "fix" it into pinging. | `main/attention/IdleDetector.ts`; `AttentionService.ts` | `IdleDetector.test.ts`, `AttentionService.test.ts` |
 | ATT-11 | Sound relay | Shipped | Any attention / quota | Main emits `ev:sound` with `(sessionId, event)`; `sessionId` is `''` for `quota`; the main window plays (the popped-out Code window does not). | `main/app/soundRelay.ts`; `renderer/sound/useAttentionSound.ts` | `soundRelay.test.ts` |
+| ATT-12 | Reminder escalation | Shipped | Settings > Sound "Repeat the alert…" | While a session stays needs-you and unread, repeat the same sound + taskbar flash + desktop notice every `reminder.afterMinutes` (1–120, default 10). Disabled = never. `unread` (the user's own flag) never schedules; the session on screen never pings (it still counts as snoozed for one interval). Reading/clearing/closing/forgetting disarms; a priority upgrade re-arms the more urgent reason. The settings are read on every 30 s tick (no restart). | `main/attention/reminder.ts` (pure), `main/attention/AttentionService.ts`; `main/index.ts` → `onReminder`; `renderer/settings/ReminderBlock.tsx` | `reminder.test.ts`, `AttentionService.test.ts` (reminders), `reminderValidation.test.ts`, `settings.test.ts`; e2e `e2e:reminder` |
 
 ### 2.5 HUB — Hub board
 
@@ -572,6 +573,7 @@ SessionDeck
 | `code.worktreesRoot` | `''` (home default) | COD-5 |
 | `code.shell` | `powershell` | AGT-3 |
 | `code.autoTrustWorktrees` | `false` | COD-11 |
+| `reminder.enabled` / `.afterMinutes` | `true` / `10` | ATT-12 |
 
 ### 3.7 e2e script → feature
 
@@ -584,6 +586,7 @@ SessionDeck
 | `e2e-robust.cjs` | SEC-1, SET-3 | Late/bogus IPC, malformed create, save on quit |
 | `e2e-busy-close.cjs` | SES-14 / SEC-4 | Busy session close leaves no process |
 | `e2e-bell.cjs` | ATT-2/3/4, SES-13 | Bell on card/tab/Hub, mark read/unread, real background turn |
+| `e2e-reminder.cjs` | ATT-12, ATT-5, ATT-7 | Settings > Sound, a real 1-minute repeat, read stops it, on-screen silent, off stops it |
 | `e2e-hub.cjs` | HUB-1/2/3, ATT-5, SET-1 | Hub columns, drag status, settings, sound pipeline |
 | `e2e-hubscroll.cjs` | HUB-6 | Busiest-column scroll |
 | `e2e-bulk.cjs` | NAV-11, HUB-3 | Real Ctrl/Shift/Esc selection, bulk sleep/status/group in the sidebar and Hub, DnD regression |
@@ -677,7 +680,7 @@ SessionDeck
 6. **Keep awake and Remote Control sessions are never slept** by any automatic rule.
 7. **Busy / needs-input sessions are never interrupted** by quota autopilot.
 8. **Only `Stop` and `Notification` hooks ping.** The idle-output detector is intentionally a no-op.
-9. **The on-screen session is recorded but never pings** (sound/flash/desktop notice).
+9. **The on-screen session is recorded but never pings** (sound/flash/desktop notice), and reminders never repeat for it.
 10. **Sleeping keeps the bell** (D27); closing/removing forgets it.
 11. **Manual usage refresh only**; the endpoint is never polled; the OAuth token stays in main and is never logged, stored or sent over IPC.
 12. **The store is never overwritten on a read error**; invalid JSON is quarantined, locked files abort startup.

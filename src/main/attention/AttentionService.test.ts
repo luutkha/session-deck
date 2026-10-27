@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createAttentionService } from './AttentionService'
-import type { AttentionReason, HookEvent, SoundEvent } from '../../shared/types'
+import type { AttentionReason, HookEvent, ReminderSettings, SoundEvent } from '../../shared/types'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -361,6 +361,125 @@ describe('AttentionService', () => {
       expect(plugins[plugins.length - 1].endsWith('sessiondeck-opencode-plugin')).toBe(true)
       expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT).permission).toEqual({ '*': 'allow' })
     })
+  })
+})
+
+// Bell escalation (D44): the service repeats the alert for a session that stays needs-you and unread.
+describe('AttentionService reminders', () => {
+  let service: ReturnType<typeof createAttentionService>
+  let settingsDir: string
+  let focusedSession: string | null
+  let beeps: Array<{ id: string; reason: SoundEvent }>
+  let reminders: Array<{ id: string; reason: AttentionReason }>
+  let settings: ReminderSettings
+  let clock: number
+
+  /** The reminder timer is real (10 ms); the bookkeeping clock is injected, so no test waits a minute. */
+  async function waitUntil(predicate: () => boolean, timeoutMs = 1000): Promise<boolean> {
+    const end = Date.now() + timeoutMs
+    while (Date.now() < end) {
+      if (predicate()) return true
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    return predicate()
+  }
+
+  beforeEach(async () => {
+    settingsDir = mkdtempSync(join(tmpdir(), 'sessiondeck-reminder-'))
+    focusedSession = null
+    beeps = []
+    reminders = []
+    settings = { enabled: true, afterMinutes: 1 }
+    clock = 0
+    service = createAttentionService({
+      isKnownSession: (id) => id === 'session-1' || id === 'session-2',
+      isFocused: (id) => focusedSession === id,
+      beep: (id, reason) => beeps.push({ id, reason }),
+      flash: () => {},
+      isWindowFocused: () => false,
+      settingsDir,
+      getReminderSettings: () => settings,
+      onReminder: (id, reason) => reminders.push({ id, reason }),
+      now: () => clock,
+      reminderTickMs: 10
+    })
+    await service.start()
+  })
+
+  afterEach(async () => {
+    await service.stop()
+    rmSync(settingsDir, { recursive: true, force: true })
+  })
+
+  it('repeats a still-unread background alert once per interval', async () => {
+    service.raise('session-1', 'done')
+    expect(beeps).toEqual([{ id: 'session-1', reason: 'done' }])
+
+    clock = 59_999
+    expect(await waitUntil(() => reminders.length > 0, 60)).toBe(false)
+
+    clock = 60_000
+    expect(await waitUntil(() => reminders.length === 1)).toBe(true)
+    expect(reminders).toEqual([{ id: 'session-1', reason: 'done' }])
+    expect(beeps).toEqual([
+      { id: 'session-1', reason: 'done' },
+      { id: 'session-1', reason: 'done' }
+    ])
+
+    // A reminder just fired: the next one waits for its own interval.
+    clock = 60_001
+    expect(await waitUntil(() => reminders.length > 1, 60)).toBe(false)
+  })
+
+  it('does not remind the session on screen', async () => {
+    focusedSession = 'session-1'
+    service.raise('session-1', 'done')
+    clock = 60_000
+    expect(await waitUntil(() => reminders.length > 0, 80)).toBe(false)
+    expect(beeps).toEqual([])
+  })
+
+  it('clearing the bell disarms the reminder', async () => {
+    service.raise('session-1', 'done')
+    clock = 60_000
+    expect(await waitUntil(() => reminders.length === 1)).toBe(true)
+
+    service.clear('session-1')
+    clock = 120_000
+    expect(await waitUntil(() => reminders.length > 1, 80)).toBe(false)
+  })
+
+  it('forgetting the session disarms the reminder', async () => {
+    service.raise('session-1', 'done')
+    service.forget('session-1')
+    clock = 60_000
+    expect(await waitUntil(() => reminders.length > 0, 80)).toBe(false)
+  })
+
+  it('reads the settings every tick: off pauses, on resumes', async () => {
+    service.raise('session-1', 'done')
+    settings = { enabled: false, afterMinutes: 1 }
+    clock = 60_000
+    expect(await waitUntil(() => reminders.length > 0, 80)).toBe(false)
+
+    settings = { enabled: true, afterMinutes: 1 }
+    expect(await waitUntil(() => reminders.length === 1)).toBe(true)
+  })
+
+  it('never reminds the user\'s own unread flag', async () => {
+    service.markUnread('session-1')
+    clock = 60_000
+    expect(await waitUntil(() => reminders.length > 0, 80)).toBe(false)
+  })
+
+  it('a priority upgrade repeats the more urgent reason like a fresh raise', async () => {
+    service.raise('session-1', 'idle')
+    clock = 60_000
+    expect(await waitUntil(() => reminders.length === 1)).toBe(true)
+
+    clock = 62_000
+    service.raise('session-1', 'permission')
+    expect(await waitUntil(() => reminders.some((entry) => entry.reason === 'permission'))).toBe(true)
   })
 })
 

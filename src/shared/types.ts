@@ -387,6 +387,16 @@ export interface AwaySettings {
   readonly afterMinutes: number
 }
 
+/**
+ * Repeats the alert (sound, taskbar flash, desktop notice) while a session stays needs-you and unread (D44).
+ * The session on screen never reminds, and the user's own "unread" flag is silent by rule.
+ */
+export interface ReminderSettings {
+  readonly enabled: boolean
+  /** Minutes a needs-you session stays unread before the alert repeats (1..120). */
+  readonly afterMinutes: number
+}
+
 /** Code mode (D31). */
 export interface CodeSettings {
   /** Folder new worktrees go in (<root>/<repo name>/<worktree folder>). '' = <home>/SessionDeck/worktrees. Absolute when set. */
@@ -411,6 +421,7 @@ export interface AppSettings {
   readonly agents: AgentSettings
   readonly hub: HubSettings
   readonly away: AwaySettings
+  readonly reminder: ReminderSettings
   readonly code: CodeSettings
 }
 
@@ -422,6 +433,7 @@ export interface SettingsPatch {
   readonly agents?: Partial<AgentSettings>
   readonly hub?: Partial<HubSettings>
   readonly away?: Partial<AwaySettings>
+  readonly reminder?: Partial<ReminderSettings>
   readonly code?: Partial<CodeSettings>
 }
 
@@ -434,11 +446,15 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   agents: { defaultAgent: 'claude', opencodeModel: '' },
   hub: { scrollToBusiest: true },
   away: { enabled: true, afterMinutes: 15 },
+  reminder: { enabled: true, afterMinutes: 10 },
   code: { worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false }
 }
 
 export const MIN_SLEEP_MINUTES = 1
 export const MAX_SLEEP_MINUTES = 1440
+
+export const MIN_REMINDER_MINUTES = 1
+export const MAX_REMINDER_MINUTES = 120
 
 /** Fills every missing field with its default (a stored value that is present always wins). */
 export function resolveSettings(stored: Partial<{ [K in keyof AppSettings]: Partial<AppSettings[K]> }> | undefined): AppSettings {
@@ -450,6 +466,7 @@ export function resolveSettings(stored: Partial<{ [K in keyof AppSettings]: Part
     agents: { ...DEFAULT_APP_SETTINGS.agents, ...(stored?.agents ?? {}) },
     hub: { ...DEFAULT_APP_SETTINGS.hub, ...(stored?.hub ?? {}) },
     away: { ...DEFAULT_APP_SETTINGS.away, ...(stored?.away ?? {}) },
+    reminder: { ...DEFAULT_APP_SETTINGS.reminder, ...(stored?.reminder ?? {}) },
     code: { ...DEFAULT_APP_SETTINGS.code, ...(stored?.code ?? {}) }
   }
 }

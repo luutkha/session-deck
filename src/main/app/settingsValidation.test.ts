@@ -84,6 +84,20 @@ describe('asSettingsPatch', () => {
     expect(() => asSettingsPatch({ away: 15 })).toThrow('away must be an object')
   })
 
+  it('accepts the reminder section', () => {
+    expect(asSettingsPatch({ reminder: { enabled: false, afterMinutes: 30 } })).toEqual({
+      reminder: { enabled: false, afterMinutes: 30 }
+    })
+    expect(asSettingsPatch({ reminder: { afterMinutes: 5 } })).toEqual({ reminder: { afterMinutes: 5 } })
+  })
+
+  it('rejects a wrong type or an unknown key in the reminder section', () => {
+    expect(() => asSettingsPatch({ reminder: { enabled: 'yes' } })).toThrow('reminder has a field with the wrong type')
+    expect(() => asSettingsPatch({ reminder: { afterMinutes: 1.5 } })).toThrow('reminder has a field with the wrong type')
+    expect(() => asSettingsPatch({ reminder: { enabled: true, sound: 1 } })).toThrow('unknown key "reminder.sound"')
+    expect(() => asSettingsPatch({ reminder: 15 })).toThrow('reminder must be an object')
+  })
+
   it('accepts the new quota autopilot keys', () => {
     expect(
       asSettingsPatch({ quota: { criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true } })

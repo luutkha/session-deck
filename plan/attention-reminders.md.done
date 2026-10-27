@@ -1,0 +1,110 @@
+# Plan: Bell escalation — repeat the alert when a needs-you session stays unheard
+
+Status: proposed — waiting for "go". No code changed yet.
+Date: 2026-10-25
+User request (2026-10-25): plan for "1. bell escalation" — "for 1, we need setting to enable/disable it".
+
+## 1. Goal
+
+Today a session that needs the user plays its sound **once** (D22, `Notifier`); the desktop
+notice fires once per raise (`attentionWiring.ts` fires once per transition). If the user is
+away — the whole point of the hands-off pipeline — one beep is easy to miss. This adds a
+reminder: while a session stays needs-you and unread, play the sound + flash + desktop notice
+again every N minutes until the user reads it.
+
+Setting (new store-backed section):
+
+```ts
+// src/shared/types.ts (additive)
+export interface ReminderSettings {
+  readonly enabled: boolean
+  /** Minutes a needs-you session stays unread before the alert repeats (1..120). */
+  readonly afterMinutes: number
+}
+// defaults: { enabled: true, afterMinutes: 10 }  (settings page can turn it off)
+```
+
+## 2. What exists already (verified in source)
+
+| Fact | Where | Why it matters |
+|---|---|---|
+| Every attention raise/clear flows through one listen point: `if (!isFocused(id)) notifier.notify(id, reason)` / `notifier.stopFlash()` | `src/main/attention/AttentionService.ts:95-97` | The reminder hooks in at exactly this place; `Notifier.notify` already does sound-debounce (1500 ms) + taskbar flash + focused-window guard. |
+| Flash stop on clear is already handled | same, `stopFlash"` on the null path | No flash leak if the reminder stops re-pinging. |
+| Desktop notice text is built once per raise with `attentionNotice({name, reason, activityMessage})`, guarded by `isFocused` | `src/main/notify/attentionWiring.ts:19-33` | Escalation re-uses the same builder; `notifySession` re-applies the tray settings for us (`desktopNotifications`, `notifyOnlyWhenUnfocused` — `desktopNotifier.ts`). |
+| `markUnread` (user's own flag) is silent by rule; `AttentionManager` treats `unread` as lowest priority (0) | `AttentionManager.ts:14-20,50-54` | `unread` sessions must never remind. Real reasons: permission 4, done 3, idle 2, bell 1. |
+| Sleep keeps the bell (`suspend`) and `forget` removes the session | `AttentionService` interface | Reminder timer must survive suspend (a slept session that still needs you is exactly when reminders matter) and must die on clear/forget. |
+| Settings sections + patch validation + defaults live in `types.ts` (e.g. `AwaySettings { enabled, afterMinutes }` is the closest twin) | `types.ts:354-358,370-386` | New section follows the `away` shape 1:1, including the `SettingsPatch` entry and the store merge/validation + defaults migration. |
+| The renderer plays sounds per reason from `sessiondeck.sound.v1` (localStorage) | HANDOFF "Custom sounds" | No renderer change at all: main re-sends the same sound event, the user's chosen sound replays. |
+
+## 3. Design
+
+### 3.1 Pure module — `src/main/attention/reminder.ts` (no timers inside)
+
+```ts
+export interface ReminderState { readonly since: Record<string, number>; readonly lastRemindAt: Record<string, number> }
+export function noteRaised(state, id, at): state            // arm when reason becomes non-null
+export function noteCleared(state, id): state               // disarm
+export function dueReminders(state, settings, now): string[] // ids where now - max(since,lastRemind) >= afterMinutes
+```
+
+Rules (unit-tested): `afterMinutes` clamped 1..120; disabled → empty list; `since` older than
+the interval is not lost (a restart mid-wait arms from… see §3.3 — v1: re-arms at app start);
+`noteRaised` on an already-raised id (priority upgrade permission→done) keeps the original
+`since` but `lastRemindAt` resets so the upgraded reason pings immediately like a fresh raise.
+
+### 3.2 Wiring in `AttentionService` (the one stateful owner)
+
+- New optional dep `getReminderSettings?: () => ReminderSettings` (from the store).
+- At the existing transition point (`AttentionService.ts:95`): reason non-null →
+  `state = noteRaised(...)`; null → `noteCleared` (also in `forget`).
+- A 30 s interval created in the service's own timer style:
+  on tick, for each id in `dueReminders(state, settings, now)` → `if (!isFocused(id)) notifier.notify(id, reason)`
+  then `lastRemindAt[id] = now`.
+- New dep/callback `onReminder?: (id: string, reason: AttentionReason) => void` fired alongside
+  (main process never guesses names); stopped in `stop()`.
+
+### 3.3 Wiring in `index.ts` (next to the existing notice wiring, line ~345)
+
+- `getReminderSettings: () => store.getSettings().reminder`.
+- `onReminder(id, reason)`: resolve the session in the store; build the notice with the same
+  `attentionNotice` helper as `attentionWiring` (extract it into a tiny shared import — no
+  duplicate text); call `notifier.notifySession(id, title, body)` — the tray settings guards
+  already live inside `notifySession`, and the `isFocused` guard is done by the service.
+- Restart semantics: re-fresh after app start = the reminder re-arms when the bell is raised;
+  a bell that existed before a restart is silent until a new raise (acceptable v1, consistent
+  with W1's away-summary fix covering the "before restart" story for data, not sounds).
+
+### 3.4 Settings UI
+
+Settings > **Sound** page gets a "Reminders" section (toggle + minutes number input), written
+through the store settings IPC — NOT localStorage, because main reads it every tick. Follow the
+Sleep page's store-backed form pattern (validated patch, inline error on clamp rejection).
+
+## 4. Files touched
+
+- `src/shared/types.ts` (ReminderSettings + AppSettings + SettingsPatch + defaults) and the settings patch validation module — the one deliberate additive contract change
+- New: `src/main/attention/reminder.ts` + `reminder.test.ts` (pure)
+- Edit: `AttentionService.ts` (interval + state), `index.ts` (deps + onReminder), settings store merge/validation
+- Edit: `src/renderer/settings/` — Sound page section
+- `docs/CODEMAP.md`, `HANDOFF.md`, `docs/DECISIONS.md` D-entries
+
+## 5. Verification (W04)
+
+- Unit: reminder pure logic (due once per interval, disabled → none, unread never scheduled, upgrade resets lastRemindAt, forget disarms), settings patch clamp (0 / 121 / negative rejected or clamped per existing convention).
+- Real-app e2e `scripts/e2e-reminder.cjs` (pattern of the attention/sound e2e if one exists, else `e2e-autopilot.cjs` shell): raise a real attention bell on a background session → set `reminder.afterMinutes = 1` via the settings UI/IPC → assert a **second** `ev:sound` (CDP: renderer invocation listener) arrives after ~60 s and a second desktop-notice path fires → read the bell → no further sounds → turn the setting off → no further sounds; on-screen session reminders do not fire.
+
+## 6. Risks / safety
+
+- Nuisance risk is the reason for the toggle: each round is a normal sound event the user already configured per reason; the interval is generous (minutes, not seconds) and the 1500 ms Notifier debounce still applies.
+- No new process/PID logic, no sends into terminals — read-only over existing attention data.
+- W11 spirit: nothing is typed into a session; repeated *sounds* only, once per interval per unread session.
+
+## 7. Out of scope (v1)
+
+- Reminders for `unread` (stays silent by D22's original rule).
+- Remembering the pre-restart wait (§3.3).
+- Configuring different intervals per reason.
+
+## 8. Effort
+
+Small: one pure module + one settings section + wiring. One worker brief (W01); Claude plans, verifies (unit + real-app e2e), commits.

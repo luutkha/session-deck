@@ -11,9 +11,11 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
 import { GeneralSection } from './GeneralSection'
 import { AgentsSection } from './AgentsSection'
 import { SoundSection } from './SoundSection'
+import { ReminderBlock } from './ReminderBlock'
 import { AutomationSection } from './AutomationSection'
 import { QuotaSection } from './QuotaSection'
 import { StatusesSection } from './StatusesSection'
@@ -98,7 +100,18 @@ function SettingsPane({
     case 'terminal':
       return <TerminalSection />
     case 'sound':
-      return <SoundSection />
+      return (
+        <>
+          <SoundSection />
+          <Separator />
+          <ReminderBlock
+            settings={settings.reminder}
+            onPatch={async (patch): Promise<void> => {
+              await actions.updateSettings(patch)
+            }}
+          />
+        </>
+      )
     case 'automation':
       return <AutomationSection settings={settings} statuses={statuses} actions={actions} />
     case 'quota':

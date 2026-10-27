@@ -34,6 +34,13 @@ async function launchApp({ port, userData, exePath } = {}) {
   const debugPort = port ?? 9340
   const dataDir = userData ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sessiondeck-e2e-'))
   const electron = path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
+  // A stale app on this port would make the new run attach to the wrong window (and mix two suites' state).
+  try {
+    await fetch(`http://127.0.0.1:${debugPort}/json`)
+    throw new Error(`CDP port ${debugPort} is already in use: a previous e2e run is still holding it`)
+  } catch (error) {
+    if (String(error instanceof Error ? error.message : error).includes('already in use')) throw error
+  }
   const log = fs.openSync(path.join(dataDir, `app-${Date.now()}.log`), 'w')
   const args = exePath
     ? [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${dataDir}`]

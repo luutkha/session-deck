@@ -33,6 +33,7 @@
     "e2e:bulk": "node scripts/e2e-bulk.cjs",
     "e2e:trust": "node scripts/e2e-trust.cjs",
     "e2e:bell": "node scripts/e2e-bell.cjs",
+    "e2e:reminder": "node scripts/e2e-reminder.cjs",
     "e2e:notes": "node scripts/e2e-notes-usage.cjs",
     "e2e:usage-refresh": "node scripts/e2e-usage-refresh.cjs",
     "e2e:sleep": "node scripts/e2e-sleep.cjs",

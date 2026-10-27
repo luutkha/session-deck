@@ -1,9 +1,18 @@
 import { randomBytes } from 'node:crypto'
-import type { HookEvent, AttentionReason, SoundEvent } from '../../shared/types'
+import type { HookEvent, AttentionReason, ReminderSettings, SoundEvent } from '../../shared/types'
 import { createHookServer, type HookServer } from './HookServer'
 import { createIdleDetector } from './IdleDetector'
 import { createAttentionManager } from './AttentionManager'
 import { createNotifier } from './Notifier'
+import {
+  REMINDER_TICK_MS,
+  dueReminders,
+  emptyReminderState,
+  noteCleared,
+  noteRaised,
+  noteReminded,
+  type ReminderState
+} from './reminder'
 import { writeSettingsFile } from './claudeSettings'
 import { writeOpencodePlugin, opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from '../opencode'
 import { writeWorkerPlugin, workerPluginEnv } from '../workers/workerPluginEnv'
@@ -33,6 +42,14 @@ export interface AttentionServiceDeps {
   readonly onHookEvent?: (event: HookEvent) => void
   /** Called with each payload of the OpenCode worker plugin (already authenticated and session-checked). Return false to reject. */
   readonly onWorkerEvent?: (sessionId: string, payload: unknown) => boolean
+  /** Store-backed reminder settings, read on every tick so a change applies without a restart. */
+  readonly getReminderSettings?: () => ReminderSettings
+  /** Called when a still-unread session's alert repeats (sound/flash already requested). */
+  readonly onReminder?: (id: string, reason: AttentionReason) => void
+  /** Clock for the reminder bookkeeping (tests). */
+  readonly now?: () => number
+  /** How often due reminders are checked (tests). */
+  readonly reminderTickMs?: number
 }
 
 export interface AttentionService {
@@ -71,7 +88,11 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
     isIgnoredProcess,
     onStatusLine,
     onHookEvent,
-    onWorkerEvent
+    onWorkerEvent,
+    getReminderSettings,
+    onReminder,
+    now = () => Date.now(),
+    reminderTickMs = REMINDER_TICK_MS
   } = deps
 
   let hookServer: HookServer | null = null
@@ -80,9 +101,11 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
   let workerPluginPath: string | null = null
   let port: number | null = null
   let started = false
+  let reminderTimer: ReturnType<typeof setInterval> | null = null
+  let reminders: ReminderState = emptyReminderState()
 
   const attentionManager = createAttentionManager()
-  const notifier = createNotifier({ beep, flash, isWindowFocused })
+  const notifier = createNotifier({ beep, flash, isWindowFocused, now })
   // Output pauses are NOT a reason to ping: Claude goes quiet while thinking or running tools. Only the Stop hook
   // (turn finished) and the Notification hook (permission / question) raise attention.
   const idleDetector = createIdleDetector({
@@ -91,12 +114,36 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
 
   const unsubscribeManager = attentionManager.onChange((id, reason) => {
     if (reason !== null) {
+      // Arm (or re-arm on a priority upgrade) the reminder; unread is handled inside noteRaised and never schedules.
+      reminders = noteRaised(reminders, id, now(), reason)
       // The session on screen still gets the bell, but no sound or flash: the user is already looking at it.
       if (!isFocused(id)) notifier.notify(id, reason)
     } else {
+      reminders = noteCleared(reminders, id)
       notifier.stopFlash()
     }
   })
+
+  /**
+   * Repeats the alert for sessions that are still needs-you and unread. The session on screen is skipped but still
+   * counts as snoozed for one interval, so leaving it does not immediately ping.
+   */
+  function runReminderTick(): void {
+    const settings = getReminderSettings?.()
+    if (settings === undefined) return
+    const at = now()
+    for (const id of dueReminders(reminders, settings, at)) {
+      const reason = attentionManager.get(id)
+      if (reason === null || reason === 'unread') {
+        reminders = noteCleared(reminders, id)
+        continue
+      }
+      reminders = noteReminded(reminders, id, at)
+      if (isFocused(id)) continue
+      notifier.notify(id, reason)
+      onReminder?.(id, reason)
+    }
+  }
 
   function isIgnored(sessionId: string, proc: string | undefined): boolean {
     return proc !== undefined && isIgnoredProcess !== undefined && isIgnoredProcess(sessionId, proc)
@@ -131,6 +178,9 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
       settingsFilePath = writeSettingsFile(settingsDir)
       pluginFilePath = writeOpencodePlugin(settingsDir)
       workerPluginPath = writeWorkerPlugin(settingsDir)
+      if (getReminderSettings !== undefined) {
+        reminderTimer = setInterval(runReminderTick, reminderTickMs)
+      }
       started = true
     },
 
@@ -138,6 +188,11 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
       if (!started) return
 
       unsubscribeManager()
+      if (reminderTimer !== null) {
+        clearInterval(reminderTimer)
+        reminderTimer = null
+      }
+      reminders = emptyReminderState()
 
       if (hookServer) {
         await hookServer.stop()
@@ -228,6 +283,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
     },
 
     forget(id: string): void {
+      reminders = noteCleared(reminders, id)
       attentionManager.forget(id)
       idleDetector.forget(id)
     },

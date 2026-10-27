@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { AppSettings, StoreData, StatusDef } from '../../shared/types'
-import { DEFAULT_APP_SETTINGS, MAX_SLEEP_MINUTES, MIN_SLEEP_MINUTES } from '../../shared/types'
+import {
+  DEFAULT_APP_SETTINGS,
+  MAX_REMINDER_MINUTES,
+  MAX_SLEEP_MINUTES,
+  MIN_REMINDER_MINUTES,
+  MIN_SLEEP_MINUTES
+} from '../../shared/types'
 import { parseStoreData } from './persistence'
 import { emptyStore, removeStatus } from './reducers'
 import { clearAutoStatusReference, parseStoredSettings, settingsProblem, updateSettings } from './settings'
@@ -46,6 +52,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       agents: { defaultAgent: 'claude' as const, opencodeModel: '' },
       hub: { scrollToBusiest: false },
       away: { enabled: false, afterMinutes: 30 },
+      reminder: { enabled: false, afterMinutes: 5 },
       code: { worktreesRoot: '', shell: 'pwsh' as const, autoTrustWorktrees: true }
     }
     const data = parseStoreData(storeWith(settings))
@@ -60,6 +67,11 @@ describe('parseStoredSettings / parseStoreData settings', () => {
   it('settings saved before the away section existed get the away defaults', () => {
     const data = parseStoreData(storeWith({ hub: { scrollToBusiest: true } }))
     expect(data.settings?.away).toEqual({ enabled: true, afterMinutes: 15 })
+  })
+
+  it('settings saved before the reminder section existed get the reminder defaults', () => {
+    const data = parseStoreData(storeWith({ hub: { scrollToBusiest: true } }))
+    expect(data.settings?.reminder).toEqual({ enabled: true, afterMinutes: 10 })
   })
 
   it('stored quota without the autopilot fields was never customized: it takes the current defaults', () => {
@@ -130,6 +142,19 @@ describe('parseStoredSettings / parseStoreData settings', () => {
   it('a stored away afterMinutes out of range is dropped', () => {
     expect(parseStoredSettings({ away: { afterMinutes: 0 } }, STATUSES)).toBeUndefined()
     expect(parseStoredSettings({ away: { afterMinutes: MAX_SLEEP_MINUTES + 1 } }, STATUSES)).toBeUndefined()
+  })
+
+  it('a stored reminder section is kept', () => {
+    const settings = parseStoredSettings({ reminder: { enabled: false, afterMinutes: 5 } }, STATUSES)
+    expect(settings?.reminder).toEqual({ enabled: false, afterMinutes: 5 })
+  })
+
+  it('a stored reminder section with a wrong type or out-of-range value is dropped', () => {
+    expect(parseStoredSettings({ reminder: { enabled: 'yes' } }, STATUSES)).toBeUndefined()
+    expect(parseStoredSettings({ reminder: { afterMinutes: 10.5 } }, STATUSES)).toBeUndefined()
+    expect(parseStoredSettings({ reminder: { afterMinutes: 0 } }, STATUSES)).toBeUndefined()
+    expect(parseStoredSettings({ reminder: { afterMinutes: 121 } }, STATUSES)).toBeUndefined()
+    expect(parseStoredSettings({ reminder: 'on' }, STATUSES)).toBeUndefined()
   })
 
   it('stored quota autopilot fields with wrong values are dropped', () => {
@@ -317,6 +342,23 @@ describe('settingsProblem', () => {
     )
   })
 
+  it('rejects a non-boolean reminder.enabled with its message', () => {
+    const bad = { ...DEFAULT_APP_SETTINGS, reminder: { ...DEFAULT_APP_SETTINGS.reminder, enabled: 'on' as unknown as boolean } }
+    expect(settingsProblem(bad)).toBe('reminder.enabled must be a boolean')
+  })
+
+  it('accepts the reminder range edges and rejects values outside them with its message', () => {
+    const withReminder = (afterMinutes: number): AppSettings => ({ ...DEFAULT_APP_SETTINGS, reminder: { enabled: true, afterMinutes } })
+    expect(settingsProblem(withReminder(MIN_REMINDER_MINUTES))).toBeNull()
+    expect(settingsProblem(withReminder(MAX_REMINDER_MINUTES))).toBeNull()
+    expect(settingsProblem(withReminder(0))).toBe(
+      `reminder.afterMinutes must be an integer from ${MIN_REMINDER_MINUTES} to ${MAX_REMINDER_MINUTES}`
+    )
+    expect(settingsProblem(withReminder(2.5))).toBe(
+      `reminder.afterMinutes must be an integer from ${MIN_REMINDER_MINUTES} to ${MAX_REMINDER_MINUTES}`
+    )
+  })
+
   it('accepts the app-wide sleep range edges and rejects values outside them', () => {
     const withAll = (allAfterMinutes: number): AppSettings => ({
       ...DEFAULT_APP_SETTINGS,
@@ -438,6 +480,22 @@ describe('updateSettings reducer', () => {
   it('rejects an away afterMinutes out of range', () => {
     expect(() => updateSettings(baseData(), { away: { afterMinutes: 0 } })).toThrow(
       `Invalid settings: away.afterMinutes must be an integer from ${MIN_SLEEP_MINUTES} to ${MAX_SLEEP_MINUTES}`
+    )
+  })
+
+  it('merges the reminder section and keeps the other reminder field', () => {
+    const next = updateSettings(baseData(), { reminder: { afterMinutes: 3 } })
+    expect(next.settings?.reminder).toEqual({ enabled: true, afterMinutes: 3 })
+    const again = updateSettings(next, { reminder: { enabled: false } })
+    expect(again.settings?.reminder).toEqual({ enabled: false, afterMinutes: 3 })
+  })
+
+  it('rejects a reminder afterMinutes out of range', () => {
+    expect(() => updateSettings(baseData(), { reminder: { afterMinutes: 0 } })).toThrow(
+      `Invalid settings: reminder.afterMinutes must be an integer from ${MIN_REMINDER_MINUTES} to ${MAX_REMINDER_MINUTES}`
+    )
+    expect(() => updateSettings(baseData(), { reminder: { afterMinutes: MAX_REMINDER_MINUTES + 1 } })).toThrow(
+      'Invalid settings: reminder.afterMinutes'
     )
   })
 

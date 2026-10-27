@@ -54,6 +54,31 @@ close (X) button, and clicking the backdrop all close the dialog.
       chosen), a red message with `role="alert"` appears under the rows; it
       clears on the next successful action.
 
+## Reminders (in the Sound section)
+
+- [ ] **Block.** Below the sound rows a separated "Repeat the alert while a
+      session waits for me" block shows a switch (`reminder.enabled`, default
+      ON) and "Remind again after (minutes)" (`reminder.afterMinutes`, default
+      10). The helper text explains that the same sound and desktop notice repeat
+      and that the session on screen never reminds.
+- [ ] **Minutes input.** The number input (step 1) accepts 1–120; entering 0
+      saves 1 and entering 500 saves 120. An empty or non-numeric value shows a
+      red inline `role="alert"` message and is NOT saved.
+- [ ] **Disabled when off.** The minutes input is dimmed and disabled while the
+      reminder switch is off; turning it on re-enables it.
+- [ ] **Repeats.** With the interval at 1 minute, make a background session
+      finish (or ask a question) and leave it unread: the sound and taskbar flash
+      fire once immediately and again about a minute later, and keep repeating
+      until you open/clear the bell. The desktop notice repeats too when
+      notifications are on (and follows "Only when SessionDeck is not the active
+      window").
+- [ ] **Reading stops it.** Click the card's bell (or open the session): no
+      further sound for that session.
+- [ ] **On screen is silent.** A session whose tab is open gets the bell but no
+      sound or reminder while it stays on screen.
+- [ ] **Off means off.** Turn the switch off: a new bell pings once and never
+      repeats. The value survives a restart (store-backed, not localStorage).
+
 ## General section
 
 - [ ] **Start on login.** "Start SessionDeck when I sign in to Windows" loads its

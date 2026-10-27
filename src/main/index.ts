@@ -26,6 +26,7 @@ import { resolveIconPath } from './app/iconPaths'
 import { attachTrayWiring } from './app/trayWiring'
 import { createDesktopNotifier } from './notify/desktopNotifier'
 import { wireAttentionNotices } from './notify/attentionWiring'
+import { attentionNotice } from './notify/attentionNotice'
 import { deliverQuotaAlert, startQuotaWiring, type QuotaDeliveryDeps } from './quota/quotaWiring'
 import { CONTINUE_FAILED_TITLE, continueFailedBody } from './quota/continueFailedNotice'
 import { createFeatureWiring } from './app/featureWiring'
@@ -259,7 +260,20 @@ if (!gotTheLock) {
         features.onHookEvent(event)
         code.onHookEvent(event)
       },
-      onWorkerEvent: (sessionId, payload) => workers.ingest(sessionId, payload)
+      onWorkerEvent: (sessionId, payload) => workers.ingest(sessionId, payload),
+      // Bell escalation (D44): the service replays the sound/flash; the desktop notice reuses the same text builder as
+      // the first raise (permission/done only; idle and bell stay in-app).
+      getReminderSettings: () => store.getSettings().reminder,
+      onReminder: (id, reason) => {
+        const session = store.get().sessions.find((candidate) => candidate.id === id)
+        if (session === undefined) return
+        const notice = attentionNotice({
+          name: session.name,
+          reason,
+          activityMessage: runtime.get(id)?.activityMessage
+        })
+        if (notice !== null) notifier.notifySession(id, notice.title, notice.body)
+      }
     })
 
     function activeSessionId(): string | null {

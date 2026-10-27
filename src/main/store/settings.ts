@@ -6,14 +6,21 @@ import type {
   CodeSettings,
   Id,
   QuotaSettings,
+  ReminderSettings,
   SettingsPatch,
   StatusDef,
   StoreData
 } from '../../shared/types'
-import { resolveSettings, MAX_SLEEP_MINUTES, MIN_SLEEP_MINUTES } from '../../shared/types'
+import {
+  MAX_REMINDER_MINUTES,
+  MAX_SLEEP_MINUTES,
+  MIN_REMINDER_MINUTES,
+  MIN_SLEEP_MINUTES,
+  resolveSettings
+} from '../../shared/types'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
 
-export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'away', 'code'] as const
+export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'away', 'reminder', 'code'] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 const AUTO_STATUS_KEYS = ['working', 'needsInput', 'finished'] as const
@@ -78,6 +85,10 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
     scrollToBusiest: isBoolean
   },
   away: {
+    enabled: isBoolean,
+    afterMinutes: isInteger
+  },
+  reminder: {
     enabled: isBoolean,
     afterMinutes: isInteger
   },
@@ -167,6 +178,19 @@ function awayProblem(away: AwaySettings): string | null {
   return null
 }
 
+/** First problem in the reminder section, or null. */
+function reminderProblem(reminder: ReminderSettings): string | null {
+  if (typeof reminder.enabled !== 'boolean') return 'reminder.enabled must be a boolean'
+  if (
+    !Number.isInteger(reminder.afterMinutes) ||
+    reminder.afterMinutes < MIN_REMINDER_MINUTES ||
+    reminder.afterMinutes > MAX_REMINDER_MINUTES
+  ) {
+    return `reminder.afterMinutes must be an integer from ${MIN_REMINDER_MINUTES} to ${MAX_REMINDER_MINUTES}`
+  }
+  return null
+}
+
 /** First problem in the code section (worktrees folder: '' or an absolute path; shell program), or null. */
 function codeProblem(code: CodeSettings): string | null {
   if (typeof code.worktreesRoot !== 'string') return 'code.worktreesRoot must be a string'
@@ -193,6 +217,8 @@ export function settingsProblem(settings: AppSettings): string | null {
   if (quotaIssue !== null) return quotaIssue
   const awayIssue = awayProblem(settings.away)
   if (awayIssue !== null) return awayIssue
+  const reminderIssue = reminderProblem(settings.reminder)
+  if (reminderIssue !== null) return reminderIssue
   const codeIssue = codeProblem(settings.code)
   if (codeIssue !== null) return codeIssue
 
@@ -262,6 +288,7 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
   const agents = pickSectionFields('agents', raw.agents)
   const hub = pickSectionFields('hub', raw.hub)
   const away = pickSectionFields('away', raw.away)
+  const reminder = pickSectionFields('reminder', raw.reminder)
   const code = pickSectionFields('code', raw.code)
   if (
     autoStatus === null ||
@@ -271,6 +298,7 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
     agents === null ||
     hub === null ||
     away === null ||
+    reminder === null ||
     code === null
   ) {
     return undefined
@@ -284,6 +312,7 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
     agents: agents as Partial<AppSettings['agents']>,
     hub: hub as Partial<AppSettings['hub']>,
     away: away as Partial<AwaySettings>,
+    reminder: reminder as Partial<ReminderSettings>,
     code: code as Partial<CodeSettings>
   })
   const merged = { ...resolved, code: normalizeCode(resolved.code) }
@@ -318,6 +347,7 @@ export function updateSettings(data: StoreData, patch: SettingsPatch): StoreData
     agents: { ...current.agents, ...definedFields(patch.agents) },
     hub: { ...current.hub, ...definedFields(patch.hub) },
     away: { ...current.away, ...definedFields(patch.away) },
+    reminder: { ...current.reminder, ...definedFields(patch.reminder) },
     code: { ...current.code, ...definedFields(patch.code) }
   }
   const next: AppSettings = { ...merged, code: normalizeCode(merged.code) }
