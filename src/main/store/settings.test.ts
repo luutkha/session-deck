@@ -46,7 +46,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       agents: { defaultAgent: 'claude' as const, opencodeModel: '' },
       hub: { scrollToBusiest: false },
       away: { enabled: false, afterMinutes: 30 },
-      code: { worktreesRoot: '', shell: 'pwsh' as const }
+      code: { worktreesRoot: '', shell: 'pwsh' as const, autoTrustWorktrees: true }
     }
     const data = parseStoreData(storeWith(settings))
     expect(data.settings).toEqual(settings)
@@ -54,7 +54,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
 
   it('settings saved before the code section existed get the code defaults', () => {
     const data = parseStoreData(storeWith({ hub: { scrollToBusiest: true } }))
-    expect(data.settings?.code).toEqual({ worktreesRoot: '', shell: 'powershell' })
+    expect(data.settings?.code).toEqual({ worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false })
   })
 
   it('settings saved before the away section existed get the away defaults', () => {

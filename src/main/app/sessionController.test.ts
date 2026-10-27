@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Id, Session, StoreData, AttentionReason } from '../../shared/types'
+import { DEFAULT_APP_SETTINGS } from '../../shared/types'
 import { SessionStore } from '../store'
 import { createSessionController } from './sessionController'
 import { createActiveSessions } from './activeSessions'
@@ -54,6 +55,7 @@ interface TestPtyManager extends PtyManager {
   fireData: (id: Id, data: string) => void
   fireExit: (id: Id, code: number | null) => void
   getLastStartOpts: (id: Id) => StartOptions | undefined
+  writesOf: (id: Id) => string[]
 }
 
 function createMockPtyManager(): TestPtyManager {
@@ -168,6 +170,10 @@ function createMockPtyManager(): TestPtyManager {
       return processes.get(id)?.startOpts
     },
 
+    writesOf(id: Id): string[] {
+      return processes.get(id)?.writes ?? []
+    },
+
     dispose(): void {
       for (const proc of processes.values()) {
         proc.killed = true
@@ -251,8 +257,8 @@ afterEach(() => {
   createdDirs.length = 0
 })
 
-function setupController(initialSessions: Session[] = []) {
-  const initialData = makeStoreData(initialSessions)
+function setupController(initialSessions: Session[] = [], extra: Partial<StoreData> = {}) {
+  const initialData: StoreData = { ...makeStoreData(initialSessions), ...extra }
   const saved: StoreData[] = []
   const saver = { schedule: (d: StoreData) => saved.push(d) }
   const deps = { newId: () => `id-${Date.now()}-${Math.random()}`, now: () => Date.now() }
@@ -815,6 +821,64 @@ describe('sessionController', () => {
       expect(state?.run).toBe('exited')
       expect(state?.exitCode).toBeNull()
       expect(readErrorLog(userDataDir)).toContain('restart boom')
+    })
+  })
+
+  describe('trust prompt auto-answer (W6)', () => {
+    const MENU = 'Do you trust the files in this folder?\r\n  Yes, I trust this folder\r\n  No, exit\r\n'
+
+    /** Default settings with the auto-status refs pointed at this test store's statuses, plus the trust flag. */
+    function trustSettings(enabled: boolean) {
+      return {
+        ...DEFAULT_APP_SETTINGS,
+        autoStatus: { ...DEFAULT_APP_SETTINGS.autoStatus, working: 'working' as Id, needsInput: null, finished: null },
+        code: { ...DEFAULT_APP_SETTINGS.code, autoTrustWorktrees: enabled }
+      }
+    }
+
+    function codeSessionSetup(enabled: boolean) {
+      const worktreePath = tempDir()
+      const worktree = {
+        id: 'wt-1',
+        repoId: 'repo-1',
+        name: 'trust-wt',
+        branch: 'trust-wt',
+        path: worktreePath,
+        baseBranch: 'main',
+        baseCommit: '0'.repeat(40),
+        createdAt: 1,
+        collapsed: false
+      }
+      const repo = { id: 'repo-1', name: 'repo', path: worktreePath, createdAt: 1, collapsed: false }
+      const setup = setupController([], { repos: [repo], worktrees: [worktree], settings: trustSettings(enabled) })
+      const session = setup.controller.createSession({ cwd: worktreePath, worktreeId: worktree.id })
+      return { ...setup, session }
+    }
+
+    it('types Down + Enter into a fresh Claude worktree session when the setting is on', () => {
+      const { pty, session } = codeSessionSetup(true)
+      pty.fireData(session.id, MENU)
+      expect(pty.writesOf(session.id)).toContain('\x1b[B\r')
+    })
+
+    it('answers only once per process', () => {
+      const { pty, session } = codeSessionSetup(true)
+      pty.fireData(session.id, MENU)
+      pty.fireData(session.id, MENU)
+      expect(pty.writesOf(session.id)).toEqual(['\x1b[B\r'])
+    })
+
+    it('does nothing while the setting is off (default)', () => {
+      const { pty, session } = codeSessionSetup(false)
+      pty.fireData(session.id, MENU)
+      expect(pty.writesOf(session.id)).toEqual([])
+    })
+
+    it('never answers an Ops session', () => {
+      const { controller, pty } = setupController([], { settings: trustSettings(true) })
+      const session = controller.createSession({ cwd: tempDir() })
+      pty.fireData(session.id, MENU)
+      expect(pty.writesOf(session.id)).toEqual([])
     })
   })
 

@@ -190,8 +190,9 @@ export function runIndicatorClass(run: SessionRun): string {
   return run === 'running' ? 'bg-status-success' : 'bg-destructive'
 }
 
-export function runIndicatorLabel(run: SessionRun): string {
-  return run === 'running' ? 'Running' : 'Exited'
+export function runIndicatorLabel(run: SessionRun, exitCode: number | null = null): string {
+  if (run === 'running') return 'Running'
+  return exitCode !== null && exitCode !== 0 ? `Exited (${String(exitCode)})` : 'Exited'
 }
 
 /** Index of the column holding the most sessions (leftmost on a tie), or null when every column is empty. */

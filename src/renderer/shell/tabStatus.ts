@@ -7,6 +7,8 @@ export interface TabModel {
   readonly title: string
   readonly run: SessionRun | null
   readonly attention: AttentionReason | null
+  /** The pty exit code (any agent); rendered as "Exited (N)" when non-zero. */
+  readonly exitCode?: number | null
   /** True while the session is asleep (its process is stopped; opening it resumes it). */
   readonly sleeping?: boolean
   /** What the agent is doing right now (working / needs-input / finished); absent = unknown. */
@@ -46,10 +48,14 @@ const UNKNOWN_INDICATOR: TabIndicator = {
 /** Attention wins over the run state: a finished or waiting session should be noticed first. */
 export function tabIndicatorFor(
   run: SessionRun | null,
-  attention: AttentionReason | null
+  attention: AttentionReason | null,
+  exitCode: number | null = null
 ): TabIndicator {
   if (attention !== null) {
     return ATTENTION_INDICATORS[attention]
+  }
+  if (run === 'exited' && exitCode !== null && exitCode !== 0) {
+    return { ...RUN_INDICATORS.exited, label: `Exited (${String(exitCode)})` }
   }
   return run === null ? UNKNOWN_INDICATOR : RUN_INDICATORS[run]
 }
@@ -70,6 +76,7 @@ export type TabVisual =
 export function tabVisualFor(input: {
   readonly run: SessionRun | null
   readonly attention: AttentionReason | null
+  readonly exitCode?: number | null
   readonly sleeping?: boolean
   readonly activity?: SessionActivity | null
 }): TabVisual {
@@ -77,7 +84,7 @@ export function tabVisualFor(input: {
   if (input.sleeping === true) return { kind: 'sleeping' }
   if (input.activity === 'working') return { kind: 'working' }
   if (input.activity === 'needs-input') return { kind: 'needs-input' }
-  return { kind: 'dot', indicator: tabIndicatorFor(input.run, null) }
+  return { kind: 'dot', indicator: tabIndicatorFor(input.run, null, input.exitCode ?? null) }
 }
 
 /** The open tabs in their order, joined with the session name and runtime state. Unknown ids are skipped. */
@@ -100,6 +107,7 @@ export function buildTabModels(
       title: session.name,
       run: state?.run ?? null,
       attention: state?.attention ?? null,
+      ...(state?.exitCode === undefined || state.exitCode === null ? {} : { exitCode: state.exitCode }),
       ...(state?.activity === undefined || state.activity === null ? {} : { activity: state.activity }),
       ...(sleeping ? { sleeping: true } : {}),
       ...(state?.remoteControl === true ? { remote: true } : {}),

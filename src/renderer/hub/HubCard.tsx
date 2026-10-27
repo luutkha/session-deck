@@ -199,7 +199,7 @@ export function HubCard(props: HubCardProps): ReactElement {
           />
         ) : runtime !== undefined ? (
           <span
-            aria-label={runIndicatorLabel(runtime.run)}
+            aria-label={runIndicatorLabel(runtime.run, runtime.exitCode)}
             className={cn(
               'inline-block size-2 shrink-0 rounded-full',
               runIndicatorClass(runtime.run)

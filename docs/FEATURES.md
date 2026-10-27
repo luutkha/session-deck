@@ -1,7 +1,7 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` — *why* a feature exists and what the user chose (D01–D42).
+> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D43).
 > - `HANDOFF.md` — the narrative state of each feature, including known gaps.
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
@@ -157,7 +157,8 @@ SessionDeck
 │   ├── COD-7  Changes list
 │   ├── COD-8  File diff
 │   ├── COD-9  Changes refresh cadence
-│   └── COD-10 Pop-out Code window
+│   ├── COD-10 Pop-out Code window
+│   └── COD-11 Opt-in trust-prompt auto-answer
 ├── WIN  Windows, tray & app lifecycle
 │   ├── WIN-1  Main window
 │   ├── WIN-2  Second Code window
@@ -248,7 +249,7 @@ SessionDeck
 | TRM-6 | Terminal bell | Shipped | Program emits BEL | Raises attention reason `bell` (priority 1); sound/flash follow the user's sound settings; the bell is silent for an `unread` flag. | `main/attention/AttentionService.ts`; `main/attention/AttentionManager.ts` | `AttentionManager.test.ts`, `AttentionService.test.ts`; e2e `e2e-bell` |
 | TRM-7 | Split panes | Shipped | Tab bar split-right / split-down; divider drag / keyboard | 2–4 panes (`MAX_PANES = 4`), row or column; no duplicate sessions; sizes sum to 1, min fraction 0.15; drag or arrow keys resize, `Enter` equalises; layout persisted per mode (`sessiondeck.split.v1` / `.code`). | `renderer/split/splitLogic.ts` (pure), `useSplitLayout.ts`, `Terminal/TerminalWorkspace.tsx`, `SplitDivider.tsx` | `splitLogic.test.ts`, `useSplitLayout.test.ts`; e2e `e2e:g1` |
 | TRM-8 | Grid view | Planned (D32) | View control "Grid ▾" (1x1, 2x1, 1x2, 2x2, 2x3, 3x2) | Every cell is a **fully interactive** terminal; max 6 cells; one session per cell (picking a visible session **moves** it); uniform cell sizes; empty cells show a picker with **no auto-fill**; open sessions only (Closed must be reopened); Ops and Code keep separate grids. Plan: `plan/grid-view.md`. | New `renderer/grid/*`; changes to `mode/viewPref.ts`, `useWorkspaceNav.ts`, `ModeWorkspace.tsx`, `TerminalWorkspace.tsx` | Planned: `gridLogic.test.ts`, `e2e-grid.cjs` |
-| TRM-9 | Exited overlay + restart | Shipped | Process exits | Overlay shows the exit code; Restart starts a new process; no typing into an exited session (main rejects it). | `renderer/Terminal/TerminalPane.tsx`; `main/app/sessionController.ts` | `sessionController.test.ts`; e2e `e2e:robust` |
+| TRM-9 | Exited overlay + restart | Shipped | Process exits | Overlay shows the exit code; Restart starts a new process; no typing into an exited session (main rejects it). The same exit code labels the tab tooltip and the Hub card dot (`Exited (N)`) for every agent. | `renderer/Terminal/TerminalPane.tsx`; `renderer/shell/tabStatus.ts`; `renderer/hub/hubLogic.ts`; `main/app/sessionController.ts` | `sessionController.test.ts`, `sessionController.opencode.test.ts`, `tabStatus.test.ts`, `hubLogic.test.ts`; e2e `e2e:robust` |
 | TRM-10 | Terminal colours | Shipped | Any Claude session | The launcher strips inherited `NO_COLOR` so Claude keeps colour even when SessionDeck was started from a colourless shell. | `main/pty/launch.ts` | `launch.test.ts`; e2e `e2e.cjs` |
 | TRM-11 | Scrollback / reattach replay | Shipped | Switch tabs, split, sleep/wake, app restart | Ring buffer replays recent output on reattach; `PtyReplay.seq` marks the last included chunk; hidden panes keep their xterm and scrollback. | `main/pty/RingBuffer.ts`; `renderer/Terminal/useTerminalPanes.ts`, `seqGate.ts` | `RingBuffer.test.ts`, `seqGate.test.ts` |
 | TRM-12 | Terminal search | Shipped | `Ctrl+Shift+F` (terminal + grid view) | One `@xterm/addon-search` provider per pane; the bar searches the pane that was active when it opened (visible pane only, v1) and closes on a tab/view change. Typing highlights all matches and the active one; count shows `n/total` or "No matches"; `Enter` / `Shift+Enter` cycle; `Esc` closes, clears decorations and refocuses the terminal. Plain `Ctrl+F` still reaches the program. The scrollbar arrow buttons are hidden, thumb colours unchanged. | `renderer/Terminal/paneFactory.ts` → `searchAddon`; `useTerminalSearch.ts`; `searchLogic.ts`; `TerminalSearchBar.tsx`; `keymap.ts`; `Terminal.css` | `searchLogic.test.ts`, `keymap.test.ts`; e2e `e2e:termview` |
@@ -379,6 +380,7 @@ SessionDeck
 | COD-8 | File diff | Shipped | Click a changed file | Unified diff for **one listed path only** (main re-validates); binary → `binary: true`, empty diff; cut at 512 KB (`truncated`); renderer parses hunks. | `main/git/worktreeFileDiff.ts`; `renderer/code/changes/parseUnifiedDiff.ts`, `DiffView.tsx` | `worktreeFileDiff.test.ts`, `parseUnifiedDiff.test.ts`; e2e `e2e:codemode` |
 | COD-9 | Changes refresh cadence | Shipped | Continuous | Recompute 1.5 s after a Stop hook in that worktree, on open, every 10 s while the panel is visible, every 30 s for row counts; a changed result is pushed to all windows (`ev:worktreeChanges`) only when the content key differs. | `main/app/codeWiring.ts` → `CHANGES_AFTER_TURN_MS`, `changesKey`; `renderer/code/changes/useWorktreeChanges.ts` | `codeWiring.test.ts`, `changesLoad.test.ts`; e2e `e2e:codemode` |
 | COD-10 | Pop-out Code window | Shipped | "Open Code in its own window" / "Move Code back" | Second BrowserWindow with `--sessiondeck-window=code`; `windowRole` fixes the renderer to Code; while popped out the main window shows Ops; docking returns Code to the main switch; focus requests route to the owning window. | `main/app/windowRegistry.ts`; `shared/ipc.ts` → `CODE_WINDOW_ARG`; `renderer/mode/useUiMode.ts` | `windowRegistry.test.ts`, `modeLogic.test.ts`; e2e `e2e:codemode` |
+| COD-11 | Trust-prompt auto-answer | Shipped (opt-in) | Settings > Code switch, default OFF | When on, a fresh Claude session in a new worktree gets Down + Enter at Claude's folder-trust menu. Only `mode === 'new'`, only Claude, only with `worktreeId`, once per process; detection needs both menu labels in the last 4,000 stripped chars; resumed/restarted/Ops/OpenCode/Shell never answered. | `main/app/trustPrompt.ts`; `main/app/sessionController.ts`; `shared/types.ts` → `CodeSettings.autoTrustWorktrees`; `renderer/settings/CodeSection.tsx` | `trustPrompt.test.ts`, `sessionController.test.ts`, `settings.code.test.ts`; e2e `e2e:trust` |
 
 ### 2.13 WIN — Windows, tray & app lifecycle
 
@@ -418,7 +420,7 @@ SessionDeck
 | WRK-1 | Worker plugin injection | Shipped | Any `opencode` started from a Claude terminal | Each Claude pty gets `OPENCODE_CONFIG_CONTENT` with only a plugin entry (merged with the user's own value; never a permission rule); the plugin lives in the package directory `<userData>/sessiondeck-attention/sessiondeck-worker-plugin/` (package.json `main` → index.mjs — OpenCode v2 loads configured plugins from package directories only). | `main/workers/workerPluginSource.ts`, `workerPluginEnv.ts`; `main/opencode/pluginEnv.ts`, `writePlugin.ts` | `workerPlugin.test.ts`, `workerPluginEnv.test.ts`, `pluginEnv.test.ts`; e2e `e2e:workers` |
 | WRK-2 | Worker events and heartbeat | Shipped | Plugin → hook server | Ordered POSTs to `POST /worker/<claudeSessionId>/event` (token header, 32 KB cap); payloads validated; 5 s heartbeat; no heartbeat for 20 s → `failed` "lost". | `main/workers/workerEvents.ts`, `WorkerHub.ts`; `main/attention/HookServer.ts` | `workerEvents.test.ts`, `WorkerHub.test.ts`, `HookServer.worker.test.ts`; e2e `e2e:workers` |
 | WRK-3 | Worker hub limits | Shipped | Continuous | Max 50 workers per session, 400 lines each; name from the session title else the first prompt line; running → done on idle; error + idle → failed; usage limits flagged; **in memory only**; no folder scanning. | `main/workers/WorkerHub.ts` | `WorkerHub.test.ts` |
-| WRK-4 | Worker tabs and view | Shipped | Claude session with workers | Read-only tabs; finished tabs close 2 min after ending unless being read; `×` only hides; selecting any session or the Hub leaves the worker view. | `renderer/workers/useWorkers.ts`, `WorkerTabs.tsx`, `WorkerView.tsx`, `workerLogic.ts` | `workerLogic.test.ts`; e2e `e2e:workers` |
+| WRK-4 | Worker tabs and view | Shipped | Claude session with workers | Read-only tabs; finished tabs close 2 min after ending unless being read; `×` only hides; selecting any session or the Hub leaves the worker view; an empty view explains that plugin-less (`--pure`) processes are invisible and suggests a restart. | `renderer/workers/useWorkers.ts`, `WorkerTabs.tsx`, `WorkerView.tsx`, `workerLogic.ts` | `workerLogic.test.ts`; e2e `e2e:workers` |
 | WRK-5 | Worker limitations | Gap | — | `opencode --pure` (no plugins) invisible; Claude sessions opened before the feature need a restart; workers started from an OpenCode session inside the app are not covered; no interactive worker terminal and no resume-from-tab (deferred). | — | See `HANDOFF.md` |
 
 ### 2.17 SEC — Robustness & security
@@ -569,6 +571,7 @@ SessionDeck
 | `away.enabled` / `.afterMinutes` | `true` / `15` | TML-5 |
 | `code.worktreesRoot` | `''` (home default) | COD-5 |
 | `code.shell` | `powershell` | AGT-3 |
+| `code.autoTrustWorktrees` | `false` | COD-11 |
 
 ### 3.7 e2e script → feature
 
@@ -584,6 +587,7 @@ SessionDeck
 | `e2e-hub.cjs` | HUB-1/2/3, ATT-5, SET-1 | Hub columns, drag status, settings, sound pipeline |
 | `e2e-hubscroll.cjs` | HUB-6 | Busiest-column scroll |
 | `e2e-bulk.cjs` | NAV-11, HUB-3 | Real Ctrl/Shift/Esc selection, bulk sleep/status/group in the sidebar and Hub, DnD regression |
+| `e2e-trust.cjs` | COD-11 | Fake `claude` on PATH: default OFF, Settings switch, fresh worktree answered exactly once |
 | `e2e-g1.cjs` | AUT-1, TRM-7, ATT-9, SET-1 | Auto status, split, settings, close-to-tray |
 | `e2e-notes-usage.cjs` | NTS-1/2, USE-2 | Notes/checklist across restart + real usage |
 | `e2e-usage-refresh.cjs` | USE-4 | Consent, one real endpoint request |
@@ -702,7 +706,7 @@ SessionDeck
 | Windows reserved worktree names | Gap | `con`, `nul`, … are not mapped. |
 | Away summary across restart | Gap | Sleeps from before a restart are not known to the summary. |
 | Timeline turn edges | Gap | A late Stop could end the next turn; late cost could count toward it. |
-| Claude trust-folder prompt | Gap | Asks once per new worktree; not bypassed. |
+| Claude trust-folder prompt | Shipped (opt-in) | COD-11: Settings > Code `code.autoTrustWorktrees`, off by default, answers fresh worktree Claude sessions only. |
 
 ---
 

@@ -393,6 +393,12 @@ export interface CodeSettings {
   readonly worktreesRoot: string
   /** Program used by Shell sessions. */
   readonly shell: ShellKind
+  /**
+   * Opt-in (default off): answer Claude's "Do you trust the files in this folder?" prompt in a freshly created
+   * worktree by typing the same Down + Enter a user would. Only the first start of a Claude Code session; never a
+   * resumed one, and never an Ops session.
+   */
+  readonly autoTrustWorktrees: boolean
 }
 
 export type ShellKind = 'powershell' | 'pwsh' | 'cmd'
@@ -428,7 +434,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   agents: { defaultAgent: 'claude', opencodeModel: '' },
   hub: { scrollToBusiest: true },
   away: { enabled: true, afterMinutes: 15 },
-  code: { worktreesRoot: '', shell: 'powershell' }
+  code: { worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false }
 }
 
 export const MIN_SLEEP_MINUTES = 1

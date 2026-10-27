@@ -38,6 +38,7 @@ Requires Node 22+, Windows (primary target), and the `claude` CLI on PATH.
 | `npm run e2e:robust` | late or bogus IPC does not freeze the main process, malformed createSession rejected, last change saved on graceful quit |
 | `npm run e2e:hub` | Hub columns, drag a card between statuses, Settings (statuses add/reorder, sound Test plays through WebAudio), main attention event reaches the renderer sound player |
 | `npm run e2e:bulk` | bulk selection in the sidebar and Hub: real Ctrl/Shift+click / Esc, Sleep, status and group actions on the whole selection, drag-and-drop still works |
+| `npm run e2e:trust` | opt-in folder-trust auto-answer: fake `claude` on PATH, default OFF leaves the prompt alone, the Settings > Code switch persists, a fresh worktree session gets Down+Enter exactly once |
 | `npm run e2e:busyclose` | closing a BUSY session (Claude running a shell command) leaves no process behind (checks the OS process tree) |
 | `npm run e2e:notes` | notes + checklist through the UI and across a restart, and REAL plan usage / model / context / cost from a live Claude turn (sends one tiny prompt) |
 | `npm run e2e:usage-refresh` | the reload button: consent dialog (Cancel = no request), then ONE real request to Anthropic's usage endpoint with the local Claude login |

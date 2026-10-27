@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -156,6 +157,28 @@ export function CodeSection({ settings, actions }: CodeSectionProps): ReactEleme
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <Separator />
+
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="code-auto-trust" className="text-[13px] font-medium text-foreground">
+            Try new worktrees without asking
+          </Label>
+          <Switch
+            id="code-auto-trust"
+            checked={settings.code.autoTrustWorktrees}
+            onCheckedChange={(checked: boolean): void => {
+              void applyPatch({ code: { autoTrustWorktrees: checked } })
+            }}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Answers Claude&apos;s &quot;Do you trust the files in this folder?&quot; prompt by choosing &quot;Yes, I trust
+          this folder&quot; the first time a new worktree session starts. Off by default; resumed sessions are never
+          answered.
+        </p>
       </div>
 
       {error !== null ? (

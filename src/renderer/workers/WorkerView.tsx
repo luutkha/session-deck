@@ -85,7 +85,13 @@ export function WorkerView({ worker }: { readonly worker: WorkerInfo }): ReactEl
       </header>
       <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 font-mono font-normal">
         {worker.lines.length === 0 ? (
-          <p className="text-xs text-neutral-500">{running ? 'Waiting for the worker’s first output…' : 'This worker wrote no output.'}</p>
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-neutral-500">{running ? 'Waiting for the worker’s first output…' : 'This worker wrote no output.'}</p>
+            <p className="text-xs text-neutral-600">
+              OpenCode processes started from this session appear here. If one should be visible, restart the session
+              (or run it without --pure) so SessionDeck can connect.
+            </p>
+          </div>
         ) : (
           worker.lines.map((line: WorkerLine, index: number): ReactElement => <LineRow key={index} line={line} />)
         )}

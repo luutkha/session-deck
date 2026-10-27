@@ -168,6 +168,13 @@ Hardening W4 of `plan/hardening-round.md`.
 - **Two independent selections:** the sidebar and the Hub each own their state; selecting in one never changes the other. The Hub rows use the same modifiers and bar, so the board is not a second, weaker UI.
 - Rejected: drag-to-select rectangles, a "select all" shortcut and bulk close (offer again if the user asks).
 
+**D43 · 2026-10-27 · Answer Claude's worktree trust prompt only when the user opts in** · active
+Hardening W6 of `plan/hardening-round.md`.
+- **Default OFF, a Code setting.** `code.autoTrustWorktrees` sits in Settings > Code next to the worktree folder. Turning it on means "when I create a new worktree, accept Claude's folder-trust prompt for me"; nothing changes for anyone who leaves it off.
+- **Narrow scope.** The watcher answers only a fresh start (`mode === 'new'`), only a Claude session, only one with `worktreeId`, and at most once per process. Resumed conversations never ask again; Ops sessions, OpenCode and Shell sessions are never touched; sleep/wake and restarts (which resume) are not answered. The trust state is cleared on start, exit, close, remove and restart.
+- **Same answer as a user.** It types Down + Enter (`\x1b[B\r`), moving from the preselected "No, exit" to "Yes, I trust this folder". Detection needs BOTH menu labels in the last 4,000 ANSI-stripped characters, so ordinary prose or a half-drawn menu does not trigger it. This is the exact sequence the real-TUI e2e harness already used, so no new bypass of Claude's checks is introduced: the user still chooses to trust the folder, only once instead of per worktree.
+- **Tested without touching the real trust store.** `e2e:trust` puts a fake `claude.cmd` first on PATH; it prints the real menu and records received bytes. The suite proves default OFF sends nothing, the Settings switch persists, and a fresh worktree gets the answer exactly once.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

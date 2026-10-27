@@ -288,6 +288,13 @@ describe('indicator helpers', () => {
     expect(runIndicatorLabel('running')).toBe('Running')
     expect(runIndicatorLabel('exited')).toBe('Exited')
   })
+
+  it('shows the exit code of a crashed or stopped process', () => {
+    expect(runIndicatorLabel('exited', 42)).toBe('Exited (42)')
+    expect(runIndicatorLabel('exited', 0)).toBe('Exited')
+    expect(runIndicatorLabel('exited', null)).toBe('Exited')
+    expect(runIndicatorLabel('running', 7)).toBe('Running')
+  })
 })
 
 function usage(sessionId: Id, costUsd: number | null): SessionUsage {

@@ -50,6 +50,24 @@ describe('buildTabModels', () => {
       { id: 'a', title: 'Alpha', run: 'running', attention: null, activity: 'working' }
     ])
   })
+
+  it('carries a non-zero exit code through to the tab model', () => {
+    const states = new Map<string, RuntimeState>([
+      ['a', { sessionId: 'a', run: 'exited', exitCode: 3, attention: null }]
+    ])
+    expect(buildTabModels(['a'], [sessionNamed('a', 'Alpha')], states)).toEqual([
+      { id: 'a', title: 'Alpha', run: 'exited', attention: null, exitCode: 3 }
+    ])
+  })
+
+  it('omits a null exit code so the plain "Exited" label stays', () => {
+    const states = new Map<string, RuntimeState>([
+      ['a', { sessionId: 'a', run: 'exited', exitCode: null, attention: null }]
+    ])
+    expect(buildTabModels(['a'], [sessionNamed('a', 'Alpha')], states)).toEqual([
+      { id: 'a', title: 'Alpha', run: 'exited', attention: null }
+    ])
+  })
 })
 
 describe('tabVisualFor (working indicator precedence)', () => {
@@ -124,6 +142,22 @@ describe('tabIndicatorFor', () => {
     const indicator = tabIndicatorFor('exited', null)
     expect(indicator.colorClass).toBe('bg-destructive')
     expect(indicator.label).toBe('Exited')
+  })
+
+  it('shows the exit code of a non-zero exit for any agent', () => {
+    const indicator = tabIndicatorFor('exited', null, 42)
+    expect(indicator.colorClass).toBe('bg-destructive')
+    expect(indicator.label).toBe('Exited (42)')
+  })
+
+  it('keeps the plain label for a clean exit or an unknown code', () => {
+    expect(tabIndicatorFor('exited', null, 0).label).toBe('Exited')
+    expect(tabIndicatorFor('exited', null, null).label).toBe('Exited')
+    expect(tabIndicatorFor('running', null, 3).label).toBe('Running')
+  })
+
+  it('attention still wins over an exit code', () => {
+    expect(tabIndicatorFor('exited', 'done', 3).label).toBe('Finished')
   })
 
   it('shows a neutral dot before any runtime state is known', () => {

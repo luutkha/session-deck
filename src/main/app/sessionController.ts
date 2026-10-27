@@ -12,6 +12,7 @@ import { STOPPING_ERROR_PREFIX } from './retryWhileStopping'
 import { logMainError } from './errorLog'
 import { activityFromHook, type ActivitySnapshot } from './activity'
 import { detectOutputSignals, findUsageLimitLine, stripAnsi } from './outputSignals'
+import { appendTrustBuffer, isTrustPrompt, shouldAnswerTrustPrompt, TRUST_ANSWER_INPUT } from './trustPrompt'
 import { createAutoStatusApplier } from '../automation/applyAutoStatus'
 
 const MAX_FALLBACK_ATTEMPTS = 1
@@ -142,6 +143,37 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     return findSession(id)?.closedAt !== undefined
   }
 
+  // W6 trust auto-answer: armed only for a pty started with a FRESH conversation in a Code worktree. The buffer keeps
+  // enough recent output for the menu to be recognised even when the TUI splits it across writes.
+  const trustFirstStart = new Set<Id>()
+  const trustAnswered = new Set<Id>()
+  const trustBuffer = new Map<Id, string>()
+
+  function forgetTrustPrompt(id: Id): void {
+    trustFirstStart.delete(id)
+    trustAnswered.delete(id)
+    trustBuffer.delete(id)
+  }
+
+  function maybeAutoAnswerTrustPrompt(id: Id, data: string): void {
+    if (!trustFirstStart.has(id)) return
+    const buffer = appendTrustBuffer(trustBuffer.get(id) ?? '', data)
+    trustBuffer.set(id, buffer)
+    if (trustAnswered.has(id)) return
+    const session = findSession(id)
+    if (!session || isClosed(id) || !isTrustPrompt(buffer)) return
+    const allowed = shouldAnswerTrustPrompt({
+      enabled: store.getSettings().code.autoTrustWorktrees,
+      agent: session.agent,
+      worktreeId: session.worktreeId,
+      firstStart: true,
+      answered: false
+    })
+    if (!allowed) return
+    trustAnswered.add(id)
+    pty.write(id, TRUST_ANSWER_INPUT)
+  }
+
   // Remote Control: a Claude process driven from claude.ai/code or the phone gets no local keystrokes, so two facts
   // are read off its screen instead: that Remote Control is on (keeps the session awake) and that a turn is running
   // again after a question was answered remotely (hooks only report the next Stop).
@@ -198,12 +230,18 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     } catch (error) {
       logMainError(userDataDir, 'screen signals', error)
     }
+    try {
+      maybeAutoAnswerTrustPrompt(id, data)
+    } catch (error) {
+      logMainError(userDataDir, 'trust prompt auto-answer', error)
+    }
     sendPtyData(id, data, seq)
   })
 
   pty.onExit((id: Id, code: number | null) => {
     // The next process has no turn of its own until a prompt is submitted.
     limitArmed.delete(id)
+    forgetTrustPrompt(id)
     // A session removed from the store must not get a runtime entry or event back.
     if (!findSession(id)) {
       startState.delete(id)
@@ -274,6 +312,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   function startSession(session: Session, mode: 'new' | 'resume'): void {
     const sessionWithId = ensureClaudeSessionId(session)
     limitArmed.delete(sessionWithId.id)
+    forgetTrustPrompt(sessionWithId.id)
     try {
       validateCwd(sessionWithId.cwd)
       const state: SessionStartState = {
@@ -285,8 +324,10 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       const opts: StartOptions = buildStartOptions(sessionWithId, mode === 'resume', attention, shellProgram())
       pty.start(opts)
       runtime.markRunning(sessionWithId.id)
+      if (mode === 'new') trustFirstStart.add(sessionWithId.id)
     } catch (error) {
       startState.delete(sessionWithId.id)
+      forgetTrustPrompt(sessionWithId.id)
       runtime.markExited(sessionWithId.id, null)
       throw error
     }
@@ -340,6 +381,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     if (pty.isRunning(id)) {
       pty.kill(id)
     }
+    forgetTrustPrompt(id)
     attention.forget(id)
     runtime.forget(id)
     store.removeSession(id)
@@ -399,6 +441,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     closeSession(id: Id): void {
       store.closeSession(id)
       startState.delete(id)
+      forgetTrustPrompt(id)
       if (pty.isRunning(id)) {
         pty.kill(id)
       }
@@ -442,6 +485,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
 
       const sessionWithId = ensureClaudeSessionId(session)
       limitArmed.delete(id)
+      forgetTrustPrompt(id)
       const previousState = startState.get(id)
       const state: SessionStartState = {
         everStartedThisRun: true,

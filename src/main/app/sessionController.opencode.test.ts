@@ -265,6 +265,18 @@ describe('opencode sessions: AgentSession hook events', () => {
   })
 })
 
+describe('opencode sessions: exit code', () => {
+  it('records the pty exit code like a Claude session, so Exited (N) can be shown for every agent', () => {
+    const { controller, pty, stateOf } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'opencode' })
+
+    pty.fireExit(created.id, 42)
+
+    expect(stateOf(created.id)?.run).toBe('exited')
+    expect(stateOf(created.id)?.exitCode).toBe(42)
+  })
+})
+
 describe('opencode sessions: sleep + wake and close/reopen', () => {
   it('sleeping and reactivating an opencode session resumes with -s when the id is known', () => {
     const { controller, pty, stateOf } = setup()

@@ -13,9 +13,9 @@ function dataWith(): StoreData {
 }
 
 describe('code settings: updateSettings', () => {
-  it('defaults to the default folder and PowerShell', () => {
-    expect(resolveSettings(undefined).code).toEqual({ worktreesRoot: '', shell: 'powershell' })
-    expect(DEFAULT_APP_SETTINGS.code).toEqual({ worktreesRoot: '', shell: 'powershell' })
+  it('defaults to the default folder, PowerShell and trust auto-answer off', () => {
+    expect(resolveSettings(undefined).code).toEqual({ worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false })
+    expect(DEFAULT_APP_SETTINGS.code).toEqual({ worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false })
   })
 
   it('accepts an empty worktrees folder (= the default folder)', () => {
@@ -76,8 +76,23 @@ describe('code settings: stored values', () => {
   }
 
   it('a stored code section is kept', () => {
+    const parsed = parseStoreData(storeWithCode({ worktreesRoot: ABSOLUTE_ROOT, shell: 'cmd', autoTrustWorktrees: true }))
+    expect(resolveSettings(parsed.settings).code).toEqual({
+      worktreesRoot: ABSOLUTE_ROOT,
+      shell: 'cmd',
+      autoTrustWorktrees: true
+    })
+  })
+
+  it('an old code section without the trust flag still loads with it off', () => {
     const parsed = parseStoreData(storeWithCode({ worktreesRoot: ABSOLUTE_ROOT, shell: 'cmd' }))
-    expect(resolveSettings(parsed.settings).code).toEqual({ worktreesRoot: ABSOLUTE_ROOT, shell: 'cmd' })
+    expect(resolveSettings(parsed.settings).code.autoTrustWorktrees).toBe(false)
+  })
+
+  it('rejects a non-boolean trust flag', () => {
+    expect(() => updateSettings(dataWith(), { code: { autoTrustWorktrees: 'yes' as unknown as boolean } })).toThrow(
+      'Invalid settings: code.autoTrustWorktrees must be a boolean'
+    )
   })
 
   it('a stored relative folder drops the settings (the file still loads)', () => {

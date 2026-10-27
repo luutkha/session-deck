@@ -95,6 +95,23 @@ close (X) button, and clicking the backdrop all close the dialog.
 - [ ] **Inline errors.** A rejected save shows a red `role="alert"` message at
       the bottom of the section; the next successful change clears it.
 
+## Code section
+
+- [ ] **Worktrees folder.** "Worktrees folder" is a text input plus Browse and
+      Reset to default. Empty means the default `<home>/SessionDeck/worktrees`;
+      the value saves on blur or Enter.
+- [ ] **Shell.** "Shell for Shell sessions" offers PowerShell, PowerShell 7
+      (`pwsh`) and Command Prompt (`cmd`); the choice persists.
+- [ ] **Trust switch.** "Try new worktrees without asking" (`code.autoTrustWorktrees`)
+      starts OFF. The muted text explains that it answers Claude's folder-trust
+      prompt with "Yes, I trust this folder" on the first start of a new
+      worktree session, and that resumed sessions are never answered.
+- [ ] **Trust behavior.** Turn it ON, create a new worktree with the Claude
+      agent: the trust menu is answered automatically and the session reaches its
+      prompt. Create a second worktree with it OFF: Claude asks and waits.
+- [ ] **Inline errors.** A rejected change shows a red `role="alert"` message at
+      the bottom of the section.
+
 ## Automation section
 
 - [ ] **Header & switch.** The section shows "Move a session to a status

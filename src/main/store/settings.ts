@@ -83,7 +83,8 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
   },
   code: {
     worktreesRoot: isString,
-    shell: isShellKind
+    shell: isShellKind,
+    autoTrustWorktrees: isBoolean
   }
 }
 
@@ -177,6 +178,7 @@ function codeProblem(code: CodeSettings): string | null {
     return 'code.worktreesRoot must be an absolute path, or empty for the default folder'
   }
   if (!isShellKind(code.shell)) return 'code.shell must be "powershell", "pwsh" or "cmd"'
+  if (typeof code.autoTrustWorktrees !== 'boolean') return 'code.autoTrustWorktrees must be a boolean'
   return null
 }
 
