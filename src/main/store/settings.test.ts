@@ -126,6 +126,27 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       )
       expect(settings?.quota).toMatchObject({ criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true })
     })
+
+    it('a block saved by the current build keeps a deliberate ask/ask/no-continue at the legacy thresholds', () => {
+      const settings = parseStoredSettings({ quota: { ...OLD_QUOTA, showOpencodeGo: true } }, STATUSES)
+      expect(settings?.quota).toEqual({ ...OLD_QUOTA, showOpencodeGo: true })
+    })
+
+    it('a deliberate ask/ask/no-continue choice survives a save and reload', () => {
+      const saved = updateSettings(baseData(), {
+        quota: { criticalAction: 'ask', resetAction: 'ask', continueOnWake: false }
+      })
+      // The saved quota block carries showOpencodeGo, which marks it as post-D33.
+      expect(saved.settings?.quota).toHaveProperty('showOpencodeGo')
+
+      const reloaded = parseStoredSettings(JSON.parse(JSON.stringify(saved.settings)), STATUSES)
+      expect(reloaded?.quota).toMatchObject({
+        criticalAction: 'ask',
+        resetAction: 'ask',
+        continueOnWake: false,
+        showOpencodeGo: true
+      })
+    })
   })
 
   it('a stored away section is kept', () => {

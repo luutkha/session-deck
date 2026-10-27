@@ -149,15 +149,25 @@ function quotaProblem(quota: QuotaSettings): string | null {
 }
 
 /**
+ * The quota field added right after the D33 hands-off defaults. Any build that saves settings writes the full
+ * resolved quota block, so a post-D33 block always carries this key; pre-D33 legacy blocks never do.
+ */
+const QUOTA_MIGRATION_MARKER = 'showOpencodeGo'
+
+/**
  * One-time upgrade to the hands-off autopilot defaults (D33): a stored quota block whose every PRESENT field still
  * equals the OLD default was the user never touching that section — the legacy values are dropped so the new
  * defaults (sleep / wake / continue) flow in. Missing fields count as matching (they merge to defaults anyway);
  * any field that differs means a deliberate choice and the whole block is kept as-is.
+ *
+ * A block with `showOpencodeGo` was saved by a build that already knows the new defaults, so its values (even
+ * ask / ask / no-continue at the old thresholds) are a deliberate choice and must survive every later load.
  */
 export function upgradeLegacyQuotaFields(
   quota: Record<string, unknown> | null
 ): Record<string, unknown> | null {
   if (quota === null) return null
+  if (quota[QUOTA_MIGRATION_MARKER] !== undefined) return quota
   const LEGACY = { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'ask', resetAction: 'ask', continueOnWake: false } as const
   for (const [key, legacy] of Object.entries(LEGACY)) {
     if (quota[key] !== undefined && quota[key] !== legacy) return quota
