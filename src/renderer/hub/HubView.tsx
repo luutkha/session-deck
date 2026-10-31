@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { TooltipProvider } from '../components/ui/tooltip'
 import { useMultiSelect } from '../state/useMultiSelect'
+import { useBulkActions } from '../state/useBulkActions'
 import { formatCost } from '../usage/usageLogic'
 import { HubColumn } from './HubColumn'
 import {
@@ -106,81 +107,13 @@ export function HubView(props: HubViewProps): ReactElement {
     [columns]
   )
   const multi = useMultiSelect(hubOrder, onOpenSession)
-  const [bulkBusy, setBulkBusy] = useState(false)
-  const { sleepIds, wakeIds } = useMemo((): { readonly sleepIds: readonly Id[]; readonly wakeIds: readonly Id[] } => {
-    const sleep: Id[] = []
-    const wake: Id[] = []
-    for (const id of multi.selectedIds) {
-      const state = runtime.get(id)
-      if (state?.sleeping === true) {
-        wake.push(id)
-      } else if (state?.run === 'running') {
-        sleep.push(id)
-      }
-    }
-    return { sleepIds: sleep, wakeIds: wake }
-  }, [multi.selectedIds, runtime])
-
-  /** Same failure policy as the per-card actions: the store banner reports it and the loop continues. */
-  const runBulk = useCallback(async (
-    ids: readonly Id[],
-    run: (id: Id) => Promise<unknown>
-  ): Promise<void> => {
-    if (ids.length === 0) return
-    setBulkBusy(true)
-    try {
-      for (const id of ids) {
-        try {
-          await run(id)
-        } catch {
-          // Already recorded in the store's lastError by the action wrapper.
-        }
-      }
-    } finally {
-      setBulkBusy(false)
-    }
-  }, [])
-
-  const bulkSleep = useCallback((): void => {
-    void runBulk(sleepIds, onSleepSession)
-  }, [runBulk, sleepIds, onSleepSession])
-
-  const bulkWake = useCallback((): void => {
-    void runBulk(wakeIds, (id): Promise<void> => {
-      onOpenSession(id)
-      return Promise.resolve()
-    })
-  }, [runBulk, wakeIds, onOpenSession])
-
-  const bulkSetStatus = useCallback((statusId: Id | null): void => {
-    void runBulk(multi.selectedIds, (id): Promise<void> => {
-      onSetStatus(id, statusId)
-      return Promise.resolve()
-    })
-  }, [runBulk, multi.selectedIds, onSetStatus])
-
-  const bulkMoveToGroup = useCallback((groupId: Id | null): void => {
-    const ids = multi.selectedIds
-    if (ids.length === 0) return
-    void (async (): Promise<void> => {
-      setBulkBusy(true)
-      let index = data.sessions.filter((session): boolean => session.groupId === groupId).length
-      try {
-        for (const id of ids) {
-          const session = data.sessions.find((candidate): boolean => candidate.id === id)
-          if (session === undefined || session.groupId === groupId) continue
-          try {
-            await onMoveSession(id, groupId, index)
-            index += 1
-          } catch {
-            // Keep moving the remaining sessions.
-          }
-        }
-      } finally {
-        setBulkBusy(false)
-      }
-    })()
-  }, [data.sessions, multi.selectedIds, onMoveSession])
+  // onSetStatus is fire-and-forget here (its errors go to the store banner), as with a single card.
+  const bulk = useBulkActions(multi.selectedIds, data.sessions, runtime, {
+    sleep: onSleepSession,
+    wake: onOpenSession,
+    setStatus: onSetStatus,
+    move: onMoveSession
+  })
 
   const handleDragStartSession = useCallback((id: Id): void => {
     setDraggedSessionId(id)
@@ -295,15 +228,15 @@ export function HubView(props: HubViewProps): ReactElement {
           <div className="shrink-0 border-t border-border px-3 py-2">
             <BulkActionBar
               count={multi.selectedIds.length}
-              sleepCount={sleepIds.length}
-              wakeCount={wakeIds.length}
+              sleepCount={bulk.sleepIds.length}
+              wakeCount={bulk.wakeIds.length}
               statuses={data.statuses}
               groups={data.groups}
-              busy={bulkBusy}
-              onSleep={bulkSleep}
-              onWake={bulkWake}
-              onSetStatus={bulkSetStatus}
-              onMoveToGroup={bulkMoveToGroup}
+              busy={bulk.busy}
+              onSleep={bulk.sleep}
+              onWake={bulk.wake}
+              onSetStatus={bulk.setStatus}
+              onMoveToGroup={bulk.moveToGroup}
               onClear={multi.clear}
             />
           </div>

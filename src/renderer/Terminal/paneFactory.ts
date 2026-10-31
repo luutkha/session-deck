@@ -158,9 +158,9 @@ export function buildTerminalView(
   sessionIds.set(term, id)
   registerLinkProvider(term, id)
 
+  // Typing also clears the session's attention: main does that inside its pty write (attention.noteInput).
   term.onData((data: string): void => {
     window.api.ptyWrite(id, data)
-    window.api.clearAttention(id)
   })
 
   term.onResize(({ cols, rows }: { cols: number; rows: number }): void => {

@@ -17,6 +17,7 @@ import {
   splitClosed
 } from '../state/selectors'
 import { useMultiSelect } from '../state/useMultiSelect'
+import { useBulkActions } from '../state/useBulkActions'
 import { computeDrop, type DragItem, type DropOver } from '../state/dropTarget'
 import { BulkActionBar } from '../components/BulkActionBar'
 import { Button } from '../components/ui/button'
@@ -96,7 +97,6 @@ export function Sidebar(props: SidebarProps): ReactElement {
   const [statusCollapsed, setStatusCollapsed] = useState<StatusCollapsedMap>(readStatusCollapsed)
   const [showWorkspaces, setShowWorkspaces] = useState<boolean>(readShowWorkspaces)
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState<StatusCollapsedMap>(readWorkspaceCollapsed)
-  const [bulkBusy, setBulkBusy] = useState(false)
   const [now, setNow] = useState<number>(Date.now)
 
   useEffect((): (() => void) => {
@@ -228,79 +228,12 @@ export function Sidebar(props: SidebarProps): ReactElement {
       .filter((session): session is Session => session !== undefined && !isClosed(session)),
     [multi.selectedIds, data.sessions]
   )
-  const { sleepIds, wakeIds } = useMemo((): { readonly sleepIds: readonly Id[]; readonly wakeIds: readonly Id[] } => {
-    const sleep: Id[] = []
-    const wake: Id[] = []
-    for (const session of selectedSessions) {
-      const state = runtime.get(session.id)
-      if (state?.sleeping === true) {
-        wake.push(session.id)
-      } else if (state?.run === 'running') {
-        sleep.push(session.id)
-      }
-    }
-    return { sleepIds: sleep, wakeIds: wake }
-  }, [selectedSessions, runtime])
-
-  /** Same failure policy as the one-at-a-time paths: the store banner reports it, the loop continues. */
-  const runBulk = useCallback(async (
-    ids: readonly Id[],
-    run: (id: Id) => Promise<unknown>
-  ): Promise<void> => {
-    if (ids.length === 0) return
-    setBulkBusy(true)
-    try {
-      for (const id of ids) {
-        try {
-          await run(id)
-        } catch {
-          // actions.* already stored the message in lastError (ErrorBanner); a failing item must not stop the rest.
-        }
-      }
-    } finally {
-      setBulkBusy(false)
-    }
-  }, [])
-
-  const bulkSleep = useCallback((): void => {
-    void runBulk(sleepIds, (id): Promise<void> => window.api.sleepSession(id))
-  }, [runBulk, sleepIds])
-
-  const bulkWake = useCallback((): void => {
-    void runBulk(wakeIds, (id): Promise<void> => {
-      onSelect(id)
-      return Promise.resolve()
-    })
-  }, [runBulk, wakeIds, onSelect])
-
-  const bulkSetStatus = useCallback((statusId: Id | null): void => {
-    void runBulk(multi.selectedIds, (id): Promise<void> => actions.setSessionStatus(id, statusId))
-  }, [runBulk, multi.selectedIds, actions])
-
-  const bulkMoveToGroup = useCallback((groupId: Id | null): void => {
-    const ids = multi.selectedIds
-    if (ids.length === 0) return
-    void (async (): Promise<void> => {
-      setBulkBusy(true)
-      // Append to the target group in view order; the index has to advance locally because the
-      // `data` prop in this closure still describes the state before the loop.
-      let index = data.sessions.filter((session): boolean => session.groupId === groupId).length
-      try {
-        for (const id of ids) {
-          const session = data.sessions.find((candidate): boolean => candidate.id === id)
-          if (session === undefined || session.groupId === groupId) continue
-          try {
-            await actions.moveSession(id, groupId, index)
-            index += 1
-          } catch {
-            // Reported by the store; keep moving the remaining sessions.
-          }
-        }
-      } finally {
-        setBulkBusy(false)
-      }
-    })()
-  }, [actions, data.sessions, multi.selectedIds])
+  const bulk = useBulkActions(multi.selectedIds, data.sessions, runtime, {
+    sleep: (id): Promise<void> => window.api.sleepSession(id),
+    wake: onSelect,
+    setStatus: actions.setSessionStatus,
+    move: actions.moveSession
+  })
 
   const handleStartRenameSession = useCallback((id: Id): void => {
     setRenamingSessionId(id)
@@ -468,15 +401,15 @@ export function Sidebar(props: SidebarProps): ReactElement {
         <div className="shrink-0 px-2 pb-1">
           <BulkActionBar
             count={selectedSessions.length}
-            sleepCount={sleepIds.length}
-            wakeCount={wakeIds.length}
+            sleepCount={bulk.sleepIds.length}
+            wakeCount={bulk.wakeIds.length}
             statuses={data.statuses}
             groups={data.groups}
-            busy={bulkBusy}
-            onSleep={bulkSleep}
-            onWake={bulkWake}
-            onSetStatus={bulkSetStatus}
-            onMoveToGroup={bulkMoveToGroup}
+            busy={bulk.busy}
+            onSleep={bulk.sleep}
+            onWake={bulk.wake}
+            onSetStatus={bulk.setStatus}
+            onMoveToGroup={bulk.moveToGroup}
             onClear={multi.clear}
           />
         </div>

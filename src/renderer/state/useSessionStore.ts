@@ -8,17 +8,7 @@ type Listener = () => void
 interface StoreSnapshot {
   readonly data: StoreData | null
   readonly runtime: ReadonlyMap<Id, RuntimeState>
-  readonly runtimeLastChange: ReadonlyMap<Id, number>
   readonly lastError: string | null
-}
-
-function createStoreSnapshot(
-  data: StoreData | null,
-  runtime: ReadonlyMap<Id, RuntimeState>,
-  runtimeLastChange: ReadonlyMap<Id, number>,
-  lastError: string | null
-): StoreSnapshot {
-  return { data, runtime, runtimeLastChange, lastError }
 }
 
 export interface SessionActions {
@@ -46,14 +36,13 @@ export interface SessionActions {
 export interface UseSessionStoreResult {
   readonly data: StoreData | null
   readonly runtime: ReadonlyMap<Id, RuntimeState>
-  readonly runtimeLastChange: ReadonlyMap<Id, number>
   readonly lastError: string | null
   readonly clearError: () => void
   readonly actions: SessionActions
 }
 
 export function useSessionStore(): UseSessionStoreResult {
-  const snapshotRef = useRef<StoreSnapshot>(createStoreSnapshot(null, new Map(), new Map(), null))
+  const snapshotRef = useRef<StoreSnapshot>({ data: null, runtime: new Map(), lastError: null })
   const listenersRef = useRef<Set<Listener>>(new Set())
   const apiRef = useRef<Api | null>(null)
   const unsubStoreRef = useRef<(() => void) | null>(null)
@@ -66,63 +55,33 @@ export function useSessionStore(): UseSessionStoreResult {
   }, [])
 
   const clearError = useCallback(() => {
-    snapshotRef.current = createStoreSnapshot(
-      snapshotRef.current.data,
-      snapshotRef.current.runtime,
-      snapshotRef.current.runtimeLastChange,
-      null
-    )
+    snapshotRef.current = { ...snapshotRef.current, lastError: null }
     notify()
   }, [notify])
 
   const setError = useCallback((message: string) => {
-    snapshotRef.current = createStoreSnapshot(
-      snapshotRef.current.data,
-      snapshotRef.current.runtime,
-      snapshotRef.current.runtimeLastChange,
-      message
-    )
+    snapshotRef.current = { ...snapshotRef.current, lastError: message }
     notify()
   }, [notify])
 
   const updateData = useCallback((data: StoreData) => {
+    // Runtime entries of sessions that are no longer in the store are dropped.
     const previousRuntime = snapshotRef.current.runtime
     const nextRuntime = new Map<Id, RuntimeState>()
-    const nextLastChange = new Map<Id, number>()
     for (const session of data.sessions) {
       const state = previousRuntime.get(session.id)
       if (state !== undefined) {
         nextRuntime.set(session.id, state)
-        const previous = snapshotRef.current.runtimeLastChange.get(session.id)
-        if (previous !== undefined) {
-          nextLastChange.set(session.id, previous)
-        } else {
-          nextLastChange.set(session.id, session.createdAt)
-        }
       }
     }
-    snapshotRef.current = createStoreSnapshot(
-      data,
-      nextRuntime,
-      nextLastChange,
-      snapshotRef.current.lastError
-    )
+    snapshotRef.current = { ...snapshotRef.current, data, runtime: nextRuntime }
     notify()
   }, [notify])
 
   const updateRuntime = useCallback((state: RuntimeState) => {
-    const previousRuntime = snapshotRef.current.runtime
-    const newRuntime = new Map(previousRuntime)
+    const newRuntime = new Map(snapshotRef.current.runtime)
     newRuntime.set(state.sessionId, state)
-    // A runtime event just arrived for this session: stamp it "now".
-    const newLastChange = new Map(snapshotRef.current.runtimeLastChange)
-    newLastChange.set(state.sessionId, Date.now())
-    snapshotRef.current = createStoreSnapshot(
-      snapshotRef.current.data,
-      newRuntime,
-      newLastChange,
-      snapshotRef.current.lastError
-    )
+    snapshotRef.current = { ...snapshotRef.current, runtime: newRuntime }
     notify()
   }, [notify])
 
@@ -144,12 +103,7 @@ export function useSessionStore(): UseSessionStoreResult {
       apiRef.current = api
       try {
         api.getStore().then(({ data, runtime }) => {
-          const runtimeMap = new Map(runtime.map(r => [r.sessionId, r]))
-          const lastChange = new Map<Id, number>()
-          for (const session of data.sessions) {
-            lastChange.set(session.id, session.createdAt)
-          }
-          snapshotRef.current = createStoreSnapshot(data, runtimeMap, lastChange, null)
+          snapshotRef.current = { data, runtime: new Map(runtime.map(r => [r.sessionId, r])), lastError: null }
           notify()
         }).catch(err => {
           setError(errorMessage(err))
@@ -210,7 +164,6 @@ export function useSessionStore(): UseSessionStoreResult {
   return {
     data: store.data,
     runtime: store.runtime,
-    runtimeLastChange: store.runtimeLastChange,
     lastError: store.lastError,
     clearError,
     actions

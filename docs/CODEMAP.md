@@ -27,7 +27,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 ## Renderer (`src/renderer/`)
 - `App.tsx`: window shell (store, usage, mode, focus requests, quota toast; sound and away summary in the main window only).
 - `mode/`: Ops | Code (D31). `ModeWorkspace.tsx` (one mode's whole layout, mounted per mode), `useWorkspaceNav.ts` (tabs/split/view per mode), `useWorkspaceCommands.ts` (dialogs, palette, shortcut), `WorkspaceDialogs.tsx`, `ModeTitleBar.tsx` + `ModeSwitch.tsx`, `useUiMode.ts` (stored mode, pop out / dock), `modeLogic.ts` (filter by mode, mode-scoped storage keys).
-- `state/`: `useSessionStore.ts` (store + runtime from main, `actions`), `selectors.ts` (grouping, workspaces, filters), `multiSelect.ts` + `useMultiSelect.ts` (bulk-selection rules, shared by the sidebar and the Hub), `formatTime.ts`.
+- `state/`: `useSessionStore.ts` (store + runtime from main, `actions`), `selectors.ts` (grouping, workspaces, filters), `multiSelect.ts` + `useMultiSelect.ts` (bulk-selection rules, shared by the sidebar and the Hub), `useBulkActions.ts` (the bulk Sleep/Wake/Status/Move loops, shared too), `formatTime.ts`.
 - `Sidebar/`: session list, groups, workspaces, status view, Closed section, context menus, New session dialog (`dialogLogic.ts`).
 - `shell/`: tab bar, status bar, title bar, empty state, tab shortcuts, user-activity reporter.
 - `Terminal/`: xterm panes, split workspace, keymap (paste, right click), terminal search (Ctrl+Shift+F), link detection, file drop.
