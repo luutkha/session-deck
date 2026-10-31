@@ -150,18 +150,27 @@ export function createWorkerHub(deps: WorkerHubDeps): WorkerHub {
     deps.onChange(snapshot())
   }
 
-  function indexOf(rec: Rec): number {
-    return [...records.values()].filter((r) => r.owner === rec.owner).findIndex((r) => r.id === rec.id) + 1
+  /** 1-based position of each worker among its owner's workers, in insertion order (the "Worker N" fallback name). */
+  function ownerIndexes(): Map<string, number> {
+    const counts = new Map<Id, number>()
+    const indexes = new Map<string, number>()
+    for (const rec of records.values()) {
+      const next = (counts.get(rec.owner) ?? 0) + 1
+      counts.set(rec.owner, next)
+      indexes.set(rec.id, next)
+    }
+    return indexes
   }
 
   function snapshot(): readonly WorkerInfo[] {
+    const indexes = ownerIndexes()
     return [...records.values()]
       .sort((a, b) => a.startedAt - b.startedAt)
       .map((rec): WorkerInfo => {
         const sum = totals(rec)
         return {
           id: rec.id,
-          name: workerName(rec, indexOf(rec)),
+          name: workerName(rec, indexes.get(rec.id) ?? 0),
           model: rec.model,
           status: rec.status,
           statusDetail: rec.detail,

@@ -1,6 +1,7 @@
 // Pure split-pane layout maths. No React, no DOM, no IPC.
 // Every function is immutable and returns a new SplitLayout.
 import type { Id } from '../../shared/types'
+import { isRecord } from '../../shared/guards'
 
 /** 'row' = panes side by side (vertical divider); 'column' = panes stacked (horizontal divider). */
 export type SplitDirection = 'row' | 'column'
@@ -220,10 +221,6 @@ export function pickPartner(
     }
   }
   return null
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Restores a persisted layout. Any malformed shape becomes null (caller falls back to a single layout). */

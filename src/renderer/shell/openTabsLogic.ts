@@ -1,6 +1,7 @@
 // Pure state for the tab bar: which sessions have an open tab, and which one is active.
 // No React, no DOM, no IPC. Every function returns new objects and never mutates its input.
 import type { Id, Session } from '../../shared/types'
+import { isRecord } from '../../shared/guards'
 
 export const OPEN_TABS_STORAGE_KEY = 'sessiondeck-open-tabs'
 
@@ -95,10 +96,6 @@ function safeJsonParse(raw: string): JsonParseResult {
     // Corrupt storage is an expected input: the caller falls back to no open tabs.
     return { ok: false }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function uniqueIds(values: readonly unknown[]): readonly Id[] {

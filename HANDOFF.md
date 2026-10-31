@@ -1,4 +1,4 @@
-# SessionDeck handoff (updated 2026-10-27)
+# SessionDeck handoff (updated 2026-10-31)
 
 This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Feature tree + matrices (rules, code path, tests): `docs/FEATURES.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
 
@@ -6,6 +6,12 @@ This file = current state of the code. Decisions the user made: `docs/DECISIONS.
 
 Verification at the end of this workstream (reminder escalation, D44): 3,086 unit tests (183 files), strict typecheck clean, build clean, and these suites against the REAL built app (CDP):
 `npm run e2e` (20: window shown, create/rename/status, real claude in a PTY, hooks -> attention, COLOUR present even with NO_COLOR in the launcher, close) · `e2e:hub` (12: columns, drag, settings, sound pipeline) · `e2e:bulk` (18: real Ctrl/Shift/Esc selection and bulk actions) · `e2e:trust` (15: fake-`claude` trust prompt, Settings switch, one answer) · `e2e:reminder` (17: Settings > Sound stores 1 minute, real background bell repeats after ~60 s, on-screen silent, reading stops it, switch off stops it) · `e2e:bell` (19: bell on card/tab/Hub, mark read/unread, real background turn) · `e2e:codemode` (34: repos, worktrees, Shell, Changes/diff, pop-out, restart, remove). Visual review: `node scripts/e2e-visual.cjs` -> `scripts/visual/*.png` (11 states; compare with `reference/orca/docs/assets/readme-hero.jpg`).
+
+## Code review round 3 (2026-10-31, D45)
+- **Behaviour change (one):** `session:rename` only renames. It used to call `controller.setActiveSession(getActiveSessionId())`, which could auto-start or wake the session on screen; `IpcHandlersDeps.getActiveSessionId` is gone with it.
+- **Fixes:** `PtyManager.kill` uses `safeKill` for a pty without a pid (no throw on a dead process); `WorkerHub.sweep` drops heartbeats older than `LOST_AFTER_MS` (the map kept one entry per OpenCode process forever).
+- **Cleanup, no behaviour change:** `src/shared/guards.ts` (`isRecord`, `errorMessage`) replaces 13 local object guards and ~20 error-message helpers; `useSessionStore` actions are one memoized `call()` wrapper (stable identity, so the sidebar's `useCallback`s now actually memoize); `HookServer` has `authorize` / `readBody` helpers (same check order and status codes); `sessionController.handleExitWithFallback` lives inside the controller closure; `WorkerHub` numbers workers in one pass. The legacy `POST /hook` route is kept on purpose.
+- **Verified:** 3,104 unit tests, both typechecks, build, and e2e against the built app: `e2e` 20, `hub` 12, `bulk` 18, `codemode` 34, `workers` 11, `opencode-workers` 11, `dialogs` 9, `notes` 11, `trust` 15, `bell` 19, `termview` 15, `grid` 10, `usage-both` 23, `sleep` 23, `links` 11, `close` 9, `busyclose` (tree gone). `e2e:opencode` is 12/13: the right-click IMAGE paste check fails identically on the pre-review commit `409a9c8`, because this session's OS clipboard is dead (`Set-Clipboard` then `Get-Clipboard` returns nothing; see LESSONS). That check does not yet preflight the clipboard and report SKIP.
 
 ## Bell escalation: repeat the alert while unread (2026-10-27, D44)
 - **Setting.** `reminder { enabled: true, afterMinutes: 10 }` (1–120 minutes) is store-backed and lives on Settings > **Sound** (`ReminderBlock.tsx`), not localStorage, because main reads it on every tick. Turning it off stops all repeats immediately and survives a restart.

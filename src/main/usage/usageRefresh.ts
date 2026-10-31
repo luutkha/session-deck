@@ -3,6 +3,7 @@ import type { UsageRefreshError, UsageRefreshResult } from '../../shared/types'
 import { logMainError } from '../app/errorLog'
 import type { TokenResult, UsageFetchResult } from './oauthUsage'
 import type { UsageService } from './UsageService'
+import { errorMessage } from '../../shared/guards'
 
 export const MIN_REFRESH_INTERVAL_MS = 5_000
 export const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000
@@ -29,7 +30,7 @@ function redact(error: unknown, secret: string | null): Error {
   const name = error instanceof Error ? error.name : 'Error'
   let raw = 'unprintable error'
   try {
-    raw = error instanceof Error ? error.message : String(error)
+    raw = errorMessage(error)
   } catch {
     // Keep the placeholder; logging must not fail here.
   }

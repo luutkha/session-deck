@@ -21,6 +21,7 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { parseSleepMinutes } from './sleepValidation'
 import { SleepAllBlock } from './SleepAllBlock'
+import { errorMessage } from '../../shared/guards'
 
 export interface AutomationSectionProps {
   readonly settings: AppSettings
@@ -43,10 +44,6 @@ const AUTO_ROWS: readonly AutoRow[] = [
   { field: 'finished', label: 'When Claude finishes' }
 ]
 
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 export function AutomationSection({
   settings,
   statuses,
@@ -66,7 +63,7 @@ export function AutomationSection({
     try {
       await actions.updateSettings(patch)
     } catch (err: unknown) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
     }
   }
 

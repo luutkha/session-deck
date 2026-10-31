@@ -1,6 +1,7 @@
 // Pure terminal view preferences (zoom + scrollback), renderer-only like the split layout.
 // No React, no DOM, no IPC: localStorage access goes through guarded helpers like shellPrefs.
 import { readStorageItem, writeStorageItem } from '../shell/shellPrefs'
+import { isRecord } from '../../shared/guards'
 
 export interface TermView {
   /** 50..200; 100 = the base font size. */
@@ -46,10 +47,6 @@ export function fontSizeFor(zoomPercent: number): number {
 
 export function normalizeTermView(view: TermView): TermView {
   return { zoomPercent: clampZoom(view.zoomPercent), scrollbackLines: clampScrollback(view.scrollbackLines) }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Parses a stored record; malformed JSON or wrong shapes → null (caller falls back to defaults). */

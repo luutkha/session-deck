@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { emptyQuotaMarkers, EMPTY_QUOTA_MARKER, type QuotaLevel, type QuotaMarker, type QuotaMarkers } from './quotaGuard'
+import { isRecord } from '../../shared/guards'
 
 export const QUOTA_MARKERS_FILE = 'quota-markers.json'
 
@@ -8,10 +9,6 @@ const LEVELS: readonly QuotaLevel[] = ['none', 'warn', 'critical']
 
 export function quotaMarkersFilePath(userDataDir: string): string {
   return path.join(userDataDir, QUOTA_MARKERS_FILE)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function parseMarker(value: unknown): QuotaMarker {

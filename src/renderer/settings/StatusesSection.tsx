@@ -5,16 +5,13 @@ import type { SessionActions } from '../state/useSessionStore'
 import { Button } from '@/components/ui/button'
 import { StatusRow } from '../Sidebar/StatusRow'
 import { moveStatus, nextStatusName, type MoveDirection } from './statusOrder'
+import { errorMessage } from '../../shared/guards'
 
 const DEFAULT_STATUS_COLOR = '#9e9e9e'
 
 export interface StatusesSectionProps {
   readonly statuses: readonly StatusDef[]
   readonly actions: Pick<SessionActions, 'upsertStatus' | 'removeStatus' | 'reorderStatuses'>
-}
-
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 export function StatusesSection({ statuses, actions }: StatusesSectionProps): ReactElement {
@@ -39,7 +36,7 @@ export function StatusesSection({ statuses, actions }: StatusesSectionProps): Re
       await actions.upsertStatus(next)
       setRowError(next.id, null)
     } catch (error) {
-      setRowError(next.id, toMessage(error))
+      setRowError(next.id, errorMessage(error))
     }
   }
 
@@ -61,7 +58,7 @@ export function StatusesSection({ statuses, actions }: StatusesSectionProps): Re
       setPendingDelete(null)
       setRowError(id, null)
     } catch (error) {
-      setRowError(id, toMessage(error))
+      setRowError(id, errorMessage(error))
     }
   }
 
@@ -74,7 +71,7 @@ export function StatusesSection({ statuses, actions }: StatusesSectionProps): Re
     try {
       await actions.reorderStatuses(order)
     } catch (error) {
-      setGlobalError(toMessage(error))
+      setGlobalError(errorMessage(error))
     }
   }
 
@@ -89,7 +86,7 @@ export function StatusesSection({ statuses, actions }: StatusesSectionProps): Re
       await actions.upsertStatus(draft)
       setRowError(draft.id, null)
     } catch (error) {
-      setGlobalError(toMessage(error))
+      setGlobalError(errorMessage(error))
     }
   }
 

@@ -1,4 +1,5 @@
 import { resolveSettings, type Id, type StoreData } from '../../shared/types'
+import { errorMessage } from '../../shared/guards'
 
 /** The slice of `window.api` the quota toasts and the held chip call. */
 export interface QuotaActionApi {
@@ -11,10 +12,6 @@ export type QuotaActionResult =
   | { readonly ok: true; readonly ids: readonly Id[] }
   | { readonly ok: false; readonly message: string }
 
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 function idsOf(value: unknown): readonly Id[] {
   return Array.isArray(value) ? (value as readonly Id[]) : []
 }
@@ -26,7 +23,7 @@ async function runAction(
   try {
     return { ok: true, ids: idsOf(await call()) }
   } catch (error: unknown) {
-    const message = toMessage(error)
+    const message = errorMessage(error)
     console.error(`Quota autopilot: could not ${verb} sessions`, error)
     return { ok: false, message: `Could not ${verb} sessions: ${message}` }
   }

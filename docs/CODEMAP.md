@@ -5,6 +5,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 ## Contract (main <-> renderer), change additively and on purpose
 - `src/shared/types.ts`: every shared shape (Session, RuntimeState, AppSettings + defaults, usage, workers).
 - `src/shared/ipc.ts`: channel names (`IPC.*`) and the `Api` interface the renderer sees as `window.api`.
+- `src/shared/guards.ts`: tiny runtime helpers used by main and renderer (`isRecord`, `errorMessage`). Use these instead of local copies.
 - `src/preload/index.ts`: implements `window.api` with `ipcRenderer`.
 
 ## Main process (`src/main/`)

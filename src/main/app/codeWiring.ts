@@ -6,6 +6,7 @@ import type { SessionStore } from '../store'
 import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, readWorktreeChanges, readWorktreePreview, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
 import { asCreateWorktreeInput, assertBoolean, assertId, assertNonEmptyString } from './ipcValidation'
 import type { SessionController } from './sessionController'
+import { errorMessage } from '../../shared/guards'
 
 /** A turn that just ended has usually written its files; give the file system a moment before diffing. */
 const CHANGES_AFTER_TURN_MS = 1500
@@ -118,7 +119,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
       // sessionless one (before Fix B there was no way back once the row button had no open session).
       store.removeWorktree(worktree.id)
       forget(worktree.id)
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = errorMessage(error)
       throw new Error(
         `The worktree could not be created: its session did not start (${reason}). Nothing was kept — files stay on disk.`
       )

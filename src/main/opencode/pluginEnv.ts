@@ -1,3 +1,5 @@
+import { isRecord } from '../../shared/guards'
+
 /**
  * Per-process plugin injection for OpenCode: the plugin package (see pluginSource.ts / writePlugin.ts) plus the
  * "no permission prompts" rule travel through OPENCODE_CONFIG_CONTENT, so nothing is written into the user's
@@ -12,10 +14,6 @@ export const OPENCODE_PLUGIN_ENV_VAR = 'OPENCODE_CONFIG_CONTENT'
 
 /** Basenames of the v1 single-file plugin layouts, whose file:// entries v2 cannot load. */
 export const LEGACY_PLUGIN_BASENAMES = ['sessiondeck-opencode-plugin.mjs', 'sessiondeck-worker-plugin.mjs']
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 /** An absolute path as OpenCode config entries expect it: forward slashes ("C:/Users/.../plugin-pkg"). */
 export function pluginEntryPath(pkgDir: string): string {

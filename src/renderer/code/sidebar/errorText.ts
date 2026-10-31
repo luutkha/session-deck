@@ -1,5 +1,7 @@
 // Turns a rejected IPC call into the text a user should read. No React, no IPC.
 
+import { errorMessage } from '../../../shared/guards'
+
 /** Electron prefixes a main-process error as "Error invoking remote method 'x': Error: <message>". */
 const MAIN_ERROR_MARKER = 'Error: '
 
@@ -8,7 +10,7 @@ const MAIN_ERROR_MARKER = 'Error: '
  * main-process message). Any other message is returned unchanged.
  */
 export function cleanErrorMessage(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error)
+  const raw = errorMessage(error)
   const markerAt = raw.lastIndexOf(MAIN_ERROR_MARKER)
   if (markerAt < 0) {
     return raw

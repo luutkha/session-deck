@@ -7,6 +7,7 @@ import { validateChecklist, validateNotes } from './sessionNotes'
 import { parseStoredSettings } from './settings'
 import { hasUnknownWorktreeRef, parseRepos, parseWorktrees } from './codePersistence'
 import { isOpencodeSessionId, isOpencodeModel } from '../opencode/values'
+import { errorMessage, isRecord } from '../../shared/guards'
 
 const STORE_VERSION = 1
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -14,10 +15,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 interface ParsedResult {
   readonly data: StoreData
   readonly warning?: string
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isString(value: unknown): value is string {
@@ -54,7 +51,7 @@ function hasDuplicateIds(items: { readonly id: string }[]): boolean {
 }
 
 function parseSession(raw: unknown, index: number): Session {
-  if (!isObject(raw)) {
+  if (!isRecord(raw)) {
     throw new Error(`Invalid store: sessions[${index}] is not an object`)
   }
   if (!isString(raw.id)) throw new Error(`Invalid store: sessions[${index}].id`)
@@ -161,7 +158,8 @@ function parseAgentFields(raw: Record<string, unknown>, index: number): AgentFie
   return { agent: 'opencode', opencodeSessionId, model }
 }
 
-/** Valid notes are kept; invalid notes and the empty string yield undefined (field absent). */function parseOptionalNotes(raw: unknown): string | undefined {
+/** Valid notes are kept; invalid notes and the empty string yield undefined (field absent). */
+function parseOptionalNotes(raw: unknown): string | undefined {
   if (raw === undefined) return undefined
   try {
     const notes = validateNotes(raw)
@@ -183,7 +181,7 @@ function parseOptionalChecklist(raw: unknown): ChecklistItem[] | undefined {
 }
 
 function parseGroup(raw: unknown, index: number): Group {
-  if (!isObject(raw)) {
+  if (!isRecord(raw)) {
     throw new Error(`Invalid store: groups[${index}] is not an object`)
   }
   if (!isString(raw.id)) throw new Error(`Invalid store: groups[${index}].id`)
@@ -194,7 +192,7 @@ function parseGroup(raw: unknown, index: number): Group {
 }
 
 function parseStatus(raw: unknown, index: number): StatusDef {
-  if (!isObject(raw)) {
+  if (!isRecord(raw)) {
     throw new Error(`Invalid store: statuses[${index}] is not an object`)
   }
   if (!isString(raw.id)) throw new Error(`Invalid store: statuses[${index}].id`)
@@ -205,7 +203,7 @@ function parseStatus(raw: unknown, index: number): StatusDef {
 }
 
 export function parseStoreData(raw: unknown): StoreData {
-  if (!isObject(raw)) {
+  if (!isRecord(raw)) {
     throw new Error('Invalid store: not an object')
   }
   if (raw.version !== STORE_VERSION) {
@@ -306,7 +304,7 @@ export async function loadStoreFile(path: string): Promise<ParsedResult> {
       // Best-effort rename; ignore failure so we still return a usable store.
     }
 
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = errorMessage(error)
     return {
       data: emptyStore(),
       warning: `Store file was corrupt (${reason}); renamed to ${corruptPath}. ` +

@@ -1,6 +1,7 @@
-import { useSyncExternalStore, useCallback, useRef, useEffect } from 'react'
+import { useSyncExternalStore, useCallback, useRef, useEffect, useMemo } from 'react'
 import type { StoreData, RuntimeState, Session, Group, StatusDef, ChecklistItem, CreateSessionInput, Id, AppSettings, SettingsPatch } from '../../shared/types'
 import type { Api } from '../../shared/ipc'
+import { errorMessage } from '../../shared/guards'
 
 type Listener = () => void
 
@@ -151,13 +152,13 @@ export function useSessionStore(): UseSessionStoreResult {
           snapshotRef.current = createStoreSnapshot(data, runtimeMap, lastChange, null)
           notify()
         }).catch(err => {
-          setError(err instanceof Error ? err.message : String(err))
+          setError(errorMessage(err))
         })
 
         unsubStoreRef.current = api.onStoreChanged(updateData)
         unsubRuntimeRef.current = api.onRuntime(updateRuntime)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        setError(errorMessage(err))
       }
     } else {
       setError('Application bridge not available')
@@ -171,160 +172,38 @@ export function useSessionStore(): UseSessionStoreResult {
     }
   }, [notify, updateData, updateRuntime, setError])
 
-  const actions: SessionActions = {
-    createSession: async (input: CreateSessionInput) => {
+  // One wrapper for every call into main: a rejection is shown in the store banner and still reaches the caller.
+  const actions = useMemo((): SessionActions => {
+    async function call<T>(run: (api: Api) => Promise<T>): Promise<T> {
       try {
-        return await apiRef.current!.createSession(input)
+        return await run(apiRef.current!)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    renameSession: async (id: Id, name: string) => {
-      try {
-        await apiRef.current!.renameSession(id, name)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    setSessionStatus: async (id: Id, statusId: Id | null) => {
-      try {
-        await apiRef.current!.setSessionStatus(id, statusId)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    moveSession: async (id: Id, groupId: Id | null, index: number) => {
-      try {
-        await apiRef.current!.moveSession(id, groupId, index)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    removeSession: async (id: Id) => {
-      try {
-        await apiRef.current!.removeSession(id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    closeSession: async (id: Id) => {
-      try {
-        await apiRef.current!.closeSession(id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    reopenSession: async (id: Id) => {
-      try {
-        await apiRef.current!.reopenSession(id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    createGroup: async (name: string) => {
-      try {
-        return await apiRef.current!.createGroup(name)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    renameGroup: async (id: Id, name: string) => {
-      try {
-        await apiRef.current!.renameGroup(id, name)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    removeGroup: async (id: Id) => {
-      try {
-        await apiRef.current!.removeGroup(id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    setGroupCollapsed: async (id: Id, collapsed: boolean) => {
-      try {
-        await apiRef.current!.setGroupCollapsed(id, collapsed)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    reorderGroups: async (order: readonly Id[]) => {
-      try {
-        await apiRef.current!.reorderGroups(order)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    upsertStatus: async (status: StatusDef) => {
-      try {
-        await apiRef.current!.upsertStatus(status)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    removeStatus: async (id: Id) => {
-      try {
-        await apiRef.current!.removeStatus(id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    reorderStatuses: async (order: readonly Id[]) => {
-      try {
-        await apiRef.current!.reorderStatuses(order)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    setSessionNotes: async (id: Id, notes: string) => {
-      try {
-        await apiRef.current!.setSessionNotes(id, notes)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    setSessionChecklist: async (id: Id, items: readonly ChecklistItem[]) => {
-      try {
-        await apiRef.current!.setSessionChecklist(id, items)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    pickFolder: async () => {
-      try {
-        return await apiRef.current!.pickFolder()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        throw err
-      }
-    },
-    updateSettings: async (patch: SettingsPatch) => {
-      try {
-        return await apiRef.current!.updateSettings(patch)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        setError(errorMessage(err))
         throw err
       }
     }
-  }
+    return {
+      createSession: (input) => call((api) => api.createSession(input)),
+      renameSession: (id, name) => call((api) => api.renameSession(id, name)),
+      setSessionStatus: (id, statusId) => call((api) => api.setSessionStatus(id, statusId)),
+      moveSession: (id, groupId, index) => call((api) => api.moveSession(id, groupId, index)),
+      removeSession: (id) => call((api) => api.removeSession(id)),
+      closeSession: (id) => call((api) => api.closeSession(id)),
+      reopenSession: (id) => call((api) => api.reopenSession(id)),
+      createGroup: (name) => call((api) => api.createGroup(name)),
+      renameGroup: (id, name) => call((api) => api.renameGroup(id, name)),
+      removeGroup: (id) => call((api) => api.removeGroup(id)),
+      setGroupCollapsed: (id, collapsed) => call((api) => api.setGroupCollapsed(id, collapsed)),
+      reorderGroups: (order) => call((api) => api.reorderGroups(order)),
+      upsertStatus: (status) => call((api) => api.upsertStatus(status)),
+      removeStatus: (id) => call((api) => api.removeStatus(id)),
+      reorderStatuses: (order) => call((api) => api.reorderStatuses(order)),
+      setSessionNotes: (id, notes) => call((api) => api.setSessionNotes(id, notes)),
+      setSessionChecklist: (id, items) => call((api) => api.setSessionChecklist(id, items)),
+      pickFolder: () => call((api) => api.pickFolder()),
+      updateSettings: (patch) => call((api) => api.updateSettings(patch))
+    }
+  }, [setError])
 
   const store = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 

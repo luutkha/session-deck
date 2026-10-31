@@ -20,6 +20,7 @@ import {
   QUOTA_WARN_MIN,
   validateQuotaThresholds
 } from './quotaValidation'
+import { errorMessage } from '../../shared/guards'
 
 export interface QuotaSectionProps {
   readonly settings: AppSettings
@@ -39,10 +40,6 @@ const RESET_OPTIONS: readonly { readonly value: QuotaResetAction; readonly label
 
 const AUTOPILOT_HELP =
   'Sleeping frees no quota by itself, it only stops idle sessions from starting new turns. Sessions marked Keep awake and Remote Control sessions are never slept. Busy sessions are never interrupted.'
-
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 function isCriticalAction(value: string): value is QuotaCriticalAction {
   return CRITICAL_OPTIONS.some((option) => option.value === value)
@@ -144,7 +141,7 @@ export function QuotaSection({ settings, actions }: QuotaSectionProps): ReactEle
     try {
       await actions.updateSettings(patch)
     } catch (err: unknown) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
     }
   }
 

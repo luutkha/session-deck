@@ -1,6 +1,7 @@
 import { win32 } from 'node:path'
 import type { OpenLinkResult, ResolvedLink } from '../../shared/types'
 import { parseLinkText, type ParsedPathLink } from './linkText'
+import { errorMessage } from '../../shared/guards'
 
 /** Result of a filesystem check made by the caller. */
 export interface LinkStat {
@@ -38,10 +39,6 @@ const DANGEROUS_EXTENSIONS = new Set([
   '.wsf', '.wsh', '.msi', '.msp', '.scr', '.lnk', '.reg', '.hta', '.cpl', '.jar',
   '.dll', '.sh', '.url', '.msc', '.pif', '.appref-ms', '.vb', '.ps1xml', '.gadget'
 ])
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 function isHttpOrMailto(url: string): boolean {
   return /^https?:/i.test(url) || /^mailto:/i.test(url)

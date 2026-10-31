@@ -34,6 +34,7 @@ import { quotaMarkersFilePath } from './quota/quotaMarkers'
 import { createSleepScheduler } from './sleep/SleepScheduler'
 import { createWorkerHub } from './workers'
 import { IPC } from '../shared/ipc'
+import { errorMessage } from '../shared/guards'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -96,7 +97,7 @@ if (!gotTheLock) {
       loaded = await loadStoreFile(storePath)
     } catch (error) {
       logMainError(userData, 'store load', error)
-      const detail = error instanceof Error ? error.message : String(error)
+      const detail = errorMessage(error)
       dialog.showErrorBox(
         'SessionDeck',
         `Could not read the session store at ${storePath}.\n\n${detail}\n\n` +

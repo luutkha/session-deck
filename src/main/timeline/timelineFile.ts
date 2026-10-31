@@ -2,6 +2,7 @@ import { readFile, rename, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { TimelineTurn, TurnEnd } from '../../shared/types'
 import { TIMELINE_MAX_AGE_DAYS, TIMELINE_PROMPT_MAX } from '../../shared/types'
+import { isRecord } from '../../shared/guards'
 
 export const TIMELINE_FILE_NAME = 'sessiondeck-timeline.json'
 export const TIMELINE_FILE_VERSION = 1
@@ -27,10 +28,6 @@ export type TimelineErrorHandler = (where: string, error: unknown) => void
 
 export function timelineFilePath(userDataDir: string): string {
   return path.join(userDataDir, TIMELINE_FILE_NAME)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isFiniteNumber(value: unknown): value is number {

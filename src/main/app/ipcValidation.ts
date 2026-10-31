@@ -3,6 +3,7 @@ import type { AgentKind, ChecklistItem, CreateSessionInput, CreateWorktreeInput,
 import { buildLaunch } from '../pty/launch'
 import { MAX_NOTES_LENGTH, validateChecklist } from '../store'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
+import { errorMessage } from '../../shared/guards'
 
 const MAX_STRING_LENGTH = 256
 const MAX_INT = 2_147_483_647
@@ -108,7 +109,7 @@ export function assertSafeClaudeArgs(args: readonly string[]): readonly string[]
   try {
     buildLaunch('linux', args)
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
+    const reason = errorMessage(error)
     throw new Error(`Invalid createSession input: ${reason}`)
   }
   return args

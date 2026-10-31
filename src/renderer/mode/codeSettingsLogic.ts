@@ -1,5 +1,6 @@
 // Pure helpers for Settings > Code: the shell choices, the folder value and the message of a failed save.
 import type { ShellKind } from '../../shared/types'
+import { errorMessage } from '../../shared/guards'
 
 export const WORKTREES_PLACEHOLDER = '~/SessionDeck/worktrees (default)'
 const ERROR_MARKER = 'Error: '
@@ -24,7 +25,7 @@ export function normalizeWorktreesRoot(input: string): string {
  * method ...: Error: <message>"), so the text after the last "Error: " is shown. Falls back to the full text.
  */
 export function errorDetail(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   const index = message.lastIndexOf(ERROR_MARKER)
   if (index === -1) {
     return message

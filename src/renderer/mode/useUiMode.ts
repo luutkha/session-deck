@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UiMode, WindowRole, WindowState } from '../../shared/types'
 import { readStorageItem, writeStorageItem } from '../shell/shellPrefs'
 import { effectiveMode, modeAfterDock, MODE_STORAGE_KEY, parseStoredMode } from './modeLogic'
+import { errorMessage } from '../../shared/guards'
 
 export interface UiModeApi {
   readonly role: WindowRole
@@ -24,10 +25,6 @@ export function readWindowRole(): WindowRole {
   return window.api?.windowRole === 'code' ? 'code' : 'main'
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /** Runs a window call. A failure (even a synchronous throw) is logged and reported through onError. */
 function runWindowCall(
   label: string,
@@ -39,7 +36,7 @@ function runWindowCall(
     .then(call)
     .catch((error: unknown): void => {
       console.error(`SessionDeck: ${label} failed`, error)
-      onError(messageOf(error))
+      onError(errorMessage(error))
     })
 }
 

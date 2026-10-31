@@ -11,14 +11,11 @@ import { Label } from '../components/ui/label'
 import { Switch } from '../components/ui/switch'
 import { cn } from '../lib/utils'
 import { parseReminderMinutes } from './reminderValidation'
+import { errorMessage } from '../../shared/guards'
 
 export interface ReminderBlockProps {
   readonly settings: ReminderSettings
   readonly onPatch: (patch: SettingsPatch) => Promise<unknown>
-}
-
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 export function ReminderBlock({ settings, onPatch }: ReminderBlockProps): ReactElement {
@@ -35,7 +32,7 @@ export function ReminderBlock({ settings, onPatch }: ReminderBlockProps): ReactE
     try {
       await onPatch(patch)
     } catch (err: unknown) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
     }
   }
 

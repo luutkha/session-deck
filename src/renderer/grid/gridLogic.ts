@@ -2,6 +2,7 @@
 // Every function is immutable and returns a new GridLayout. Grid cells hold OPEN sessions only
 // (D-c); a session occupies at most one cell (D-b); cell sizes are uniform per preset (D-d).
 import type { Id } from '../../shared/types'
+import { isRecord } from '../../shared/guards'
 
 /** Preset names are COLUMNS x ROWS: '2x1' = side by side, '1x2' = stacked, '3x2' = 3 wide 2 tall. */
 export type GridPreset = '1x1' | '2x1' | '1x2' | '2x2' | '2x3' | '3x2'
@@ -136,10 +137,6 @@ export function assignOverflow(
     placed.add(id)
   }
   return { layout: { preset: layout.preset, cells }, overflow: kept }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Restores a persisted grid. Any malformed shape becomes null (caller falls back to an empty 1x1). */

@@ -3,16 +3,13 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Id, QuotaAutopilotState } from '../../shared/types'
 import { EMPTY_AUTOPILOT_STATE, uniqueIds } from './autopilotPolicy'
+import { isRecord } from '../../shared/guards'
 
 export const QUOTA_AUTOPILOT_FILE = 'quota-autopilot.json'
 const STATE_VERSION = 1
 
 export function quotaAutopilotFilePath(userDataDir: string): string {
   return path.join(userDataDir, QUOTA_AUTOPILOT_FILE)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isIdList(value: unknown): value is Id[] {

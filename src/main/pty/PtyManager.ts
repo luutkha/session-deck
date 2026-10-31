@@ -6,6 +6,7 @@ import type { PtyReplay } from '../../shared/ipc'
 import { RingBuffer, DEFAULT_LIMIT_CHARS } from './RingBuffer'
 import { buildCommandLaunch, type LaunchCommand } from './launch'
 import { createTreeKiller, NOOP_TREE_KILLER, type TreeKiller } from './treeKiller'
+import { errorMessage } from '../../shared/guards'
 
 const TERM_NAME = 'xterm-256color'
 const COLORTERM_VALUE = 'truecolor'
@@ -226,7 +227,7 @@ export class PtyManager {
     try {
       proc = this.spawn(file, args, options)
     } catch (err) {
-      throw new Error(toErrorMessage(err))
+      throw new Error(errorMessage(err))
     }
 
     this.processes.set(id, proc)
@@ -287,6 +288,3 @@ function clampDim(value: number): number {
   return Math.min(MAX_DIM, Math.max(MIN_DIM, Math.trunc(value)))
 }
 
-function toErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}

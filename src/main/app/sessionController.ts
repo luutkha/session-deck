@@ -77,50 +77,6 @@ function getOutputTail(pty: PtyManager, sessionId: Id): string {
   return text.length <= REPLAY_TAIL_CHARS ? text : text.slice(-REPLAY_TAIL_CHARS)
 }
 
-function handleExitWithFallback(
-  sessionId: Id,
-  runMs: number,
-  exitCode: number | null,
-  pty: PtyManager,
-  store: SessionStore,
-  attention: AttentionService,
-  runtime: RuntimeRegistry,
-  startState: Map<Id, SessionStartState>
-): boolean {
-  const state = startState.get(sessionId)
-  if (!state) return false
-
-  const session = store.get().sessions.find((s) => s.id === sessionId)
-  // The "no conversation" fallback and resume args are Claude-only; OpenCode and shell sessions just stay exited.
-  if (!session || session.agent === 'opencode' || session.agent === 'shell' || !session.claudeSessionId) return false
-
-  const outputTail = getOutputTail(pty, sessionId)
-  if (
-    state.fallbackAttempts < MAX_FALLBACK_ATTEMPTS &&
-    shouldRotateSessionId({ mode: 'resume', runMs, exitCode, outputTail, hasTranscript: transcriptExists(session.claudeSessionId) })
-  ) {
-    // Never prompted, so nothing is lost: continue under a fresh conversation id.
-    startState.set(sessionId, { ...state, fallbackAttempts: state.fallbackAttempts + 1 })
-    store.setClaudeSessionId(sessionId, randomUUID())
-    const rotated = store.get().sessions.find((s) => s.id === sessionId) ?? session
-    pty.restart(buildStartOptions(rotated, false, attention))
-    runtime.markRunning(sessionId)
-    return true
-  }
-  const fallback = shouldFallbackToNew({ mode: 'resume', runMs, exitCode, outputTail })
-
-  if (fallback && state.fallbackAttempts < MAX_FALLBACK_ATTEMPTS) {
-    const nextState = { ...state, fallbackAttempts: state.fallbackAttempts + 1 }
-    startState.set(sessionId, nextState)
-
-    pty.restart(buildStartOptions(session, false, attention))
-    runtime.markRunning(session.id)
-    return true
-  }
-
-  return false
-}
-
 export function createSessionController(deps: SessionControllerDeps): SessionController {
   const { store, pty, attention, runtime, sendPtyData, userDataDir } = deps
 
@@ -141,6 +97,40 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
 
   function isClosed(id: Id): boolean {
     return findSession(id)?.closedAt !== undefined
+  }
+
+  /** A resumed Claude process exited early: retry once under a fresh id or as a new conversation. True when retried. */
+  function handleExitWithFallback(sessionId: Id, runMs: number, exitCode: number | null): boolean {
+    const state = startState.get(sessionId)
+    if (!state) return false
+
+    const session = findSession(sessionId)
+    // The "no conversation" fallback and resume args are Claude-only; OpenCode and shell sessions just stay exited.
+    if (!session || session.agent === 'opencode' || session.agent === 'shell' || !session.claudeSessionId) return false
+
+    const outputTail = getOutputTail(pty, sessionId)
+    if (
+      state.fallbackAttempts < MAX_FALLBACK_ATTEMPTS &&
+      shouldRotateSessionId({ mode: 'resume', runMs, exitCode, outputTail, hasTranscript: transcriptExists(session.claudeSessionId) })
+    ) {
+      // Never prompted, so nothing is lost: continue under a fresh conversation id.
+      startState.set(sessionId, { ...state, fallbackAttempts: state.fallbackAttempts + 1 })
+      store.setClaudeSessionId(sessionId, randomUUID())
+      const rotated = findSession(sessionId) ?? session
+      pty.restart(buildStartOptions(rotated, false, attention))
+      runtime.markRunning(sessionId)
+      return true
+    }
+    const fallback = shouldFallbackToNew({ mode: 'resume', runMs, exitCode, outputTail })
+
+    if (fallback && state.fallbackAttempts < MAX_FALLBACK_ATTEMPTS) {
+      startState.set(sessionId, { ...state, fallbackAttempts: state.fallbackAttempts + 1 })
+      pty.restart(buildStartOptions(session, false, attention))
+      runtime.markRunning(session.id)
+      return true
+    }
+
+    return false
   }
 
   // W6 trust auto-answer: armed only for a pty started with a FRESH conversation in a Code worktree. The buffer keeps
@@ -267,7 +257,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     const runMs = startTime ? Date.now() - startTime : 0
     let fallbackHandled = false
     try {
-      fallbackHandled = handleExitWithFallback(id, runMs, code, pty, store, attention, runtime, startState)
+      fallbackHandled = handleExitWithFallback(id, runMs, code)
     } catch (error) {
       // The automatic restart failed: the session stays exited and the error is recorded, not thrown into pty.
       startState.delete(id)
@@ -294,7 +284,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     if (session.agent === 'opencode' || session.agent === 'shell' || session.claudeSessionId) {
       return session
     }
-    const newId = crypto.randomUUID()
+    const newId = randomUUID()
     store.setClaudeSessionId(session.id, newId)
     return { ...session, claudeSessionId: newId }
   }

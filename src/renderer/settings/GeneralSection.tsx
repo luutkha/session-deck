@@ -6,14 +6,11 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { AwaySettingsBlock } from '../timeline/AwaySettingsBlock'
+import { errorMessage } from '../../shared/guards'
 
 export interface GeneralSectionProps {
   readonly settings: AppSettings
   readonly actions: Pick<SessionActions, 'updateSettings'>
-}
-
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 export function GeneralSection({ settings, actions }: GeneralSectionProps): ReactElement {
@@ -30,7 +27,7 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
         if (!cancelled) setLoginItem(state)
       })
       .catch((err: unknown): void => {
-        if (!cancelled) setError(toMessage(err))
+        if (!cancelled) setError(errorMessage(err))
       })
     return (): void => {
       cancelled = true
@@ -42,7 +39,7 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
     try {
       await actions.updateSettings(patch)
     } catch (err: unknown) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
     }
   }
 
@@ -52,7 +49,7 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
     try {
       setLoginItem(await window.api.setLoginItem(open))
     } catch (err: unknown) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
     } finally {
       setLoginPending(false)
     }
@@ -67,7 +64,7 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
     try {
       await window.api.quitApp()
     } catch (err: unknown) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
       setConfirmQuit(false)
     }
   }

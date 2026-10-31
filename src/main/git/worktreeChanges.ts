@@ -11,6 +11,7 @@ import {
   parseNumstatZ,
   parseUntrackedZ
 } from './worktreeParse'
+import { errorMessage } from '../../shared/guards'
 
 export interface WorktreeRef {
   readonly id: Id
@@ -93,10 +94,6 @@ async function collectChanges(wt: WorktreeRef, now: () => number, run: GitRun): 
   return buildChanges(wt.id, files, now())
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /**
  * Every change of the worktree against its base. Never throws: a failure (folder missing, git missing, unreadable
  * output) comes back as `error` with no files.
@@ -116,7 +113,7 @@ export async function readWorktreeChanges(
       additions: 0,
       deletions: 0,
       computedAt: now(),
-      error: messageOf(error)
+      error: errorMessage(error)
     }
   }
 }

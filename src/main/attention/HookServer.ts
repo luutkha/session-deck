@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 import type { HookEvent } from '../../shared/types'
 import { TIMELINE_PROMPT_MAX } from '../../shared/types'
 import { isOpencodeSessionId } from '../opencode/values'
+import { isRecord } from '../../shared/guards'
 
 export interface HookServer {
   start(): Promise<{ port: number }>
@@ -64,7 +65,7 @@ function decodeSegment(segment: string): string | null {
 
 /** The optional per-process id of an OpenCode plugin body (the owner process vs its child workers). */
 function procFromBody(parsed: unknown): string | undefined {
-  if (!isJsonObject(parsed) || typeof parsed.proc !== 'string') return undefined
+  if (!isRecord(parsed) || typeof parsed.proc !== 'string') return undefined
   const proc = parsed.proc
   return proc.length === 0 || proc.length > MAX_PROC_LENGTH ? undefined : proc
 }
@@ -74,7 +75,7 @@ function optionalJson(body: string): Record<string, unknown> | null {
   if (body.trim().length === 0) return null
   try {
     const parsed: unknown = JSON.parse(body)
-    return isJsonObject(parsed) ? parsed : null
+    return isRecord(parsed) ? parsed : null
   } catch {
     return null
   }
@@ -185,10 +186,6 @@ function statusLineSessionId(url: string | undefined): string | null {
   }
 }
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 export function createHookServer(options: CreateHookServerOptions): HookServer {
   const { token, isKnownSession, onEvent, onStatusLine, onWorkerEvent } = options
   let server: Server | null = null
@@ -199,20 +196,27 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
     socket.on('close', () => sockets.delete(socket))
   }
 
-  const handleStatusLine = async (req: IncomingMessage, res: ServerResponse, sessionId: string): Promise<void> => {
-    const providedToken = req.headers['x-token'] as string | undefined
-    if (!validateToken(token, providedToken)) {
-      sendResponse(res, 401, JSON.stringify({ error: 'Unauthorized' }))
-      return
-    }
+  /** Checks the `x-token` header; answers 401 and returns false when it does not match. */
+  function authorize(req: IncomingMessage, res: ServerResponse): boolean {
+    if (validateToken(token, req.headers['x-token'] as string | undefined)) return true
+    sendResponse(res, 401, JSON.stringify({ error: 'Unauthorized' }))
+    return false
+  }
 
-    let body: string
+  /** The request body, or null after answering 413 when it exceeds the limit (or the stream fails). */
+  async function readBody(req: IncomingMessage, res: ServerResponse, limit: number): Promise<string | null> {
     try {
-      body = await parseBody(req, MAX_STATUSLINE_BODY_SIZE)
+      return await parseBody(req, limit)
     } catch {
       sendResponse(res, 413, JSON.stringify({ error: 'Payload too large' }))
-      return
+      return null
     }
+  }
+
+  const handleStatusLine = async (req: IncomingMessage, res: ServerResponse, sessionId: string): Promise<void> => {
+    if (!authorize(req, res)) return
+    const body = await readBody(req, res, MAX_STATUSLINE_BODY_SIZE)
+    if (body === null) return
 
     let payload: unknown
     try {
@@ -221,7 +225,7 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
       sendResponse(res, 400, JSON.stringify({ error: 'Invalid JSON' }))
       return
     }
-    if (!isJsonObject(payload)) {
+    if (!isRecord(payload)) {
       sendResponse(res, 400, JSON.stringify({ error: 'Expected a JSON object' }))
       return
     }
@@ -237,17 +241,9 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
 
   /** POST /worker/<claudeSessionId>/event: one event from the OpenCode worker plugin of a process started in that session. */
   const handleWorkerRoute = async (req: IncomingMessage, res: ServerResponse, rawSessionId: string): Promise<void> => {
-    if (!validateToken(token, req.headers['x-token'] as string | undefined)) {
-      sendResponse(res, 401, JSON.stringify({ error: 'Unauthorized' }))
-      return
-    }
-    let body: string
-    try {
-      body = await parseBody(req, MAX_WORKER_BODY_SIZE)
-    } catch {
-      sendResponse(res, 413, JSON.stringify({ error: 'Payload too large' }))
-      return
-    }
+    if (!authorize(req, res)) return
+    const body = await readBody(req, res, MAX_WORKER_BODY_SIZE)
+    if (body === null) return
     const sessionId = decodeSegment(rawSessionId)
     if (sessionId === null || !isKnownSession(sessionId)) {
       sendResponse(res, 404, JSON.stringify({ error: 'Unknown session' }))
@@ -275,19 +271,9 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
     }
     const event = route.rawEvent
 
-    const providedToken = req.headers['x-token'] as string | undefined
-    if (!validateToken(token, providedToken)) {
-      sendResponse(res, 401, JSON.stringify({ error: 'Unauthorized' }))
-      return
-    }
-
-    let body: string
-    try {
-      body = await parseBody(req, MAX_HOOK_BODY_SIZE)
-    } catch {
-      sendResponse(res, 413, JSON.stringify({ error: 'Payload too large' }))
-      return
-    }
+    if (!authorize(req, res)) return
+    const body = await readBody(req, res, MAX_HOOK_BODY_SIZE)
+    if (body === null) return
 
     const sessionId = decodeSegment(route.rawSessionId)
     if (sessionId === null || !isKnownSession(sessionId)) {
@@ -349,19 +335,9 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
       return
     }
 
-    const providedToken = req.headers['x-token'] as string | undefined
-    if (!validateToken(token, providedToken)) {
-      sendResponse(res, 401, JSON.stringify({ error: 'Unauthorized' }))
-      return
-    }
-
-    let body: string
-    try {
-      body = await parseBody(req, MAX_BODY_SIZE)
-    } catch {
-      sendResponse(res, 413, JSON.stringify({ error: 'Payload too large' }))
-      return
-    }
+    if (!authorize(req, res)) return
+    const body = await readBody(req, res, MAX_BODY_SIZE)
+    if (body === null) return
 
     let event: HookEvent
     try {

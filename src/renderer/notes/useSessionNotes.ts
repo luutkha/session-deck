@@ -13,6 +13,7 @@ import {
   type MoveDirection
 } from './checklistLogic'
 import { createDebouncedSaver, type DebouncedSaver } from './debounce'
+import { errorMessage } from '../../shared/guards'
 
 /** Notes are saved this long after the last keystroke; blur / switch / unmount flush immediately. */
 const NOTES_SAVE_DELAY_MS = 600
@@ -31,10 +32,6 @@ export interface UseSessionNotesResult {
   readonly clearDone: () => void
   readonly error: string | null
   readonly flush: () => Promise<void>
-}
-
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -65,7 +62,7 @@ export function useSessionNotes(session: Session, actions: NoteActions): UseSess
         setError(null)
       },
       (err: unknown) => {
-        setError(toMessage(err))
+        setError(errorMessage(err))
       }
     )
     inFlightRef.current = promise
@@ -106,7 +103,7 @@ export function useSessionNotes(session: Session, actions: NoteActions): UseSess
           setError(null)
         },
         (err: unknown) => {
-          setError(toMessage(err))
+          setError(errorMessage(err))
         }
       )
     },

@@ -1,10 +1,7 @@
 // Stored Code mode data (D31): repos and worktrees. An invalid entry is dropped, never failing the whole file.
 import type { Id, Repo, Worktree } from '../../shared/types'
 import { pathKey } from './codeReducers'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+import { isRecord } from '../../shared/guards'
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0

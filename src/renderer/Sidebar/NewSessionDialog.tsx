@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { buildCreateInput, initialFolder, validateOpenCodeModel } from './dialogLogic'
 import { NEW_GROUP_CHOICE, NO_VALUE_CHOICE, NewSessionFields } from './NewSessionFields'
+import { errorMessage } from '../../shared/guards'
 
 export interface NewSessionDialogProps {
   readonly data: StoreData
@@ -31,10 +32,6 @@ export interface NewSessionDialogProps {
   readonly actions: Pick<SessionActions, 'createSession' | 'createGroup' | 'pickFolder'>
   readonly onClose: () => void
   readonly onCreated: (sessionId: Id) => void
-}
-
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function orderedGroups(data: StoreData): readonly Group[] {
@@ -85,7 +82,7 @@ export function NewSessionDialog({
         setFolder(picked)
       }
     } catch (err) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
     }
   }
 
@@ -120,7 +117,7 @@ export function NewSessionDialog({
       onCreated(session.id)
       onClose()
     } catch (err) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
     } finally {
       setBusy(false)
     }

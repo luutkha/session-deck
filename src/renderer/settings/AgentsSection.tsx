@@ -6,14 +6,11 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { AgentPicker } from '../components/AgentPicker'
 import { MAX_OPENCODE_MODEL_LENGTH, validateOpenCodeModel } from '../Sidebar/dialogLogic'
+import { errorMessage } from '../../shared/guards'
 
 export interface AgentsSectionProps {
   readonly settings: AppSettings
   readonly actions: Pick<SessionActions, 'updateSettings'>
-}
-
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactElement {
@@ -33,7 +30,7 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
     try {
       await actions.updateSettings(patch)
     } catch (err: unknown) {
-      setError(toMessage(err))
+      setError(errorMessage(err))
     }
   }
 

@@ -2,6 +2,7 @@
 import type { AttentionReason, SoundEvent } from '../../shared/types'
 import { BUILTIN_SOUNDS } from './builtinSounds'
 import { SOUND_STORAGE_KEY as LEGACY_SOUND_ENABLED_KEY } from '../shell/shellPrefs'
+import { isRecord } from '../../shared/guards'
 
 export type BuiltinSoundId = 'chime' | 'ping' | 'pop' | 'bell' | 'marimba' | 'soft'
 
@@ -46,10 +47,6 @@ export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
 
 /** The old on/off key (shellPrefs.SOUND_STORAGE_KEY), read only when the new key does not exist yet. */
 export const LEGACY_SOUND_KEY: string = LEGACY_SOUND_ENABLED_KEY
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function isBuiltinId(value: unknown): value is BuiltinSoundId {
   return typeof value === 'string' && (BUILTIN_SOUND_IDS as readonly string[]).includes(value)

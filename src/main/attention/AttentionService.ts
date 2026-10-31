@@ -16,10 +16,7 @@ import {
 import { writeSettingsFile } from './claudeSettings'
 import { writeOpencodePlugin, opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from '../opencode'
 import { writeWorkerPlugin, workerPluginEnv } from '../workers/workerPluginEnv'
-
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+import { isRecord } from '../../shared/guards'
 
 export interface AttentionServiceDeps {
   readonly isKnownSession: (id: string) => boolean
@@ -166,7 +163,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
         onEvent: handleHook,
         onStatusLine: (sessionId, payload) => {
           // A worker child's statusline must not add its cost to the parent session's usage.
-          if (isJsonObject(payload) && isIgnored(sessionId, typeof payload.proc === 'string' ? payload.proc : undefined)) return
+          if (isRecord(payload) && isIgnored(sessionId, typeof payload.proc === 'string' ? payload.proc : undefined)) return
           onStatusLine?.(sessionId, payload)
         },
         onWorkerEvent
