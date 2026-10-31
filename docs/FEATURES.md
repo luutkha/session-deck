@@ -1,7 +1,7 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D43).
+> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D46).
 > - `HANDOFF.md` — the narrative state of each feature, including known gaps.
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
@@ -248,7 +248,7 @@ SessionDeck
 | TRM-5 | Clickable links | Shipped | Hover/click a URL, file or folder in the terminal | Underlined only when the target exists (relative paths resolved against the session cwd); click opens (URL → browser, file → default app, folder → Explorer); `Shift+click` reveals; executables/scripts are only revealed; UNC paths rejected; main re-resolves and never trusts the renderer. | `main/links/LinkService.ts`, `linkText.ts`; `renderer/Terminal/links/detectLinks.ts`, `linkCache.ts` | `LinkService.test.ts`, `linkText.test.ts`, `detectLinks.test.ts`, `linkCache.test.ts`; e2e `e2e:links` |
 | TRM-6 | Terminal bell | Shipped | Program emits BEL | Raises attention reason `bell` (priority 1); sound/flash follow the user's sound settings; the bell is silent for an `unread` flag. | `main/attention/AttentionService.ts`; `main/attention/AttentionManager.ts` | `AttentionManager.test.ts`, `AttentionService.test.ts`; e2e `e2e-bell` |
 | TRM-7 | Split panes | Shipped | Tab bar split-right / split-down; divider drag / keyboard | 2–4 panes (`MAX_PANES = 4`), row or column; no duplicate sessions; sizes sum to 1, min fraction 0.15; drag or arrow keys resize, `Enter` equalises; layout persisted per mode (`sessiondeck.split.v1` / `.code`). | `renderer/split/splitLogic.ts` (pure), `useSplitLayout.ts`, `Terminal/TerminalWorkspace.tsx`, `SplitDivider.tsx` | `splitLogic.test.ts`, `useSplitLayout.test.ts`; e2e `e2e:g1` |
-| TRM-8 | Grid view | Planned (D32) | View control "Grid ▾" (1x1, 2x1, 1x2, 2x2, 2x3, 3x2) | Every cell is a **fully interactive** terminal; max 6 cells; one session per cell (picking a visible session **moves** it); uniform cell sizes; empty cells show a picker with **no auto-fill**; open sessions only (Closed must be reopened); Ops and Code keep separate grids. Plan: `plan/grid-view.md`. | New `renderer/grid/*`; changes to `mode/viewPref.ts`, `useWorkspaceNav.ts`, `ModeWorkspace.tsx`, `TerminalWorkspace.tsx` | Planned: `gridLogic.test.ts`, `e2e-grid.cjs` |
+| TRM-8 | Grid view | Shipped | Tab bar **Grid ▾** (1x1, 2x1, 1x2, 2x2, 2x3, 3x2), palette "Open grid view" | Every cell is a fully interactive terminal; max 6 cells; one session per cell (picking a visible session MOVES it, the occupant takes its old cell); empty cells show a picker with no auto-fill; open sessions only; a shrink keeps overflow ids in memory and restores them when a bigger preset fits; Ops and Code keep separate grids (`sessiondeck.grid.v1` + `.code`). ONE host element per xterm: `TerminalWorkspace` draws the grid itself. | `renderer/grid/gridLogic.ts`, `useGridLayout.ts`, `GridCells.tsx`, `GridCellHeader.tsx`; `Terminal/TerminalWorkspace.tsx`; `mode/ModeWorkspace.tsx` | `gridLogic.test.ts`, `useGridLayout.test.ts`; e2e `e2e:grid` |
 | TRM-9 | Exited overlay + restart | Shipped | Process exits | Overlay shows the exit code; Restart starts a new process; no typing into an exited session (main rejects it). The same exit code labels the tab tooltip and the Hub card dot (`Exited (N)`) for every agent. | `renderer/Terminal/TerminalPane.tsx`; `renderer/shell/tabStatus.ts`; `renderer/hub/hubLogic.ts`; `main/app/sessionController.ts` | `sessionController.test.ts`, `sessionController.opencode.test.ts`, `tabStatus.test.ts`, `hubLogic.test.ts`; e2e `e2e:robust` |
 | TRM-10 | Terminal colours | Shipped | Any Claude session | The launcher strips inherited `NO_COLOR` so Claude keeps colour even when SessionDeck was started from a colourless shell. | `main/pty/launch.ts` | `launch.test.ts`; e2e `e2e.cjs` |
 | TRM-11 | Scrollback / reattach replay | Shipped | Switch tabs, split, sleep/wake, app restart | Ring buffer replays recent output on reattach; `PtyReplay.seq` marks the last included chunk; hidden panes keep their xterm and scrollback. | `main/pty/RingBuffer.ts`; `renderer/Terminal/useTerminalPanes.ts`, `seqGate.ts` | `RingBuffer.test.ts`, `seqGate.test.ts` |
@@ -305,7 +305,7 @@ SessionDeck
 | TAB-1 | Open tabs and restore | Shipped | Opening a session | Open sessions get tabs; tab state and active tab persisted (`sessiondeck-open-tabs` + `.code`); dead ids pruned on load; cycling wraps. | `renderer/shell/openTabsLogic.ts` (pure), `useOpenTabs.ts` | `openTabsLogic.test.ts` |
 | TAB-2 | Per-folder tab bar | Shipped | Tab bar | Shows only open sessions sharing the active session's folder (`folderKey`); a lone session gets a bar of one; with no active session every tab shows. | `renderer/shell/projectTabs.ts` → `projectTabIds` | `projectTabs.test.ts`; e2e `e2e:foldertabs` |
 | TAB-3 | Tab shortcuts | Shipped | Keyboard | `Ctrl+Tab` / `Ctrl+Shift+Tab` cycle; `Ctrl+W` closes the active tab **outside** the terminal only (readline keeps delete-word); `Ctrl+Shift+W` closes everywhere; dialogs and text inputs win. | `renderer/shell/openTabsLogic.ts` → `decideTabShortcut`; `useTabShortcuts.ts` | `openTabsLogic.test.ts`; e2e `e2e:palette` (shortcut context) |
-| TAB-4 | Terminal \| Hub view | Shipped | Tab-bar view control, palette "Open Hub" | Per-mode persisted `MainView` (`sessiondeck.view.v1` / `.code`); switching view never destroys terminal state; a focus request may switch the view. Grid becomes the third value (TRM-8). | `renderer/mode/viewPref.ts`; `mode/useWorkspaceNav.ts`; `ModeWorkspace.tsx` | `viewPref.test.ts`, `modeLogic.test.ts` |
+| TAB-4 | Terminal \| Grid \| Hub view | Shipped | Tab-bar view control, palette "Open Hub" | Per-mode persisted `MainView` (`sessiondeck.view.v1` / `.code`); switching view never destroys terminal state; a focus request may switch the view. `grid` is the third value (TRM-8). | `renderer/mode/viewPref.ts`; `mode/useWorkspaceNav.ts`; `ModeWorkspace.tsx` | `viewPref.test.ts`, `modeLogic.test.ts` |
 | TAB-5 | Notes \| Activity side panel | Shipped | Tab-bar panel toggle | Per-mode open/closed and per-mode selected tab (`sessiondeck.notes.open.v1`, `sessiondeck.sidepanel.tab.v1` + `.code`); Code sessions add a **Changes** tab; the chosen tab falls back to the first valid one. | `renderer/timeline/sidePanelTab.ts`; `renderer/notes/NotesPanel.tsx`; `mode/useWorkspaceNav.ts` | `sidePanelTab.test.ts`; e2e `e2e:notes`, `e2e:away` |
 | TAB-6 | Worker tabs | Shipped | OpenCode process started from a Claude session | Read-only tabs beside the session's tabs; see WRK. | `renderer/workers/*` | `workerLogic.test.ts`; e2e `e2e:workers` |
 
@@ -374,7 +374,7 @@ SessionDeck
 | COD-1 | Ops \| Code separation | Shipped | Mode switch in the sidebar title bar | A session is Code iff it has `worktreeId`; the store is filtered per mode; tabs, split, view, notes, side-panel tab and (future) grid are per mode; Code can pop out into its own window; a needs-you badge marks the other mode. | `renderer/mode/modeLogic.ts` → `sessionMode`, `dataForMode`, `modeStorageKeys`; `useUiMode.ts`, `ModeSwitch.tsx`, `ModeWorkspace.tsx` | `modeLogic.test.ts`; e2e `e2e:codemode` |
 | COD-2 | Add repository | Shipped | Code sidebar "Add repository" | Resolves the **git top level**; plain folders, bare repos and linked worktrees are rejected; an already-added repo is returned as is; repos persist in `StoreData.repos`. | `main/git/repoInfo.ts` → `resolveRepoRoot`; `main/app/codeWiring.ts`; `renderer/code/sidebar/CodeSidebar.tsx` | `repoInfo.test.ts`, `codeWiring.test.ts`; e2e `e2e:codemode` |
 | COD-3 | Repo tree | Shipped | Code sidebar | Repo > worktree > sessions; collapse state persisted; remove repo stops its sessions and forgets repo/worktrees (files and branches stay on disk). | `main/store/codeReducers.ts`; `renderer/code/sidebar/codeTree.ts` | `codeReducers.test.ts`, `codeTree.test.ts`; e2e `e2e:codemode` |
-| COD-4 | Create worktree | Shipped | "New worktree" dialog | Name 1..`WORKTREE_NAME_MAX`; branch/folder derived git-safe (`branchNameFor`); base = current branch; agent Claude/OpenCode/Shell; `git worktree add -b`; the first session starts inside it; input `cwd` is ignored when `worktreeId` is given. | `main/git/branchName.ts`, `worktreeCreate.ts`; `main/app/codeWiring.ts`; `renderer/code/dialogs/worktreeDialogLogic.ts` | `branchName.test.ts`, `worktreeCreate.test.ts`, `worktreeDialogLogic.test.ts`; e2e `e2e:codemode` |
+| COD-4 | Create worktree | Shipped | "New worktree" dialog | Name 1..`WORKTREE_NAME_MAX`; branch/folder derived git-safe (`branchNameFor`, `folderNameFor`); a Windows reserved segment (`con`, `nul`, `aux.v1`, `com1`…) gets `-wt` before its first dot, because git cannot create the branch file `refs/heads/con` on Windows; base = current branch; agent Claude/OpenCode/Shell; `git worktree add -b`; the first session starts inside it; input `cwd` is ignored when `worktreeId` is given. | `main/git/branchName.ts`, `worktreeCreate.ts`; `main/app/codeWiring.ts`; `renderer/code/dialogs/worktreeDialogLogic.ts` | `branchName.test.ts`, `worktreeCreate.test.ts`, `worktreeDialogLogic.test.ts`; e2e `e2e:codemode` |
 | COD-5 | Worktree location | Shipped | Settings > Code | Empty = `<home>/SessionDeck/worktrees/<repo>/<name>`; a set value must be absolute; the repo folder is the repo's folder name. | `main/git/worktreeCreate.ts` → `defaultWorktreesRoot`; `renderer/mode/codeSettingsLogic.ts` | `worktreeCreate.test.ts`, `codeSettingsLogic.test.ts`; e2e `e2e:codemode` |
 | COD-6 | Remove worktree | Shipped | Worktree context menu | Stops and removes its sessions from SessionDeck and forgets the worktree; the folder and branch **stay on disk** (no git delete in v1). | `main/app/codeWiring.ts`; `renderer/code/sidebar/removeCopy.ts` | `codeWiring.test.ts`, `removeCopy.test.ts`; e2e `e2e:codemode` |
 | COD-7 | Changes list | Shipped | Side panel > Changes (Code only) | Diff vs `merge-base(base, HEAD)` including committed, staged, unstaged and untracked; renamed/deleted/added kinds; additions/deletions; binary counts null; max 500 files (`truncated`); git errors returned as a readable `error`, not a crash. | `main/git/worktreeChanges.ts`, `worktreeParse.ts`, `untrackedCount.ts`; `renderer/code/changes/*` | `worktreeChanges.test.ts`, `worktreeParse.test.ts`, `untrackedCount.test.ts`, `changesState.test.ts`; e2e `e2e:codemode` |
@@ -496,7 +496,7 @@ SessionDeck
 |---|---|---|
 | `sessiondeck-open-tabs` (+`.code`) | TAB-1 | Open tab ids + active tab |
 | `sessiondeck.split.v1` (+`.code`) | TRM-7 | Split direction, panes, sizes |
-| `sessiondeck.view.v1` (+`.code`) | TAB-4 | `terminal` \| `hub` (grid later) |
+| `sessiondeck.view.v1` (+`.code`) | TAB-4 | `terminal` \| `grid` \| `hub` |
 | `sessiondeck.notes.open.v1` (+`.code`) | TAB-5 | Side panel open |
 | `sessiondeck.sidepanel.tab.v1` (+`.code`) | TAB-5 | Chosen side-panel tab |
 | `sessiondeck.mode.v1` | COD-1 | Last main-window mode |
@@ -698,7 +698,6 @@ SessionDeck
 
 | Item | Status | Detail |
 |---|---|---|
-| Grid view (1x1 … 3x2, 6 panes) | Planned (D32) | `plan/grid-view.md`, waiting for the user's "go". |
 | Auto-update | Deferred | Not started. |
 | Interactive OpenCode worker terminal | Deferred | Phase 2 idea (`opencode serve` + `attach`); worker tabs stay read-only. |
 | Light theme | Deferred | Dark only. |
@@ -706,9 +705,6 @@ SessionDeck
 | Real-mouse drag and drop | Gap | Pure logic tested; HTML5 DnD events not simulated. |
 | Packaged installer freshness | Gap | `release/SessionDeck-Setup-0.0.3.exe` is stale relative to current code; build only on request (W09). |
 | Autopilot limit wording | Gap | `USAGE_LIMIT_PATTERNS` may need additions once seen in the wild. |
-| Windows reserved worktree names | Gap | `con`, `nul`, … are not mapped. |
-| Away summary across restart | Gap | Sleeps from before a restart are not known to the summary. |
-| Timeline turn edges | Gap | A late Stop could end the next turn; late cost could count toward it. |
 | Claude trust-folder prompt | Shipped (opt-in) | COD-11: Settings > Code `code.autoTrustWorktrees`, off by default, answers fresh worktree Claude sessions only. |
 
 ---

@@ -190,6 +190,11 @@ Plan `plan/attention-reminders.md` (bell escalation).
 - **Legacy `POST /hook` route is kept** (body `{sessionId, event, message?}`), although nothing in `src` posts to it.
 - Everything else is behaviour-preserving: `PtyManager.kill` never throws on a dead pid-less pty, `WorkerHub` prunes heartbeats of forgotten processes, shared `isJsonObject` / `errorMessage` helpers, one wrapper for the renderer store actions, `HookServer` auth/body helpers, `sessionController` tidy-up.
 
+**D46 · 2026-10-31 · Next round: quick fixes, the queued features, then an installer for hands-on testing** · active
+After the round-3 review the suggestion list was: 1 hands-on round with a fresh installer, 2 quick fixes (Windows reserved worktree names, stale docs, away summary across restart), 3 features (prompt queue, send one prompt to several sessions, session presets, reopen sessions on launch, cost per session over time, search past conversations / fork), 4 share-only items (auto-update, code signing, light theme). The user: "Do for 1,2,3 . Skip 4".
+- Order: quick fixes, then the features one by one (each verified and committed), then `npm run dist` so the hands-on round uses a build that has everything.
+- Auto-update, code signing and the light theme stay deferred.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

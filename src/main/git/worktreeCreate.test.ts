@@ -113,6 +113,16 @@ describe('createGitWorktree', () => {
     expect(realpathSync.native(created.path)).toBe(created.path)
   })
 
+  // A real git on Windows cannot create the branch "con" ("cannot lock ref ... con.lock: Invalid argument").
+  it('creates a worktree named after a Windows reserved device name', async () => {
+    const root = makeTempDir('reserved')
+    const created = await createGitWorktree({ repoPath: repo, repoName: 'nul', root, name: 'CON', baseBranch: 'main' })
+    expect(created.branch).toBe('con-wt')
+    expect(created.path).toBe(path.join(root, 'nul-wt', 'con-wt'))
+    expect(existsSync(path.join(created.path, 'README.md'))).toBe(true)
+    expect(git(repo, 'branch', '--list', 'con-wt')).toContain('con-wt')
+  })
+
   it('rejects an empty name before touching git', async () => {
     const root = makeTempDir('empty')
     await expect(

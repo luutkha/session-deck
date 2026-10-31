@@ -40,20 +40,35 @@ function sanitise(input: string): string {
     .join('/')
 }
 
-/** Git branch name for a worktree name: safe characters only, at most 60 characters. Throws when nothing is left. */
+// Windows refuses these names as a file or folder, with or without an extension ("con", "aux.v1", "com1"). Git stores
+// each branch segment as a file under .git/refs/heads, so a branch "con" fails too ("cannot lock ref ... con.lock").
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\.|$)/i
+const RESERVED_SUFFIX = '-wt'
+
+/**
+ * Git branch name for a worktree name: safe characters only, at most 60 characters (63 when the last segment is a
+ * Windows reserved name and gets its suffix). Throws when nothing is left.
+ */
 export function branchNameFor(name: string): string {
   const cleaned = sanitise(name).slice(0, BRANCH_MAX_LENGTH).replace(TRAILING_SEPARATORS, '')
   if (cleaned.length === 0) throw new Error('Name must contain a letter or digit')
-  return cleaned
+  return cleaned.split('/').map(safeFolderName).join('/')
 }
 
-/** Worktree folder name for a branch: '/' becomes '-'. */
+/** A file or folder name Windows accepts: a reserved base name gets RESERVED_SUFFIX before its first dot. Same on every OS. */
+function safeFolderName(name: string): string {
+  if (!WINDOWS_RESERVED.test(name)) return name
+  const dot = name.indexOf('.')
+  return dot < 0 ? `${name}${RESERVED_SUFFIX}` : `${name.slice(0, dot)}${RESERVED_SUFFIX}${name.slice(dot)}`
+}
+
+/** Worktree folder name for a branch: '/' becomes '-'; Windows reserved names are made safe. */
 export function folderNameFor(branch: string): string {
-  return branch.replace(/\//g, '-')
+  return safeFolderName(branch.replace(/\//g, '-'))
 }
 
 /** Folder name for a repository inside the worktrees root. '' or unusable names fall back to "repo". */
 export function repoFolderName(repoName: string): string {
   const cleaned = sanitise(repoName.replace(SLASH_RUN, '-'))
-  return cleaned.length > 0 ? cleaned : DEFAULT_REPO_FOLDER
+  return cleaned.length > 0 ? safeFolderName(cleaned) : DEFAULT_REPO_FOLDER
 }
