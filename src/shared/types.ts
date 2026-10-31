@@ -379,6 +379,12 @@ export interface HubSettings {
   readonly scrollToBusiest: boolean
 }
 
+/** App launch behaviour (D50). */
+export interface LaunchSettings {
+  /** Sessions that were running when SessionDeck quit are resumed in the background on the next launch. */
+  readonly resumeRunning: boolean
+}
+
 /** Which agent new sessions use by default, and the default OpenCode model (empty = OpenCode's own default). */
 export interface AgentSettings {
   readonly defaultAgent: AgentKind
@@ -454,6 +460,7 @@ export interface AppSettings {
   readonly sleep: SleepSettings
   readonly agents: AgentSettings
   readonly hub: HubSettings
+  readonly launch: LaunchSettings
   readonly away: AwaySettings
   readonly reminder: ReminderSettings
   readonly code: CodeSettings
@@ -466,6 +473,7 @@ export interface SettingsPatch {
   readonly sleep?: Partial<SleepSettings>
   readonly agents?: Partial<AgentSettings>
   readonly hub?: Partial<HubSettings>
+  readonly launch?: Partial<LaunchSettings>
   readonly away?: Partial<AwaySettings>
   readonly reminder?: Partial<ReminderSettings>
   readonly code?: Partial<CodeSettings>
@@ -479,6 +487,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   sleep: { enabled: false, afterMinutes: 30, allEnabled: false, allAfterMinutes: 60 },
   agents: { defaultAgent: 'claude', opencodeModel: '' },
   hub: { scrollToBusiest: true },
+  launch: { resumeRunning: true },
   away: { enabled: true, afterMinutes: 15 },
   reminder: { enabled: true, afterMinutes: 10 },
   code: { worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false }
@@ -499,6 +508,7 @@ export function resolveSettings(stored: Partial<{ [K in keyof AppSettings]: Part
     sleep: { ...DEFAULT_APP_SETTINGS.sleep, ...(stored?.sleep ?? {}) },
     agents: { ...DEFAULT_APP_SETTINGS.agents, ...(stored?.agents ?? {}) },
     hub: { ...DEFAULT_APP_SETTINGS.hub, ...(stored?.hub ?? {}) },
+    launch: { ...DEFAULT_APP_SETTINGS.launch, ...(stored?.launch ?? {}) },
     away: { ...DEFAULT_APP_SETTINGS.away, ...(stored?.away ?? {}) },
     reminder: { ...DEFAULT_APP_SETTINGS.reminder, ...(stored?.reminder ?? {}) },
     code: { ...DEFAULT_APP_SETTINGS.code, ...(stored?.code ?? {}) }

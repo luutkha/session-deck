@@ -34,6 +34,7 @@ import { quotaMarkersFilePath } from './quota/quotaMarkers'
 import { createSleepScheduler } from './sleep/SleepScheduler'
 import { createWorkerHub } from './workers'
 import { createPromptQueue } from './queue/promptQueue'
+import { createLaunchResume, RESUME_FILE_NAME } from './app/launchResume'
 import { IPC } from '../shared/ipc'
 import { errorMessage } from '../shared/guards'
 
@@ -361,6 +362,22 @@ if (!gotTheLock) {
     // Sessions saved without a Claude conversation id get one now, so they start fresh instead of resuming a random id.
     controller.initializeRestoredSessions()
 
+    // Resume on launch (D50): the sessions that were running when the app last quit start again in the background.
+    const resumeFile = path.join(userData, RESUME_FILE_NAME)
+    const launchResume = createLaunchResume({
+      readFile: () => readFile(resumeFile, 'utf-8'),
+      writeFile: (text) => writeFile(resumeFile, text, 'utf-8'),
+      getSessions: () => store.get().sessions,
+      subscribeRuntime: (listener) => runtime.subscribe(listener),
+      resume: (id) => controller.resumeInBackground(id),
+      enabled: () => store.getSettings().launch.resumeRunning,
+      setTimeout: (callback, ms) => setTimeout(callback, ms),
+      clearTimeout: (timer) => clearTimeout(timer),
+      onError
+    })
+    const resumeIds = await launchResume.loadSaved()
+    launchResume.startTracking()
+
     await features.loadTimeline()
     await attention.start()
     // Test seam: lets an end-to-end script reach the hook server of this run. Does nothing unless the variable is set.
@@ -368,6 +385,8 @@ if (!gotTheLock) {
       writeFile(process.env.SESSIONDECK_E2E_ENDPOINT_FILE, JSON.stringify(attention.endpoint()), 'utf-8').catch((error: unknown) => onError('e2e endpoint file', error))
     }
     sleepScheduler.start()
+    // After the hook server is up: a resumed session needs its env (port, token) to report attention and status.
+    launchResume.resumeSaved(resumeIds)
 
     // Desktop notification for permission requests and finished turns (the attention manager raises each once).
     wireAttentionNotices({
@@ -441,6 +460,8 @@ if (!gotTheLock) {
     }
 
     async function shutdown(): Promise<void> {
+      // First: the list of running sessions is saved before the kills below would empty it.
+      await runShutdownStep('save running sessions', () => launchResume.stop())
       sleepScheduler.stop()
       clearInterval(workerSweep)
       promptQueue.stop()

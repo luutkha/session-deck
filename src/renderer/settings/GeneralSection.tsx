@@ -164,6 +164,24 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
 
       <Separator />
 
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="general-resume-running" className="text-[13px] font-medium text-foreground">
+            Resume running sessions on launch
+          </Label>
+          <Switch
+            id="general-resume-running"
+            checked={settings.launch.resumeRunning}
+            onCheckedChange={(checked: boolean): void => void applyPatch({ launch: { resumeRunning: checked } })}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Sessions that were running when SessionDeck closed start again in the background (their conversations resume).
+        </p>
+      </div>
+
+      <Separator />
+
       <AwaySettingsBlock settings={settings.away} onPatch={applyPatch} />
 
       <Separator />

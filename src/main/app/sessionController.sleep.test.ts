@@ -285,3 +285,32 @@ describe('sessionController.sleepSession', () => {
     expect(runtime.get('s1')).toBeUndefined()
   })
 })
+
+describe('sessionController.resumeInBackground (D50)', () => {
+  it('starts a stopped session with --resume without changing the active session', () => {
+    const { controller, pty, runtime } = setup([makeSession({ id: 'a' }), makeSession({ id: 'b' })])
+    controller.setActiveSession('b')
+    expect(controller.resumeInBackground('a')).toBe(true)
+    expect(pty.isRunning('a')).toBe(true)
+    expect(pty.getLastStartOpts('a')?.internalArgs).toContain('--resume')
+    expect(stateOf(runtime, 'a')?.run).toBe('running')
+    expect(controller.getActiveSessionId()).toBe('b')
+  })
+
+  it('refuses unknown, closed and already running sessions', () => {
+    const { controller, pty } = setup([makeSession({ id: 'a' }), makeSession({ id: 'closed', closedAt: 5 })])
+    expect(controller.resumeInBackground('nope')).toBe(false)
+    expect(controller.resumeInBackground('closed')).toBe(false)
+    expect(pty.isRunning('closed')).toBe(false)
+    controller.resumeInBackground('a')
+    expect(controller.resumeInBackground('a')).toBe(false)
+  })
+
+  it('does not start a second process when the user opens the session right after', () => {
+    const { controller, pty } = setup([makeSession({ id: 'a' })])
+    controller.resumeInBackground('a')
+    const first = pty.getLastStartOpts('a')
+    controller.setActiveSession('a')
+    expect(pty.getLastStartOpts('a')).toBe(first)
+  })
+})

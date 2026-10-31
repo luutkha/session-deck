@@ -1,6 +1,7 @@
 // E2E: a session's Claude conversation survives closing and reopening the app. Run: node scripts/e2e-resume.cjs
 // Launch 1: create session, tell claude a unique codeword, wait until it answers, kill the app.
-// Launch 2 (same user-data dir): session is restored as exited; activating it lazily resumes the SAME conversation.
+// Launch 2 (same user-data dir, resume-on-launch switched off): session is restored as exited; activating it lazily
+// resumes the SAME conversation. The on-launch resume (D50, default on) is covered by e2e-resume-launch.cjs.
 const { spawn, execSync } = require('node:child_process')
 const path = require('node:path')
 const os = require('node:os')
@@ -47,6 +48,8 @@ async function main() {
     app = await launch()
     await waitFor(() => app.evaluate('typeof window.api.getStore === "function"'), 15000)
     await app.evaluate(`(window.__rt = [], window.api.onRuntime((s) => window.__rt.push(s)), true)`)
+    // D50 resumes running sessions on launch by default; this suite covers the lazy path (switch off: start on select).
+    await app.evaluate(`window.api.updateSettings({ launch: { resumeRunning: false } })`)
     const session = await app.evaluate(`window.api.createSession({ cwd: ${JSON.stringify(ROOT)}, name: 'persist me' })`)
     check('session created with a Claude conversation id', typeof session.claudeSessionId === 'string' && session.claudeSessionId.length > 20, session.claudeSessionId)
     await app.evaluate(`window.api.setActiveSession(null)`)
@@ -69,7 +72,7 @@ async function main() {
     const restored = store.data.sessions.find((s) => s.id === session.id)
     check('session is restored after relaunch (name, same conversation id)', !!restored && restored.name === 'persist me' && restored.claudeSessionId === session.claudeSessionId)
     const rt = store.runtime.find((r) => r.sessionId === session.id)
-    check('restored session is NOT auto-started (no process at launch)', !rt || rt.run === 'exited')
+    check('with resume-on-launch off, the restored session is NOT auto-started (no process at launch)', !rt || rt.run === 'exited')
 
     await app.evaluate(`window.api.setActiveSession(${JSON.stringify(session.id)})`)
     const resumed = await waitFor(async () => { const s = await app.evaluate('window.api.getStore()'); return s.runtime.find((r) => r.sessionId === session.id && r.run === 'running') ?? null }, 20000)

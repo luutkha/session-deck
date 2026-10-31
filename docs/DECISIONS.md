@@ -21,7 +21,7 @@ Current state of the code lives in `HANDOFF.md`; gotchas learned the hard way li
 "i want the same UI like orca, exactly". Spec and measured tokens: `DESIGN.md`. Orca's source is in `reference/` (git-ignored, third-party).
 
 **D03 · 2026-10-13 · Sessions survive an app restart (conversation resume)** · active
-User: Orca keeps sessions after close/reopen, SessionDeck should too. Each session has its own Claude conversation id; selecting it after a restart runs `claude --resume`. Nothing starts at launch.
+User: Orca keeps sessions after close/reopen, SessionDeck should too. Each session has its own Claude conversation id; selecting it after a restart runs `claude --resume`. Nothing starts at launch. **Partly superseded by D50 (2026-10-31):** sessions that were running at quit now resume on launch by default; with that switch off, the old rule holds.
 Rejected for now: a background service that keeps `claude` processes alive while the app is closed (offered, not taken).
 
 **D04 · 2026-10-13 · Closing a tab kills the session, but it can be resumed** · active
@@ -208,6 +208,12 @@ Feature 2 of the D46 list. A **Prompt** button on the bulk bar (sidebar and Hub)
 
 **D49 · 2026-10-31 · Session presets** · active
 Feature 3 of the D46 list. A preset is a saved New Session form: folder, agent, OpenCode model, Claude args (Remote Control included), group and status, under a name (max 30 presets, kept in the store). The dialog gets a **Presets** menu (fill the form, Delete a preset) and **Save as preset** (same name replaces). Each preset is also a command-palette item "New session: <name>" that starts the session in one step (Ops mode; Code sessions belong to worktrees). A group or status deleted later is simply left out.
+
+**D50 · 2026-10-31 · Resume running sessions on launch (default on)** · active
+Feature 4 of the D46 list ("Reopen sessions on launch", offered as "sessions that were open when you quit come back on their own"; the user: "Do for 1,2,3"). This partly supersedes D03's "Nothing starts at launch":
+- **Which:** the sessions that were RUNNING (awake, not closed) when the app quit or crashed. Closed, sleeping and exited sessions stay stopped. Conversations resume (`--resume`), no prompt is sent, so no tokens are used.
+- **How:** main keeps `<userData>/resume-on-launch.json` current on every run change (1 s debounce) and saves it again FIRST in the shutdown, before the kills. On launch, after the hook server is up, the sessions start in the background 400 ms apart; the active session and the tabs are not changed.
+- **Switch:** Settings > General "Resume running sessions on launch" (`launch.resumeRunning`, default **on** because the user picked the feature). Off = D03's lazy start on select. Flagged to the user in the report so they can flip the default.
 
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.

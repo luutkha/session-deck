@@ -4,6 +4,7 @@ import type {
   AwaySettings,
   CodeSettings,
   HubSettings,
+  LaunchSettings,
   QuotaSettings,
   ReminderSettings,
   SettingsPatch,
@@ -37,7 +38,7 @@ function sectionOf(obj: Record<string, unknown>, name: SettingsSection): Record<
 }
 
 /**
- * IPC payload check for settings:update. Accepts an object with the keys autoStatus / tray / quota / sleep / agents / hub / away / reminder / code;
+ * IPC payload check for settings:update. Accepts an object with the keys autoStatus / tray / quota / sleep / agents / hub / launch / away / reminder / code;
  * each section is an object with known keys only and primitive values (booleans, integers, status id or null).
  * Range rules and status existence are checked by the store reducer. Throws `Invalid settings: <reason>`.
  */
@@ -58,6 +59,7 @@ export function asSettingsPatch(raw: unknown): SettingsPatch {
   const sleep = sectionOf(obj, 'sleep')
   const agents = sectionOf(obj, 'agents')
   const hub = sectionOf(obj, 'hub')
+  const launch = sectionOf(obj, 'launch')
   const away = sectionOf(obj, 'away')
   const reminder = sectionOf(obj, 'reminder')
   const code = sectionOf(obj, 'code')
@@ -69,6 +71,7 @@ export function asSettingsPatch(raw: unknown): SettingsPatch {
     ...(sleep !== undefined ? { sleep: sleep as Partial<SleepSettings> } : {}),
     ...(agents !== undefined ? { agents: agents as Partial<AgentSettings> } : {}),
     ...(hub !== undefined ? { hub: hub as Partial<HubSettings> } : {}),
+    ...(launch !== undefined ? { launch: launch as Partial<LaunchSettings> } : {}),
     ...(away !== undefined ? { away: away as Partial<AwaySettings> } : {}),
     ...(reminder !== undefined ? { reminder: reminder as Partial<ReminderSettings> } : {}),
     ...(code !== undefined ? { code: code as Partial<CodeSettings> } : {})

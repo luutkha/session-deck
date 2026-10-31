@@ -20,6 +20,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 - `usage/`: statusLine parsing, `UsageService.ts`, manual refresh through the OAuth usage endpoint (`oauthUsage.ts`, token stays in main).
 - `git/`: Code mode git service, always `execFile('git')`: `repoInfo.ts` (repo root, branches), `branchName.ts` (git-safe names), `worktreeCreate.ts` (`git worktree add -b`), `worktreeChanges.ts` + `worktreeParse.ts` + `untrackedCount.ts` (changes vs merge-base), `worktreeFileDiff.ts` (one file's diff, only for listed paths), `previewRead.ts` (rendered preview of one worktree file: image base64 / markdown text, path resolved + realpath-checked inside the worktree).
 - `timeline/`: per-session turn log (`timelineService.ts`, `timelineState.ts` pure updates, `timelineFile.ts` persistence) and `awaySummary.ts` (pure "While you were away" builder).
+- `app/launchResume.ts`: resume running sessions on launch (D50; `<userData>/resume-on-launch.json`).
 - `queue/`: the prompt queue (D47). `promptQueue.ts` types the next queued prompt when a session's turn finishes (runtime activity → `finished`), plus Send now.
 - `notify/`: desktop notifications. `tray/`: tray icon and menu.
 - `links/`: resolves and opens URLs and paths clicked in the terminal.

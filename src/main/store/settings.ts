@@ -20,7 +20,7 @@ import {
 } from '../../shared/types'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
 
-export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'away', 'reminder', 'code'] as const
+export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'launch', 'away', 'reminder', 'code'] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 const AUTO_STATUS_KEYS = ['working', 'needsInput', 'finished'] as const
@@ -83,6 +83,9 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
   },
   hub: {
     scrollToBusiest: isBoolean
+  },
+  launch: {
+    resumeRunning: isBoolean
   },
   away: {
     enabled: isBoolean,
@@ -266,6 +269,7 @@ export function settingsProblem(settings: AppSettings): string | null {
   }
 
   if (typeof settings.hub.scrollToBusiest !== 'boolean') return 'hub.scrollToBusiest must be a boolean'
+  if (typeof settings.launch.resumeRunning !== 'boolean') return 'launch.resumeRunning must be a boolean'
 
   return null
 }
@@ -297,6 +301,7 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
   const sleep = pickSectionFields('sleep', raw.sleep)
   const agents = pickSectionFields('agents', raw.agents)
   const hub = pickSectionFields('hub', raw.hub)
+  const launch = pickSectionFields('launch', raw.launch)
   const away = pickSectionFields('away', raw.away)
   const reminder = pickSectionFields('reminder', raw.reminder)
   const code = pickSectionFields('code', raw.code)
@@ -307,6 +312,7 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
     sleep === null ||
     agents === null ||
     hub === null ||
+    launch === null ||
     away === null ||
     reminder === null ||
     code === null
@@ -321,6 +327,7 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
     sleep: sleep as Partial<AppSettings['sleep']>,
     agents: agents as Partial<AppSettings['agents']>,
     hub: hub as Partial<AppSettings['hub']>,
+    launch: launch as Partial<AppSettings['launch']>,
     away: away as Partial<AwaySettings>,
     reminder: reminder as Partial<ReminderSettings>,
     code: code as Partial<CodeSettings>
@@ -356,6 +363,7 @@ export function updateSettings(data: StoreData, patch: SettingsPatch): StoreData
     sleep: { ...current.sleep, ...definedFields(patch.sleep) },
     agents: { ...current.agents, ...definedFields(patch.agents) },
     hub: { ...current.hub, ...definedFields(patch.hub) },
+    launch: { ...current.launch, ...definedFields(patch.launch) },
     away: { ...current.away, ...definedFields(patch.away) },
     reminder: { ...current.reminder, ...definedFields(patch.reminder) },
     code: { ...current.code, ...definedFields(patch.code) }

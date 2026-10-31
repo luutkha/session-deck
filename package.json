@@ -65,6 +65,7 @@
     "e2e:queue-real": "node scripts/e2e-queue-real.cjs",
     "e2e:broadcast": "node scripts/e2e-broadcast.cjs",
     "e2e:presets": "node scripts/e2e-presets.cjs",
+    "e2e:resume-launch": "node scripts/e2e-resume-launch.cjs",
     "e2e:visual": "node scripts/e2e-visual.cjs"
   },
   "dependencies": {

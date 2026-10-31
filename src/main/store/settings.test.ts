@@ -51,12 +51,22 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       sleep: { enabled: true, afterMinutes: 15, allEnabled: false, allAfterMinutes: 60 },
       agents: { defaultAgent: 'claude' as const, opencodeModel: '' },
       hub: { scrollToBusiest: false },
+      launch: { resumeRunning: false },
       away: { enabled: false, afterMinutes: 30 },
       reminder: { enabled: false, afterMinutes: 5 },
       code: { worktreesRoot: '', shell: 'pwsh' as const, autoTrustWorktrees: true }
     }
     const data = parseStoreData(storeWith(settings))
     expect(data.settings).toEqual(settings)
+  })
+
+  it('settings saved before the launch section existed resume running sessions by default (D50)', () => {
+    const data = parseStoreData(storeWith({ hub: { scrollToBusiest: false } }))
+    expect(data.settings?.launch).toEqual({ resumeRunning: true })
+  })
+
+  it('a launch.resumeRunning that is not a boolean drops the stored settings', () => {
+    expect(parseStoreData(storeWith({ launch: { resumeRunning: 'yes' } })).settings).toBeUndefined()
   })
 
   it('settings saved before the code section existed get the code defaults', () => {

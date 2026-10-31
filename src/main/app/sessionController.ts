@@ -64,6 +64,12 @@ export interface SessionController {
    * could not start (the error is logged).
    */
   wakeSession(id: Id): boolean
+  /**
+   * D50: starts an open, stopped session in the background (same `--resume` path as activation) without changing the
+   * active session. Returns true when a start was attempted; false for an unknown, closed or already running session,
+   * or when the start failed (logged).
+   */
+  resumeInBackground(id: Id): boolean
   setActiveSession(id: Id | null): void
   getActiveSessionId(): Id | null
   initializeRestoredSessions(): void
@@ -537,6 +543,18 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         tryAutoStartSession(id)
       } catch (error) {
         logMainError(userDataDir, `wake session ${id}`, error)
+        return false
+      }
+      return true
+    },
+
+    resumeInBackground(id: Id): boolean {
+      const session = findSession(id)
+      if (!session || isClosed(id) || pty.isRunning(id)) return false
+      try {
+        tryAutoStartSession(id)
+      } catch (error) {
+        logMainError(userDataDir, `resume session ${id} on launch`, error)
         return false
       }
       return true
