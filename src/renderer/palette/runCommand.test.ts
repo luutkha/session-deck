@@ -14,6 +14,7 @@ function fakeHandlers(): PaletteHandlers {
     openSession: vi.fn(),
     reopenSession: vi.fn(),
     newSession: vi.fn(),
+    newFromPreset: vi.fn(),
     openHub: vi.fn(),
     openGrid: vi.fn(),
     openSettings: vi.fn(),
@@ -64,6 +65,11 @@ describe('runPaletteCommand: session and view commands', () => {
   it('starts the New session dialog for new-session', () => {
     runPaletteCommand({ kind: 'new-session' }, handlers, api)
     expect(handlers.newSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts a session from a preset for new-from-preset', () => {
+    runPaletteCommand({ kind: 'new-from-preset', presetId: 'p1' }, handlers, api)
+    expect(handlers.newFromPreset).toHaveBeenCalledWith('p1')
   })
 
   it('opens the Hub for open-hub', () => {

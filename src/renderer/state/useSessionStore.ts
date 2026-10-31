@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useCallback, useRef, useEffect, useMemo } from 'react'
-import type { StoreData, RuntimeState, Session, Group, StatusDef, ChecklistItem, QueuedPrompt, CreateSessionInput, Id, AppSettings, SettingsPatch } from '../../shared/types'
+import type { StoreData, RuntimeState, Session, Group, StatusDef, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, Id, AppSettings, SettingsPatch } from '../../shared/types'
 import type { Api } from '../../shared/ipc'
 import { errorMessage } from '../../shared/guards'
 
@@ -31,6 +31,8 @@ export interface SessionActions {
   setSessionChecklist: (id: Id, items: readonly ChecklistItem[]) => Promise<void>
   setSessionQueue: (id: Id, items: readonly QueuedPrompt[]) => Promise<void>
   sendQueuedNow: (id: Id, promptId: string) => Promise<void>
+  savePreset: (preset: SessionPreset) => Promise<void>
+  removePreset: (id: Id) => Promise<void>
   pickFolder: () => Promise<string | null>
   updateSettings: (patch: SettingsPatch) => Promise<AppSettings>
 }
@@ -158,6 +160,8 @@ export function useSessionStore(): UseSessionStoreResult {
       setSessionChecklist: (id, items) => call((api) => api.setSessionChecklist(id, items)),
       setSessionQueue: (id, items) => call((api) => api.setSessionQueue(id, items)),
       sendQueuedNow: (id, promptId) => call((api) => api.sendQueuedNow(id, promptId)),
+      savePreset: (preset) => call((api) => api.savePreset(preset)),
+      removePreset: (id) => call((api) => api.removePreset(id)),
       pickFolder: () => call((api) => api.pickFolder()),
       updateSettings: (patch) => call((api) => api.updateSettings(patch))
     }

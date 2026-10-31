@@ -102,6 +102,25 @@ export interface Worktree {
 export const WORKTREE_NAME_MAX = 60
 
 /** Persisted document (JSON on disk). Runtime-only data (run state, attention) is NOT persisted. */
+/** A saved New Session form (D49): one click starts a session with these values. */
+export interface SessionPreset {
+  readonly id: Id
+  /** 1..PRESET_NAME_MAX chars, trimmed. */
+  readonly name: string
+  readonly cwd: string
+  readonly agent: AgentKind
+  /** OpenCode only: "provider/model". Absent = OpenCode's own default. */
+  readonly model?: string
+  /** Claude only (includes --remote-control when chosen). */
+  readonly claudeArgs: readonly string[]
+  /** A group or status deleted later is simply left out when the preset is used. */
+  readonly groupId: Id | null
+  readonly statusId: Id | null
+}
+
+export const PRESET_MAX = 30
+export const PRESET_NAME_MAX = 60
+
 export interface StoreData {
   readonly version: 1
   readonly sessions: readonly Session[]
@@ -114,6 +133,8 @@ export interface StoreData {
   readonly repos?: readonly Repo[]
   /** Code mode worktrees (D31). Absent = none. Array order within a repo = sidebar order. */
   readonly worktrees?: readonly Worktree[]
+  /** Saved New Session forms (D49). Absent = none. Array order = menu order. */
+  readonly presets?: readonly SessionPreset[]
 }
 
 /** unread = the user flagged the session themselves (Mark as unread): silent, never a sound or notification. */

@@ -1,6 +1,6 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, QueuedPrompt, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
+  AppSettings, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
   Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole
 } from './types'
 
@@ -18,6 +18,8 @@ export const IPC = {
   sessionSetNotes: 'session:setNotes', // (id, notes string <= 20000 chars)
   sessionSetChecklist: 'session:setChecklist', // (id, items <= 100; ids unique; text 1..300)
   sessionSetQueue: 'session:setQueue', // (id, prompts <= 20; ids unique; text 1..4000) D47 prompt queue
+  presetSave: 'preset:save', // (preset) D49: add or replace a saved New Session form (max 30)
+  presetRemove: 'preset:remove', // (id) D49
   sessionSendQueuedNow: 'session:sendQueuedNow', // (id, promptId) type that queued prompt now and drop it from the queue (D47)
   sessionSetActive: 'session:setActive', // renderer tells main which session is on screen (attention is suppressed for it)
   groupCreate: 'group:create',
@@ -119,6 +121,9 @@ export interface Api {
   setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void>
   /** D47: types one queued prompt now (running, awake Claude/OpenCode session only) and removes it from the queue. */
   sendQueuedNow(id: Id, promptId: string): Promise<void>
+  /** D49: adds a preset or replaces the one with the same id. */
+  savePreset(preset: SessionPreset): Promise<void>
+  removePreset(id: Id): Promise<void>
   getUsage(): Promise<UsageState>
   getWorkers(): Promise<readonly WorkerInfo[]>
   getTimeline(sessionId: Id): Promise<readonly TimelineTurn[]>

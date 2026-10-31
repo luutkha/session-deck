@@ -1,6 +1,7 @@
 // Pure model of the command palette: which items exist, their labels, and what each one does.
 // No React, no DOM, no IPC. Commands are data only; App maps them to real calls (runCommand.ts).
-import type { Id, RuntimeState, Session, StatusDef, UiMode, WindowRole } from '../../shared/types'
+import type { Id, RuntimeState, Session, SessionPreset, StatusDef, UiMode, WindowRole } from '../../shared/types'
+import { presetDetail } from '../presets/presetLogic'
 
 export type PaletteGroup = 'Sessions' | 'Actions' | 'This session'
 export type PaletteView = 'terminal' | 'grid' | 'hub'
@@ -10,6 +11,7 @@ export type PaletteCommand =
   | { readonly kind: 'open-session'; readonly id: Id }
   | { readonly kind: 'reopen-session'; readonly id: Id }
   | { readonly kind: 'new-session' }
+  | { readonly kind: 'new-from-preset'; readonly presetId: Id }
   | { readonly kind: 'open-hub' }
   | { readonly kind: 'open-grid' }
   | { readonly kind: 'open-settings' }
@@ -46,6 +48,8 @@ export interface PaletteInput {
   /** Which window the palette runs in: the main window offers the switch, the Code window offers to dock back. */
   readonly windowRole: WindowRole
   readonly codePoppedOut: boolean
+  /** D49: saved New Session forms; each becomes a one-step "New session: <name>" item in Ops mode. Absent = none. */
+  readonly presets?: readonly SessionPreset[]
 }
 
 const NO_STATUS = 'No status'
@@ -301,6 +305,19 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
       run: { kind: 'new-session' }
     }
   ]
+  // Presets start Ops sessions in a folder; Code sessions belong to a worktree, so Code mode does not offer them.
+  if (input.mode === 'ops') {
+    for (const preset of input.presets ?? []) {
+      items.push({
+        id: `action:preset:${preset.id}`,
+        group: 'Actions',
+        label: `New session: ${preset.name}`,
+        detail: presetDetail(preset),
+        keywords: `preset create start ${preset.cwd}`,
+        run: { kind: 'new-from-preset', presetId: preset.id }
+      })
+    }
+  }
   if (view !== 'hub') {
     items.push({
       id: 'action:open-hub',

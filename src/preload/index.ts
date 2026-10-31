@@ -5,6 +5,7 @@ import type {
   AppSettings,
   ChecklistItem,
   QueuedPrompt,
+  SessionPreset,
   CreateSessionInput,
   Group,
   Id,
@@ -91,6 +92,14 @@ const api: Api = {
 
   sendQueuedNow(id: Id, promptId: string): Promise<void> {
     return ipcRenderer.invoke(IPC.sessionSendQueuedNow, id, promptId)
+  },
+
+  savePreset(preset: SessionPreset): Promise<void> {
+    return ipcRenderer.invoke(IPC.presetSave, preset)
+  },
+
+  removePreset(id: Id): Promise<void> {
+    return ipcRenderer.invoke(IPC.presetRemove, id)
   },
 
   getUsage(): Promise<UsageState> {

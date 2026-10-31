@@ -21,6 +21,7 @@ import {
   asCreateSessionInput,
   asNotes,
   asChecklist,
+  asPreset,
   asQueue
 } from './ipcValidation'
 import { SessionStore } from '../store'
@@ -166,6 +167,14 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
 
   ipcMain.handle(IPC.sessionSendQueuedNow, async (_event, rawId: unknown, rawPromptId: unknown): Promise<void> => {
     promptQueue.sendNow(assertId(rawId, 'session id'), assertNonEmptyString(rawPromptId, 'prompt id'))
+  })
+
+  ipcMain.handle(IPC.presetSave, async (_event, raw: unknown): Promise<void> => {
+    store.savePreset(asPreset(raw))
+  })
+
+  ipcMain.handle(IPC.presetRemove, async (_event, rawId: unknown): Promise<void> => {
+    store.removePreset(assertId(rawId, 'preset id'))
   })
 
   ipcMain.handle(IPC.groupCreate, async (_event, rawName: unknown): Promise<Group> => {

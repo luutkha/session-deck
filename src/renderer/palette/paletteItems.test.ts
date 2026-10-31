@@ -317,6 +317,22 @@ describe('buildPaletteItems: this session group', () => {
   })
 })
 
+describe('buildPaletteItems: presets (D49)', () => {
+  const preset = { id: 'p1', name: 'Backend', cwd: 'C:/work/api', agent: 'claude' as const, claudeArgs: [], groupId: null, statusId: null }
+
+  it('offers one "New session: <preset>" item per preset in Ops mode', () => {
+    const item = byId(buildPaletteItems(input({ mode: 'ops', presets: [preset] })), 'action:preset:p1')
+    expect(item.label).toBe('New session: Backend')
+    expect(item.detail).toBe('api · Claude')
+    expect(item.run).toEqual({ kind: 'new-from-preset', presetId: 'p1' })
+  })
+
+  it('offers no preset items in Code mode or without presets', () => {
+    expect(buildPaletteItems(input({ mode: 'code', presets: [preset] })).some((i) => i.id.startsWith('action:preset:'))).toBe(false)
+    expect(buildPaletteItems(input({ mode: 'ops' })).some((i) => i.id.startsWith('action:preset:'))).toBe(false)
+  })
+})
+
 describe('buildPaletteItems: mode and window actions', () => {
   const codeSession = session({ id: 'c1', name: 'Feature', worktreeId: 'w1' })
 

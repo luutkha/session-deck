@@ -7,6 +7,7 @@ import { validateChecklist, validateNotes, validateQueue } from './sessionNotes'
 import { parseStoredSettings } from './settings'
 import { hasUnknownWorktreeRef, parseRepos, parseWorktrees } from './codePersistence'
 import { isOpencodeSessionId, isOpencodeModel } from '../opencode/values'
+import { parsePresets } from './presets'
 import { errorMessage, isRecord } from '../../shared/guards'
 
 const STORE_VERSION = 1
@@ -266,6 +267,9 @@ export function parseStoreData(raw: unknown): StoreData {
       : { ...s, groupId, statusId }
   })
 
+  // Invalid presets are dropped one by one (D49); the file itself is kept.
+  const presets = parsePresets(raw.presets, groupIds, statusIds)
+
   // An invalid stored settings value is dropped (undefined = defaults); the file itself is kept.
   const settings = raw.settings === undefined ? undefined : parseStoredSettings(raw.settings, statuses)
 
@@ -277,7 +281,8 @@ export function parseStoreData(raw: unknown): StoreData {
     groupOrder: [...raw.groupOrder],
     ...(settings !== undefined ? { settings } : {}),
     ...(repos !== undefined ? { repos } : {}),
-    ...(worktrees !== undefined ? { worktrees } : {})
+    ...(worktrees !== undefined ? { worktrees } : {}),
+    ...(presets !== undefined ? { presets } : {})
   }
 }
 

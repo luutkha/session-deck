@@ -2,6 +2,7 @@ import type {
   AppSettings,
   ChecklistItem,
   QueuedPrompt,
+  SessionPreset,
   CreateSessionInput,
   Group,
   Id,
@@ -26,6 +27,7 @@ import {
   type AddRepoInput,
   type WorktreeDraft
 } from './codeReducers'
+import { removePreset as removePresetReducer, upsertPreset } from './presets'
 import {
   setSessionChecklist as setSessionChecklistReducer,
   setSessionQueue as setSessionQueueReducer,
@@ -220,6 +222,22 @@ export class SessionStore {
 
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): void {
     const next = setSessionChecklistReducer(this.data, id, items)
+    this.data = next
+    this.saver.schedule(next)
+    this.emit(next)
+  }
+
+  /** D49: adds a preset or replaces the one with the same id. */
+  savePreset(preset: SessionPreset): void {
+    const next = upsertPreset(this.data, preset)
+    this.data = next
+    this.saver.schedule(next)
+    this.emit(next)
+  }
+
+  removePreset(id: Id): void {
+    const next = removePresetReducer(this.data, id)
+    if (next === this.data) return
     this.data = next
     this.saver.schedule(next)
     this.emit(next)

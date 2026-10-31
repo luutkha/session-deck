@@ -1,7 +1,7 @@
 import { WORKTREE_NAME_MAX } from '../../shared/types'
-import type { AgentKind, ChecklistItem, QueuedPrompt, CreateSessionInput, CreateWorktreeInput, Group, Id, StatusDef } from '../../shared/types'
+import type { AgentKind, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, CreateWorktreeInput, Group, Id, StatusDef } from '../../shared/types'
 import { buildLaunch } from '../pty/launch'
-import { MAX_NOTES_LENGTH, validateChecklist, validateQueue } from '../store'
+import { MAX_NOTES_LENGTH, validateChecklist, validatePreset, validateQueue } from '../store'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
 import { errorMessage } from '../../shared/guards'
 
@@ -303,4 +303,12 @@ export function asQueue(raw: unknown): QueuedPrompt[] {
     throw new Error('Invalid queue: must be an array of prompts')
   }
   return validateQueue(raw)
+}
+
+/** Preset payload (D49): the store's shape rules, the Claude argument safety rule and the OpenCode model rule. */
+export function asPreset(raw: unknown): SessionPreset {
+  const preset = validatePreset(raw)
+  assertSafeClaudeArgs(preset.claudeArgs)
+  if (preset.model !== undefined) assertOpencodeModel(preset.model, 'preset')
+  return preset
 }

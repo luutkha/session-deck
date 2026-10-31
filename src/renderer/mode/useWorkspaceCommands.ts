@@ -7,6 +7,7 @@ import { usePaletteShortcut } from '../palette/usePaletteShortcut'
 import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SessionActions } from '../state/useSessionStore'
 import { useGlobalNewSessionShortcut } from '../Sidebar/useSidebarKeyboard'
+import { createInputFromPreset } from '../presets/presetLogic'
 import { codeNewDialog, opsNewDialog, worktreeSessionDialog, type NewDialog } from './newSessionTarget'
 import type { WorkspaceNav } from './useWorkspaceNav'
 
@@ -81,14 +82,22 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
     view: nav.view,
     mode,
     windowRole: input.role,
-    codePoppedOut: input.codePoppedOut
-  }), [data?.sessions, data?.statuses, input.runtime, activeId, nav.view, mode, input.role, input.codePoppedOut])
+    codePoppedOut: input.codePoppedOut,
+    presets: data?.presets
+  }), [data?.sessions, data?.statuses, data?.presets, input.runtime, activeId, nav.view, mode, input.role, input.codePoppedOut])
 
   const runPalette = useCallback((command: PaletteCommand): void => {
     runPaletteCommand(command, {
       openSession: nav.selectSession,
       reopenSession: nav.reopenSession,
       newSession: () => openNew(),
+      newFromPreset: async (presetId: Id): Promise<void> => {
+        const preset = data?.presets?.find((p) => p.id === presetId)
+        if (preset === undefined || data === null) return
+        // A failure is shown in the store banner by the action wrapper.
+        const session = await actions.createSession(createInputFromPreset(preset, data))
+        nav.openCreated(session.id)
+      },
       openHub: (): void => nav.setView('hub'),
       openGrid: (): void => nav.setView('grid'),
       openSettings: (): void => setSettingsSection('general'),
@@ -99,7 +108,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       dockCode: input.onDockCode,
       newWorktree: () => openNewWorktree()
     })
-  }, [nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions])
+  }, [data, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions])
 
   return {
     newDialog, closeNew, openNew, openNewInStatus, openNewWorktree, openNewInWorktree, handleCreated,

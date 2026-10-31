@@ -8,6 +8,8 @@ export interface PaletteHandlers {
   readonly openSession: (id: Id) => void
   readonly reopenSession: (id: Id) => void
   readonly newSession: () => void
+  /** D49: starts a session from a saved preset in one step. */
+  readonly newFromPreset: (presetId: Id) => void | Promise<void>
   readonly openHub: () => void
   readonly openGrid: () => void
   readonly openSettings: () => void
@@ -54,6 +56,8 @@ function runSessionCommand(
       return attempt(command, () => handlers.reopenSession(command.id))
     case 'new-session':
       return attempt(command, () => handlers.newSession())
+    case 'new-from-preset':
+      return attempt(command, () => handlers.newFromPreset(command.presetId))
     case 'open-hub':
       return attempt(command, () => handlers.openHub())
     case 'open-grid':
