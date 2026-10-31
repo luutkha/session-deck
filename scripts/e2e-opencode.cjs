@@ -71,14 +71,21 @@ async function main() {
     t.check('the earlier turn is visible again after resume', /pong/i.test(await replay(app, s.id)))
 
     // ---- clipboard image paste (right-click) attaches an image in OpenCode (Ctrl+V under the hood)
-    const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC'
-    await app.evaluate(`navigator.clipboard.write([new ClipboardItem({ 'image/png': Promise.resolve(new Blob([Uint8Array.from(atob('${PNG}'), (c) => c.charCodeAt(0))], { type: 'image/png' })) })])`)
-    const rect = await app.evaluate(`(() => { const r = document.querySelector('.xterm-screen').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
-    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y, button: 'none' })
-    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'right', buttons: 2, clickCount: 1 })
-    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'right', buttons: 0, clickCount: 1 })
-    const attached = await waitFor(async () => /\[Image ?1\]/.test(await replay(app, s.id)), 10000, 500)
-    t.check('right-click image paste attaches [Image 1] in OpenCode', !!attached)
+    // Needs a working OS clipboard. In some remote/headless Windows sessions write+read stays empty (see
+    // docs/LESSONS.md), so report a real SKIP for this probe instead of a red run; the rest of the suite still counts.
+    const clipboardWorks = await app.evaluate(`navigator.clipboard.writeText('sessiondeck-clipboard-probe').then(() => navigator.clipboard.readText()).then((text) => text === 'sessiondeck-clipboard-probe', () => false)`)
+    if (!clipboardWorks) {
+      console.log('SKIP  right-click image paste: the OS clipboard is unavailable in this session (write/read stays empty).')
+    } else {
+      const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC'
+      await app.evaluate(`navigator.clipboard.write([new ClipboardItem({ 'image/png': Promise.resolve(new Blob([Uint8Array.from(atob('${PNG}'), (c) => c.charCodeAt(0))], { type: 'image/png' })) })])`)
+      const rect = await app.evaluate(`(() => { const r = document.querySelector('.xterm-screen').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y, button: 'none' })
+      await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'right', buttons: 2, clickCount: 1 })
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'right', buttons: 0, clickCount: 1 })
+      const attached = await waitFor(async () => /\[Image ?1\]/.test(await replay(app, s.id)), 10000, 500)
+      t.check('right-click image paste attaches [Image 1] in OpenCode', !!attached)
+    }
 
     // ---- New Session dialog has the Agent dropdown
     await app.evaluate(`document.querySelector('[aria-label="New session"], [aria-label="New Session"]')?.click()`)
