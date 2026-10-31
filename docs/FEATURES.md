@@ -727,7 +727,7 @@ SessionDeck
 | Light theme | Deferred | Dark only. |
 | Sound / taskbar flash human verification | Gap | Code paths tested; not heard/seen by a human. |
 | Real-mouse drag and drop | Gap | Pure logic tested; HTML5 DnD events not simulated. |
-| Packaged installer freshness | Gap | `release/SessionDeck-Setup-0.0.3.exe` is stale relative to current code; build only on request (W09). |
+| Packaged installer freshness | Shipped (2026-10-31) | `release/SessionDeck-Setup-0.0.3.exe` rebuilt after D47–D52 for the hands-on round (D46); `e2e:packaged` 12/12. Rebuild only on request (W09). |
 | Autopilot limit wording | Gap | `USAGE_LIMIT_PATTERNS` may need additions once seen in the wild. |
 | Claude trust-folder prompt | Shipped (opt-in) | COD-11: Settings > Code `code.autoTrustWorktrees`, off by default, answers fresh worktree Claude sessions only. |
 

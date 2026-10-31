@@ -2,7 +2,10 @@
 
 This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Feature tree + matrices (rules, code path, tests): `docs/FEATURES.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
 
-## State: v1 feature-complete, Orca-style UI done, awaiting the user's first hands-on test round
+## State: D47–D52 shipped; fresh installer built for the user's hands-on test round (2026-10-31)
+Installer `release/SessionDeck-Setup-0.0.3.exe` (unsigned, SmartScreen warns) built from `0cabb33`+docs; `e2e:packaged` 12/12. Final regression before the build: every suite listed in the D47–D52 sections plus `trust` 15, `termview` 15, `grid` 10, `workers` 11, `opencode` 12 (+1 SKIP: clipboard unavailable), `usage-both` 23, `notes` 11, `annotate` 13, `links` 11, `reminder` 17; 3,219 unit tests.
+
+## Previous state: v1 feature-complete, Orca-style UI done
 
 Verification at the end of this workstream (reminder escalation, D44): 3,086 unit tests (183 files), strict typecheck clean, build clean, and these suites against the REAL built app (CDP):
 `npm run e2e` (20: window shown, create/rename/status, real claude in a PTY, hooks -> attention, COLOUR present even with NO_COLOR in the launcher, close) · `e2e:hub` (12: columns, drag, settings, sound pipeline) · `e2e:bulk` (18: real Ctrl/Shift/Esc selection and bulk actions) · `e2e:trust` (15: fake-`claude` trust prompt, Settings switch, one answer) · `e2e:reminder` (17: Settings > Sound stores 1 minute, real background bell repeats after ~60 s, on-screen silent, reading stops it, switch off stops it) · `e2e:bell` (19: bell on card/tab/Hub, mark read/unread, real background turn) · `e2e:codemode` (34: repos, worktrees, Shell, Changes/diff, pop-out, restart, remove). Visual review: `node scripts/e2e-visual.cjs` -> `scripts/visual/*.png` (11 states; compare with `reference/orca/docs/assets/readme-hero.jpg`).
