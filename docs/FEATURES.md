@@ -1,7 +1,7 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D47).
+> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D48).
 > - `HANDOFF.md` — the narrative state of each feature, including known gaps.
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
@@ -270,7 +270,7 @@ SessionDeck
 | NAV-8 | Context menus | Shipped | Right-click a card / group | Session: rename, status submenu, move to group, new group + move, sleep/wake, keep awake, mark read/unread, close, remove. Group: rename, new session, delete. Menus clamp to the viewport. | `renderer/Sidebar/SessionContextMenu.tsx`, `GroupContextMenu.tsx`, `uiLogic.ts` → `clampMenuPosition` | `uiLogic.test.ts` |
 | NAV-9 | Keyboard navigation | Shipped | Sidebar focused | `↑`/`↓` roving selection, `Enter` opens, `F2` renames, `Delete` asks to remove; typing in inputs and open dialogs suppress global shortcuts. | `renderer/Sidebar/useSidebarKeyboard.ts`; `Sidebar/uiLogic.ts` → `moveFocus`, `shouldHandleGlobalShortcut` | `uiLogic.test.ts` |
 | NAV-10 | Status view | Shipped | Group-by = Status | Read-only grouping by status; no workspace buckets; drag between sections changes status (same as Hub). | `renderer/state/selectors.ts`; `Sidebar/Sidebar.tsx` | `selectors.test.ts` |
-| NAV-11 | Bulk selection and actions | Shipped | Sidebar / Hub with Ctrl / Shift / Esc | Plain click opens and clears (sets the range anchor); Ctrl/Cmd+click toggles without opening; Shift+click replaces with the visible range; Esc clears unless a dialog/menu/input/xterm has focus. Ids are pruned to the visible order; actions apply in view order, sequentially, one try/catch each (store banner reports failures) and the selection survives. Actions: Sleep, Wake (opens), Set status, Move to group, Clear. Closed sessions never select; sidebar and Hub selections are independent. | `renderer/state/multiSelect.ts`, `useMultiSelect.ts`, `useBulkActions.ts` (the shared action loops); `components/BulkActionBar.tsx`; `Sidebar/Sidebar.tsx`, `SessionCard.tsx`; `hub/HubView.tsx`, `HubCard.tsx` | `multiSelect.test.ts`, `useBulkActions.test.ts`; e2e `e2e:bulk` |
+| NAV-11 | Bulk selection and actions | Shipped | Sidebar / Hub with Ctrl / Shift / Esc | Plain click opens and clears (sets the range anchor); Ctrl/Cmd+click toggles without opening; Shift+click replaces with the visible range; Esc clears unless a dialog/menu/input/xterm has focus. Ids are pruned to the visible order; actions apply in view order, sequentially, one try/catch each (store banner reports failures) and the selection survives. Actions: Sleep, Wake (opens), **Prompt** (D48: one prompt into every selected Claude/OpenCode session's queue — idle ones get it at once, busy ones when their turn finishes, not-running ones later; Shell sessions and full queues are skipped; the dialog shows that split), Set status, Move to group, Clear. The bar's buttons wrap to a second line in the 300 px sidebar. Closed sessions never select; sidebar and Hub selections are independent. | `renderer/state/multiSelect.ts`, `useMultiSelect.ts`, `useBulkActions.ts` (the shared action loops); `components/BulkActionBar.tsx`; `queue/BroadcastDialog.tsx`, `queueLogic.ts` → `broadcastPlan`; `Sidebar/Sidebar.tsx`, `SessionCard.tsx`; `hub/HubView.tsx`, `HubCard.tsx` | `multiSelect.test.ts`, `useBulkActions.test.ts`, `queueLogic.test.ts`; e2e `e2e:bulk`, `e2e-broadcast.cjs` |
 
 ### 2.4 ATT — Attention & alerts
 
@@ -589,6 +589,7 @@ SessionDeck
 | `e2e-robust.cjs` | SEC-1, SET-3 | Late/bogus IPC, malformed create, save on quit |
 | `e2e-busy-close.cjs` | SES-14 / SEC-4 | Busy session close leaves no process |
 | `e2e-queue.cjs` | SES-15 | Queue tab, Stop → typed + Enter, idle send, guard, Send now, chip, restart (fake claude) |
+| `e2e-broadcast.cjs` | NAV-11 / SES-15 | Bulk Prompt: Ctrl+click 3 sessions, dialog split, idle sent now, busy after Stop, Shell skipped (fake claude) |
 | `e2e-queue-real.cjs` | SES-15 | A real Claude turn finishes and the queued prompt is submitted and answered |
 | `e2e-bell.cjs` | ATT-2/3/4, SES-13 | Bell on card/tab/Hub, mark read/unread, real background turn |
 | `e2e-reminder.cjs` | ATT-12, ATT-5, ATT-7 | Settings > Sound, a real 1-minute repeat, read stops it, on-screen silent, off stops it |

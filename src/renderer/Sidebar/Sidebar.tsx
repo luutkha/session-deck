@@ -232,7 +232,8 @@ export function Sidebar(props: SidebarProps): ReactElement {
     sleep: (id): Promise<void> => window.api.sleepSession(id),
     wake: onSelect,
     setStatus: actions.setSessionStatus,
-    move: actions.moveSession
+    move: actions.moveSession,
+    setQueue: actions.setSessionQueue
   })
 
   const handleStartRenameSession = useCallback((id: Id): void => {
@@ -410,6 +411,8 @@ export function Sidebar(props: SidebarProps): ReactElement {
             onWake={bulk.wake}
             onSetStatus={bulk.setStatus}
             onMoveToGroup={bulk.moveToGroup}
+            promptPlan={bulk.promptPlan}
+            onSendPrompt={bulk.sendPrompt}
             onClear={multi.clear}
           />
         </div>

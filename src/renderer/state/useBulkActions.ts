@@ -1,7 +1,8 @@
 // W4 bulk actions over a multi-selection, shared by the sidebar and the Hub (D42). Items run one after another in the
 // given (view) order; a failing item never stops the rest, its error is already in the store banner (lastError).
 import { useCallback, useMemo, useState } from 'react'
-import type { Id, RuntimeState, Session } from '../../shared/types'
+import type { Id, QueuedPrompt, RuntimeState, Session } from '../../shared/types'
+import { addPrompt, broadcastPlan, broadcastTargets, type BroadcastPlan } from '../queue/queueLogic'
 
 /** The per-session operations a bulk action repeats. */
 export interface BulkOps {
@@ -10,6 +11,8 @@ export interface BulkOps {
   readonly wake: (id: Id) => void
   readonly setStatus: (id: Id, statusId: Id | null) => Promise<unknown> | void
   readonly move: (id: Id, groupId: Id | null, index: number) => Promise<unknown>
+  /** Replaces a session's prompt queue (D48 sends one prompt to several sessions through their queues). */
+  readonly setQueue: (id: Id, items: readonly QueuedPrompt[]) => Promise<unknown>
 }
 
 export interface BulkActions {
@@ -22,6 +25,10 @@ export interface BulkActions {
   readonly wake: () => void
   readonly setStatus: (statusId: Id | null) => void
   readonly moveToGroup: (groupId: Id | null) => void
+  /** Where a prompt sent to the selection would go (now / later / not running / skipped). */
+  readonly promptPlan: BroadcastPlan
+  /** Adds the prompt to the queue of every reachable selected session (D48). */
+  readonly sendPrompt: (text: string) => void
 }
 
 /** Splits a selection into the sessions Sleep and Wake apply to; any other state (exited, unknown) is in neither. */
@@ -67,7 +74,8 @@ export function useBulkActions(
     }
   }, [])
 
-  const { sleep: sleepOne, wake: wakeOne, setStatus: setStatusOne, move: moveOne } = ops
+  const { sleep: sleepOne, wake: wakeOne, setStatus: setStatusOne, move: moveOne, setQueue: setQueueOne } = ops
+  const promptPlan = useMemo(() => broadcastPlan(selectedIds, sessions, runtime), [selectedIds, sessions, runtime])
 
   const sleep = useCallback((): void => {
     void runBulk(sleepIds, sleepOne)
@@ -93,5 +101,13 @@ export function useBulkActions(
     })
   }, [runBulk, selectedIds, sessions, moveOne])
 
-  return { busy, sleepIds, wakeIds, sleep, wake, setStatus, moveToGroup }
+  const sendPrompt = useCallback((text: string): void => {
+    const now = Date.now()
+    void runBulk(broadcastTargets(promptPlan, selectedIds), async (id): Promise<void> => {
+      const queue = sessions.find((candidate): boolean => candidate.id === id)?.queue ?? []
+      await setQueueOne(id, addPrompt(queue, text, crypto.randomUUID(), now))
+    })
+  }, [runBulk, promptPlan, selectedIds, sessions, setQueueOne])
+
+  return { busy, sleepIds, wakeIds, sleep, wake, setStatus, moveToGroup, promptPlan, sendPrompt }
 }

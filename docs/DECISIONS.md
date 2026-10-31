@@ -203,6 +203,9 @@ Feature 1 of the D46 list ("Do for 1,2,3"). Defaults chosen while building, chan
 - **Never:** into Shell sessions, sleeping, exited or closed sessions; the queue never wakes a session.
 - **UI:** a Queue tab in the side panel (add with Ctrl+Enter, Move up, Send now, Remove, state line) and a count chip on sidebar / Code / Hub cards.
 
+**D48 · 2026-10-31 · Send one prompt to several sessions through their queues** · active
+Feature 2 of the D46 list. A **Prompt** button on the bulk bar (sidebar and Hub) opens a dialog; the prompt is ADDED TO EACH SELECTED SESSION'S QUEUE (D47) instead of being typed blindly, so a running turn is never interrupted: idle sessions get it at once, busy ones when their turn finishes, sleeping/exited/closed ones after they run and finish a turn. Shell sessions and full queues are skipped; the dialog shows the split before sending.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

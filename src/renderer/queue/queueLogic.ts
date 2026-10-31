@@ -31,6 +31,45 @@ export function queueState(session: Session, state: RuntimeState | undefined): Q
   return state.activity === 'finished' ? 'idle' : 'busy'
 }
 
+/** Where one prompt sent to several sessions goes (D48): through each session's queue, never into a running turn. */
+export interface BroadcastPlan {
+  /** Idle sessions: the prompt is typed in at once. */
+  readonly now: readonly string[]
+  /** Busy sessions: typed in when their current turn finishes. */
+  readonly later: readonly string[]
+  /** Sleeping, exited or closed sessions: queued, sent after they run and finish a turn. */
+  readonly stopped: readonly string[]
+  /** Shell sessions and full queues: not sent. */
+  readonly skipped: readonly string[]
+}
+
+export function broadcastPlan(
+  ids: readonly string[],
+  sessions: readonly Session[],
+  runtime: ReadonlyMap<string, RuntimeState>
+): BroadcastPlan {
+  const now: string[] = []
+  const later: string[] = []
+  const stopped: string[] = []
+  const skipped: string[] = []
+  for (const id of ids) {
+    const session = sessions.find((s) => s.id === id)
+    if (session === undefined) continue
+    const state = queueState(session, runtime.get(id))
+    if (state === 'shell' || (session.queue?.length ?? 0) >= QUEUE_MAX_ITEMS) skipped.push(id)
+    else if (state === 'idle') now.push(id)
+    else if (state === 'busy') later.push(id)
+    else stopped.push(id)
+  }
+  return { now, later, stopped, skipped }
+}
+
+/** The sessions a broadcast actually reaches (everything except the skipped ones), in selection order. */
+export function broadcastTargets(plan: BroadcastPlan, ids: readonly string[]): readonly string[] {
+  const reach = new Set([...plan.now, ...plan.later, ...plan.stopped])
+  return ids.filter((id) => reach.has(id))
+}
+
 export const QUEUE_STATE_TEXT: Readonly<Record<QueueState, string>> = {
   shell: 'Prompts can only be queued for Claude and OpenCode sessions.',
   stopped: 'The session is not running. Queued prompts go out after it runs and finishes a turn.',

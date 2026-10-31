@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Plus, Search, Tag } from 'lucide-react'
-import type { Id, RuntimeState, SessionUsage, StoreData } from '../../shared/types'
+import type { Id, QueuedPrompt, RuntimeState, SessionUsage, StoreData } from '../../shared/types'
 import { BulkActionBar } from '../components/BulkActionBar'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -31,6 +31,8 @@ export interface HubViewProps {
   /** W4 bulk actions: the board needs the same per-session operations as the sidebar. */
   readonly onSleepSession: (id: Id) => Promise<void>
   readonly onMoveSession: (id: Id, groupId: Id | null, index: number) => Promise<void>
+  /** D48: the bulk Prompt action adds to each selected session's queue. */
+  readonly onSetQueue: (id: Id, items: readonly QueuedPrompt[]) => Promise<void>
   readonly onNewSession: (statusId: Id | null) => void
   readonly onEditStatuses: () => void
   readonly onReopen: (id: Id) => void
@@ -65,6 +67,7 @@ export function HubView(props: HubViewProps): ReactElement {
     onSetStatus,
     onSleepSession,
     onMoveSession,
+    onSetQueue,
     onNewSession,
     onEditStatuses,
     onReopen,
@@ -112,7 +115,8 @@ export function HubView(props: HubViewProps): ReactElement {
     sleep: onSleepSession,
     wake: onOpenSession,
     setStatus: onSetStatus,
-    move: onMoveSession
+    move: onMoveSession,
+    setQueue: onSetQueue
   })
 
   const handleDragStartSession = useCallback((id: Id): void => {
@@ -237,6 +241,8 @@ export function HubView(props: HubViewProps): ReactElement {
               onWake={bulk.wake}
               onSetStatus={bulk.setStatus}
               onMoveToGroup={bulk.moveToGroup}
+              promptPlan={bulk.promptPlan}
+              onSendPrompt={bulk.sendPrompt}
               onClear={multi.clear}
             />
           </div>

@@ -63,6 +63,7 @@
     "e2e:checklist-draft": "node scripts/e2e-checklist-draft.cjs",
     "e2e:queue": "node scripts/e2e-queue.cjs",
     "e2e:queue-real": "node scripts/e2e-queue-real.cjs",
+    "e2e:broadcast": "node scripts/e2e-broadcast.cjs",
     "e2e:visual": "node scripts/e2e-visual.cjs"
   },
   "dependencies": {

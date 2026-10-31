@@ -1,8 +1,10 @@
 // Floating bar for bulk session actions (W4). Shared by the sidebar and the Hub board: it only
 // renders the count and the existing per-session actions, so both views apply them in view order.
-import { Moon, Sun, X } from 'lucide-react'
-import type { ReactElement } from 'react'
+import { MessageSquarePlus, Moon, Sun, X } from 'lucide-react'
+import { useState, type ReactElement } from 'react'
 import type { Group, Id, StatusDef } from '../../shared/types'
+import { BroadcastDialog } from '../queue/BroadcastDialog'
+import type { BroadcastPlan } from '../queue/queueLogic'
 import { Button } from './ui/button'
 import {
   DropdownMenu,
@@ -26,6 +28,9 @@ export interface BulkActionBarProps {
   readonly onSetStatus: (statusId: Id | null) => void
   readonly onMoveToGroup: (groupId: Id | null) => void
   readonly onClear: () => void
+  /** D48: where a prompt for the selection would go; absent = no Send prompt button. */
+  readonly promptPlan?: BroadcastPlan
+  readonly onSendPrompt?: (text: string) => void
 }
 
 function CountLabel(props: { readonly count: number }): ReactElement {
@@ -91,13 +96,16 @@ function GroupMenu(props: BulkActionBarProps): ReactElement {
 }
 
 export function BulkActionBar(props: BulkActionBarProps): ReactElement {
+  const [promptOpen, setPromptOpen] = useState(false)
+  const plan = props.promptPlan
+  const reach = plan === undefined ? 0 : plan.now.length + plan.later.length + plan.stopped.length
   return (
     <div
       data-testid="bulk-action-bar"
       className="flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-sidebar-border bg-worktree-sidebar-accent px-1.5 py-1 shadow-sm"
     >
       <CountLabel count={props.count} />
-      <div className="ml-auto flex items-center gap-0.5">
+      <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-0.5">
         <Button
           type="button"
           variant="ghost"
@@ -120,6 +128,20 @@ export function BulkActionBar(props: BulkActionBarProps): ReactElement {
           <Sun className="size-3" aria-hidden="true" />
           Wake
         </Button>
+        {plan !== undefined && props.onSendPrompt !== undefined ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            disabled={props.busy || reach === 0}
+            onClick={(): void => setPromptOpen(true)}
+            title="Send one prompt to every selected Claude / OpenCode session"
+            className="h-6 gap-1 px-2 text-[11px]"
+          >
+            <MessageSquarePlus className="size-3" aria-hidden="true" />
+            Prompt
+          </Button>
+        ) : null}
         <StatusMenu {...props} />
         <GroupMenu {...props} />
         <Button
@@ -134,6 +156,9 @@ export function BulkActionBar(props: BulkActionBarProps): ReactElement {
           <X className="size-3" aria-hidden="true" />
         </Button>
       </div>
+      {plan !== undefined && props.onSendPrompt !== undefined ? (
+        <BroadcastDialog open={promptOpen} plan={plan} onOpenChange={setPromptOpen} onSend={props.onSendPrompt} />
+      ) : null}
     </div>
   )
 }
