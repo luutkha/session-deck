@@ -40,6 +40,8 @@ export interface WorkspaceCommands {
   readonly setSettingsSection: (section: SettingsSection | null) => void
   readonly paletteOpen: boolean
   readonly setPaletteOpen: (open: boolean) => void
+  readonly costsOpen: boolean
+  readonly setCostsOpen: (open: boolean) => void
   readonly paletteItems: readonly PaletteItem[]
   readonly runPalette: (command: PaletteCommand) => void
 }
@@ -49,6 +51,8 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
   const [newDialog, setNewDialog] = useState<NewDialog | null>(null)
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // D51: the cost report dialog (palette "Show cost report", Hub header total).
+  const [costsOpen, setCostsOpen] = useState(false)
   const worktrees = data?.worktrees ?? []
 
   const openNew = useCallback((groupId?: Id | null, folder?: string): void => {
@@ -102,6 +106,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       openGrid: (): void => nav.setView('grid'),
       openSettings: (): void => setSettingsSection('general'),
       showAwaySummary: input.onShowAwaySummary,
+      showCosts: (): void => setCostsOpen(true),
       setStatus: (id, statusId): void | Promise<void> => actions.setSessionStatus(id, statusId),
       switchMode: input.onSwitchMode,
       popOutCode: input.onPopOutCode,
@@ -112,6 +117,6 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
 
   return {
     newDialog, closeNew, openNew, openNewInStatus, openNewWorktree, openNewInWorktree, handleCreated,
-    settingsSection, setSettingsSection, paletteOpen, setPaletteOpen, paletteItems, runPalette
+    settingsSection, setSettingsSection, paletteOpen, setPaletteOpen, paletteItems, runPalette, costsOpen, setCostsOpen
   }
 }

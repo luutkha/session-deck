@@ -215,6 +215,12 @@ Feature 4 of the D46 list ("Reopen sessions on launch", offered as "sessions tha
 - **How:** main keeps `<userData>/resume-on-launch.json` current on every run change (1 s debounce) and saves it again FIRST in the shutdown, before the kills. On launch, after the hook server is up, the sessions start in the background 400 ms apart; the active session and the tabs are not changed.
 - **Switch:** Settings > General "Resume running sessions on launch" (`launch.resumeRunning`, default **on** because the user picked the feature). Off = D03's lazy start on select. Flagged to the user in the report so they can flip the default.
 
+**D51 · 2026-10-31 · Cost over time** · active
+Feature 5 of the D46 list ("cost per session over time"). Built only from what the timeline already records (each turn's cost; kept 30 days), so no new data is collected:
+- **Cost report dialog** (palette "Show cost report", or click the Hub header total): Today / 7 days / 30 days, a 14-day cost-per-day chart, and a per-session table (a row opens the session).
+- **Activity tab strip:** the session's own 14-day cost per day.
+- Turns with an unknown cost are not counted; the report says so. One chart colour token `--chart-1`, checked with the dataviz validator against the dark surface.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

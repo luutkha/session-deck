@@ -14,6 +14,7 @@ import { HubView } from '../hub/HubView'
 import { NotesPanel } from '../notes'
 import { progress } from '../notes/checklistLogic'
 import { CommandPalette } from '../palette/CommandPalette'
+import { CostDialog } from '../costs/CostDialog'
 import { TerminalWorkspace } from '../Terminal/TerminalWorkspace'
 import type { TerminalGridMode } from '../grid/GridCells'
 import { WorkerView } from '../workers/WorkerView'
@@ -275,6 +276,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                     onReopen={nav.reopenSession}
                     sessionUsage={sessionUsage}
                     scrollToBusiest={settings.hub.scrollToBusiest}
+                    onShowCosts={(): void => commands.setCostsOpen(true)}
                   />
                 </div>
               ) : null}
@@ -347,6 +349,14 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
         onSettingsSectionChange={commands.setSettingsSection}
         onCloseSettings={(): void => commands.setSettingsSection(null)}
       />
+      {commands.costsOpen ? (
+        <CostDialog
+          open
+          sessions={store.data?.sessions ?? []}
+          onOpenChange={commands.setCostsOpen}
+          onOpenSession={nav.selectSession}
+        />
+      ) : null}
       <CommandPalette open={commands.paletteOpen} onOpenChange={commands.setPaletteOpen} items={commands.paletteItems} onRun={commands.runPalette} />
     </>
   )

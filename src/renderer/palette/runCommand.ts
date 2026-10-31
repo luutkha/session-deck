@@ -14,6 +14,8 @@ export interface PaletteHandlers {
   readonly openGrid: () => void
   readonly openSettings: () => void
   readonly showAwaySummary: () => void
+  /** D51: opens the cost report. */
+  readonly showCosts: () => void
   readonly setStatus: (id: Id, statusId: Id) => void | Promise<void>
   /** Mode switch (main window). */
   readonly switchMode: (mode: UiMode) => void
@@ -66,6 +68,8 @@ function runSessionCommand(
       return attempt(command, () => handlers.openSettings())
     case 'show-away-summary':
       return attempt(command, () => handlers.showAwaySummary())
+    case 'show-costs':
+      return attempt(command, () => handlers.showCosts())
     case 'set-status':
       return attempt(command, () => handlers.setStatus(command.id, command.statusId))
     case 'switch-mode':

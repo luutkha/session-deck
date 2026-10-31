@@ -1,7 +1,7 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D50).
+> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D51).
 > - `HANDOFF.md` — the narrative state of each feature, including known gaps.
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
@@ -143,7 +143,8 @@ SessionDeck
 │   ├── TML-3  Timeline persistence
 │   ├── TML-4  Activity tab
 │   ├── TML-5  Away detection
-│   └── TML-6  "While you were away" summary
+│   ├── TML-6  "While you were away" summary
+│   └── TML-7  Cost over time (report + per-session strip)
 ├── AGT  Agents
 │   ├── AGT-1  Claude Code
 │   ├── AGT-2  OpenCode
@@ -362,6 +363,7 @@ SessionDeck
 | TML-4 | Activity tab | Shipped | Side panel > Activity | Per-session turns newest first; prompt, end reason, cost, needed-you marker; refetches on `ev:timeline`. | `renderer/timeline/ActivityList.tsx`, `useTimeline.ts`, `timelineLoad.ts`, `timelineFormat.ts` | `timelineLoad.test.ts`, `timelineFormat.test.ts`; e2e `e2e:away` |
 | TML-5 | Away detection | Shipped | No input for `away.afterMinutes` (default 15, enabled) | Same input signal as sleep-all; coming back after the threshold builds a summary; only non-empty summaries are sent (`ev:awaySummary`) and kept as the last one. | `main/app/userPresence.ts`; `main/app/featureWiring.ts` | `userPresence.test.ts`; e2e `e2e:away` |
 | TML-6 | "While you were away" | Shipped | Return after absence; palette action | Per session: finished turns, needs-you, hit limit, slept, known cost, newest prompt; sorted newest event first; rows open the session; totals; `away:getLast` keeps the last summary of the run. | `main/timeline/awaySummary.ts`; `renderer/timeline/AwayDialog.tsx`, `awayState.ts`, `useAwaySummary.ts` | `awaySummary.test.ts`, `awayState.test.ts`; e2e `e2e:away` |
+| TML-7 | Cost over time | Shipped | Palette "Show cost report"; Hub header total (click); side panel Activity tab | From the timeline's per-turn `costUsd` (known costs only; 30-day retention, 200 turns/session). Dialog: Today / Last 7 days / Last 30 days tiles (calendar days, today included), a 14-day column chart (one series `--chart-1`, validated on the dark card surface; ≤24px bars with 4px rounded tops; hover/focus tooltip with cost and turns), and a per-session table (30 days, most expensive first; a row opens the session). Live: refetches a session on `ev:timeline`. Activity tab: a compact 14-day strip with the 14-day and today total, hidden until the session has a known cost. | `renderer/costs/costLogic.ts`, `CostBars.tsx`, `CostDialog.tsx`, `useCostTurns.ts`; `timeline/ActivityList.tsx`; `hub/HubView.tsx`; `palette/*`; `mode/useWorkspaceCommands.ts`, `ModeWorkspace.tsx`; `styles/orca-theme.css` (`--chart-1`) | `costLogic.test.ts`, palette tests; e2e `e2e-costs.cjs` (10) |
 
 ### 2.11 AGT — Agents
 
@@ -599,6 +601,7 @@ SessionDeck
 | `e2e-broadcast.cjs` | NAV-11 / SES-15 | Bulk Prompt: Ctrl+click 3 sessions, dialog split, idle sent now, busy after Stop, Shell skipped (fake claude) |
 | `e2e-presets.cjs` | SES-16 | Save as preset, menu fills the form, palette one-step start, restart, delete (fake claude) |
 | `e2e-resume-launch.cjs` | SES-17 | Running resumed with --resume on launch, closed/sleeping not, crash keeps the list, Settings switch off (fake claude) |
+| `e2e-costs.cjs` | TML-7 / HUB-5 | Seeded multi-day timeline + a live turn: tiles, chart, tooltip, table, row opens session, Activity strip, Hub total opens the report |
 | `e2e-queue-real.cjs` | SES-15 | A real Claude turn finishes and the queued prompt is submitted and answered |
 | `e2e-bell.cjs` | ATT-2/3/4, SES-13 | Bell on card/tab/Hub, mark read/unread, real background turn |
 | `e2e-reminder.cjs` | ATT-12, ATT-5, ATT-7 | Settings > Sound, a real 1-minute repeat, read stops it, on-screen silent, off stops it |

@@ -1,9 +1,12 @@
-import type { ReactElement } from 'react'
+import { useMemo, type ReactElement } from 'react'
 import type { Id, TimelineTurn } from '../../shared/types'
 import { ScrollArea } from '../components/ui/scroll-area'
 import { useNow } from './useNow'
 import { useTimeline } from './useTimeline'
 import { isTurnRunning, promptText, turnMeta } from './timelineFormat'
+import { CostBars } from '../costs/CostBars'
+import { costTotals, dailyCosts } from '../costs/costLogic'
+import { formatCost } from '../usage/usageLogic'
 
 export interface ActivityListProps {
   readonly sessionId: Id
@@ -68,5 +71,28 @@ export function ActivityList({ sessionId }: ActivityListProps): ReactElement {
     )
   }
 
-  return <ScrollArea className="min-h-0 flex-1">{content}</ScrollArea>
+  return (
+    <>
+      <SessionCostStrip turns={timeline.turns} />
+      <ScrollArea className="min-h-0 flex-1">{content}</ScrollArea>
+    </>
+  )
+}
+
+/** D51: this session's cost per day over the last 14 days. Hidden until the session has a known cost. */
+function SessionCostStrip({ turns }: { readonly turns: readonly TimelineTurn[] }): ReactElement | null {
+  const now = useMemo(() => Date.now(), [turns])
+  const days = useMemo(() => dailyCosts(turns, now), [turns, now])
+  const totals = useMemo(() => costTotals(turns, now), [turns, now])
+  const fortnight = days.reduce((sum, day) => sum + day.total, 0)
+  if (fortnight <= 0) return null
+  return (
+    <div className="shrink-0 border-b border-sidebar-border px-3 py-2" data-session-cost="">
+      <p className="flex items-baseline justify-between text-[11px] text-muted-foreground">
+        <span>Cost per day, 14 days</span>
+        <span className="tabular-nums text-foreground">{`${formatCost(fortnight)} · today ${totals.today > 0 ? formatCost(totals.today) : '$0.00'}`}</span>
+      </p>
+      <CostBars days={days} height={40} compact label="This session's cost per day over the last 14 days" />
+    </div>
+  )
 }

@@ -50,6 +50,7 @@
   --color-worktree-sidebar-accent-foreground: var(--worktree-sidebar-accent-foreground);
   --color-worktree-sidebar-border: var(--worktree-sidebar-border);
   --color-worktree-sidebar-ring: var(--worktree-sidebar-ring);
+  --color-chart-1: var(--chart-1);
   --color-status-success: var(--status-success);
   --color-status-success-background: var(--status-success-background);
   --color-status-success-border: var(--status-success-border);
@@ -82,6 +83,8 @@
   --radius: 0.625rem;
   --background: #fff;
   --foreground: #0a0a0a;
+  /* Single-series chart mark (cost report, D51): validated slot-1 blue, light step. */
+  --chart-1: #2a78d6;
   --card: #fff;
   --card-foreground: #0a0a0a;
   --popover: #fff;
@@ -136,6 +139,8 @@
   --attn-idle: #42a5f5;
   --background: #0a0a0a;
   --foreground: #fafafa;
+  /* Validated against the dark card surface #171717 (dataviz checks: lightness, chroma, >= 3:1). */
+  --chart-1: #3987e5;
   --card: #171717;
   --card-foreground: #fafafa;
   --popover: #171717;

@@ -38,6 +38,8 @@ export interface HubViewProps {
   readonly onReopen: (id: Id) => void
   /** Settings > Hub: when the Hub opens, scroll the board to the status column with the most sessions. */
   readonly scrollToBusiest?: boolean
+  /** D51: the header total opens the cost report. */
+  readonly onShowCosts?: () => void
 }
 
 interface DropTarget {
@@ -71,7 +73,8 @@ export function HubView(props: HubViewProps): ReactElement {
     onNewSession,
     onEditStatuses,
     onReopen,
-    scrollToBusiest = false
+    scrollToBusiest = false,
+    onShowCosts
   } = props
 
   const [query, setQuery] = useState('')
@@ -160,7 +163,18 @@ export function HubView(props: HubViewProps): ReactElement {
             <h1 className="text-[15px] font-semibold tracking-tight">Hub</h1>
             <p className="truncate text-[12px] text-muted-foreground">
               {totals.sessions} sessions, {totals.needAttention} need attention
-              {total > 0 ? ` · Total ${formatCost(total)}` : ''}
+              {total > 0 ? ' · ' : ''}
+              {total > 0 && onShowCosts !== undefined ? (
+                <button
+                  type="button"
+                  data-hub-total-cost=""
+                  title="Open the cost report"
+                  className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+                  onClick={onShowCosts}
+                >
+                  {`Total ${formatCost(total)}`}
+                </button>
+              ) : total > 0 ? `Total ${formatCost(total)}` : ''}
             </p>
           </div>
           <div className="relative ml-auto w-56 max-w-full shrink-0">

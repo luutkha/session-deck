@@ -19,6 +19,7 @@ function fakeHandlers(): PaletteHandlers {
     openGrid: vi.fn(),
     openSettings: vi.fn(),
     showAwaySummary: vi.fn(),
+    showCosts: vi.fn(),
     setStatus: vi.fn(),
     switchMode: vi.fn(),
     popOutCode: vi.fn(),
@@ -70,6 +71,11 @@ describe('runPaletteCommand: session and view commands', () => {
   it('starts a session from a preset for new-from-preset', () => {
     runPaletteCommand({ kind: 'new-from-preset', presetId: 'p1' }, handlers, api)
     expect(handlers.newFromPreset).toHaveBeenCalledWith('p1')
+  })
+
+  it('opens the cost report for show-costs', () => {
+    runPaletteCommand({ kind: 'show-costs' }, handlers, api)
+    expect(handlers.showCosts).toHaveBeenCalledTimes(1)
   })
 
   it('opens the Hub for open-hub', () => {

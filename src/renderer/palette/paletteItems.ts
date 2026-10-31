@@ -16,6 +16,7 @@ export type PaletteCommand =
   | { readonly kind: 'open-grid' }
   | { readonly kind: 'open-settings' }
   | { readonly kind: 'show-away-summary' }
+  | { readonly kind: 'show-costs' }
   | { readonly kind: 'sleep'; readonly id: Id }
   | { readonly kind: 'set-keep-awake'; readonly id: Id; readonly keepAwake: boolean }
   | { readonly kind: 'set-status'; readonly id: Id; readonly statusId: Id }
@@ -338,6 +339,14 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
       run: { kind: 'open-grid' }
     })
   }
+  items.push({
+    id: 'action:show-costs',
+    group: 'Actions',
+    label: 'Show cost report',
+    detail: 'Cost per day and per session (last 30 days)',
+    keywords: 'cost usage spend money dollars report chart',
+    run: { kind: 'show-costs' }
+  })
   items.push({
     id: 'action:open-settings',
     group: 'Actions',
