@@ -206,6 +206,9 @@ Feature 1 of the D46 list ("Do for 1,2,3"). Defaults chosen while building, chan
 **D48 · 2026-10-31 · Send one prompt to several sessions through their queues** · active
 Feature 2 of the D46 list. A **Prompt** button on the bulk bar (sidebar and Hub) opens a dialog; the prompt is ADDED TO EACH SELECTED SESSION'S QUEUE (D47) instead of being typed blindly, so a running turn is never interrupted: idle sessions get it at once, busy ones when their turn finishes, sleeping/exited/closed ones after they run and finish a turn. Shell sessions and full queues are skipped; the dialog shows the split before sending.
 
+**D49 · 2026-10-31 · Session presets** · active
+Feature 3 of the D46 list. A preset is a saved New Session form: folder, agent, OpenCode model, Claude args (Remote Control included), group and status, under a name (max 30 presets, kept in the store). The dialog gets a **Presets** menu (fill the form, Delete a preset) and **Save as preset** (same name replaces). Each preset is also a command-palette item "New session: <name>" that starts the session in one step (Ops mode; Code sessions belong to worktrees). A group or status deleted later is simply left out.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

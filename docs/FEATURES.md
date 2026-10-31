@@ -1,7 +1,7 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D48).
+> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D49).
 > - `HANDOFF.md` — the narrative state of each feature, including known gaps.
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
@@ -58,7 +58,8 @@ SessionDeck
 │   ├── SES-12 Conversation restore across app restart
 │   ├── SES-13 Active session / on-screen semantics
 │   ├── SES-14 Busy-close process-tree safety
-│   └── SES-15 Prompt queue (send when finished)
+│   ├── SES-15 Prompt queue (send when finished)
+│   └── SES-16 Session presets
 ├── TRM  Terminal & input
 │   ├── TRM-1  xterm panes, WebGL, replay + sequence gate
 │   ├── TRM-2  PTY write / resize
@@ -236,6 +237,7 @@ SessionDeck
 | SES-11 | Restart exited PTY | Shipped | Exited overlay "Restart", pane header | Starts a new process for the same session; conversation resumes if one exists; restarting never creates a second session. | `renderer/Terminal/TerminalPane.tsx`; `main/app/sessionController.ts` → `restartSession` | `sessionController.test.ts`; e2e `e2e.cjs` |
 | SES-12 | Conversation restore across app restart | Shipped | App relaunch; select a session | Stored `claudeSessionId` / `opencodeSessionId`; sessions come back `exited` and resume **lazily** when selected; the same conversation returns. | `main/store/persistence.ts`; `main/app/sessionController.ts`; `main/app/startOptions.ts` | `persistence.test.ts`, `startOptions.test.ts`; e2e `e2e:resume` |
 | SES-13 | Active session / on-screen semantics | Shipped | Selecting a session, focusing a pane/cell | Renderer tells main which session is on screen per window role (`session:setActive`); attention is cleared on focus/input; sound, flash and desktop notice are suppressed for a session on screen in ANY open window **but the bell is still recorded**; sleep policy spares every such session. Docking/closing the Code window clears its role (no ghost on-screen ids). | `renderer/state/useSessionStore.ts`; `main/app/activeSessions.ts`, `windowRegistry.ts`; `main/index.ts` → `onScreenSessionIds` / `isSessionOnScreen` | `activeSessions.test.ts`, `windowRegistry.test.ts`, `sleepPolicy.test.ts`; e2e `e2e-bell`, `e2e:sleep` |
+| SES-16 | Session presets | Shipped | New Session dialog **Presets** menu / **Save as preset**; palette "New session: <preset>" | `StoreData.presets` (max 30; name 1..60; folder, agent, OpenCode model, Claude args incl. `--remote-control`, group, status). Save as preset stores the current form (name suggested from the session name or folder; same name, any case, replaces). Picking a preset fills the form; a deleted group/status is left empty. The palette item (Ops mode only) creates the session in one step and opens it. Delete through the menu's "Delete a preset". Stored presets are shape-checked on load (invalid ones dropped, deleted group/status → null); session:create re-applies the Claude argument safety rule. | `main/store/presets.ts`; `main/app/ipcValidation.ts` → `asPreset`; `renderer/presets/presetLogic.ts`, `PresetMenu.tsx`; `Sidebar/NewSessionDialog.tsx`; `palette/paletteItems.ts`, `runCommand.ts`; `mode/useWorkspaceCommands.ts` | `presets.test.ts`, `presetLogic.test.ts`, `paletteItems.test.ts`, `runCommand.test.ts`; e2e `e2e-presets.cjs` (11) |
 | SES-15 | Prompt queue (send when finished) | Shipped | Side panel > **Queue** tab; chip on cards | `Session.queue` (max 20 prompts, 1..4000 chars, saved in the store). When the session's activity turns `finished` (Claude Stop hook / OpenCode plugin Stop) main types the FIRST prompt, then a separate Enter 300 ms later; one prompt per finished turn. Adding a prompt to an idle (`finished`) session sends it at once. After a send nothing else goes out until the session reports a new turn (working / needs-input) or 30 s pass. Never types into Shell, sleeping, exited or closed sessions (and never wakes them). "Send now" types one prompt immediately (running, awake session) and removes it. Move up / Remove edit the order. CR/CRLF become LF so only the Enter submits. | `main/queue/promptQueue.ts`; `main/store/sessionNotes.ts` → `validateQueue`, `setSessionQueue`; `main/app/ipcHandlers.ts`; `renderer/queue/QueuePanel.tsx`, `queueLogic.ts`; `notes/NotesPanel.tsx`, `ChecklistChip.tsx` | `promptQueue.test.ts`, `queueLogic.test.ts`, `sessionNotes.test.ts`, `persistence.notes.test.ts`; e2e `e2e-queue.cjs` (fake claude, 17), `e2e-queue-real.cjs` (real Claude, 6) |
 | SES-14 | Busy-close process-tree safety | Shipped | Close a session while a command runs | `taskkill /T /F` while the parent is alive; no orphan shell/dev-server survives; verified at OS level. | `main/pty/treeKiller.ts` | `treeKiller.test.ts`; e2e `e2e:busyclose` |
 
@@ -454,6 +456,7 @@ SessionDeck
 | `session:reopen` | SES-7 | `sessionController` |
 | `session:setKeepAwake` | SES-10 | `reducers.setKeepAwake` |
 | `session:setNotes` / `session:setChecklist` | NTS-1/2 | `sessionNotes` |
+| `preset:save` / `preset:remove` | SES-16 | `presets.upsertPreset`, `presets.removePreset` |
 | `session:setQueue` / `session:sendQueuedNow` | SES-15 | `sessionNotes.setSessionQueue`, `promptQueue.sendNow` |
 | `session:setActive` | SES-13 | `activeSessions` |
 | `session:sleep` | SES-9 | `sessionController` |
@@ -521,7 +524,7 @@ SessionDeck
 
 | File | Feature | Notes |
 |---|---|---|
-| `sessiondeck-store.json` | SET-3 | Sessions, groups, statuses, settings, repos, worktrees |
+| `sessiondeck-store.json` | SET-3 | Sessions (incl. notes, checklist, queue), groups, statuses, settings, repos, worktrees, presets |
 | `sessiondeck-store.json.bak` | SET-3 | Best-effort copy after a successful load |
 | `sessiondeck-timeline.json` | TML-3 | Turns (200/session, 30 days) + last sleep per session |
 | `quota-markers.json` | USE-5 | Alert markers per window instance |
@@ -590,6 +593,7 @@ SessionDeck
 | `e2e-busy-close.cjs` | SES-14 / SEC-4 | Busy session close leaves no process |
 | `e2e-queue.cjs` | SES-15 | Queue tab, Stop → typed + Enter, idle send, guard, Send now, chip, restart (fake claude) |
 | `e2e-broadcast.cjs` | NAV-11 / SES-15 | Bulk Prompt: Ctrl+click 3 sessions, dialog split, idle sent now, busy after Stop, Shell skipped (fake claude) |
+| `e2e-presets.cjs` | SES-16 | Save as preset, menu fills the form, palette one-step start, restart, delete (fake claude) |
 | `e2e-queue-real.cjs` | SES-15 | A real Claude turn finishes and the queued prompt is submitted and answered |
 | `e2e-bell.cjs` | ATT-2/3/4, SES-13 | Bell on card/tab/Hub, mark read/unread, real background turn |
 | `e2e-reminder.cjs` | ATT-12, ATT-5, ATT-7 | Settings > Sound, a real 1-minute repeat, read stops it, on-screen silent, off stops it |
