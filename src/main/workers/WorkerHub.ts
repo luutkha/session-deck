@@ -230,6 +230,11 @@ export function createWorkerHub(deps: WorkerHubDeps): WorkerHub {
           changed = true
         }
       }
+      // A beat this old can no longer keep any worker alive (see the check above), so it is dropped: the map would
+      // otherwise keep one entry per OpenCode process ever seen.
+      for (const [proc, at] of lastBeat) {
+        if (now - at > LOST_AFTER_MS) lastBeat.delete(proc)
+      }
       if (changed) emit()
     },
 

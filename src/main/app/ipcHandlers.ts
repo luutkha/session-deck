@@ -2,7 +2,7 @@ import { app, ipcMain, dialog, shell, type BrowserWindow, type OpenDialogOptions
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { createLinkService, MAX_LINK_TEXTS } from '../links'
-import type { AppSettings, StoreData, RuntimeState, Session, Group, Id, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
+import type { AppSettings, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from './sessionController'
@@ -53,7 +53,6 @@ export interface IpcHandlersDeps {
   readonly roleOfSender: (webContentsId: number) => WindowRole | null
   /** The session on screen per window role. */
   readonly activeSessions: ActiveSessions
-  readonly getActiveSessionId: () => Id | null
   /** Whether Code mode is popped out into its own window. */
   readonly windowState: () => WindowState
   readonly popOutCode: () => void
@@ -86,7 +85,7 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 }
 
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, broadcast, windowForSender, roleOfSender, activeSessions, getActiveSessionId, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
 
   const sendStoreChanged = (data: StoreData): void => {
     broadcast(IPC.evStoreChanged, data)
@@ -110,7 +109,6 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
   ipcMain.handle(IPC.sessionRename, async (_event, rawId: unknown, rawName: unknown): Promise<void> => {
     const id = assertId(rawId, 'session id')
     const name = assertNonEmptyString(rawName, 'session name')
-    controller.setActiveSession(getActiveSessionId())
     store.renameSession(id, name)
   })
 

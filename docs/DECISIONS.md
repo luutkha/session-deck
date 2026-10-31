@@ -184,6 +184,12 @@ Plan `plan/attention-reminders.md` (bell escalation).
 - **Restart semantics (v1).** The wait start is in memory only: a bell that existed before a restart stays silent until a new raise. No pre-restart catch-up and no per-reason intervals.
 - **Verified in the real app.** `e2e:reminder` opens Settings > Sound through CDP, stores 1 minute, raises a real hook bell on a background Shell session (one sound at once, a second after ~60 s), leaves an on-screen session raised for the same minute with no sound, clears the bell (no further sound), turns the switch off in the UI (a new raise pings once, no second), and asserts the store values throughout.
 
+**D45 · 2026-10-31 · Code review round 3: improve without changing feature logic** · active
+"review all the code, to improve, but DO NOT break the logic of features", then "go ahead with all, remove A1, keep the route".
+- **Rename no longer touches the active session.** The `session:rename` handler used to call `controller.setActiveSession(getActiveSessionId())` (a leftover from the initial commit), which could auto-start or wake the session on screen. Removed; renaming only renames.
+- **Legacy `POST /hook` route is kept** (body `{sessionId, event, message?}`), although nothing in `src` posts to it.
+- Everything else is behaviour-preserving: `PtyManager.kill` never throws on a dead pid-less pty, `WorkerHub` prunes heartbeats of forgotten processes, shared `isJsonObject` / `errorMessage` helpers, one wrapper for the renderer store actions, `HookServer` auth/body helpers, `sessionController` tidy-up.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

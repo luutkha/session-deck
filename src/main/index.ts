@@ -276,10 +276,6 @@ if (!gotTheLock) {
       }
     })
 
-    function activeSessionId(): string | null {
-      return controller.getActiveSessionId()
-    }
-
     /** Every session visible in an OPEN window: main and Code can show different sessions. */
     function onScreenSessionIds(): ReadonlySet<string> {
       return new Set(activeSessions.all())
@@ -395,7 +391,6 @@ if (!gotTheLock) {
       windowState: () => windows.state(),
       popOutCode: () => { windows.popOutCode() },
       dockCode: () => windows.dockCode(),
-      getActiveSessionId: activeSessionId,
       userDataDir: userData,
       loginItem: createLoginItem(app),
       onUserActivity: () => {

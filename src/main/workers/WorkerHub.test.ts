@@ -165,6 +165,20 @@ describe('WorkerHub.sweep', () => {
     expect(only()).toMatchObject({ status: 'failed', statusDetail: 'lost' })
   })
 
+  it('keeps a worker alive through sweeps that drop the old heartbeats of other processes', () => {
+    hub.ingest('claude-1', { v: 1, proc: 'gone', kind: 'beat' })
+    hub.ingest('claude-1', ev('busy'))
+    for (let i = 0; i < 5; i += 1) {
+      clock += LOST_AFTER_MS - 1000
+      hub.ingest('claude-1', { v: 1, proc: 'p1', kind: 'beat' })
+      hub.sweep()
+    }
+    expect(only().status).toBe('running')
+    clock += LOST_AFTER_MS + 1
+    hub.sweep()
+    expect(only()).toMatchObject({ status: 'failed', statusDetail: 'lost' })
+  })
+
   it('forgets finished workers after a long while', () => {
     hub.ingest('claude-1', ev('idle'))
     clock += 31 * 60 * 1000

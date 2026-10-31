@@ -153,7 +153,7 @@ export class PtyManager {
     if (!proc) return
     const pid = realPid(proc)
     if (pid === null) {
-      proc.kill()
+      safeKill(proc)
       return
     }
     // Tree first, while the parent is still alive (children are found through it); the plain kill is the backstop.
