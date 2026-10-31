@@ -2,6 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { chooseClaudeLaunch, shouldFallbackToNew, RESUME_FAILURE_WINDOW_MS, REPLAY_TAIL_CHARS, NO_CONVERSATION_RE } from './claudeLaunch'
 
 describe('chooseClaudeLaunch', () => {
+  it('starts a fork with --resume <parent> --fork-session --session-id <new> (D52)', () => {
+    expect(chooseClaudeLaunch({ claudeSessionId: 'new-id', everStarted: false, forkFrom: 'parent-id' })).toEqual({
+      args: ['--resume', 'parent-id', '--fork-session', '--session-id', 'new-id'],
+      mode: 'new'
+    })
+  })
+
+  it('resumes a fork by its own id once it has started', () => {
+    expect(chooseClaudeLaunch({ claudeSessionId: 'new-id', everStarted: true, forkFrom: 'parent-id' }).args).toEqual(['--resume', 'new-id'])
+  })
+
   it('returns resume mode when everStarted is true', () => {
     const result = chooseClaudeLaunch({ claudeSessionId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', everStarted: true })
     expect(result).toEqual({

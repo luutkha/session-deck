@@ -86,6 +86,10 @@ const api: Api = {
     return ipcRenderer.invoke(IPC.sessionSetChecklist, id, items)
   },
 
+  forkSession(id: Id): Promise<Session> {
+    return ipcRenderer.invoke(IPC.sessionFork, id)
+  },
+
   setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void> {
     return ipcRenderer.invoke(IPC.sessionSetQueue, id, items)
   },

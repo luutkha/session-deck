@@ -314,3 +314,45 @@ describe('sessionController.resumeInBackground (D50)', () => {
     expect(pty.getLastStartOpts('a')).toBe(first)
   })
 })
+
+describe('sessionController.forkSession (D52)', () => {
+  const PARENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+
+  afterEach(() => {
+    if (previousConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
+    else process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+  })
+
+  /** A fake Claude config dir (never the user's real ~/.claude) holding a transcript for `id`. */
+  function withTranscript(id: string): void {
+    const config = tempDir()
+    const project = join(config, 'projects', 'p')
+    require('node:fs').mkdirSync(project, { recursive: true })
+    require('node:fs').writeFileSync(join(project, `${id}.jsonl`), '{"type":"user","message":{"role":"user","content":"hi"}}\n')
+    process.env.CLAUDE_CONFIG_DIR = config
+  }
+
+  it('creates a Claude session in the same folder and group and starts it on a copy of the conversation', () => {
+    withTranscript(PARENT_ID)
+    const parent = makeSession({ id: 'p', name: 'Backend', groupId: null, claudeArgs: ['--verbose'] })
+    const { controller, pty, store } = setup([parent])
+    const fork = controller.forkSession('p')
+    expect(fork).toMatchObject({ name: 'Backend (fork)', cwd: parent.cwd, claudeArgs: ['--verbose'] })
+    expect(fork.agent ?? 'claude').toBe('claude')
+    expect(fork.claudeSessionId).toBeDefined()
+    expect(fork.claudeSessionId).not.toBe(PARENT_ID)
+    const opts = pty.getLastStartOpts(fork.id)
+    expect(opts?.internalArgs.slice(-5)).toEqual(['--resume', PARENT_ID, '--fork-session', '--session-id', fork.claudeSessionId])
+    expect(store.get().sessions.find((s) => s.id === 'p')?.claudeSessionId).toBe(PARENT_ID)
+  })
+
+  it('refuses a session without a saved conversation, and non-Claude sessions', () => {
+    process.env.CLAUDE_CONFIG_DIR = tempDir()
+    const { controller, store } = setup([makeSession({ id: 'p' }), makeSession({ id: 'oc', agent: 'opencode' })])
+    expect(() => controller.forkSession('p')).toThrow('Nothing to fork yet')
+    expect(() => controller.forkSession('oc')).toThrow('Only Claude Code sessions')
+    expect(() => controller.forkSession('nope')).toThrow('Unknown session')
+    expect(store.get().sessions).toHaveLength(2)
+  })
+})

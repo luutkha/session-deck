@@ -111,6 +111,10 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     return controller.createSession(asCreateSessionInput(raw))
   })
 
+  ipcMain.handle(IPC.sessionFork, async (_event, raw: unknown): Promise<Session> => {
+    return controller.forkSession(assertId(raw, 'session id'))
+  })
+
   ipcMain.handle(IPC.sessionRename, async (_event, rawId: unknown, rawName: unknown): Promise<void> => {
     const id = assertId(rawId, 'session id')
     const name = assertNonEmptyString(rawName, 'session name')

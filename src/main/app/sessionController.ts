@@ -16,6 +16,8 @@ import { appendTrustBuffer, isTrustPrompt, shouldAnswerTrustPrompt, TRUST_ANSWER
 import { createAutoStatusApplier } from '../automation/applyAutoStatus'
 
 const MAX_FALLBACK_ATTEMPTS = 1
+/** Session names are at most 100 characters (store rule). */
+const MAX_FORK_NAME = 100
 
 interface SessionStartState {
   readonly everStartedThisRun: boolean
@@ -42,6 +44,11 @@ export interface SessionControllerDeps {
 
 export interface SessionController {
   createSession(input: CreateSessionInput): Session
+  /**
+   * D52: a new Claude session that continues a copy of this session's conversation (same folder, group, args and
+   * worktree). Throws for a non-Claude session or one with no saved conversation yet.
+   */
+  forkSession(id: Id): Session
   removeSession(id: Id): void
   /** Code mode: stops and removes every session of the worktree, then the worktree (the folder is not touched). */
   removeWorktree(id: Id): void
@@ -305,7 +312,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     store.setOpencodeSessionId(session.id, message)
   }
 
-  function startSession(session: Session, mode: 'new' | 'resume'): void {
+  function startSession(session: Session, mode: 'new' | 'resume', forkFrom?: string): void {
     const sessionWithId = ensureClaudeSessionId(session)
     limitArmed.delete(sessionWithId.id)
     forgetTrustPrompt(sessionWithId.id)
@@ -317,7 +324,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         startTime: Date.now()
       }
       startState.set(sessionWithId.id, state)
-      const opts: StartOptions = buildStartOptions(sessionWithId, mode === 'resume', attention, shellProgram())
+      const opts: StartOptions = buildStartOptions(sessionWithId, mode === 'resume', attention, shellProgram(), forkFrom)
       pty.start(opts)
       runtime.markRunning(sessionWithId.id)
       if (mode === 'new') trustFirstStart.add(sessionWithId.id)
@@ -417,6 +424,37 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         throw error
       }
       return session
+    },
+
+    forkSession(id: Id): Session {
+      const parent = findSession(id)
+      if (!parent) throw new Error(`Unknown session: ${id}`)
+      if (parent.agent === 'opencode' || parent.agent === 'shell' || parent.claudeSessionId === undefined) {
+        throw new Error('Only Claude Code sessions can be forked.')
+      }
+      if (!transcriptExists(parent.claudeSessionId)) {
+        throw new Error('Nothing to fork yet: this session has no saved conversation. Send it a prompt first.')
+      }
+      validateCwd(parent.cwd)
+      const name = `${parent.name} (fork)`
+      const session = store.createSession({
+        cwd: parent.cwd,
+        name: name.length <= MAX_FORK_NAME ? name : `${parent.name.slice(0, MAX_FORK_NAME - 7)} (fork)`,
+        groupId: parent.groupId,
+        statusId: null,
+        claudeArgs: [...parent.claudeArgs],
+        agent: 'claude',
+        ...(parent.worktreeId !== undefined ? { worktreeId: parent.worktreeId } : {})
+      })
+      try {
+        startSession(session, 'new', parent.claudeSessionId)
+      } catch (error) {
+        store.removeSession(session.id)
+        startState.delete(session.id)
+        runtime.forget(session.id)
+        throw error
+      }
+      return findSession(session.id) ?? session
     },
 
     removeSession(id: Id): void {

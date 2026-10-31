@@ -5,6 +5,11 @@ const NO_CONVERSATION_RE = /no conversation found|could not find|not found/i
 export interface ChooseClaudeLaunchInput {
   readonly claudeSessionId: string
   readonly everStarted: boolean
+  /**
+   * D52: the parent's Claude conversation id for the first start of a fork. Claude copies that conversation into
+   * claudeSessionId (`--resume <parent> --fork-session --session-id <new>`) and leaves the parent untouched.
+   */
+  readonly forkFrom?: string
 }
 
 export interface ChooseClaudeLaunchResult {
@@ -13,6 +18,10 @@ export interface ChooseClaudeLaunchResult {
 }
 
 export function chooseClaudeLaunch(input: ChooseClaudeLaunchInput): ChooseClaudeLaunchResult {
+  if (input.forkFrom !== undefined && !input.everStarted) {
+    // A fresh id like 'new': if Claude rejects it, the usual "no transcript yet" rotation applies.
+    return { args: ['--resume', input.forkFrom, '--fork-session', '--session-id', input.claudeSessionId] as const, mode: 'new' }
+  }
   if (input.everStarted) {
     return { args: ['--resume', input.claudeSessionId] as const, mode: 'resume' }
   }

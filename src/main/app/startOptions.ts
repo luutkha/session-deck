@@ -42,7 +42,9 @@ export function buildStartOptions(
   session: Session,
   everStarted: boolean,
   attention: AttentionService,
-  shell: ShellKind = 'powershell'
+  shell: ShellKind = 'powershell',
+  /** D52: first start of a fork; see chooseClaudeLaunch. */
+  forkFrom?: string
 ): StartOptions {
   if (session.agent === 'shell') {
     return buildShellStartOptions(session, attention, shell)
@@ -50,7 +52,7 @@ export function buildStartOptions(
   if (session.agent === 'opencode') {
     return buildOpencodeStartOptions(session, attention)
   }
-  const chosen = chooseClaudeLaunch({ claudeSessionId: session.claudeSessionId!, everStarted })
+  const chosen = chooseClaudeLaunch({ claudeSessionId: session.claudeSessionId!, everStarted, ...(forkFrom !== undefined ? { forkFrom } : {}) })
   const userArgs = session.claudeArgs ?? []
   return {
     sessionId: session.id,

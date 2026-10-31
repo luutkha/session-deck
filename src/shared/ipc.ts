@@ -8,6 +8,7 @@ export const IPC = {
   // store (renderer -> main, invoke)
   storeGet: 'store:get',
   sessionCreate: 'session:create',
+  sessionFork: 'session:fork', // (id) -> Session: a new Claude session on a copy of this conversation (D52)
   sessionRename: 'session:rename',
   sessionSetStatus: 'session:setStatus',
   sessionMove: 'session:move', // to group + index
@@ -119,6 +120,8 @@ export interface Api {
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): Promise<void>
   /** D47: replaces the session's prompt queue (the first item is typed in when the current turn finishes). */
   setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void>
+  /** D52: a new Claude session that continues a copy of this session's conversation. */
+  forkSession(id: Id): Promise<Session>
   /** D47: types one queued prompt now (running, awake Claude/OpenCode session only) and removes it from the queue. */
   sendQueuedNow(id: Id, promptId: string): Promise<void>
   /** D49: adds a preset or replaces the one with the same id. */
