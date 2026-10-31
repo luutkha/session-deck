@@ -1,4 +1,5 @@
-import type { ChecklistItem, Id, StoreData } from '../../shared/types'
+import type { ChecklistItem, Id, QueuedPrompt, StoreData } from '../../shared/types'
+import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX } from '../../shared/types'
 import { findSessionIndex } from './reducers'
 
 export const MAX_NOTES_LENGTH = 20000
@@ -71,6 +72,60 @@ export function setSessionNotes(data: StoreData, id: Id, notes: string): StoreDa
     if (i !== index) return s
     const { notes: _notes, ...rest } = s
     return value === '' ? rest : { ...rest, notes: value }
+  })
+  return { ...data, sessions }
+}
+
+function invalidQueue(reason: string): Error {
+  return new Error(`Invalid queue: ${reason}`)
+}
+
+/** Returns normalized prompts ({ id, text trimmed, addedAt }) when valid; throws `Invalid queue: <reason>` otherwise. */
+export function validateQueue(items: unknown): QueuedPrompt[] {
+  if (!Array.isArray(items)) {
+    throw invalidQueue('must be an array')
+  }
+  const list: unknown[] = items
+  if (list.length > QUEUE_MAX_ITEMS) {
+    throw invalidQueue(`at most ${QUEUE_MAX_ITEMS} prompts`)
+  }
+  const seen = new Set<string>()
+  return list.map((raw, index): QueuedPrompt => {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      throw invalidQueue(`prompt ${index} must be an object`)
+    }
+    const obj = raw as Record<string, unknown>
+    const id = obj.id
+    if (typeof id !== 'string' || id.length === 0 || id.length > MAX_CHECKLIST_ID_LENGTH) {
+      throw invalidQueue(`prompt ${index} id must be a non-empty string up to ${MAX_CHECKLIST_ID_LENGTH} characters`)
+    }
+    if (seen.has(id)) {
+      throw invalidQueue(`duplicate id "${id}"`)
+    }
+    seen.add(id)
+    if (typeof obj.text !== 'string') {
+      throw invalidQueue(`prompt ${index} text must be a string`)
+    }
+    const text = obj.text.trim()
+    if (text.length < 1 || text.length > QUEUE_TEXT_MAX) {
+      throw invalidQueue(`prompt ${index} text must be 1 to ${QUEUE_TEXT_MAX} characters`)
+    }
+    const addedAt = obj.addedAt
+    if (typeof addedAt !== 'number' || !Number.isFinite(addedAt) || addedAt < 0) {
+      throw invalidQueue(`prompt ${index} addedAt must be a non-negative number`)
+    }
+    return { id, text, addedAt }
+  })
+}
+
+/** Sets (or, for an empty list, removes) the session's prompt queue. Unknown session throws. */
+export function setSessionQueue(data: StoreData, id: Id, items: unknown): StoreData {
+  const index = findSessionIndex(data, id)
+  const normalized = validateQueue(items)
+  const sessions = data.sessions.map((s, i) => {
+    if (i !== index) return s
+    const { queue: _queue, ...rest } = s
+    return normalized.length === 0 ? rest : { ...rest, queue: normalized }
   })
   return { ...data, sessions }
 }

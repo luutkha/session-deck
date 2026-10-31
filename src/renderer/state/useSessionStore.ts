@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useCallback, useRef, useEffect, useMemo } from 'react'
-import type { StoreData, RuntimeState, Session, Group, StatusDef, ChecklistItem, CreateSessionInput, Id, AppSettings, SettingsPatch } from '../../shared/types'
+import type { StoreData, RuntimeState, Session, Group, StatusDef, ChecklistItem, QueuedPrompt, CreateSessionInput, Id, AppSettings, SettingsPatch } from '../../shared/types'
 import type { Api } from '../../shared/ipc'
 import { errorMessage } from '../../shared/guards'
 
@@ -29,6 +29,8 @@ export interface SessionActions {
   reorderStatuses: (order: readonly Id[]) => Promise<void>
   setSessionNotes: (id: Id, notes: string) => Promise<void>
   setSessionChecklist: (id: Id, items: readonly ChecklistItem[]) => Promise<void>
+  setSessionQueue: (id: Id, items: readonly QueuedPrompt[]) => Promise<void>
+  sendQueuedNow: (id: Id, promptId: string) => Promise<void>
   pickFolder: () => Promise<string | null>
   updateSettings: (patch: SettingsPatch) => Promise<AppSettings>
 }
@@ -154,6 +156,8 @@ export function useSessionStore(): UseSessionStoreResult {
       reorderStatuses: (order) => call((api) => api.reorderStatuses(order)),
       setSessionNotes: (id, notes) => call((api) => api.setSessionNotes(id, notes)),
       setSessionChecklist: (id, items) => call((api) => api.setSessionChecklist(id, items)),
+      setSessionQueue: (id, items) => call((api) => api.setSessionQueue(id, items)),
+      sendQueuedNow: (id, promptId) => call((api) => api.sendQueuedNow(id, promptId)),
       pickFolder: () => call((api) => api.pickFolder()),
       updateSettings: (patch) => call((api) => api.updateSettings(patch))
     }

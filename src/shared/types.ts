@@ -14,6 +14,17 @@ export interface ChecklistItem {
   readonly done: boolean
 }
 
+/** A prompt waiting to be typed into a session when its current turn finishes (prompt queue, D47). */
+export interface QueuedPrompt {
+  readonly id: string // unique within the session, 1..64 chars
+  readonly text: string // 1..QUEUE_TEXT_MAX chars after trimming
+  readonly addedAt: number // epoch ms
+}
+
+/** Prompt queue limits (D47): items per session and characters per prompt. */
+export const QUEUE_MAX_ITEMS = 20
+export const QUEUE_TEXT_MAX = 4000
+
 export interface Group {
   readonly id: Id
   readonly name: string
@@ -53,6 +64,8 @@ export interface Session {
   readonly notes?: string
   /** Work-in-progress checklist (max 100 items). Absent or empty = none. */
   readonly checklist?: readonly ChecklistItem[]
+  /** Prompts typed in one by one as turns finish (D47; max QUEUE_MAX_ITEMS). Absent or empty = none. */
+  readonly queue?: readonly QueuedPrompt[]
   /** Code mode (D31): the worktree this session runs in (its cwd is the worktree path). Absent = an Ops session. */
   readonly worktreeId?: Id
 }

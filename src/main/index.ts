@@ -33,6 +33,7 @@ import { createFeatureWiring } from './app/featureWiring'
 import { quotaMarkersFilePath } from './quota/quotaMarkers'
 import { createSleepScheduler } from './sleep/SleepScheduler'
 import { createWorkerHub } from './workers'
+import { createPromptQueue } from './queue/promptQueue'
 import { IPC } from '../shared/ipc'
 import { errorMessage } from '../shared/guards'
 
@@ -314,6 +315,18 @@ if (!gotTheLock) {
       onUsageLimit: (id) => features.onUsageLimit(id)
     })
 
+    // Prompt queue (D47): the next queued prompt is typed in when a session's turn finishes.
+    const promptQueue = createPromptQueue({
+      getData: () => store.get(),
+      setQueue: (id, items) => store.setSessionQueue(id, items),
+      getRuntime: (id) => runtime.get(id),
+      subscribeRuntime: (listener) => runtime.subscribe(listener),
+      write: (id, data) => controller.writeToPty(id, data),
+      setTimeout: (callback, ms) => setTimeout(callback, ms),
+      clearTimeout: (timer) => clearTimeout(timer),
+      onError
+    })
+
     // Timeline + "While you were away" (D29) and the quota autopilot (D30).
     const features = createFeatureWiring({
       userDataDir: userData,
@@ -382,6 +395,7 @@ if (!gotTheLock) {
       usage,
       usageRefresher,
       workers,
+      promptQueue,
       broadcast: sendToWindow,
       windowForSender: (senderId) => {
         const role = windows.roleOf(senderId)
@@ -429,6 +443,7 @@ if (!gotTheLock) {
     async function shutdown(): Promise<void> {
       sleepScheduler.stop()
       clearInterval(workerSweep)
+      promptQueue.stop()
       await runShutdownStep('timeline + autopilot', () => features.shutdown())
       await runShutdownStep('code mode', () => code.shutdown())
       await runShutdownStep('close Code window', () => windows.closeCode())

@@ -4,6 +4,7 @@ import { IPC } from '../shared/ipc'
 import type {
   AppSettings,
   ChecklistItem,
+  QueuedPrompt,
   CreateSessionInput,
   Group,
   Id,
@@ -82,6 +83,14 @@ const api: Api = {
 
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): Promise<void> {
     return ipcRenderer.invoke(IPC.sessionSetChecklist, id, items)
+  },
+
+  setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void> {
+    return ipcRenderer.invoke(IPC.sessionSetQueue, id, items)
+  },
+
+  sendQueuedNow(id: Id, promptId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.sessionSendQueuedNow, id, promptId)
   },
 
   getUsage(): Promise<UsageState> {

@@ -1,9 +1,9 @@
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
-import type { ChecklistItem, Group, Session, StatusDef, StoreData } from '../../shared/types'
+import type { ChecklistItem, Group, QueuedPrompt, Session, StatusDef, StoreData } from '../../shared/types'
 import { emptyStore } from './reducers'
-import { validateChecklist, validateNotes } from './sessionNotes'
+import { validateChecklist, validateNotes, validateQueue } from './sessionNotes'
 import { parseStoredSettings } from './settings'
 import { hasUnknownWorktreeRef, parseRepos, parseWorktrees } from './codePersistence'
 import { isOpencodeSessionId, isOpencodeModel } from '../opencode/values'
@@ -84,6 +84,7 @@ function parseSession(raw: unknown, index: number): Session {
   // Notes and checklist are optional extras: an invalid value is dropped, never failing the whole file.
   const notes = parseOptionalNotes(raw.notes)
   const checklist = parseOptionalChecklist(raw.checklist)
+  const queue = parseOptionalQueue(raw.queue)
 
   const session: Session = {
     id: raw.id,
@@ -104,6 +105,7 @@ function parseSession(raw: unknown, index: number): Session {
     ...(raw.keepAwake === true ? { keepAwake: true } : {}),
     ...(notes !== undefined ? { notes } : {}),
     ...(checklist !== undefined ? { checklist } : {}),
+    ...(queue !== undefined ? { queue } : {}),
     // Checked by parseStoreData: a present worktreeId is a non-empty string of a stored worktree.
     ...(raw.worktreeId !== undefined ? { worktreeId: raw.worktreeId as string } : {})
   }
@@ -174,6 +176,17 @@ function parseOptionalChecklist(raw: unknown): ChecklistItem[] | undefined {
   if (raw === undefined) return undefined
   try {
     const items = validateChecklist(raw)
+    return items.length === 0 ? undefined : items
+  } catch {
+    return undefined
+  }
+}
+
+/** Valid queues are kept; invalid queues and the empty list yield undefined (field absent). */
+function parseOptionalQueue(raw: unknown): QueuedPrompt[] | undefined {
+  if (raw === undefined) return undefined
+  try {
+    const items = validateQueue(raw)
     return items.length === 0 ? undefined : items
   } catch {
     return undefined

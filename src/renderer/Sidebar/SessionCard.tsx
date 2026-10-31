@@ -258,7 +258,7 @@ export function SessionCard(props: SessionCardProps): ReactElement {
             {folder}
           </span>
         )}
-        <ChecklistChip checklist={session.checklist} hasNotes={!!session.notes?.trim()} />
+        <ChecklistChip checklist={session.checklist} hasNotes={!!session.notes?.trim()} queued={session.queue?.length ?? 0} />
       </div>
       <div className="flex min-w-0 items-start justify-between text-[11px] text-muted-foreground/80">
         <span className="min-w-0 flex-1">

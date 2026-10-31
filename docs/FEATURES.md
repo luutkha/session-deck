@@ -1,7 +1,7 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D46).
+> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D47).
 > - `HANDOFF.md` — the narrative state of each feature, including known gaps.
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
@@ -57,7 +57,8 @@ SessionDeck
 │   ├── SES-11 Restart exited PTY
 │   ├── SES-12 Conversation restore across app restart
 │   ├── SES-13 Active session / on-screen semantics
-│   └── SES-14 Busy-close process-tree safety
+│   ├── SES-14 Busy-close process-tree safety
+│   └── SES-15 Prompt queue (send when finished)
 ├── TRM  Terminal & input
 │   ├── TRM-1  xterm panes, WebGL, replay + sequence gate
 │   ├── TRM-2  PTY write / resize
@@ -235,6 +236,7 @@ SessionDeck
 | SES-11 | Restart exited PTY | Shipped | Exited overlay "Restart", pane header | Starts a new process for the same session; conversation resumes if one exists; restarting never creates a second session. | `renderer/Terminal/TerminalPane.tsx`; `main/app/sessionController.ts` → `restartSession` | `sessionController.test.ts`; e2e `e2e.cjs` |
 | SES-12 | Conversation restore across app restart | Shipped | App relaunch; select a session | Stored `claudeSessionId` / `opencodeSessionId`; sessions come back `exited` and resume **lazily** when selected; the same conversation returns. | `main/store/persistence.ts`; `main/app/sessionController.ts`; `main/app/startOptions.ts` | `persistence.test.ts`, `startOptions.test.ts`; e2e `e2e:resume` |
 | SES-13 | Active session / on-screen semantics | Shipped | Selecting a session, focusing a pane/cell | Renderer tells main which session is on screen per window role (`session:setActive`); attention is cleared on focus/input; sound, flash and desktop notice are suppressed for a session on screen in ANY open window **but the bell is still recorded**; sleep policy spares every such session. Docking/closing the Code window clears its role (no ghost on-screen ids). | `renderer/state/useSessionStore.ts`; `main/app/activeSessions.ts`, `windowRegistry.ts`; `main/index.ts` → `onScreenSessionIds` / `isSessionOnScreen` | `activeSessions.test.ts`, `windowRegistry.test.ts`, `sleepPolicy.test.ts`; e2e `e2e-bell`, `e2e:sleep` |
+| SES-15 | Prompt queue (send when finished) | Shipped | Side panel > **Queue** tab; chip on cards | `Session.queue` (max 20 prompts, 1..4000 chars, saved in the store). When the session's activity turns `finished` (Claude Stop hook / OpenCode plugin Stop) main types the FIRST prompt, then a separate Enter 300 ms later; one prompt per finished turn. Adding a prompt to an idle (`finished`) session sends it at once. After a send nothing else goes out until the session reports a new turn (working / needs-input) or 30 s pass. Never types into Shell, sleeping, exited or closed sessions (and never wakes them). "Send now" types one prompt immediately (running, awake session) and removes it. Move up / Remove edit the order. CR/CRLF become LF so only the Enter submits. | `main/queue/promptQueue.ts`; `main/store/sessionNotes.ts` → `validateQueue`, `setSessionQueue`; `main/app/ipcHandlers.ts`; `renderer/queue/QueuePanel.tsx`, `queueLogic.ts`; `notes/NotesPanel.tsx`, `ChecklistChip.tsx` | `promptQueue.test.ts`, `queueLogic.test.ts`, `sessionNotes.test.ts`, `persistence.notes.test.ts`; e2e `e2e-queue.cjs` (fake claude, 17), `e2e-queue-real.cjs` (real Claude, 6) |
 | SES-14 | Busy-close process-tree safety | Shipped | Close a session while a command runs | `taskkill /T /F` while the parent is alive; no orphan shell/dev-server survives; verified at OS level. | `main/pty/treeKiller.ts` | `treeKiller.test.ts`; e2e `e2e:busyclose` |
 
 ### 2.2 TRM — Terminal & input
@@ -306,7 +308,7 @@ SessionDeck
 | TAB-2 | Per-folder tab bar | Shipped | Tab bar | Shows only open sessions sharing the active session's folder (`folderKey`); a lone session gets a bar of one; with no active session every tab shows. | `renderer/shell/projectTabs.ts` → `projectTabIds` | `projectTabs.test.ts`; e2e `e2e:foldertabs` |
 | TAB-3 | Tab shortcuts | Shipped | Keyboard | `Ctrl+Tab` / `Ctrl+Shift+Tab` cycle; `Ctrl+W` closes the active tab **outside** the terminal only (readline keeps delete-word); `Ctrl+Shift+W` closes everywhere; dialogs and text inputs win. | `renderer/shell/openTabsLogic.ts` → `decideTabShortcut`; `useTabShortcuts.ts` | `openTabsLogic.test.ts`; e2e `e2e:palette` (shortcut context) |
 | TAB-4 | Terminal \| Grid \| Hub view | Shipped | Tab-bar view control, palette "Open Hub" | Per-mode persisted `MainView` (`sessiondeck.view.v1` / `.code`); switching view never destroys terminal state; a focus request may switch the view. `grid` is the third value (TRM-8). | `renderer/mode/viewPref.ts`; `mode/useWorkspaceNav.ts`; `ModeWorkspace.tsx` | `viewPref.test.ts`, `modeLogic.test.ts` |
-| TAB-5 | Notes \| Activity side panel | Shipped | Tab-bar panel toggle | Per-mode open/closed and per-mode selected tab (`sessiondeck.notes.open.v1`, `sessiondeck.sidepanel.tab.v1` + `.code`); Code sessions add a **Changes** tab; the chosen tab falls back to the first valid one. | `renderer/timeline/sidePanelTab.ts`; `renderer/notes/NotesPanel.tsx`; `mode/useWorkspaceNav.ts` | `sidePanelTab.test.ts`; e2e `e2e:notes`, `e2e:away` |
+| TAB-5 | Notes \| Activity \| Queue side panel | Shipped | Tab-bar panel toggle | Per-mode open/closed and per-mode selected tab (`sessiondeck.notes.open.v1`, `sessiondeck.sidepanel.tab.v1` + `.code`); Code sessions add a **Changes** tab; the chosen tab falls back to the first valid one. | `renderer/timeline/sidePanelTab.ts`; `renderer/notes/NotesPanel.tsx`; `mode/useWorkspaceNav.ts` | `sidePanelTab.test.ts`; e2e `e2e:notes`, `e2e:away` |
 | TAB-6 | Worker tabs | Shipped | OpenCode process started from a Claude session | Read-only tabs beside the session's tabs; see WRK. | `renderer/workers/*` | `workerLogic.test.ts`; e2e `e2e:workers` |
 
 ### 2.7 NTS — Notes & checklist
@@ -452,6 +454,7 @@ SessionDeck
 | `session:reopen` | SES-7 | `sessionController` |
 | `session:setKeepAwake` | SES-10 | `reducers.setKeepAwake` |
 | `session:setNotes` / `session:setChecklist` | NTS-1/2 | `sessionNotes` |
+| `session:setQueue` / `session:sendQueuedNow` | SES-15 | `sessionNotes.setSessionQueue`, `promptQueue.sendNow` |
 | `session:setActive` | SES-13 | `activeSessions` |
 | `session:sleep` | SES-9 | `sessionController` |
 | `group:create` / `group:rename` / `group:remove` / `group:setCollapsed` / `group:reorder` | SES-4 | `reducers` |
@@ -585,6 +588,8 @@ SessionDeck
 | `e2e-dialogs.cjs` | SES-1/2, SET-1 | New Session + Statuses dialogs through real input; unsafe args rejected |
 | `e2e-robust.cjs` | SEC-1, SET-3 | Late/bogus IPC, malformed create, save on quit |
 | `e2e-busy-close.cjs` | SES-14 / SEC-4 | Busy session close leaves no process |
+| `e2e-queue.cjs` | SES-15 | Queue tab, Stop → typed + Enter, idle send, guard, Send now, chip, restart (fake claude) |
+| `e2e-queue-real.cjs` | SES-15 | A real Claude turn finishes and the queued prompt is submitted and answered |
 | `e2e-bell.cjs` | ATT-2/3/4, SES-13 | Bell on card/tab/Hub, mark read/unread, real background turn |
 | `e2e-reminder.cjs` | ATT-12, ATT-5, ATT-7 | Settings > Sound, a real 1-minute repeat, read stops it, on-screen silent, off stops it |
 | `e2e-hub.cjs` | HUB-1/2/3, ATT-5, SET-1 | Hub columns, drag status, settings, sound pipeline |

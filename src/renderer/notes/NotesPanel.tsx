@@ -1,11 +1,12 @@
 import { Check, NotebookPen, Save, X } from 'lucide-react'
 import { useState, type ReactElement } from 'react'
-import type { Session } from '../../shared/types'
+import type { RuntimeState, Session } from '../../shared/types'
 import { Button } from '../components/ui/button'
 import { ScrollArea } from '../components/ui/scroll-area'
 import { ChangesPanel, type ChangesTarget } from '../code/changes'
 import type { SessionActions } from '../state/useSessionStore'
 import { ActivityList } from '../timeline/ActivityList'
+import { QueuePanel } from '../queue/QueuePanel'
 import {
   SIDE_PANEL_TAB_KEY,
   readSidePanelTab,
@@ -22,7 +23,9 @@ import { useSessionNotes } from './useSessionNotes'
 
 export interface NotesPanelProps {
   readonly session: Session
-  readonly actions: Pick<SessionActions, 'setSessionNotes' | 'setSessionChecklist'>
+  readonly actions: Pick<SessionActions, 'setSessionNotes' | 'setSessionChecklist' | 'setSessionQueue' | 'sendQueuedNow'>
+  /** The session's runtime state: the Queue tab says whether the next prompt waits or goes out at once (D47). */
+  readonly runtimeState?: RuntimeState
   readonly onClose: () => void
   /** Where the chosen tab is remembered (each mode has its own, D31). Default = the Ops key. */
   readonly storageKey?: string
@@ -33,10 +36,11 @@ export interface NotesPanelProps {
 const TAB_LABELS: Readonly<Record<SidePanelTab, string>> = {
   notes: 'Notes',
   activity: 'Activity',
+  queue: 'Queue',
   changes: 'Changes'
 }
 
-export function NotesPanel({ session, actions, onClose, storageKey = SIDE_PANEL_TAB_KEY, changesTarget }: NotesPanelProps): ReactElement {
+export function NotesPanel({ session, actions, onClose, storageKey = SIDE_PANEL_TAB_KEY, changesTarget, runtimeState }: NotesPanelProps): ReactElement {
   const notes = useSessionNotes(session, actions)
   const [draft, setDraft] = useChecklistDraft(session.id)
   const [storedTab, setStoredTab] = useState<SidePanelTab>((): SidePanelTab => readSidePanelTab(storageKey))
@@ -73,6 +77,9 @@ export function NotesPanel({ session, actions, onClose, storageKey = SIDE_PANEL_
               onClick={(): void => selectTab(option)}
             >
               {TAB_LABELS[option]}
+              {option === 'queue' && (session.queue?.length ?? 0) > 0 ? (
+                <span className="tabular-nums text-muted-foreground">{session.queue?.length}</span>
+              ) : null}
             </Button>
           ))}
         </div>
@@ -109,6 +116,8 @@ export function NotesPanel({ session, actions, onClose, storageKey = SIDE_PANEL_
         <ChangesPanel worktreeId={worktreeId} target={changesTarget} className="min-h-0 flex-1" />
       ) : tab === 'activity' ? (
         <ActivityList sessionId={session.id} />
+      ) : tab === 'queue' ? (
+        <QueuePanel session={session} state={runtimeState} onSetQueue={actions.setSessionQueue} onSendNow={actions.sendQueuedNow} />
       ) : (
         <>
           {notes.error !== null ? (

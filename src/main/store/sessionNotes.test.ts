@@ -4,9 +4,12 @@ import { emptyStore } from './reducers'
 import {
   setSessionChecklist,
   setSessionNotes,
+  setSessionQueue,
   validateChecklist,
-  validateNotes
+  validateNotes,
+  validateQueue
 } from './sessionNotes'
+import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX } from '../../shared/types'
 
 function session(id: string, extra: Partial<Session> = {}): Session {
   return {
@@ -160,5 +163,42 @@ describe('setSessionChecklist', () => {
     const data = storeWith(session('s1', { checklist: items }))
     expect(() => setSessionChecklist(data, 's1', [{ id: 'a', text: '', done: false }])).toThrow('Invalid checklist')
     expect(data.sessions[0].checklist).toEqual(items)
+  })
+})
+
+describe('validateQueue / setSessionQueue (D47)', () => {
+  const items = [{ id: 'q1', text: '  run the tests  ', addedAt: 5 }]
+
+  it('trims the text and keeps id and addedAt', () => {
+    expect(validateQueue(items)).toEqual([{ id: 'q1', text: 'run the tests', addedAt: 5 }])
+  })
+
+  it('accepts multi-line text up to the limit', () => {
+    expect(validateQueue([{ id: 'a', text: 'one\ntwo', addedAt: 0 }])[0]?.text).toBe('one\ntwo')
+    expect(validateQueue([{ id: 'a', text: 'x'.repeat(QUEUE_TEXT_MAX), addedAt: 0 }])).toHaveLength(1)
+  })
+
+  it.each([
+    ['not an array', 'x'],
+    ['too many prompts', Array.from({ length: QUEUE_MAX_ITEMS + 1 }, (_, i) => ({ id: `p${i}`, text: 't', addedAt: 0 }))],
+    ['a blank text', [{ id: 'a', text: '   ', addedAt: 0 }]],
+    ['a text over the limit', [{ id: 'a', text: 'x'.repeat(QUEUE_TEXT_MAX + 1), addedAt: 0 }]],
+    ['a duplicate id', [{ id: 'a', text: 't', addedAt: 0 }, { id: 'a', text: 'u', addedAt: 0 }]],
+    ['a missing addedAt', [{ id: 'a', text: 't' }]],
+    ['an empty id', [{ id: '', text: 't', addedAt: 0 }]]
+  ])('rejects %s', (_label, value) => {
+    expect(() => validateQueue(value)).toThrow('Invalid queue')
+  })
+
+  it('sets the queue immutably and removes the field for an empty list', () => {
+    const data = storeWith(session('s1'))
+    const after = setSessionQueue(data, 's1', items)
+    expect(after.sessions[0].queue).toEqual([{ id: 'q1', text: 'run the tests', addedAt: 5 }])
+    expect(data.sessions[0].queue).toBeUndefined()
+    expect(setSessionQueue(after, 's1', []).sessions[0]).not.toHaveProperty('queue')
+  })
+
+  it('throws for an unknown session', () => {
+    expect(() => setSessionQueue(storeWith(), 'nope', items)).toThrow('Unknown session: nope')
   })
 })

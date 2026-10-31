@@ -22,6 +22,10 @@ describe('parseSidePanelTab', () => {
     expect(parseSidePanelTab('notes')).toBe('notes')
   })
 
+  it('reads queue as the Queue tab', () => {
+    expect(parseSidePanelTab('queue')).toBe('queue')
+  })
+
   it('reads changes as the Changes tab', () => {
     expect(parseSidePanelTab('changes')).toBe('changes')
   })
@@ -36,12 +40,12 @@ describe('parseSidePanelTab', () => {
 })
 
 describe('sidePanelTabsFor', () => {
-  it('offers Notes, Activity and Changes for a worktree session', () => {
-    expect(sidePanelTabsFor(true)).toEqual(['notes', 'activity', 'changes'])
+  it('offers Notes, Activity, Queue and Changes for a worktree session', () => {
+    expect(sidePanelTabsFor(true)).toEqual(['notes', 'activity', 'queue', 'changes'])
   })
 
-  it('offers only Notes and Activity for an Ops session', () => {
-    expect(sidePanelTabsFor(false)).toEqual(['notes', 'activity'])
+  it('offers Notes, Activity and Queue for an Ops session', () => {
+    expect(sidePanelTabsFor(false)).toEqual(['notes', 'activity', 'queue'])
   })
 })
 

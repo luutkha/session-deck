@@ -20,7 +20,8 @@ import {
   assertStatusDef,
   asCreateSessionInput,
   asNotes,
-  asChecklist
+  asChecklist,
+  asQueue
 } from './ipcValidation'
 import { SessionStore } from '../store'
 import { PtyManager } from '../pty/PtyManager'
@@ -31,6 +32,7 @@ import { logMainError } from './errorLog'
 import type { UsageRefresher, UsageService } from '../usage'
 import type { LoginItem } from './loginItem'
 import type { WorkerHub } from '../workers'
+import type { PromptQueue } from '../queue/promptQueue'
 import { markQuitting } from './quitState'
 import { asSettingsPatch } from './settingsValidation'
 
@@ -45,6 +47,8 @@ export interface IpcHandlersDeps {
   readonly usageRefresher: UsageRefresher
   /** OpenCode workers started from inside Claude sessions (read-only). */
   readonly workers: WorkerHub
+  /** D47 prompt queue: sends the next prompt when a turn finishes, or one prompt on request. */
+  readonly promptQueue: PromptQueue
   /** Sends to every open window (main and, when popped out, Code). */
   readonly broadcast: (channel: string, ...args: unknown[]) => void
   /** The window that sent an IPC call, used as the dialog parent. Null when it is gone: the dialog then has no parent. */
@@ -85,7 +89,7 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 }
 
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
 
   const sendStoreChanged = (data: StoreData): void => {
     broadcast(IPC.evStoreChanged, data)
@@ -152,6 +156,16 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
 
   ipcMain.handle(IPC.sessionSetChecklist, async (_event, rawId: unknown, rawItems: unknown): Promise<void> => {
     store.setSessionChecklist(assertId(rawId, 'session id'), asChecklist(rawItems))
+  })
+
+  ipcMain.handle(IPC.sessionSetQueue, async (_event, rawId: unknown, rawItems: unknown): Promise<void> => {
+    const id = assertId(rawId, 'session id')
+    store.setSessionQueue(id, asQueue(rawItems))
+    promptQueue.onQueueChanged(id)
+  })
+
+  ipcMain.handle(IPC.sessionSendQueuedNow, async (_event, rawId: unknown, rawPromptId: unknown): Promise<void> => {
+    promptQueue.sendNow(assertId(rawId, 'session id'), assertNonEmptyString(rawPromptId, 'prompt id'))
   })
 
   ipcMain.handle(IPC.groupCreate, async (_event, rawName: unknown): Promise<Group> => {

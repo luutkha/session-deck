@@ -1,7 +1,7 @@
 import { WORKTREE_NAME_MAX } from '../../shared/types'
-import type { AgentKind, ChecklistItem, CreateSessionInput, CreateWorktreeInput, Group, Id, StatusDef } from '../../shared/types'
+import type { AgentKind, ChecklistItem, QueuedPrompt, CreateSessionInput, CreateWorktreeInput, Group, Id, StatusDef } from '../../shared/types'
 import { buildLaunch } from '../pty/launch'
-import { MAX_NOTES_LENGTH, validateChecklist } from '../store'
+import { MAX_NOTES_LENGTH, validateChecklist, validateQueue } from '../store'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
 import { errorMessage } from '../../shared/guards'
 
@@ -296,4 +296,11 @@ export function assertStatusDef(raw: unknown): StatusDef {
     name: assertNonEmptyString(obj.name, 'status.name'),
     color: assertNonEmptyString(obj.color, 'status.color')
   }
+}
+/** Prompt queue payload (D47): validated by the same rules as the store (count, unique ids, text length). */
+export function asQueue(raw: unknown): QueuedPrompt[] {
+  if (!Array.isArray(raw)) {
+    throw new Error('Invalid queue: must be an array of prompts')
+  }
+  return validateQueue(raw)
 }

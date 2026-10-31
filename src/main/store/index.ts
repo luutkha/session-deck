@@ -26,8 +26,10 @@ export {
   MAX_NOTES_LENGTH,
   setSessionChecklist,
   setSessionNotes,
+  setSessionQueue,
   validateChecklist,
-  validateNotes
+  validateNotes,
+  validateQueue
 } from './sessionNotes'
 export {
   clearAutoStatusReference,

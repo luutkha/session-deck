@@ -308,6 +308,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                 onClose={nav.closeNotes}
                 storageKey={keys.sidePanel}
                 changesTarget={changesTarget(activeSession, activeState)}
+                runtimeState={activeState}
               />
             ) : null}
           </div>

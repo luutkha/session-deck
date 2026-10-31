@@ -195,6 +195,14 @@ After the round-3 review the suggestion list was: 1 hands-on round with a fresh 
 - Order: quick fixes, then the features one by one (each verified and committed), then `npm run dist` so the hands-on round uses a build that has everything.
 - Auto-update, code signing and the light theme stay deferred.
 
+**D47 · 2026-10-31 · Prompt queue: send the next prompt when the turn finishes** · active
+Feature 1 of the D46 list ("Do for 1,2,3"). Defaults chosen while building, change on request:
+- **Saved per session** in the store (`Session.queue`, max 20 prompts, 1..4000 chars), so a queue survives a restart.
+- **When:** the moment the session's activity turns `finished` (Claude Stop hook or the OpenCode plugin's Stop). One prompt per finished turn. A prompt added while the session is already idle goes out at once.
+- **How:** main types the text, then Enter 300 ms later (same as the autopilot's "continue"). A 30 s guard holds the next prompt until the session reports a new turn, so two prompts never go out back to back.
+- **Never:** into Shell sessions, sleeping, exited or closed sessions; the queue never wakes a session.
+- **UI:** a Queue tab in the side panel (add with Ctrl+Enter, Move up, Send now, Remove, state line) and a count chip on sidebar / Code / Hub cards.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

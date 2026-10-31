@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   ChecklistItem,
+  QueuedPrompt,
   CreateSessionInput,
   Group,
   Id,
@@ -27,6 +28,7 @@ import {
 } from './codeReducers'
 import {
   setSessionChecklist as setSessionChecklistReducer,
+  setSessionQueue as setSessionQueueReducer,
   setSessionNotes as setSessionNotesReducer
 } from './sessionNotes'
 import {
@@ -218,6 +220,13 @@ export class SessionStore {
 
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): void {
     const next = setSessionChecklistReducer(this.data, id, items)
+    this.data = next
+    this.saver.schedule(next)
+    this.emit(next)
+  }
+
+  setSessionQueue(id: Id, items: readonly QueuedPrompt[]): void {
+    const next = setSessionQueueReducer(this.data, id, items)
     this.data = next
     this.saver.schedule(next)
     this.emit(next)

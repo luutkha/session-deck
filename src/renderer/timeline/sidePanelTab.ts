@@ -1,22 +1,22 @@
-// Which tab the side panel shows (Notes, Activity or Changes), remembered across launches.
+// Which tab the side panel shows (Notes, Activity, Queue or Changes), remembered across launches.
 // localStorage can be blocked, so every access is guarded and falls back to Notes.
 // Changes exists only for worktree (Code mode) sessions; elsewhere a stored 'changes' shows Notes.
 
-export type SidePanelTab = 'notes' | 'activity' | 'changes'
+export type SidePanelTab = 'notes' | 'activity' | 'queue' | 'changes'
 
 export const SIDE_PANEL_TAB_KEY = 'sessiondeck.sidepanel.tab.v1'
 export const DEFAULT_SIDE_PANEL_TAB: SidePanelTab = 'notes'
 
 export function parseSidePanelTab(raw: string | null): SidePanelTab {
-  if (raw === 'activity' || raw === 'changes') {
+  if (raw === 'activity' || raw === 'queue' || raw === 'changes') {
     return raw
   }
   return DEFAULT_SIDE_PANEL_TAB
 }
 
-/** The tabs a session offers: Changes only for a worktree session. */
+/** The tabs a session offers: Changes only for a worktree session. Queue is D47. */
 export function sidePanelTabsFor(hasChanges: boolean): readonly SidePanelTab[] {
-  return hasChanges ? ['notes', 'activity', 'changes'] : ['notes', 'activity']
+  return hasChanges ? ['notes', 'activity', 'queue', 'changes'] : ['notes', 'activity', 'queue']
 }
 
 /** The tab to show: a stored Changes tab falls back to Notes when the session has no worktree. */

@@ -1,4 +1,4 @@
-import { CheckSquare, NotebookPen } from 'lucide-react'
+import { CheckSquare, ListOrdered, NotebookPen } from 'lucide-react'
 import type { ReactElement } from 'react'
 import type { ChecklistItem } from '../../shared/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
@@ -8,18 +8,20 @@ import { isComplete, progress } from './checklistLogic'
 export interface ChecklistChipProps {
   readonly checklist?: readonly ChecklistItem[]
   readonly hasNotes: boolean
+  /** Prompts waiting in the session's queue (D47). 0 or absent = no chip. */
+  readonly queued?: number
 }
 
 /**
- * The "2/5" progress chip and notes indicator shown in a card's row 2. Renders nothing when the
- * session has neither a checklist nor notes.
+ * The "2/5" progress chip, the queued-prompts count and the notes indicator shown in a card's row 2. Renders nothing
+ * when the session has none of them.
  */
-export function ChecklistChip({ checklist, hasNotes }: ChecklistChipProps): ReactElement | null {
+export function ChecklistChip({ checklist, hasNotes, queued = 0 }: ChecklistChipProps): ReactElement | null {
   const items = checklist ?? []
   const stats = progress(items)
   const complete = isComplete(items)
 
-  if (stats.total === 0 && !hasNotes) return null
+  if (stats.total === 0 && !hasNotes && queued === 0) return null
 
   return (
     <>
@@ -38,6 +40,19 @@ export function ChecklistChip({ checklist, hasNotes }: ChecklistChipProps): Reac
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={4}>
             {stats.done} of {stats.total} steps done
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
+      {queued > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span data-queue-chip={queued} className="inline-flex shrink-0 items-center gap-1 text-[11px] leading-none tabular-nums text-muted-foreground/80">
+              <ListOrdered className="size-3" aria-hidden="true" />
+              {queued}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={4}>
+            {queued === 1 ? '1 prompt queued' : `${queued} prompts queued`}
           </TooltipContent>
         </Tooltip>
       ) : null}

@@ -103,3 +103,20 @@ describe('persistence: notes and checklist', () => {
     expect(parsed.sessions[0].checklist).toEqual([{ id: 'a', text: 'hi', done: true }])
   })
 })
+
+describe('persistence: prompt queue (D47)', () => {
+  it('round trips a queue', () => {
+    const data: StoreData = {
+      ...emptyStore(),
+      sessions: [{ ...BASE_SESSION, queue: [{ id: 'q1', text: 'next step', addedAt: 3 }] }]
+    }
+    expect(parseStoreData(JSON.parse(JSON.stringify(data)))).toEqual(data)
+  })
+
+  it('drops an empty or invalid queue without failing the file', () => {
+    expect(parseStoreData(fileWith({ queue: [] })).sessions[0]).not.toHaveProperty('queue')
+    const parsed = parseStoreData(fileWith({ queue: [{ id: 'q', text: '' }], name: 'Kept' }))
+    expect(parsed.sessions[0]).not.toHaveProperty('queue')
+    expect(parsed.sessions[0]?.name).toBe('Kept')
+  })
+})

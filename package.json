@@ -61,6 +61,8 @@
     "e2e:lastfolder": "node scripts/e2e-lastfolder.cjs",
     "e2e:foldertabs": "node scripts/e2e-foldertabs.cjs",
     "e2e:checklist-draft": "node scripts/e2e-checklist-draft.cjs",
+    "e2e:queue": "node scripts/e2e-queue.cjs",
+    "e2e:queue-real": "node scripts/e2e-queue-real.cjs",
     "e2e:visual": "node scripts/e2e-visual.cjs"
   },
   "dependencies": {

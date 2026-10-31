@@ -222,7 +222,7 @@ export function HubCard(props: HubCardProps): ReactElement {
             {folder}
           </span>
         )}
-        <ChecklistChip checklist={session.checklist} hasNotes={!!session.notes?.trim()} />
+        <ChecklistChip checklist={session.checklist} hasNotes={!!session.notes?.trim()} queued={session.queue?.length ?? 0} />
         {usage !== undefined ? <UsageChip usage={usage} /> : null}
         {groupName !== null && (
           <Badge variant="hostContext" className="h-4 px-1.5 text-[10px] leading-none">
