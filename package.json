@@ -67,6 +67,7 @@
     "e2e:presets": "node scripts/e2e-presets.cjs",
     "e2e:resume-launch": "node scripts/e2e-resume-launch.cjs",
     "e2e:costs": "node scripts/e2e-costs.cjs",
+    "e2e:fork-search-real": "node scripts/e2e-fork-search-real.cjs",
     "e2e:visual": "node scripts/e2e-visual.cjs"
   },
   "dependencies": {

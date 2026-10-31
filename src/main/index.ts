@@ -35,6 +35,9 @@ import { createSleepScheduler } from './sleep/SleepScheduler'
 import { createWorkerHub } from './workers'
 import { createPromptQueue } from './queue/promptQueue'
 import { createLaunchResume, RESUME_FILE_NAME } from './app/launchResume'
+import { createConversationSearch } from './transcripts/conversationSearch'
+import { claudeConfigDir } from './app/transcript'
+import { readdir, stat } from 'node:fs/promises'
 import { IPC } from '../shared/ipc'
 import { errorMessage } from '../shared/guards'
 
@@ -415,6 +418,19 @@ if (!gotTheLock) {
       usageRefresher,
       workers,
       promptQueue,
+      conversationSearch: createConversationSearch({
+        configDir: claudeConfigDir,
+        readdir: (dir) => readdir(dir),
+        stat: async (file) => {
+          try {
+            const info = await stat(file)
+            return { size: info.size, mtimeMs: info.mtimeMs }
+          } catch {
+            return null
+          }
+        },
+        readFile: (file) => readFile(file, 'utf-8')
+      }),
       broadcast: sendToWindow,
       windowForSender: (senderId) => {
         const role = windows.roleOf(senderId)

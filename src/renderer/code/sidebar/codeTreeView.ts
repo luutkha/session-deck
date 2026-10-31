@@ -43,4 +43,6 @@ export interface CodeTreeView {
   readonly actions: SessionActions
   readonly commands: CodeCommands
   readonly handlers: CodeTreeHandlers
+  /** D52: forks a Claude session and opens the fork. Absent = no menu item. */
+  readonly onForkSession?: (id: Id) => void
 }

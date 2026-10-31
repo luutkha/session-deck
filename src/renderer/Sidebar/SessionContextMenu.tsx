@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode } from 'react'
-import { Bell, BellOff, Coffee, Moon, Sun } from 'lucide-react'
+import { Bell, BellOff, Coffee, GitFork, Moon, Sun } from 'lucide-react'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -35,6 +35,8 @@ export interface SessionContextMenuProps {
   /** The session's current bell (null = none): drives the Mark as read / Mark as unread item. */
   readonly attention?: AttentionReason | null
   readonly onToggleRead?: () => void
+  /** D52: shown for Claude sessions; starts a new session on a copy of the conversation. */
+  readonly onFork?: () => void
 }
 
 export function SessionContextMenu(props: SessionContextMenuProps): ReactElement {
@@ -44,7 +46,7 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
     onCloseSession, onRemoveSession,
     sleeping = false, canSleep = false, onSleep, onWake,
     keepAwake = false, onToggleKeepAwake,
-    attention = null, onToggleRead
+    attention = null, onToggleRead, onFork
   } = props
   return (
     <ContextMenu>
@@ -122,6 +124,12 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
           <ContextMenuItem onSelect={onToggleKeepAwake}>
             <Coffee aria-hidden="true" />
             {keepAwake ? 'Allow auto-sleep' : 'Keep awake'}
+          </ContextMenuItem>
+        ) : null}
+        {onFork !== undefined ? (
+          <ContextMenuItem onSelect={onFork} data-fork-session="">
+            <GitFork aria-hidden="true" />
+            Fork session
           </ContextMenuItem>
         ) : null}
         <ContextMenuItem onSelect={onCloseSession}>Close session</ContextMenuItem>

@@ -102,6 +102,28 @@ export interface Worktree {
 export const WORKTREE_NAME_MAX = 60
 
 /** Persisted document (JSON on disk). Runtime-only data (run state, attention) is NOT persisted. */
+/** One match in a past conversation (D52 conversation search). */
+export interface ConversationHit {
+  readonly sessionId: Id
+  readonly role: 'user' | 'assistant'
+  /** A short excerpt around the match, whitespace collapsed. */
+  readonly snippet: string
+  /** Where the match starts in `snippet`, and its length. */
+  readonly matchStart: number
+  readonly matchLength: number
+  /** Epoch ms of the message, null when the transcript has no timestamp. */
+  readonly at: number | null
+}
+
+export interface ConversationSearchResult {
+  /** Newest first. */
+  readonly hits: readonly ConversationHit[]
+  /** True when more matches existed than were returned. */
+  readonly truncated: boolean
+  /** How many session transcripts were read. */
+  readonly searchedSessions: number
+}
+
 /** A saved New Session form (D49): one click starts a session with these values. */
 export interface SessionPreset {
   readonly id: Id

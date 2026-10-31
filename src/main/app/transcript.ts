@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /** Claude's config dir: CLAUDE_CONFIG_DIR when set, else ~/.claude. */
-function claudeConfigDir(): string {
+export function claudeConfigDir(): string {
   const fromEnv = process.env.CLAUDE_CONFIG_DIR
   return fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : join(homedir(), '.claude')
 }

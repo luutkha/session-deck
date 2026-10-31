@@ -37,6 +37,7 @@ export interface SessionListProps {
   readonly onStartRenameGroup: (groupId: Id) => void
   readonly onRenameGroup: (groupId: Id, name: string) => void
   readonly onCloseSession: (id: Id) => void
+  readonly onForkSession?: (id: Id) => void
   readonly onSetSessionStatus: (id: Id, statusId: Id | null) => void
   readonly onMoveSession: (id: Id, groupId: Id | null) => void
   readonly onCreateGroupAndMove: (id: Id) => void
@@ -92,6 +93,7 @@ export function SessionList(props: SessionListProps): ReactElement {
               onStartRenameGroup={props.onStartRenameGroup}
               onRenameGroup={props.onRenameGroup}
               onCloseSession={props.onCloseSession}
+              onForkSession={props.onForkSession}
               onSetSessionStatus={props.onSetSessionStatus}
               onMoveSession={props.onMoveSession}
               onCreateGroupAndMove={props.onCreateGroupAndMove}
@@ -136,6 +138,7 @@ export function SessionList(props: SessionListProps): ReactElement {
               onRenameSession={props.onRenameSession}
               onCancelRename={props.onCancelRename}
               onCloseSession={props.onCloseSession}
+              onForkSession={props.onForkSession}
               onSetSessionStatus={props.onSetSessionStatus}
               onMoveSession={props.onMoveSession}
               onCreateGroupAndMove={props.onCreateGroupAndMove}

@@ -31,6 +31,8 @@ export interface StatusSectionProps {
   readonly onRenameSession: (id: Id, name: string) => void
   readonly onCancelRename: () => void
   readonly onCloseSession: (id: Id) => void
+  /** D52: fork a Claude session (absent = no menu item). */
+  readonly onForkSession?: (id: Id) => void
   readonly onSetSessionStatus: (id: Id, statusId: Id | null) => void
   readonly onMoveSession: (id: Id, groupId: Id | null) => void
   readonly onCreateGroupAndMove: (id: Id) => void
@@ -47,7 +49,7 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
     activeId, renamingSessionId, drag, dropOver, collapsed, draggableSessions,
     selectedIds,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
-    onCloseSession, onSetSessionStatus, onMoveSession, onCreateGroupAndMove,
+    onCloseSession, onForkSession, onSetSessionStatus, onMoveSession, onCreateGroupAndMove,
     onRequestRemoveSession, onDragStartSession, onDragOverSession, onDropItem, onDragEnd
   } = props
 
@@ -158,6 +160,7 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
                 onMoveToGroup={(gid): void => onMoveSession(session.id, gid)}
                 onNewGroupAndMove={(): void => onCreateGroupAndMove(session.id)}
                 onCloseSession={(): void => onCloseSession(session.id)}
+                onFork={onForkSession !== undefined && (session.agent ?? 'claude') === 'claude' ? (): void => onForkSession(session.id) : undefined}
                 onRemoveSession={(): void => onRequestRemoveSession(session.id)}
               >
                 {card}

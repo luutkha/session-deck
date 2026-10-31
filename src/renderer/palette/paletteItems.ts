@@ -17,6 +17,8 @@ export type PaletteCommand =
   | { readonly kind: 'open-settings' }
   | { readonly kind: 'show-away-summary' }
   | { readonly kind: 'show-costs' }
+  | { readonly kind: 'fork-session'; readonly id: Id }
+  | { readonly kind: 'search-conversations' }
   | { readonly kind: 'sleep'; readonly id: Id }
   | { readonly kind: 'set-keep-awake'; readonly id: Id; readonly keepAwake: boolean }
   | { readonly kind: 'set-status'; readonly id: Id; readonly statusId: Id }
@@ -230,6 +232,17 @@ function thisSessionItems(
     items.push(sleepItem(session, name, detail))
   }
   items.push(keepAwakeItem(session, name, detail), readItem(session, name, detail, state))
+  // D52: only Claude conversations can be forked (Claude Code's --fork-session).
+  if ((session.agent ?? 'claude') === 'claude') {
+    items.push({
+      id: `this:fork:${session.id}`,
+      group: 'This session',
+      label: `Fork ${name}`,
+      detail: 'New session on a copy of this conversation',
+      keywords: 'fork branch copy duplicate conversation',
+      run: { kind: 'fork-session', id: session.id }
+    })
+  }
   return [...items, ...statusItems(session, detail, statuses)]
 }
 
@@ -339,6 +352,14 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
       run: { kind: 'open-grid' }
     })
   }
+  items.push({
+    id: 'action:search-conversations',
+    group: 'Actions',
+    label: 'Search conversations',
+    detail: 'Find text in past Claude conversations of your sessions',
+    keywords: 'search find history transcript conversation grep',
+    run: { kind: 'search-conversations' }
+  })
   items.push({
     id: 'action:show-costs',
     group: 'Actions',

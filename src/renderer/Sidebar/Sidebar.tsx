@@ -58,6 +58,8 @@ export interface SidebarProps {
   readonly activeId: Id | null
   readonly onSelect: (id: Id) => void
   readonly onReopen: (id: Id) => void
+  /** D52: forks a Claude session and opens the fork (right-click "Fork session"). Absent = no menu item. */
+  readonly onForkSession?: (id: Id) => void
   readonly actions: SessionActions
   readonly onNewSession: (groupId?: Id | null, folder?: string) => void
   readonly onEditStatuses: () => void
@@ -366,6 +368,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
           onStartRenameGroup={handleStartRenameGroup}
           onRenameGroup={renameGroup}
           onCloseSession={closeSession}
+          onForkSession={props.onForkSession}
           onSetSessionStatus={(id, statusId): void => ignoreRejection(actions.setSessionStatus(id, statusId))}
           onMoveSession={moveToGroupEnd}
           onCreateGroupAndMove={createGroupAndMove}

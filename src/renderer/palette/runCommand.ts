@@ -16,6 +16,10 @@ export interface PaletteHandlers {
   readonly showAwaySummary: () => void
   /** D51: opens the cost report. */
   readonly showCosts: () => void
+  /** D52: forks a Claude session and opens the fork. */
+  readonly forkSession: (id: Id) => void | Promise<void>
+  /** D52: opens the conversation search. */
+  readonly searchConversations: () => void
   readonly setStatus: (id: Id, statusId: Id) => void | Promise<void>
   /** Mode switch (main window). */
   readonly switchMode: (mode: UiMode) => void
@@ -70,6 +74,10 @@ function runSessionCommand(
       return attempt(command, () => handlers.showAwaySummary())
     case 'show-costs':
       return attempt(command, () => handlers.showCosts())
+    case 'fork-session':
+      return attempt(command, () => handlers.forkSession(command.id))
+    case 'search-conversations':
+      return attempt(command, () => handlers.searchConversations())
     case 'set-status':
       return attempt(command, () => handlers.setStatus(command.id, command.statusId))
     case 'switch-mode':

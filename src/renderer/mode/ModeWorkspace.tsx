@@ -15,6 +15,7 @@ import { NotesPanel } from '../notes'
 import { progress } from '../notes/checklistLogic'
 import { CommandPalette } from '../palette/CommandPalette'
 import { CostDialog } from '../costs/CostDialog'
+import { ConversationSearchDialog } from '../search/ConversationSearchDialog'
 import { TerminalWorkspace } from '../Terminal/TerminalWorkspace'
 import type { TerminalGridMode } from '../grid/GridCells'
 import { WorkerView } from '../workers/WorkerView'
@@ -173,6 +174,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   activeId={activeId}
                   onSelect={nav.selectSession}
                   onReopen={nav.reopenSession}
+                  onForkSession={commands.forkSession}
                   actions={actions}
                   onNewWorktree={commands.openNewWorktree}
                   onNewSessionInWorktree={commands.openNewInWorktree}
@@ -190,6 +192,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   activeId={activeId}
                   onSelect={nav.selectSession}
                   onReopen={nav.reopenSession}
+                  onForkSession={commands.forkSession}
                   actions={actions}
                   onNewSession={commands.openNew}
                   onEditStatuses={editStatuses}
@@ -349,6 +352,14 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
         onSettingsSectionChange={commands.setSettingsSection}
         onCloseSettings={(): void => commands.setSettingsSection(null)}
       />
+      {commands.searchOpen ? (
+        <ConversationSearchDialog
+          open
+          sessions={store.data?.sessions ?? []}
+          onOpenChange={commands.setSearchOpen}
+          onOpenSession={nav.selectSession}
+        />
+      ) : null}
       {commands.costsOpen ? (
         <CostDialog
           open

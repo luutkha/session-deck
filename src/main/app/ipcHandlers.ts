@@ -2,7 +2,7 @@ import { app, ipcMain, dialog, shell, type BrowserWindow, type OpenDialogOptions
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { createLinkService, MAX_LINK_TEXTS } from '../links'
-import type { AppSettings, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
+import type { AppSettings, ConversationSearchResult, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from './sessionController'
@@ -34,6 +34,7 @@ import type { UsageRefresher, UsageService } from '../usage'
 import type { LoginItem } from './loginItem'
 import type { WorkerHub } from '../workers'
 import type { PromptQueue } from '../queue/promptQueue'
+import type { ConversationSearch } from '../transcripts/conversationSearch'
 import { markQuitting } from './quitState'
 import { asSettingsPatch } from './settingsValidation'
 
@@ -50,6 +51,8 @@ export interface IpcHandlersDeps {
   readonly workers: WorkerHub
   /** D47 prompt queue: sends the next prompt when a turn finishes, or one prompt on request. */
   readonly promptQueue: PromptQueue
+  /** D52: read-only search in the saved Claude conversations. */
+  readonly conversationSearch: ConversationSearch
   /** Sends to every open window (main and, when popped out, Code). */
   readonly broadcast: (channel: string, ...args: unknown[]) => void
   /** The window that sent an IPC call, used as the dialog parent. Null when it is gone: the dialog then has no parent. */
@@ -90,7 +93,7 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 }
 
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, conversationSearch, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
 
   const sendStoreChanged = (data: StoreData): void => {
     broadcast(IPC.evStoreChanged, data)
@@ -109,6 +112,11 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
 
   ipcMain.handle(IPC.sessionCreate, async (_event, raw: unknown): Promise<Session> => {
     return controller.createSession(asCreateSessionInput(raw))
+  })
+
+  ipcMain.handle(IPC.conversationSearch, async (_event, raw: unknown): Promise<ConversationSearchResult> => {
+    if (typeof raw !== 'string') throw new Error('Search text must be a string')
+    return conversationSearch.search(store.get().sessions, raw)
   })
 
   ipcMain.handle(IPC.sessionFork, async (_event, raw: unknown): Promise<Session> => {

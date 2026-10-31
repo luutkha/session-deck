@@ -40,6 +40,8 @@ export interface GroupSectionProps {
   readonly onStartRenameGroup: (groupId: Id) => void
   readonly onRenameGroup: (groupId: Id, name: string) => void
   readonly onCloseSession: (id: Id) => void
+  /** D52: fork a Claude session (absent = no menu item). */
+  readonly onForkSession?: (id: Id) => void
   readonly onSetSessionStatus: (id: Id, statusId: Id | null) => void
   readonly onMoveSession: (id: Id, groupId: Id | null) => void
   readonly onCreateGroupAndMove: (id: Id) => void
@@ -62,7 +64,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     showWorkspaces, workspaceCollapsed, onToggleWorkspace, onNewSessionInFolder,
     selectedIds,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
-    onStartRenameGroup, onRenameGroup, onCloseSession, onSetSessionStatus,
+    onStartRenameGroup, onRenameGroup, onCloseSession, onForkSession, onSetSessionStatus,
     onMoveSession, onCreateGroupAndMove, onRequestRemoveSession, onRemoveGroup,
     onNewSession, onDragStartSession, onDragStartGroup,
     onDragOverSession, onDragOverUngrouped,
@@ -275,6 +277,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         onMoveToGroup={(groupId): void => onMoveSession(session.id, groupId)}
         onNewGroupAndMove={(): void => onCreateGroupAndMove(session.id)}
         onCloseSession={(): void => onCloseSession(session.id)}
+        onFork={onForkSession !== undefined && (session.agent ?? 'claude') === 'claude' ? (): void => onForkSession(session.id) : undefined}
         onRemoveSession={(): void => onRequestRemoveSession(session.id)}
       >
         {card}

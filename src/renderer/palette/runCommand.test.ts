@@ -20,6 +20,8 @@ function fakeHandlers(): PaletteHandlers {
     openSettings: vi.fn(),
     showAwaySummary: vi.fn(),
     showCosts: vi.fn(),
+    forkSession: vi.fn(),
+    searchConversations: vi.fn(),
     setStatus: vi.fn(),
     switchMode: vi.fn(),
     popOutCode: vi.fn(),
@@ -71,6 +73,13 @@ describe('runPaletteCommand: session and view commands', () => {
   it('starts a session from a preset for new-from-preset', () => {
     runPaletteCommand({ kind: 'new-from-preset', presetId: 'p1' }, handlers, api)
     expect(handlers.newFromPreset).toHaveBeenCalledWith('p1')
+  })
+
+  it('forks for fork-session and opens the search for search-conversations', () => {
+    runPaletteCommand({ kind: 'fork-session', id: 's1' }, handlers, api)
+    expect(handlers.forkSession).toHaveBeenCalledWith('s1')
+    runPaletteCommand({ kind: 'search-conversations' }, handlers, api)
+    expect(handlers.searchConversations).toHaveBeenCalledTimes(1)
   })
 
   it('opens the cost report for show-costs', () => {

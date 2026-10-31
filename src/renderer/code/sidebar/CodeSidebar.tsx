@@ -24,6 +24,8 @@ export interface CodeSidebarProps {
   readonly activeId: Id | null
   readonly onSelect: (id: Id) => void
   readonly onReopen: (id: Id) => void
+  /** D52: forks a Claude session and opens the fork. Absent = no menu item. */
+  readonly onForkSession?: (id: Id) => void
   readonly actions: SessionActions
   /** "New worktree" (repo header button / empty state). repoId undefined = let the dialog pick the first repo. */
   readonly onNewWorktree: (repoId?: Id) => void
@@ -64,7 +66,8 @@ export function CodeSidebar(props: CodeSidebarProps): ReactElement | null {
     changeCounts: model.changeCounts,
     actions,
     commands: controller.commands,
-    handlers: controller.handlers
+    handlers: controller.handlers,
+    onForkSession: props.onForkSession
   }
 
   const bannerMessage = controller.localError ?? props.lastError

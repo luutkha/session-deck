@@ -1,6 +1,6 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
+  AppSettings, ChecklistItem, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
   Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole
 } from './types'
 
@@ -8,6 +8,7 @@ export const IPC = {
   // store (renderer -> main, invoke)
   storeGet: 'store:get',
   sessionCreate: 'session:create',
+  conversationSearch: 'conversation:search', // (query 2..200 chars) -> ConversationSearchResult: text in past Claude conversations (D52)
   sessionFork: 'session:fork', // (id) -> Session: a new Claude session on a copy of this conversation (D52)
   sessionRename: 'session:rename',
   sessionSetStatus: 'session:setStatus',
@@ -122,6 +123,8 @@ export interface Api {
   setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void>
   /** D52: a new Claude session that continues a copy of this session's conversation. */
   forkSession(id: Id): Promise<Session>
+  /** D52: finds text in the saved Claude conversations of SessionDeck's sessions (read-only). */
+  searchConversations(query: string): Promise<ConversationSearchResult>
   /** D47: types one queued prompt now (running, awake Claude/OpenCode session only) and removes it from the queue. */
   sendQueuedNow(id: Id, promptId: string): Promise<void>
   /** D49: adds a preset or replaces the one with the same id. */

@@ -6,6 +6,7 @@ import type {
   ChecklistItem,
   QueuedPrompt,
   SessionPreset,
+  ConversationSearchResult,
   CreateSessionInput,
   Group,
   Id,
@@ -84,6 +85,10 @@ const api: Api = {
 
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): Promise<void> {
     return ipcRenderer.invoke(IPC.sessionSetChecklist, id, items)
+  },
+
+  searchConversations(query: string): Promise<ConversationSearchResult> {
+    return ipcRenderer.invoke(IPC.conversationSearch, query)
   },
 
   forkSession(id: Id): Promise<Session> {

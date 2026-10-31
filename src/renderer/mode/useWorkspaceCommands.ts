@@ -42,6 +42,9 @@ export interface WorkspaceCommands {
   readonly setPaletteOpen: (open: boolean) => void
   readonly costsOpen: boolean
   readonly setCostsOpen: (open: boolean) => void
+  readonly searchOpen: boolean
+  readonly forkSession: (id: Id) => void
+  readonly setSearchOpen: (open: boolean) => void
   readonly paletteItems: readonly PaletteItem[]
   readonly runPalette: (command: PaletteCommand) => void
 }
@@ -53,6 +56,8 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
   const [paletteOpen, setPaletteOpen] = useState(false)
   // D51: the cost report dialog (palette "Show cost report", Hub header total).
   const [costsOpen, setCostsOpen] = useState(false)
+  // D52: conversation search dialog (palette "Search conversations").
+  const [searchOpen, setSearchOpen] = useState(false)
   const worktrees = data?.worktrees ?? []
 
   const openNew = useCallback((groupId?: Id | null, folder?: string): void => {
@@ -90,6 +95,12 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
     presets: data?.presets
   }), [data?.sessions, data?.statuses, data?.presets, input.runtime, activeId, nav.view, mode, input.role, input.codePoppedOut])
 
+  // D52: fork and open the fork in a tab (a just-created session has no tab yet, so openCreated, not selectSession).
+  // A refusal (no conversation yet, not Claude) is shown in the store banner by the action wrapper.
+  const forkSession = useCallback((id: Id): void => {
+    actions.forkSession(id).then((fork): void => nav.openCreated(fork.id), (): void => undefined)
+  }, [actions, nav.openCreated])
+
   const runPalette = useCallback((command: PaletteCommand): void => {
     runPaletteCommand(command, {
       openSession: nav.selectSession,
@@ -107,16 +118,18 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       openSettings: (): void => setSettingsSection('general'),
       showAwaySummary: input.onShowAwaySummary,
       showCosts: (): void => setCostsOpen(true),
+      searchConversations: (): void => setSearchOpen(true),
+      forkSession,
       setStatus: (id, statusId): void | Promise<void> => actions.setSessionStatus(id, statusId),
       switchMode: input.onSwitchMode,
       popOutCode: input.onPopOutCode,
       dockCode: input.onDockCode,
       newWorktree: () => openNewWorktree()
     })
-  }, [data, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions])
+  }, [data, forkSession, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions])
 
   return {
     newDialog, closeNew, openNew, openNewInStatus, openNewWorktree, openNewInWorktree, handleCreated,
-    settingsSection, setSettingsSection, paletteOpen, setPaletteOpen, paletteItems, runPalette, costsOpen, setCostsOpen
+    settingsSection, setSettingsSection, paletteOpen, setPaletteOpen, paletteItems, runPalette, costsOpen, setCostsOpen, searchOpen, setSearchOpen, forkSession
   }
 }

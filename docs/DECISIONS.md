@@ -221,6 +221,11 @@ Feature 5 of the D46 list ("cost per session over time"). Built only from what t
 - **Activity tab strip:** the session's own 14-day cost per day.
 - Turns with an unknown cost are not counted; the report says so. One chart colour token `--chart-1`, checked with the dataviz validator against the dark surface.
 
+**D52 · 2026-10-31 · Fork a session and search past conversations** · active
+Feature 6 of the D46 list.
+- **Fork (Claude only):** right-click "Fork session" or the palette. Uses Claude Code's own `--resume <parent> --fork-session --session-id <new>`, checked first with the real CLI: the fork gets the history, the original conversation is not changed. A session with no saved conversation cannot be forked (clear message).
+- **Search:** palette "Search conversations" reads the saved Claude transcripts of SessionDeck's sessions (read-only, cached), shows highlighted excerpts newest first, and a hit opens the session. OpenCode conversations are not searched in v1 (different storage).
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 
