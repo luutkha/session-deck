@@ -38,3 +38,7 @@ D. Visual QA loop against the reference screenshots; fix the diffs.
 - Hub: main-area view (pinned "Hub" tab + sidebar nav item). Columns = "No status" + statuses in array order; cards open sessions; drag changes status; Closed sessions listed in a strip with Resume.
 - Settings dialog (gear in the sidebar footer): Sound (per-event sound, volume, custom file, Test) and Statuses (add/rename/recolor/reorder/delete). Footer Tag button opens Settings on Statuses.
 - Closing really kills the process tree (see HANDOFF).
+
+## Addendum 2026-11-01 (Jarvis)
+- Jarvis lives in a right-side overlay panel (not a tab, not a sidebar entry): full height between the title row and the status bar, `bg-background`, left border, `shadow-2xl`, a drag handle on its left edge, header row like the tab bar (h-9, `bg-card`) with icon buttons (mic, speaker, schedules, undo, new conversation, close). It slides in/out (`translate-x`), keeping its terminal size. The toggle is a ghost button "Jarvis" with the `Bot` icon at the right end of the tab bar, pressed state = accent background.
+- Destructive Jarvis actions reuse the Orca confirm dialog (`Sidebar/ConfirmDialog.tsx`).

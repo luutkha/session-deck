@@ -1,8 +1,9 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D53).
-> - `HANDOFF.md` — the narrative state of each feature, including known gaps.
+> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D54).
+> - `HANDOFF.md` — the one-page current state, known gaps and history.
+> - `docs/IMPLEMENTATION.md` — how to build a change (workflow, checklists, tests, definition of done).
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
 >
@@ -16,7 +17,7 @@
 2. Open the **domain matrix** (§2) and read the `Rules` column before changing anything.
 3. Follow `Code` for the real implementation and `Tests` for the proof that already exists.
 4. Check the **cross-cutting maps** (§3) when the change touches IPC, storage, shortcuts, settings or e2e.
-5. Use a **change recipe** (§4) for the common edits; respect the **invariants** (§5).
+5. Follow `docs/IMPLEMENTATION.md` for the change itself (§4 points there); respect the **invariants** (§5).
 
 **Status legend**
 
@@ -446,19 +447,6 @@ SessionDeck
 | WRK-4 | Worker tabs and view | Shipped | Claude session with workers | Read-only tabs; finished tabs close 2 min after ending unless being read; `×` only hides; selecting any session or the Hub leaves the worker view; an empty view explains that plugin-less (`--pure`) processes are invisible and suggests a restart. | `renderer/workers/useWorkers.ts`, `WorkerTabs.tsx`, `WorkerView.tsx`, `workerLogic.ts` | `workerLogic.test.ts`; e2e `e2e:workers` |
 | WRK-5 | Worker limitations | Gap | — | `opencode --pure` (no plugins) invisible; Claude sessions opened before the feature need a restart; workers started from an OpenCode session inside the app are not covered; no interactive worker terminal and no resume-from-tab (deferred). | — | See `HANDOFF.md` |
 
-### 2.18 JRV — Jarvis (D53)
-
-| ID | Feature | Status | Trigger / entry | Rules (must-know) | Code | Tests |
-|---|---|---|---|---|---|---|
-| JRV-1 | Jarvis session + panel | Shipped | `Ctrl+Shift+J` (toggle), the Jarvis button at the right of the tab bar (both modes), palette "Open Jarvis" / "Jarvis: start a new conversation" | ONE Claude session with `Session.role = 'jarvis'` (only main can create it: IPC `session:create` rejects `role`), created on first open in `<userData>/jarvis` (name "Jarvis"); `jarvis:open` creates, reopens, wakes or starts it (serialized in main, no focus request). Shown ONLY in a right-side overlay panel (per window, mounted by `App` outside the mode workspace: stays open across session, tab and Ops/Code switches), never as a tab, sidebar card, Hub card or needs-you item (`dataForMode` filters it). Terminal created on first open, slid out (not resized) on close; width drag-resizable 340 px..75% of the window, remembered. Main counts it as always on screen (no ping/bell, never auto-slept). Its folder-trust question is always answered (Down, then Enter). "New conversation" removes it and creates a fresh one. | `main/jarvis/jarvisWiring.ts`; `main/index.ts` (`onScreenSessionIds`); `renderer/jarvis/JarvisPanel.tsx`, `jarvisPanelStore.ts`, `jarvisLogic.ts`, `useJarvisShortcut.ts`; `shell/TabBar.tsx`; `mode/modeLogic.ts` → `dataForMode`; `App.tsx` | `jarvisLogic.test.ts`, `sessionController.test.ts` (trust), `persistence.test.ts`, `ipcValidation.test.ts`; e2e `e2e-jarvis.cjs`, `e2e-jarvis-real.cjs` |
-| JRV-2 | MCP tool server | Shipped | App start (before resume-on-launch) | `POST /mcp` on `127.0.0.1:<random>`, `Authorization: Bearer <per-run token>`, JSON-RPC 2.0 (initialize, ping, tools/list, tools/call), plain JSON answers, notifications 202, GET 405, 1 MB body cap. `<userData>/jarvis/mcp.json` + `system-prompt.md` are rewritten each run; the prompt lists every tool name (`jarvisSystemPrompt(toolNames)`). Only Jarvis is launched with `--mcp-config <mcp.json> --append-system-prompt-file <prompt> --model <m>` (via `SessionControllerDeps.extraClaudeArgs`); the user's `~/.claude` is never changed. | `main/jarvis/mcpProtocol.ts`, `mcpHttpServer.ts`, `jarvisLaunch.ts`; `main/app/startOptions.ts` (`extraArgs`); `main/index.ts` | `mcpProtocol.test.ts`, `mcpHttpServer.test.ts`, `jarvisLaunch.test.ts`; e2e `e2e-jarvis.cjs` |
-| JRV-3 | Tools | Shipped | Jarvis calls them | Tools: `list_sessions`, `read_screen` (pty replay drawn in `@xterm/headless`), `get_activity`, `search_conversations`, D54: `wait_for_session` (until not working and no queued prompts; default 600 s, max 1800 s, polls 1 s; "still working" on timeout), `get_last_answer` (assistant text after the last user message in the saved Claude transcript, keeps the end, default 4000 / max 20000 chars; screen fallback for OpenCode/shell), `get_usage` (Claude 5-hour/weekly %, resets, OpenCode Go, cost today, running sessions' model/context/cost), `get_away_summary` (the last "While you were away"), Code mode (D54): `list_repos` (repos, current + local branches, worktrees with sessions), `add_repo`, `create_worktree` (base = the checked-out branch unless given; must be a local branch; optional first prompt), `worktree_changes` (files with kind and +/- vs the base), `create_session` (folder or preset, optional first prompt), `send_prompt` (auto: wake/start if needed, type when the screen settled, queue while working; now; queue), `broadcast_prompt`, `press_keys`, `sleep_session`, `wake_session` (sleeping→wake, stopped→start, closed→reopen), `restart_session`, `close_session`, `fork_session`, `remove_session`, `remove_worktree`, `rename_session`, `set_status`, `move_to_group`, `create_group`, `remove_group`, `set_notes`, `set_keep_awake`, `open_session`. Same controller/store/queue paths as the UI. Names resolve by id, exact name, or a unique part; ambiguity is an error listing candidates; Jarvis is never a target. Typing never goes into a folder-trust question. Every action is appended to `<userData>/jarvis/actions.log` (reset past 1 MB). | `main/jarvis/jarvisTools.ts`, `targets.ts`, `screenText.ts` | `jarvisTools.test.ts`, `targets.test.ts`, `screenText.test.ts`; e2e `e2e-jarvis.cjs` (shell sessions), `e2e-jarvis-real.cjs` |
-| JRV-4 | Confirm destructive tools | Shipped | `remove_session`, `remove_worktree`, `remove_group` | Main shows the window and sends `ev:jarvisConfirm`; the main window shows the Orca ConfirmDialog (queue, one at a time); the answer comes back via `jarvis:confirmReply`. No window, Cancel or 120 s without an answer = No, and Jarvis is told nothing changed. | `main/jarvis/jarvisWiring.ts` (`confirm`); `renderer/jarvis/JarvisConfirm.tsx` | `jarvisTools.test.ts`; e2e both Jarvis suites |
-| JRV-6 | Scheduled instructions | Shipped | Ask Jarvis ("every weekday at 9:00 …"); the clock button in the panel header lists them | `schedule_add` / `schedule_list` / `schedule_remove` tools; `<userData>/jarvis/schedules.json` (max 50; instruction ≤2000, label ≤60; local HH:MM; days = every day / weekdays / weekends / names; once). Checked every 30 s; a run more than 15 min late (app closed, PC asleep) is skipped; a run is marked before delivery (never twice), a one-time one is then disabled. Delivery = Jarvis is opened/started and gets "[Scheduled task …] <instruction>" through the same sender as `send_prompt` (queued behind a running Jarvis turn; trust question retried), plus a desktop notice. Panel list: pause / resume / delete (IPC `jarvis:schedules*`, event `ev:jarvisSchedules`). | `main/jarvis/schedules.ts` (pure), `scheduleService.ts`, `jarvisWiring.ts` (`deliver`); `shared/jarvisSchedule.ts`; `renderer/jarvis/JarvisSchedules.tsx` | `schedules.test.ts`, `jarvisTools.test.ts`; e2e `e2e-jarvis.cjs` (tools + list UI), `e2e-jarvis-real.cjs` (a real run 2 min ahead) |
-| JRV-7 | Undo | Shipped | Ask Jarvis ("undo that") → `undo_last_action`; the Undo button in the panel header | In-memory stack (last 20, this run) of inverses recorded by sleep (→ wake), wake (→ sleep, or close for a reopen), close (→ reopen), create_session (→ close), rename, set_status, move_to_group (old group + position), set_notes, set_keep_awake, create_group (→ delete), schedule_add (→ remove), schedule_remove (→ add back). One step per call, newest first; says what it undid and what is next; a gone target is reported, not thrown. Removals and worktree creation are not undoable. | `main/jarvis/jarvisTools.ts` (`pushUndo`, `undoLast`); IPC `jarvis:undo`; `renderer/jarvis/JarvisPanel.tsx` | `jarvisTools.test.ts`; e2e `e2e-jarvis.cjs` |
-| JRV-8 | Voice | Shipped | Panel header: mic button (talk), speaker toggle (read replies aloud) | Talk: main runs Windows' offline recognizer (System.Speech dictation through PowerShell, no cloud) for one sentence (8 s initial silence, 30 s max), then sends the words to Jarvis through the `send_prompt` sender; the panel shows "Heard: …"; the mic button stops listening; logged as `voice`. Language = the recognizers Windows has installed (en-US by default); a missing recognizer or blocked microphone gets a plain message. Read aloud: on a Jarvis (Claude engine) Stop hook main sends the reply from the transcript (`ev:jarvisReply`); the main window speaks it with the system voices when the toggle is on (`sessiondeck.jarvis.speak.v1`), as plain words (`speakableText`: no markdown/code, ≤1200 chars). Not for an OpenCode Jarvis (no transcript). Test seam `SESSIONDECK_VOICE_WAV` = recognize a WAV instead of the mic. | `main/jarvis/voice.ts`, `jarvisWiring.ts` (`voiceCommand`, `onHookEvent`); `renderer/jarvis/JarvisPanel.tsx`, `JarvisSpeaker.tsx`, `jarvisLogic.ts` | `voice.test.ts`, `jarvisLogic.test.ts`; e2e `e2e-jarvis-voice.cjs` |
-| JRV-5 | Jarvis engine + model | Shipped | Settings > Agents "Jarvis engine", "Jarvis OpenCode model", "Jarvis model (Claude)" | `jarvis.agent` (`claude` default \| `opencode`, D54), `jarvis.opencodeModel` (provider/model, empty = OpenCode default), `jarvis.model` (Claude `--model`, default `sonnet`; letters/digits/`._:[]-` only since it reaches cmd.exe). OpenCode Jarvis gets `mcp.sessiondeck` (type remote, Bearer header) + `instructions: [system-prompt.md]` merged into its `OPENCODE_CONFIG_CONTENT` (`LaunchExtras.opencodeConfig`; verified OpenCode 2.1.4 calls the tools). Changing the engine or the OpenCode model replaces Jarvis with a new conversation on the next open; the Claude model applies at Jarvis's next start. | `shared/types.ts` (`JarvisSettings`), `main/store/settings.ts`; `renderer/settings/AgentsSection.tsx` | `settings.test.ts`; e2e `e2e-jarvis.cjs` |
-
 ### 2.17 SEC — Robustness & security
 
 | ID | Feature | Status | Trigger / entry | Rules (must-know) | Code | Tests |
@@ -468,6 +456,19 @@ SessionDeck
 | SEC-3 | Credentials stay in main | Shipped | Manual usage refresh | The Claude OAuth token is read and used only in main; never sent over IPC, stored or logged; errors and logs are asserted not to contain it. | `main/usage/oauthUsage.ts`, `usageRefresh.ts` | `oauthUsage.test.ts`, `usageRefresh.test.ts`; e2e `e2e:usage-refresh` |
 | SEC-4 | Process-tree kill | Shipped | Close / remove / quit | Whole tree is killed while the parent is alive; no orphan dev servers. | `main/pty/treeKiller.ts` | `treeKiller.test.ts`; e2e `e2e:busyclose` |
 | SEC-5 | Test isolation | Shipped | Any e2e / smoke test | Tests use a temp user-data dir and never change the user's real Claude/OpenCode config; never send state-changing slash commands into a test Claude session; use a temp `--settings` file (W11). | `scripts/e2e-lib.cjs` | e2e suites |
+
+### 2.18 JRV — Jarvis (D53, D54)
+
+| ID | Feature | Status | Trigger / entry | Rules (must-know) | Code | Tests |
+|---|---|---|---|---|---|---|
+| JRV-1 | Jarvis session + panel | Shipped | `Ctrl+Shift+J` (toggle), the Jarvis button at the right of the tab bar (both modes), palette "Open Jarvis" / "Jarvis: start a new conversation" | ONE Claude session with `Session.role = 'jarvis'` (only main can create it: IPC `session:create` rejects `role`), created on first open in `<userData>/jarvis` (name "Jarvis"); `jarvis:open` creates, reopens, wakes or starts it (serialized in main, no focus request). Shown ONLY in a right-side overlay panel (per window, mounted by `App` outside the mode workspace: stays open across session, tab and Ops/Code switches), never as a tab, sidebar card, Hub card or needs-you item (`dataForMode` filters it). Terminal created on first open, slid out (not resized) on close; width drag-resizable 340 px..75% of the window, remembered. Main counts it as always on screen (no ping/bell, never auto-slept). Its folder-trust question is always answered (Down, then Enter). "New conversation" removes it and creates a fresh one. | `main/jarvis/jarvisWiring.ts`; `main/index.ts` (`onScreenSessionIds`); `renderer/jarvis/JarvisPanel.tsx`, `jarvisPanelStore.ts`, `jarvisLogic.ts`, `useJarvisShortcut.ts`; `shell/TabBar.tsx`; `mode/modeLogic.ts` → `dataForMode`; `App.tsx` | `jarvisLogic.test.ts`, `sessionController.test.ts` (trust), `persistence.test.ts`, `ipcValidation.test.ts`; e2e `e2e-jarvis.cjs`, `e2e-jarvis-real.cjs` |
+| JRV-2 | MCP tool server | Shipped | App start (before resume-on-launch) | `POST /mcp` on `127.0.0.1:<random>`, `Authorization: Bearer <per-run token>`, JSON-RPC 2.0 (initialize, ping, tools/list, tools/call), plain JSON answers, notifications 202, GET 405, 1 MB body cap. `<userData>/jarvis/mcp.json` + `system-prompt.md` are rewritten each run; the prompt lists every tool name (`jarvisSystemPrompt(toolNames)`). Only Jarvis is launched with `--mcp-config <mcp.json> --append-system-prompt-file <prompt> --model <m>` (via `SessionControllerDeps.launchExtras` → `{ claudeArgs }`; an OpenCode Jarvis gets `{ opencodeConfig }`, JRV-5); the user's `~/.claude` is never changed. | `main/jarvis/mcpProtocol.ts`, `mcpHttpServer.ts`, `jarvisLaunch.ts`; `main/app/startOptions.ts` (`LaunchExtras`); `main/index.ts` | `mcpProtocol.test.ts`, `mcpHttpServer.test.ts`, `jarvisLaunch.test.ts`; e2e `e2e-jarvis.cjs` |
+| JRV-3 | Tools | Shipped | Jarvis calls them | Tools: `list_sessions`, `read_screen` (pty replay drawn in `@xterm/headless`), `get_activity`, `search_conversations`, D54: `wait_for_session` (until not working and no queued prompts; default 600 s, max 1800 s, polls 1 s; "still working" on timeout), `get_last_answer` (assistant text after the last user message in the saved Claude transcript, keeps the end, default 4000 / max 20000 chars; screen fallback for OpenCode/shell), `get_usage` (Claude 5-hour/weekly %, resets, OpenCode Go, cost today, running sessions' model/context/cost), `get_away_summary` (the last "While you were away"), Code mode (D54): `list_repos` (repos, current + local branches, worktrees with sessions), `add_repo`, `create_worktree` (base = the checked-out branch unless given; must be a local branch; optional first prompt), `worktree_changes` (files with kind and +/- vs the base), `create_session` (folder or preset, optional first prompt), `send_prompt` (auto: wake/start if needed, type when the screen settled, queue while working; now; queue), `broadcast_prompt`, `press_keys`, `sleep_session`, `wake_session` (sleeping→wake, stopped→start, closed→reopen), `restart_session`, `close_session`, `fork_session`, `remove_session`, `remove_worktree`, `rename_session`, `set_status`, `move_to_group`, `create_group`, `remove_group`, `set_notes`, `set_keep_awake`, `open_session`. Same controller/store/queue paths as the UI. Names resolve by id, exact name, or a unique part; ambiguity is an error listing candidates; Jarvis is never a target. Typing never goes into a folder-trust question. Every action is appended to `<userData>/jarvis/actions.log` (reset past 1 MB). | `main/jarvis/jarvisTools.ts`, `targets.ts`, `screenText.ts` | `jarvisTools.test.ts`, `targets.test.ts`, `screenText.test.ts`; e2e `e2e-jarvis.cjs` (shell sessions), `e2e-jarvis-real.cjs` |
+| JRV-4 | Confirm destructive tools | Shipped | `remove_session`, `remove_worktree`, `remove_group` | Main shows the window and sends `ev:jarvisConfirm`; the main window shows the Orca ConfirmDialog (queue, one at a time); the answer comes back via `jarvis:confirmReply`. No window, Cancel or 120 s without an answer = No, and Jarvis is told nothing changed. | `main/jarvis/jarvisWiring.ts` (`confirm`); `renderer/jarvis/JarvisConfirm.tsx` | `jarvisTools.test.ts`; e2e both Jarvis suites |
+| JRV-6 | Scheduled instructions | Shipped | Ask Jarvis ("every weekday at 9:00 …"); the clock button in the panel header lists them | `schedule_add` / `schedule_list` / `schedule_remove` tools; `<userData>/jarvis/schedules.json` (max 50; instruction ≤2000, label ≤60; local HH:MM; days = every day / weekdays / weekends / names; once). Checked every 30 s; a run more than 15 min late (app closed, PC asleep) is skipped; a run is marked before delivery (never twice), a one-time one is then disabled. Delivery = Jarvis is opened/started and gets "[Scheduled task …] <instruction>" through the same sender as `send_prompt` (queued behind a running Jarvis turn; trust question retried), plus a desktop notice. Panel list: pause / resume / delete (IPC `jarvis:schedules*`, event `ev:jarvisSchedules`). | `main/jarvis/schedules.ts` (pure), `scheduleService.ts`, `jarvisWiring.ts` (`deliver`); `shared/jarvisSchedule.ts`; `renderer/jarvis/JarvisSchedules.tsx` | `schedules.test.ts`, `jarvisTools.test.ts`; e2e `e2e-jarvis.cjs` (tools + list UI), `e2e-jarvis-real.cjs` (a real run 2 min ahead) |
+| JRV-7 | Undo | Shipped | Ask Jarvis ("undo that") → `undo_last_action`; the Undo button in the panel header | In-memory stack (last 20, this run) of inverses recorded by sleep (→ wake), wake (→ sleep, or close for a reopen), close (→ reopen), create_session (→ close), rename, set_status, move_to_group (old group + position), set_notes, set_keep_awake, create_group (→ delete), schedule_add (→ remove), schedule_remove (→ add back). One step per call, newest first; says what it undid and what is next; a gone target is reported, not thrown. Removals and worktree creation are not undoable. | `main/jarvis/jarvisTools.ts` (`pushUndo`, `undoLast`); IPC `jarvis:undo`; `renderer/jarvis/JarvisPanel.tsx` | `jarvisTools.test.ts`; e2e `e2e-jarvis.cjs` |
+| JRV-8 | Voice | Shipped | Panel header: mic button (talk), speaker toggle (read replies aloud) | Talk: main runs Windows' offline recognizer (System.Speech dictation through PowerShell, no cloud) for one sentence (8 s initial silence, 30 s max), then sends the words to Jarvis through the `send_prompt` sender; the panel shows "Heard: …"; the mic button stops listening; logged as `voice`. Language = the recognizers Windows has installed (en-US by default); a missing recognizer or blocked microphone gets a plain message. Read aloud: on a Jarvis (Claude engine) Stop hook main sends the reply from the transcript (`ev:jarvisReply`); the main window speaks it with the system voices when the toggle is on (`sessiondeck.jarvis.speak.v1`), as plain words (`speakableText`: no markdown/code, ≤1200 chars). Not for an OpenCode Jarvis (no transcript). Test seam `SESSIONDECK_VOICE_WAV` = recognize a WAV instead of the mic. | `main/jarvis/voice.ts`, `jarvisWiring.ts` (`voiceCommand`, `onHookEvent`); `renderer/jarvis/JarvisPanel.tsx`, `JarvisSpeaker.tsx`, `jarvisLogic.ts` | `voice.test.ts`, `jarvisLogic.test.ts`; e2e `e2e-jarvis-voice.cjs` |
+| JRV-5 | Jarvis engine + model | Shipped | Settings > Agents "Jarvis engine", "Jarvis OpenCode model", "Jarvis model (Claude)" | `jarvis.agent` (`claude` default \| `opencode`, D54), `jarvis.opencodeModel` (provider/model, empty = OpenCode default), `jarvis.model` (Claude `--model`, default `sonnet`; letters/digits/`._:[]-` only since it reaches cmd.exe). OpenCode Jarvis gets `mcp.sessiondeck` (type remote, Bearer header) + `instructions: [system-prompt.md]` merged into its `OPENCODE_CONFIG_CONTENT` (`LaunchExtras.opencodeConfig`; verified OpenCode 2.1.4 calls the tools). Changing the engine or the OpenCode model replaces Jarvis with a new conversation on the next open; the Claude model applies at Jarvis's next start. | `shared/types.ts` (`JarvisSettings`), `main/store/settings.ts`; `renderer/settings/AgentsSection.tsx` | `settings.test.ts`; e2e `e2e-jarvis.cjs` |
 
 ---
 
@@ -687,55 +688,13 @@ SessionDeck
 
 ## 4. Change recipes
 
-### 4.1 Add a setting
-
-1. Add the field to the right `*Settings` interface in `src/shared/types.ts` and to `DEFAULT_APP_SETTINGS` (and `SettingsPatch`).
-2. Validate it in `main/app/settingsValidation.ts` and `main/store/settings.ts` (clamps, allowed values, cross-field rules).
-3. Add the control to the matching `renderer/settings/*Section.tsx`; write through `actions.updateSettings`.
-4. Use the value in the owning module; never read `localStorage` for a real setting.
-5. Unit-test validation + default merge; add/extend an e2e if it changes visible behaviour.
-6. Document it in §3.6 and `HANDOFF.md`.
-
-### 4.2 Add an IPC call
-
-1. Add the channel to `IPC` and the method to `Api` in `src/shared/ipc.ts`.
-2. Implement it in `src/preload/index.ts` with `ipcRenderer.invoke`.
-3. Register and validate it in `main/app/ipcHandlers.ts` (or the feature wiring file) — validate ids and payloads; never trust the renderer.
-4. Call it from a renderer action (`useSessionStore` / feature hook), not from a component directly when state must update.
-5. Add a unit test for validation; add a real-app e2e if it changes user-visible behaviour.
-6. Update §3.1 and `docs/CODEMAP.md` if a new file/folder appears.
-
-### 4.3 Add a view
-
-1. Extend `MainView` in `renderer/mode/viewPref.ts` (`parseView` must still fall back safely).
-2. Add per-mode keys only if the view has its own persisted state (`modeStorageKeys`).
-3. Add a pure logic module + tests first (mirror `splitLogic.ts`).
-4. Add a hook (mirror `useSplitLayout.ts`) and render it from `ModeWorkspace.tsx`; keep one xterm registry per session (see TRM-1).
-5. Add the control to the tab bar and a palette item; make focus requests land in the view.
-6. Extend `e2e-visual.cjs` and add an e2e suite; update `HANDOFF.md` + `docs/CODEMAP.md`.
-
-### 4.4 Add an agent
-
-1. Extend `AgentKind` in `src/shared/types.ts` (and any badge/label map).
-2. Add launch options in `main/app/startOptions.ts` (command, args, env, resume rule).
-3. Add hook/attention integration if the agent can report state (`main/attention`, `main/opencode` pattern).
-4. Add the dropdown option in `NewSessionDialog` and the default in Settings > Agents; validate its model/args in `dialogLogic.ts`.
-5. Define sleep/restart behaviour (Shell-style never-sleep vs conversation resume).
-6. Unit-test start options; add a real-agent e2e if the CLI is available; document limits.
-
-### 4.5 Add a pure feature slice
-
-1. Put rules in a `*Logic.ts` with no React/DOM/IPC.
-2. Unit-test it in a sibling `*.test.ts` first.
-3. Wrap it in a hook that owns persistence/IPC.
-4. Render it with existing primitives; reuse the Orca look.
-5. Add an e2e that drives the real app; take a screenshot for UI work.
+The step-by-step checklists (new IPC call, setting, store field, main service, UI, view, Jarvis tool, agent or launch argument) live in `docs/IMPLEMENTATION.md` §3, together with the test standard (§5) and the definition of done (§8). When a recipe there is wrong or missing, fix that file in the same change.
 
 ---
 
 ## 5. Invariants (do not break)
 
-1. **One xterm per session.** Panes/cells hide, never unmount. Split, grid (once built) and tab switching must share the same registry.
+1. **One xterm per session.** Panes/cells hide, never unmount. Split, grid and tab switching share the workspace registry; the Jarvis panel owns its own single pane. A hidden terminal keeps its size.
 2. **Split stays at 4 panes** (`MAX_PANES = 4`); grid is a separate layout with its own max (6).
 3. **No duplicate session in visible panes/cells.** Picking an already-visible session moves it.
 4. **Closed sessions cannot be used** until reopened; they have no PTY.
@@ -753,7 +712,11 @@ SessionDeck
 16. **A session belongs to Code iff it has `worktreeId`.**
 17. **Claude sessions always run yolo** unless the user already passed a permission flag.
 18. **Tests never touch the user's real Claude/OpenCode config** (W11); use a temp user-data dir and a temp `--settings` file.
-19. **Docs stay current**: a shipped feature updates `HANDOFF.md`; a decision updates `DECISIONS.md`; a new folder updates `CODEMAP.md`; a new gotcha updates `LESSONS.md`.
+19. **Docs stay current** (`docs/IMPLEMENTATION.md` §6): a decision updates `DECISIONS.md`; a shipped feature updates this file and `HANDOFF.md`; a new file/folder updates `CODEMAP.md`; a new gotcha updates `LESSONS.md`.
+20. **Jarvis belongs to no mode** and there is only one: `dataForMode` filters it, `jarvis:open` is serialized in main, it is never a tab/card/needs-you item, and main counts it as always on screen.
+21. **Jarvis tools never fork logic**: every tool calls the same controller/store/service path as the UI; Jarvis never targets itself; destructive tools confirm in the app; reversible ones record an undo step; every action is logged.
+22. **The MCP server is local and private**: 127.0.0.1, random port, per-run Bearer token, only the Jarvis session gets its config; the user's `~/.claude` and global OpenCode config are never changed.
+23. **Keys are separate writes**: text, Enter and menu keys sent to a TUI go as separate writes with a pause (trust answer, queue, Jarvis).
 
 ---
 
@@ -766,10 +729,16 @@ SessionDeck
 | Light theme | Deferred | Dark only. |
 | Sound / taskbar flash human verification | Gap | Code paths tested; not heard/seen by a human. |
 | Real-mouse drag and drop | Gap | Pure logic tested; HTML5 DnD events not simulated. |
-| Packaged installer freshness | Shipped (2026-10-31) | `release/SessionDeck-Setup-0.0.3.exe` rebuilt after D47–D52 for the hands-on round (D46); `e2e:packaged` 12/12. Rebuild only on request (W09). |
+| Packaged installer freshness | Shipped (2026-11-01) | `release/SessionDeck-Setup-0.0.3.exe` built from `84bf042` (everything through D54); `e2e:packaged` 15/15, `e2e-spaces` 4/4 on the exe. Unsigned; version not bumped. Rebuild only on request (W09). |
+| Code signing | Deferred | SmartScreen warns on install. |
+| OpenCode Go usage, real endpoint | Gap | Tested with fakes only (no Go connection on the dev machine). |
+| Jarvis voice languages | Gap | Only the speech recognizers Windows has installed (en-US, zh-CN on the dev PC). |
+| Jarvis on OpenCode | Gap (by design) | No transcript: no read-aloud, `get_last_answer` falls back to the screen. |
+| Jarvis schedules while the app is closed | Gap (by design) | Skipped; a run more than 15 min late is skipped. |
+| Jarvis undo across restarts | Gap (by design) | In memory, last 20, this run; removals are final. |
 | Autopilot limit wording | Gap | `USAGE_LIMIT_PATTERNS` may need additions once seen in the wild. |
 | Claude trust-folder prompt | Shipped (opt-in) | COD-11: Settings > Code `code.autoTrustWorktrees`, off by default, answers fresh worktree Claude sessions only. |
 
 ---
 
-*Last updated: 2026-10-25. Keep the matrices and the maps in sync with the code; when in doubt, read the module named in the `Code` column.*
+*Last updated: 2026-11-01. Keep the matrices and the maps in sync with the code; when in doubt, read the module named in the `Code` column.*

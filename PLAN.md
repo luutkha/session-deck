@@ -1,5 +1,7 @@
 # SessionDeck: PLAN
 
+> **Historical.** This is the original v1 plan from 2026-10-12, kept for context. Several of its choices changed (for example: Tailwind/shadcn instead of plain CSS (D02), git worktrees in Code mode (D31), auto status (D08), OpenCode (D15)). The current architecture is in `docs/CODEMAP.md` and `docs/IMPLEMENTATION.md`; the current state in `HANDOFF.md`.
+
 Narrow desktop app to run and manage many Claude Code sessions. Windows first, cross-platform later.
 
 ## Requirements (user's six)

@@ -174,6 +174,7 @@ Hardening W6 of `plan/hardening-round.md`.
 - **Narrow scope.** The watcher answers only a fresh start (`mode === 'new'`), only a Claude session, only one with `worktreeId`, and at most once per process. Resumed conversations never ask again; Ops sessions, OpenCode and Shell sessions are never touched; sleep/wake and restarts (which resume) are not answered. The trust state is cleared on start, exit, close, remove and restart.
 - **Same answer as a user.** It types Down + Enter (`\x1b[B\r`), moving from the preselected "No, exit" to "Yes, I trust this folder". Detection needs BOTH menu labels in the last 4,000 ANSI-stripped characters, so ordinary prose or a half-drawn menu does not trigger it. This is the exact sequence the real-TUI e2e harness already used, so no new bypass of Claude's checks is introduced: the user still chooses to trust the folder, only once instead of per worktree.
 - **Tested without touching the real trust store.** `e2e:trust` puts a fake `claude.cmd` first on PATH; it prints the real menu and records received bytes. The suite proves default OFF sends nothing, the Settings switch persists, and a fresh worktree gets the answer exactly once.
+- **Update 2026-11-01:** Claude Code 2.1.316 ignores an Enter sent in the same write as the arrow, so the answer is now Down, then Enter as two writes (0.5 s, then 0.4 s). The Jarvis session (D53) is always answered, since its folder is SessionDeck's own.
 
 **D44 · 2026-10-27 · Repeat the alert while a needs-you session stays unread** · active
 Plan `plan/attention-reminders.md` (bell escalation).
@@ -228,11 +229,11 @@ Feature 6 of the D46 list.
 
 **D53 · 2026-11-01 · Jarvis: an AI session that controls the app** · active
 The user: "i want a session of AI can help to to create/close/sleep/reconnect or put prompt in the sesssion if i tell it, Like Jarvis of Ironman, it should be help me to controll all things of the apps if i request". Plan answers: "1. call it Jarvis 2. use sonnet first, changeable 3. no, include them 4. skip first".
-- **Jarvis** is one special Claude Code session (pinned at the top of the sidebar, Ctrl+J, palette). It runs on the user's plan, not an API key. The name "Hub" stays with the status board.
+- **Jarvis** is one special Claude Code session (pinned at the top of the sidebar, Ctrl+J, palette — built as Ctrl+Shift+J because plain Ctrl+J is a newline in Claude; the sidebar placement was replaced by the panel below). It runs on the user's plan, not an API key. The name "Hub" stays with the status board.
 - **Tools:** SessionDeck serves a local MCP server (127.0.0.1, random port, per-run secret token). Only Jarvis gets it, through Claude's own `--mcp-config` + `--append-system-prompt-file` launch flags; the user's `~/.claude` is never changed. Tools call the same controller/store paths as the UI.
-- **Model:** Sonnet by default, changeable in Settings > Jarvis.
+- **Model:** Sonnet by default, changeable (built into Settings > Agents).
 - **Destructive actions are included** (remove a session, a worktree, a group); each one asks the user Yes/No in an in-app dialog first. Jarvis cannot act on itself.
-- **Voice:** skipped for now.
+- **Voice:** skipped for now (added later by D54).
 - **2026-11-01 feedback (supersedes "pinned at the top of the sidebar"):** "i dont see jarvis on code-change mode, and jarvis should live on the right side bar, overlay in all session". Jarvis is now a right-side panel that floats over whatever is on screen, in Ops AND Code mode (and the Code window); it stays open across session, tab and mode switches. Opened with Ctrl+Shift+J, the Jarvis button at the right of the tab bar, or the palette. It is no longer a tab or a sidebar entry. The panel width is resizable.
 
 **D54 · 2026-11-01 · Jarvis round 2** · active
@@ -240,7 +241,7 @@ After "tested good now", asked "what is next step for jarvis"; offered 1) shippa
 - Choices made while building (change on request): voice uses Windows' offline speech recognizer (no cloud, no key; the languages Windows has installed, usually English) and the system voices; a spoken sentence is sent to Jarvis at once; replies are read aloud only for a Claude-engine Jarvis. Schedules need the app running; a run more than 15 minutes late is skipped. Undo covers reversible actions only (last 20, this run). Changing the Jarvis engine starts a new Jarvis conversation.
 
 ### Suggested but not chosen (offer again only if relevant)
-Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
+A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 
 ---
 
@@ -285,3 +286,5 @@ The first double-paste "fix" was a guess and the bug came back (D21). Reproduce 
 2026-10-22: asked "do we have a knownledge hub for this project, for agent can check and get infomation?", then "yes" to adding `AGENTS.md` (entry point for OpenCode and other agents, points to CLAUDE.md) and `docs/CODEMAP.md` (folder-by-folder map).
 2026-10-25: added `docs/FEATURES.md` after "can u build a docs that list all feature support by this app in a tree or matrix form? the goal is make the agent can easily check and get the info/logic/related code path of feature without mistake and fater". It is the feature tree + per-domain matrices (rules, code path, tests) plus IPC/storage/shortcut/settings/e2e maps and change recipes. Keep it in sync when a feature ships or its code path changes.
 
+**W13 · Follow the implementation standard** · active
+2026-11-01: "update documents, clean stale info, and write standard implementation for futures work can smooth and less issue". `docs/IMPLEMENTATION.md` is the standard: workflow, architecture rules, a checklist per kind of change, the test standard and the definition of done. Every agent follows it; when the standard is wrong or missing a case, fix the document in the same change. `HANDOFF.md` is a one-page current state (gaps + history table) instead of a per-round log; per-feature detail lives in `FEATURES.md`.

@@ -1,6 +1,15 @@
 # Code map
 
-Where things live. One line per folder, plus the files you usually need. Feature details (how a feature works, its e2e) are in `HANDOFF.md`; the feature tree + matrices (rules, code path, tests per feature) are in `docs/FEATURES.md`. Tests sit next to the code as `*.test.ts`.
+Where things live. One line per folder, plus the files you usually need. Feature details (rules, code path, tests per feature) are in `docs/FEATURES.md`; how to build a change is in `docs/IMPLEMENTATION.md`. Tests sit next to the code as `*.test.ts`.
+
+## Docs
+- `CLAUDE.md` / `AGENTS.md`: entry points for agents (read-first list, standing rules).
+- `HANDOFF.md`: one-page current state, known gaps, history.
+- `docs/DECISIONS.md`: the user's decisions (Dnn) and working rules (Wnn).
+- `docs/FEATURES.md`: feature tree, per-domain matrices, cross-cutting maps (IPC, storage, shortcuts, settings, e2e), invariants, gaps.
+- `docs/IMPLEMENTATION.md`: the implementation standard (workflow, architecture rules, checklists, tests, definition of done).
+- `docs/CODEMAP.md`: this file. `docs/LESSONS.md`: gotchas by topic.
+- `DESIGN.md`: the Orca look. `README.md`: features, run, test. `PLAN.md`: the original v1 plan (historical).
 
 ## Contract (main <-> renderer), change additively and on purpose
 - `src/shared/types.ts`: every shared shape (Session, RuntimeState, AppSettings + defaults, usage, workers).
@@ -23,7 +32,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 - `timeline/`: per-session turn log (`timelineService.ts`, `timelineState.ts` pure updates, `timelineFile.ts` persistence) and `awaySummary.ts` (pure "While you were away" builder).
 - `app/launchResume.ts`: resume running sessions on launch (D50; `<userData>/resume-on-launch.json`).
 - `transcripts/conversationSearch.ts`: read-only search in saved Claude conversations (D52).
-- `jarvis/`: Jarvis (D53), the AI session that controls the app. `mcpProtocol.ts` (JSON-RPC tools protocol), `mcpHttpServer.ts` (local POST /mcp, Bearer token), `jarvisTools.ts` (the 23 tools), `targets.ts` (name → session/group/status), `screenText.ts` (headless xterm render for read_screen), `jarvisLaunch.ts` (files, launch args, system prompt), `jarvisWiring.ts` (wiring + IPC + Yes/No round trip + schedule delivery), `schedules.ts` (pure schedule rules) + `scheduleService.ts` (schedules.json, 30 s tick), `voice.ts` (Windows speech recognition through PowerShell) (D54).
+- `jarvis/`: Jarvis (D53), the AI session that controls the app. `mcpProtocol.ts` (JSON-RPC tools protocol), `mcpHttpServer.ts` (local POST /mcp, Bearer token), `jarvisTools.ts` (the tools, undo stack, prompt sender), `targets.ts` (name → session/group/status), `screenText.ts` (headless xterm render for read_screen), `jarvisLaunch.ts` (files, launch args, system prompt), `jarvisWiring.ts` (wiring + IPC + Yes/No round trip + schedule delivery), `schedules.ts` (pure schedule rules) + `scheduleService.ts` (schedules.json, 30 s tick), `voice.ts` (Windows speech recognition through PowerShell) (D54).
 - `queue/`: the prompt queue (D47). `promptQueue.ts` types the next queued prompt when a session's turn finishes (runtime activity → `finished`), plus Send now.
 - `notify/`: desktop notifications. `tray/`: tray icon and menu.
 - `links/`: resolves and opens URLs and paths clicked in the terminal.
