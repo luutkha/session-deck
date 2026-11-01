@@ -8,17 +8,22 @@ import type {
   AwaySummary,
   ConversationSearchResult,
   CreateSessionInput,
+  CreateWorktreeInput,
+  CreateWorktreeResult,
   Id,
   QueuedPrompt,
+  Repo,
+  RepoBranches,
   RuntimeState,
   Session,
   StoreData,
   TimelineTurn,
   UsageState,
   UsageWindow,
-  Worktree
+  Worktree,
+  WorktreeChanges
 } from '../../shared/types'
-import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX } from '../../shared/types'
+import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX, WORKTREE_NAME_MAX } from '../../shared/types'
 import { canTypeInto, queuedText, QUEUE_ENTER_DELAY_MS } from '../queue/promptQueue'
 import { isTrustPrompt } from '../app/trustPrompt'
 import { stripAnsi } from '../app/outputSignals'
@@ -40,6 +45,7 @@ export const WAIT_MAX_S = 1800
 const WAIT_POLL_MS = 1000
 const ANSWER_DEFAULT_CHARS = 4000
 const ANSWER_MAX_CHARS = 20_000
+const CHANGES_LIST_DEFAULT = 50
 const ACTIVITY_DEFAULT = 10
 const ACTIVITY_MAX = 50
 const NOTES_MAX = 20_000
@@ -91,6 +97,14 @@ export interface JarvisToolDeps {
   /** Every recorded turn of every session (cost today). */
   readonly allTurns: () => readonly TimelineTurn[]
   readonly lastAway: () => AwaySummary | null
+  /** D54: Code mode, the same paths as the IPC (codeWiring). */
+  readonly code: {
+    addRepo(folder: string): Promise<Repo>
+    createWorktree(input: CreateWorktreeInput): Promise<CreateWorktreeResult>
+    branches(repoId: Id): Promise<RepoBranches>
+    changes(worktreeId: Id): Promise<WorktreeChanges>
+    removeWorktree(worktreeId: Id): void
+  }
   /** Shows the session in the window (like a click on its card). */
   readonly openSession: (id: Id) => void
   /** Asks the user Yes/No in the app; false on No, timeout or no window. */
@@ -219,6 +233,15 @@ function resolveFolder(raw: string): string {
   if (!isAbsolute(expanded)) throw new Error(`Use a full folder path (like C:\\work\\project), not "${raw}".`)
   if (!existsSync(expanded)) throw new Error(`Folder not found: ${expanded}`)
   return expanded
+}
+
+function resolveRepo(data: StoreData, ref: string): Repo {
+  const repos = data.repos ?? []
+  const want = ref.trim().toLowerCase()
+  const found = repos.filter((r) => r.id === ref.trim() || r.name.toLowerCase() === want || r.path.toLowerCase() === want)
+  if (found.length === 1) return found[0]
+  if (found.length === 0) throw new Error(`No repository matches "${ref}". Repositories: ${repos.map((r) => `"${r.name}"`).join(', ') || '(none; use add_repo)'}`)
+  throw new Error(`"${ref}" matches several repositories: ${found.map((r) => `"${r.name}" (${r.path})`).join(', ')}. Pass the path or id.`)
 }
 
 function resolveWorktree(data: StoreData, ref: string): Worktree {
@@ -699,6 +722,88 @@ export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
       }
     },
     {
+      name: 'list_repos',
+      description: 'Code mode: lists the git repositories added to SessionDeck, their worktrees (branch, folder, sessions) and the local branches of each repo.',
+      inputSchema: schema({}),
+      run: async () => {
+        const data = deps.getData()
+        const repos = data.repos ?? []
+        if (repos.length === 0) return 'No repositories yet. Add one with add_repo.'
+        const lines: string[] = []
+        for (const repo of repos) {
+          let branchText = ''
+          try {
+            const b = await deps.code.branches(repo.id)
+            branchText = ` · current branch ${b.current ?? '(detached)'} · branches: ${b.branches.slice(0, 20).join(', ')}${b.branches.length > 20 ? ', …' : ''}`
+          } catch (error) {
+            branchText = ` · branches unavailable (${error instanceof Error ? error.message : String(error)})`
+          }
+          lines.push(`- repo "${repo.name}" (id ${repo.id}) · ${repo.path}${branchText}`)
+          for (const w of (data.worktrees ?? []).filter((x) => x.repoId === repo.id)) {
+            const sessions = data.sessions.filter((s) => s.worktreeId === w.id).map((s) => `"${s.name}"`)
+            lines.push(`  - worktree "${w.name}" (id ${w.id}) · branch ${w.branch} from ${w.baseBranch} · ${w.path} · sessions: ${sessions.join(', ') || '(none)'}`)
+          }
+        }
+        return lines.join('\n')
+      }
+    },
+    {
+      name: 'add_repo',
+      description: 'Code mode: adds a git repository (any folder inside it) so worktrees can be created from it.',
+      inputSchema: schema({ folder: { type: 'string', description: 'Full path of the repository or a folder inside it.' } }, ['folder']),
+      run: async (args) => {
+        const repo = await deps.code.addRepo(resolveFolder(text(args, 'folder')))
+        deps.log('add_repo', repo.path)
+        return `Added repository "${repo.name}" (${repo.path}).`
+      }
+    },
+    {
+      name: 'create_worktree',
+      description: 'Code mode: creates a new branch + git worktree from a repository and starts a session in it (optionally with a first prompt). The branch and folder names come from the worktree name.',
+      inputSchema: schema({
+        repo: { type: 'string', description: 'Repository name, path or id (see list_repos).' },
+        name: { type: 'string', description: `Worktree name, 1 to ${WORKTREE_NAME_MAX} characters, e.g. "login fix".` },
+        base_branch: { type: 'string', description: 'Local branch to start from (default: the branch checked out in the repo).' },
+        agent: { type: 'string', enum: ['claude', 'opencode', 'shell'], description: 'Default claude.' },
+        model: { type: 'string', description: 'OpenCode only: provider/model.' },
+        prompt: { type: 'string', description: 'First prompt, typed in when the session is ready.' },
+        open: { type: 'boolean', description: 'Show the new session (default false).' }
+      }, ['repo', 'name']),
+      run: async (args) => {
+        const data = deps.getData()
+        const repo = resolveRepo(data, text(args, 'repo'))
+        const name = text(args, 'name').trim()
+        const agentArg = optionalText(args, 'agent') ?? 'claude'
+        if (!['claude', 'opencode', 'shell'].includes(agentArg)) throw new Error('"agent" must be claude, opencode or shell.')
+        const branches = await deps.code.branches(repo.id)
+        const base = optionalText(args, 'base_branch')?.trim() ?? branches.current
+        if (base === null) throw new Error(`"${repo.name}" has no branch checked out (detached HEAD). Say which base_branch to use: ${branches.branches.join(', ')}`)
+        if (!branches.branches.includes(base)) throw new Error(`No local branch "${base}" in "${repo.name}". Branches: ${branches.branches.join(', ')}`)
+        const model = agentArg === 'opencode' ? optionalText(args, 'model') : undefined
+        const { worktree, session } = await deps.code.createWorktree({ repoId: repo.id, name, baseBranch: base, agent: agentArg as AgentKind, ...(model !== undefined ? { model } : {}) })
+        deps.log('create_worktree', `${repo.name}: ${worktree.name} (${worktree.branch})`)
+        if (optionalBool(args, 'open') === true) deps.openSession(session.id)
+        const created = `Created worktree "${worktree.name}" on branch ${worktree.branch} (from ${base}) at ${worktree.path}, with session "${session.name}" (id ${session.id}).`
+        const prompt = optionalText(args, 'prompt')
+        return prompt === undefined ? created : `${created} ${await sendPrompt(session, prompt, 'auto')}`
+      }
+    },
+    {
+      name: 'worktree_changes',
+      description: 'Code mode: what changed in a worktree compared with its base branch: each file (added/modified/deleted/renamed) with lines added and removed, and the totals.',
+      inputSchema: schema({ worktree: { type: 'string', description: 'Worktree name, branch or id.' }, max_files: { type: 'integer', description: `Default ${CHANGES_LIST_DEFAULT}.` } }, ['worktree']),
+      run: async (args) => {
+        const worktree = resolveWorktree(deps.getData(), text(args, 'worktree'))
+        const result = await deps.code.changes(worktree.id)
+        if (result.error !== undefined) throw new Error(`Could not read the changes of "${worktree.name}": ${result.error}`)
+        const max = optionalInt(args, 'max_files', CHANGES_LIST_DEFAULT, 500)
+        const count = (n: number | null): string => (n === null ? '?' : String(n))
+        const lines = result.files.slice(0, max).map((f) => `- ${f.kind} ${f.oldPath !== undefined ? `${f.oldPath} -> ` : ''}${f.path} (+${count(f.additions)} -${count(f.deletions)})`)
+        const more = result.files.length > max || result.truncated ? '\n(more files not shown)' : ''
+        return `"${worktree.name}" (branch ${worktree.branch} vs ${worktree.baseBranch}): ${result.files.length}${result.truncated ? '+' : ''} file(s), +${result.additions} -${result.deletions}.\n${lines.join('\n') || '(no changes)'}${more}`
+      }
+    },
+    {
       name: 'remove_worktree',
       description: 'Code mode: PERMANENTLY removes a worktree from SessionDeck with all its sessions (the folder on disk is kept). The user is asked to confirm.',
       inputSchema: schema({ worktree: { type: 'string', description: 'Worktree name, branch or id.' } }, ['worktree']),
@@ -707,7 +812,7 @@ export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
         const count = deps.getData().sessions.filter((s) => s.worktreeId === worktree.id).length
         const yes = await deps.confirm({ title: 'Jarvis: remove worktree', message: `Jarvis wants to remove worktree “${worktree.name}” and its ${count} session(s) from SessionDeck. The folder on disk is kept.`, confirmLabel: 'Remove' })
         if (!yes) return `The user did not allow removing worktree "${worktree.name}". Nothing was changed.`
-        deps.controller.removeWorktree(worktree.id)
+        deps.code.removeWorktree(worktree.id)
         deps.log('remove_worktree', worktree.name)
         return `Worktree "${worktree.name}" was removed.`
       }

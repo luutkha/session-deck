@@ -403,6 +403,14 @@ if (!gotTheLock) {
         usage: () => usage.getState(),
         allTurns: () => features.timeline.all(),
         lastAway: () => features.lastAway(),
+        // `code` is created below; these run only when Jarvis calls a tool, long after startup.
+        code: {
+          addRepo: (folder) => code.addRepo(folder),
+          createWorktree: (input) => code.createWorktree(input),
+          branches: (repoId) => code.branches(repoId),
+          changes: (worktreeId) => code.changes(worktreeId),
+          removeWorktree: (worktreeId) => code.removeWorktree(worktreeId)
+        },
         openSession: (id) => focusSession(id),
         startedAt: (id) => ptyStartedAt.get(id),
         lastOutputAt: (id) => ptyLastOutputAt.get(id)

@@ -6,6 +6,7 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { execFileSync } = require('node:child_process')
 const { sleep, strip, waitFor, makeChecker, launchApp } = require('./e2e-lib.cjs')
 
 const PORT = 9462
@@ -60,7 +61,7 @@ async function main() {
     t.check('initialize answers with the tools capability', init.body?.result?.capabilities?.tools !== undefined, js(init.body))
     const list = await rpc('tools/list', {})
     const names = list.body.result.tools.map((x) => x.name)
-    t.check('every tool is offered (27)', names.length === 27, names.join(','))
+    t.check('every tool is offered (31)', names.length === 31, names.join(','))
 
     // ---- the pinned sidebar entry before Jarvis exists
     t.check('the tab bar has the Jarvis button, the panel is not open yet', (await waitFor(() => ev(`!!document.querySelector('[data-jarvis-toggle]') || null`), 5000, 200)) === true &&
@@ -129,6 +130,34 @@ async function main() {
     await waitFor(async () => (await runtimeOf(shell.id))?.sleeping === true, 5000, 200)
     const sent = await tool('send_prompt', { session: 'jv shell one', text: 'echo SECOND_PROMPT' })
     t.check('send_prompt wakes a sleeping session, then types', /^Woke it first\. Typed into the shell/.test(sent.text), sent.text)
+
+    // ---- D54: Code mode tools on a temp git repo (worktrees under a temp root, never the home folder)
+    const repoDir = path.join(folder, 'repo-jv')
+    const wtRoot = path.join(folder, 'wt')
+    fs.mkdirSync(repoDir)
+    const git = (...args) => execFileSync('git', ['-c', 'user.name=e2e', '-c', 'user.email=e2e@example.com', ...args], { cwd: repoDir, encoding: 'utf8' }).trim()
+    git('init', '-b', 'main')
+    fs.writeFileSync(path.join(repoDir, 'README.md'), 'hello\n')
+    git('add', '.')
+    git('commit', '-m', 'init')
+    await ev(`window.api.updateSettings({ code: { worktreesRoot: ${js(wtRoot)} } })`)
+    const addedRepo = await tool('add_repo', { folder: repoDir })
+    t.check('add_repo adds the repository', /Added repository "repo-jv"/.test(addedRepo.text) && (await store()).data.repos.some((r) => r.name === 'repo-jv'), addedRepo.text)
+    const repos = await tool('list_repos')
+    t.check('list_repos shows it with its current branch', /repo "repo-jv" .* current branch main · branches: main/.test(repos.text), repos.text)
+    const madeWt = await tool('create_worktree', { repo: 'repo-jv', name: 'jv feature', agent: 'shell' })
+    const wt = (await store()).data.worktrees.find((w) => w.name === 'jv feature')
+    t.check('create_worktree makes the branch + worktree (from main) with a session', !!wt && wt.baseBranch === 'main' && wt.path.toLowerCase().startsWith(wtRoot.toLowerCase()) && fs.existsSync(wt.path) &&
+      (await store()).data.sessions.some((s) => s.worktreeId === wt.id), madeWt.text)
+    fs.writeFileSync(path.join(wt.path, 'feature.txt'), 'one\ntwo\n')
+    fs.writeFileSync(path.join(wt.path, 'README.md'), 'hello\nworld\n')
+    const changed = await tool('worktree_changes', { worktree: 'jv feature' })
+    t.check('worktree_changes lists the new and the modified file with line counts', /2 file\(s\), \+3 -0/.test(changed.text) && /README\.md \(\+1 -0\)/.test(changed.text) && /feature\.txt \(\+2 -0\)/.test(changed.text), changed.text)
+    const pendingWt = tool('remove_worktree', { worktree: 'jv feature' })
+    await waitFor(() => ev(`!!document.querySelector('[role=alertdialog]') || null`), 8000, 200)
+    await click(button('Remove'), 'Remove worktree')
+    const removedWt = await pendingWt
+    t.check('remove_worktree (after Yes) removes it from SessionDeck, the folder stays', /was removed/.test(removedWt.text) && !(await store()).data.worktrees.some((w) => w.name === 'jv feature') && fs.existsSync(wt.path), removedWt.text)
 
     // ---- the action log
     const logFile = path.join(app.userData, 'jarvis', 'actions.log')

@@ -7,6 +7,7 @@ The installer `release/SessionDeck-Setup-0.0.3.exe` predates Jarvis (rebuild wit
 
 ## Jarvis round 2 (2026-11-01, D54)
 - **Wait / answer / usage / away tools:** `wait_for_session`, `get_last_answer` (`ConversationSearch.messagesOfSession` + `lastAnswer` in `transcripts/conversationSearch.ts`, same size+mtime cache as search), `get_usage` (`UsageService` state + `timeline.all()` for cost today), `get_away_summary` (`FeatureWiring.lastAway()`). The system prompt is now generated from the tool list (`jarvisSystemPrompt`). Verified: unit, `e2e-jarvis.cjs` 46/46.
+- **Code mode tools:** `list_repos`, `add_repo`, `create_worktree`, `worktree_changes`; `remove_worktree` now goes through `codeWiring.removeWorktree` (drops the cached changes too). `CodeWiring` exposes `branches`, `changes`, `removeWorktree` (the IPC handlers call the same functions). Verified: unit, `e2e-jarvis.cjs` 51/51 (temp git repo, worktrees under a temp root), `e2e-codemode` 34/34.
 
 ## Jarvis: an AI session that controls the app (2026-11-01, D53)
 - **What:** one Claude session (`Session.role = 'jarvis'`, folder `<userData>/jarvis`, name "Jarvis") shown in a right-side panel that floats over whatever the window shows, in Ops and Code mode (and the Code window). Opened with Ctrl+Shift+J, the Jarvis button at the right of the tab bar, or the palette. The user types requests in plain words; Jarvis acts through SessionDeck's MCP tools.

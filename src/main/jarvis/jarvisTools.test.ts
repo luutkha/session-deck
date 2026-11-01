@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { tmpdir } from 'node:os'
-import type { AwaySummary, QueuedPrompt, RuntimeState, Session, StoreData, TimelineTurn, UsageState } from '../../shared/types'
+import type { AwaySummary, QueuedPrompt, RuntimeState, Session, StoreData, TimelineTurn, UsageState, WorktreeChanges } from '../../shared/types'
 import { createJarvisTools, READY_TIMEOUT_MS, type JarvisToolDeps } from './jarvisTools'
 
 const session = (id: string, name: string, extra: Partial<Session> = {}): Session => ({
@@ -15,6 +15,8 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     sessions,
     groups: [{ id: 'g1', name: 'Backend', collapsed: false }],
     statuses: [{ id: 'st1', name: 'Review', color: '#fff' }],
+    repos: [{ id: 'r1', name: 'shop', path: 'C:/src/shop', createdAt: 0, collapsed: false }],
+    worktrees: [{ id: 'w1', repoId: 'r1', name: 'checkout', branch: 'checkout', path: 'C:/wt/checkout', baseBranch: 'main', baseCommit: '0'.repeat(40), createdAt: 0, collapsed: false }],
     presets: [{ id: 'p1', name: 'api', cwd: tmpdir(), agent: 'claude', claudeArgs: ['--remote-control'], groupId: 'g1', statusId: null }]
   } as unknown as StoreData
   const states = new Map(runtime.map((r) => [r.sessionId, r]))
@@ -83,6 +85,32 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     usage: () => usageState,
     allTurns: () => [...turns.values()].flat(),
     lastAway: () => away,
+    code: {
+      addRepo: vi.fn(async (folder: string) => {
+        const repo = { id: 'r2', name: 'added', path: folder, createdAt: 0, collapsed: false }
+        data = { ...data, repos: [...(data.repos ?? []), repo] }
+        return repo
+      }),
+      createWorktree: vi.fn(async (input: { repoId: string; name: string; baseBranch: string; agent: string }) => {
+        const worktree = { id: 'w2', repoId: input.repoId, name: input.name, branch: 'login-fix', path: 'C:/wt/login-fix', baseBranch: input.baseBranch, baseCommit: '0'.repeat(40), createdAt: 0, collapsed: false }
+        const created = session('ws', input.name, { cwd: worktree.path, worktreeId: 'w2', agent: input.agent as Session['agent'] })
+        data = { ...data, worktrees: [...(data.worktrees ?? []), worktree], sessions: [...data.sessions, created] }
+        states.set('ws', running('ws'))
+        startTimes.set('ws', clock)
+        return { worktree, session: created }
+      }),
+      branches: vi.fn(async () => ({ current: 'main', branches: ['dev', 'main'] })),
+      changes: vi.fn(async (worktreeId: string): Promise<WorktreeChanges> => ({
+        worktreeId,
+        files: [
+          { path: 'src/a.ts', kind: 'modified', additions: 10, deletions: 2 },
+          { path: 'src/new.ts', oldPath: 'src/old.ts', kind: 'renamed', additions: 0, deletions: 0 },
+          { path: 'logo.png', kind: 'added', additions: null, deletions: null }
+        ],
+        truncated: false, additions: 10, deletions: 2, computedAt: 0
+      })),
+      removeWorktree: vi.fn()
+    },
     openSession: vi.fn(),
     confirm: vi.fn(async () => options.confirm ?? false),
     startedAt: (id) => startTimes.get(id) ?? 0,
@@ -101,7 +129,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     return tool.run(args)
   }
   return {
-    call, controller, store, deps, writes, raw, states, turns, startTimes, answers, data: () => data,
+    call, controller, store, deps, code: deps.code as unknown as Record<string, ReturnType<typeof vi.fn>>, writes, raw, states, turns, startTimes, answers, data: () => data,
     setUsage: (u: UsageState) => { usageState = u },
     setAway: (a: AwaySummary | null) => { away = a }
   }
@@ -307,6 +335,44 @@ describe('jarvis tools', () => {
     const text = await call('get_away_summary')
     expect(text).toContain('2 finished, 1 need the user')
     expect(text).toContain('"API": 2 turn(s) finished · NEEDS THE USER · $0.30 · last prompt "deploy"')
+  })
+
+  it('lists repos with branches and worktrees', async () => {
+    const { call } = setup([session('c', 'cart', { worktreeId: 'w1' })])
+    const text = await call('list_repos')
+    expect(text).toContain('- repo "shop" (id r1) · C:/src/shop · current branch main · branches: dev, main')
+    expect(text).toContain('  - worktree "checkout" (id w1) · branch checkout from main · C:/wt/checkout · sessions: "cart"')
+  })
+
+  it('creates a worktree from the checked-out branch with a first prompt', async () => {
+    const { call, code, writes } = setup([])
+    const text = await call('create_worktree', { repo: 'shop', name: 'login fix', prompt: 'fix the login' })
+    expect(code.createWorktree).toHaveBeenCalledWith({ repoId: 'r1', name: 'login fix', baseBranch: 'main', agent: 'claude' })
+    expect(text).toContain('Created worktree "login fix" on branch login-fix (from main)')
+    expect(text).toContain('it started working')
+    expect(writes.map((w) => w[1])).toEqual(['fix the login', '\r'])
+  })
+
+  it('refuses an unknown base branch or repo', async () => {
+    const { call, code } = setup([])
+    await expect(call('create_worktree', { repo: 'shop', name: 'x', base_branch: 'nope' })).rejects.toThrow('No local branch "nope" in "shop". Branches: dev, main')
+    await expect(call('create_worktree', { repo: 'other', name: 'x' })).rejects.toThrow('No repository matches "other". Repositories: "shop"')
+    expect(code.createWorktree).not.toHaveBeenCalled()
+  })
+
+  it('summarizes the changes of a worktree', async () => {
+    const { call } = setup([])
+    const text = await call('worktree_changes', { worktree: 'checkout' })
+    expect(text).toContain('"checkout" (branch checkout vs main): 3 file(s), +10 -2.')
+    expect(text).toContain('- modified src/a.ts (+10 -2)')
+    expect(text).toContain('- renamed src/old.ts -> src/new.ts (+0 -0)')
+    expect(text).toContain('- added logo.png (+? -?)')
+  })
+
+  it('removes a worktree through the Code mode path after a Yes', async () => {
+    const { call, code } = setup([], [], { confirm: true })
+    expect(await call('remove_worktree', { worktree: 'checkout' })).toBe('Worktree "checkout" was removed.')
+    expect(code.removeWorktree).toHaveBeenCalledWith('w1')
   })
 
   it('shows recent activity with cost today', async () => {

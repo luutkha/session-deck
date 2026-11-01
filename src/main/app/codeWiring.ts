@@ -34,6 +34,10 @@ export interface CodeWiring {
   addRepo(rawFolder: unknown): Promise<Repo>
   /** Creates a branch + worktree and starts the first session in it (also reachable from createWorktree tests). */
   createWorktree(raw: unknown): Promise<CreateWorktreeResult>
+  /** D54 (Jarvis): local branches of a repo, a worktree's changes, and worktree removal (same paths as the IPC). */
+  branches(repoId: Id): Promise<RepoBranches>
+  changes(worktreeId: Id): Promise<WorktreeChanges>
+  removeWorktree(worktreeId: Id): void
   /** A turn ended in some session: refresh the changes of its worktree and push them to the windows. */
   onHookEvent(event: HookEvent): void
   shutdown(): void
@@ -139,6 +143,19 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     return readWorktreePreview(worktree, filePath)
   }
 
+  function branches(repoId: Id): Promise<RepoBranches> {
+    return listBranches(repoOrThrow(repoId).path)
+  }
+
+  function changes(worktreeId: Id): Promise<WorktreeChanges> {
+    return computeChanges(worktreeOrThrow(worktreeId))
+  }
+
+  function removeWorktree(worktreeId: Id): void {
+    forget(worktreeId)
+    controller.removeWorktree(worktreeId)
+  }
+
   function registerIpc(): void {
     ipcMain.handle(IPC.repoAdd, (_event, raw: unknown) => addRepo(raw))
     ipcMain.handle(IPC.repoRemove, (_event, rawId: unknown): void => {
@@ -151,21 +168,13 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     ipcMain.handle(IPC.repoSetCollapsed, (_event, rawId: unknown, rawCollapsed: unknown): void => {
       store.setRepoCollapsed(assertId(rawId, 'repo id'), assertBoolean(rawCollapsed, 'collapsed'))
     })
-    ipcMain.handle(IPC.repoBranches, (_event, rawId: unknown): Promise<RepoBranches> => {
-      return listBranches(repoOrThrow(assertId(rawId, 'repo id')).path)
-    })
+    ipcMain.handle(IPC.repoBranches, (_event, rawId: unknown): Promise<RepoBranches> => branches(assertId(rawId, 'repo id')))
     ipcMain.handle(IPC.worktreeCreate, (_event, raw: unknown) => createWorktree(raw))
-    ipcMain.handle(IPC.worktreeRemove, (_event, rawId: unknown): void => {
-      const id = assertId(rawId, 'worktree id')
-      forget(id)
-      controller.removeWorktree(id)
-    })
+    ipcMain.handle(IPC.worktreeRemove, (_event, rawId: unknown): void => removeWorktree(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeSetCollapsed, (_event, rawId: unknown, rawCollapsed: unknown): void => {
       store.setWorktreeCollapsed(assertId(rawId, 'worktree id'), assertBoolean(rawCollapsed, 'collapsed'))
     })
-    ipcMain.handle(IPC.worktreeChanges, (_event, rawId: unknown): Promise<WorktreeChanges> => {
-      return computeChanges(worktreeOrThrow(assertId(rawId, 'worktree id')))
-    })
+    ipcMain.handle(IPC.worktreeChanges, (_event, rawId: unknown): Promise<WorktreeChanges> => changes(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeFileDiff, (_event, rawId: unknown, rawPath: unknown) => fileDiff(rawId, rawPath))
     ipcMain.handle(IPC.filePreviewRead, (_event, rawId: unknown, rawPath: unknown) => filePreview(rawId, rawPath))
   }
@@ -174,6 +183,9 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     registerIpc,
     addRepo,
     createWorktree,
+    branches,
+    changes,
+    removeWorktree,
     onHookEvent: (event) => {
       if (event.event !== 'Stop') return
       const worktreeId = store.get().sessions.find((s) => s.id === event.sessionId)?.worktreeId
