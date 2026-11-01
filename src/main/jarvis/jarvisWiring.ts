@@ -179,6 +179,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       // The renderer shows Jarvis in its own panel (D53); main only makes sure the session exists and runs.
       ipcMain.handle(IPC.jarvisOpen, async (): Promise<Session> => serial(openJarvis))
       ipcMain.handle(IPC.jarvisReset, async (): Promise<Session> => serial(resetJarvis))
+      ipcMain.handle(IPC.jarvisUndo, (): Promise<string> => tools.undoLast())
       ipcMain.handle(IPC.jarvisSchedulesGet, (): readonly JarvisSchedule[] => schedules.list())
       ipcMain.handle(IPC.jarvisScheduleRemove, (_event, rawId: unknown): void => {
         const removed = schedules.remove(assertNonEmptyString(rawId, 'schedule id', 64))

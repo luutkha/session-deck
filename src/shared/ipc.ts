@@ -15,6 +15,7 @@ export const IPC = {
   jarvisSchedulesGet: 'jarvis:schedulesGet', // () -> JarvisSchedule[] (D54)
   jarvisScheduleRemove: 'jarvis:scheduleRemove', // (id) (D54)
   jarvisScheduleSetEnabled: 'jarvis:scheduleSetEnabled', // (id, enabled boolean) (D54)
+  jarvisUndo: 'jarvis:undo', // () -> string: undoes Jarvis's last reversible action (D54)
   jarvisConfirmReply: 'jarvis:confirmReply', // (requestId, yes boolean): the user's answer to an evJarvisConfirm (D53)
   sessionRename: 'session:rename',
   sessionSetStatus: 'session:setStatus',
@@ -136,6 +137,8 @@ export interface Api {
   /** D53: removes the Jarvis session and starts a fresh one (new conversation). */
   resetJarvis(): Promise<Session>
   jarvisConfirmReply(requestId: string, yes: boolean): Promise<void>
+  /** D54: undoes Jarvis's last reversible action; returns what happened. */
+  undoJarvis(): Promise<string>
   /** D54: Jarvis's scheduled instructions. */
   getJarvisSchedules(): Promise<readonly JarvisSchedule[]>
   removeJarvisSchedule(id: string): Promise<void>

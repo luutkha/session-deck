@@ -420,6 +420,47 @@ describe('jarvis tools', () => {
     expect(writes.map((w) => w[1])).toEqual(['scheduled hello', '\r'])
   })
 
+  it('undoes the last reversible actions, newest first (D54)', async () => {
+    const { call, controller, store } = setup([session('a', 'API', { statusId: null, notes: 'old notes' })], [running('a')])
+    expect(await call('undo_last_action')).toBe('Nothing to undo.')
+    await call('rename_session', { session: 'API', name: 'Backend' })
+    await call('set_status', { session: 'API', status: 'review' })
+    await call('sleep_session', { session: 'API' })
+    expect(await call('undo_last_action')).toBe('Undone: sleep "API" (wake it). Next undo would be: set the status of "API" (put the old one back).')
+    expect(controller.wakeSession).toHaveBeenCalledWith('a')
+    await call('undo_last_action')
+    expect(store.setSessionStatus).toHaveBeenLastCalledWith('a', null)
+    await call('undo_last_action')
+    expect(store.renameSession).toHaveBeenLastCalledWith('a', 'API')
+    expect(await call('undo_last_action')).toBe('Nothing to undo.')
+  })
+
+  it('undoes close (reopen), notes, keep awake and a new group; removals are not on the stack', async () => {
+    const { call, controller, store } = setup([session('a', 'API', { notes: 'keep me' }), session('b', 'Web')], [running('a'), running('b')], { confirm: true })
+    await call('close_session', { session: 'Web' })
+    await call('set_notes', { session: 'API', notes: 'new' })
+    await call('set_keep_awake', { session: 'API', keep_awake: true })
+    await call('create_group', { name: 'Tmp' })
+    await call('remove_session', { session: 'Web' })
+    await call('undo_last_action')
+    expect(store.removeGroup).toHaveBeenCalledWith('g2')
+    await call('undo_last_action')
+    expect(store.setKeepAwake).toHaveBeenLastCalledWith('a', false)
+    await call('undo_last_action')
+    expect(store.setSessionNotes).toHaveBeenLastCalledWith('a', 'keep me')
+    await call('undo_last_action')
+    expect(controller.reopenSession).toHaveBeenCalledWith('b')
+  })
+
+  it('undoes a new schedule and a removed one', async () => {
+    const { call } = setup([])
+    await call('schedule_add', { instruction: 'run the tests', time: '07:30', days: ['mon', 'fri'] })
+    await call('schedule_remove', { schedule: 'sch1' })
+    expect(await call('schedule_list')).toBe('No schedules.')
+    await call('undo_last_action')
+    expect(await call('schedule_list')).toContain('07:30 mon, fri')
+  })
+
   it('shows recent activity with cost today', async () => {
     const { call, turns, deps } = setup([session('a', 'API')])
     const now = deps.now()

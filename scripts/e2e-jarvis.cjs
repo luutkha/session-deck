@@ -61,7 +61,7 @@ async function main() {
     t.check('initialize answers with the tools capability', init.body?.result?.capabilities?.tools !== undefined, js(init.body))
     const list = await rpc('tools/list', {})
     const names = list.body.result.tools.map((x) => x.name)
-    t.check('every tool is offered (34)', names.length === 34, names.join(','))
+    t.check('every tool is offered (35)', names.length === 35, names.join(','))
 
     // ---- the pinned sidebar entry before Jarvis exists
     t.check('the tab bar has the Jarvis button, the panel is not open yet', (await waitFor(() => ev(`!!document.querySelector('[data-jarvis-toggle]') || null`), 5000, 200)) === true &&
@@ -232,6 +232,18 @@ async function main() {
     await app.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' })
     await app.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' })
     await sleep(300)
+    await pressJ()
+
+    // ---- D54: undo from the panel button
+    await tool('rename_session', { session: 'jv shell one', name: 'jv renamed' })
+    t.check('a tool rename happened', !!(await byName('jv renamed')))
+    await pressJ()
+    await waitFor(async () => (await panelState()) === 'open' || null, 3000, 200)
+    await click(`document.querySelector('[data-jarvis-undo]')`, 'Undo')
+    const undoNotice = await waitFor(() => ev(`document.querySelector('[data-jarvis-notice]')?.innerText ?? null`), 5000, 200)
+    t.check('the panel Undo button reverts it and says what it undid', !!(await byName('jv shell one')) && !(await byName('jv renamed')) && /Undone: rename "jv shell one" to "jv renamed"/.test(String(undoNotice)), String(undoNotice))
+    const viaTool = await tool('undo_last_action')
+    t.check('undo_last_action steps further back and says when its target is gone', !viaTool.error && /^(Undone|Could not undo|Nothing to undo)/.test(viaTool.text), viaTool.text)
     await pressJ()
 
     const again = await ev('window.api.openJarvis()')

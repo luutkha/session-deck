@@ -2,7 +2,7 @@
 // Mounted once per window by App (outside the mode workspace), so it survives session, tab and mode switches. The
 // terminal is created on first open and then only slid out of view (never resized to zero), so Claude never redraws
 // for a tiny width while the panel is closed.
-import { Bot, RotateCcw, X } from 'lucide-react'
+import { Bot, RotateCcw, Undo2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import type { Id, RuntimeState, StoreData } from '../../shared/types'
 import { Button } from '../components/ui/button'
@@ -16,6 +16,7 @@ import { JarvisSchedules } from './JarvisSchedules'
 
 const WIDTH_KEY = 'sessiondeck.jarvis.width.v1'
 const NO_IDS: readonly Id[] = []
+const NOTICE_MS = 5000
 
 function readWidth(): number {
   try {
@@ -43,6 +44,8 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
   const [mounted, setMounted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [width, setWidth] = useState<number>(readWidth)
+  // D54: the last Undo result, shown under the header for a few seconds.
+  const [notice, setNotice] = useState<string | null>(null)
   const jarvis = findJarvis(data)
   const jarvisId = jarvis?.id ?? null
   const state = jarvisId === null ? undefined : runtime.get(jarvisId)
@@ -100,6 +103,16 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
     window.api.openJarvis().catch((err: unknown): void => setError(err instanceof Error ? err.message : String(err)))
   }, [])
 
+  useEffect((): (() => void) | undefined => {
+    if (notice === null) return undefined
+    const timer = window.setTimeout((): void => setNotice(null), NOTICE_MS)
+    return (): void => window.clearTimeout(timer)
+  }, [notice])
+
+  const undo = useCallback((): void => {
+    window.api.undoJarvis().then(setNotice, (err: unknown): void => setNotice(err instanceof Error ? err.message : String(err)))
+  }, [])
+
   const newConversation = useCallback((): void => {
     setError(null)
     window.api.resetJarvis().catch((err: unknown): void => setError(err instanceof Error ? err.message : String(err)))
@@ -136,6 +149,14 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
           <JarvisSchedules />
           <Tooltip>
             <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-xs" className="text-muted-foreground" aria-label="Undo Jarvis's last action" data-jarvis-undo="" onClick={undo}>
+                <Undo2 size={13} aria-hidden="true" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6}>Undo Jarvis's last action</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" className="text-muted-foreground" aria-label="New Jarvis conversation" onClick={newConversation}>
                 <RotateCcw size={13} aria-hidden="true" />
               </Button>
@@ -152,6 +173,7 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
           </Tooltip>
         </div>
       </header>
+      {notice !== null ? <p role="status" data-jarvis-notice="" className="shrink-0 border-b border-border bg-card px-3 py-1 text-[11px] text-muted-foreground">{notice}</p> : null}
       <div className="terminal-pane__stage">
         {created && jarvisId !== null ? (
           <div key={jarvisId} className="terminal-pane__viewport" data-session-id={jarvisId} ref={panes.handleViewportRef} />

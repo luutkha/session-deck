@@ -32,7 +32,8 @@ import { stripAnsi } from '../app/outputSignals'
 import type { McpTool } from './mcpProtocol'
 import { resolveGroup, resolveSession, resolveStatus, targetSessions } from './targets'
 import { SCREEN_LINES_DEFAULT, SCREEN_LINES_MAX } from './screenText'
-import { nextRun, scheduleWhen } from './schedules'
+import { nextRun, scheduleWhen, timeText } from './schedules'
+import { DAY_NAMES } from '../../shared/jarvisSchedule'
 import type { ScheduleInput } from './scheduleService'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
@@ -50,6 +51,7 @@ const WAIT_POLL_MS = 1000
 const ANSWER_DEFAULT_CHARS = 4000
 const ANSWER_MAX_CHARS = 20_000
 const CHANGES_LIST_DEFAULT = 50
+const UNDO_MAX = 20
 const ACTIVITY_DEFAULT = 10
 const ACTIVITY_MAX = 50
 const NOTES_MAX = 20_000
@@ -106,6 +108,7 @@ export interface JarvisToolDeps {
     list(): readonly JarvisSchedule[]
     add(input: ScheduleInput): JarvisSchedule
     remove(id: string): JarvisSchedule
+    setEnabled(id: string, enabled: boolean): JarvisSchedule
   }
   /** D54: Code mode, the same paths as the IPC (codeWiring). */
   readonly code: {
@@ -282,10 +285,42 @@ type ReadyResult = 'ready' | 'trust' | 'stopped' | 'timeout'
 /** The tools, plus the prompt sender they use (also used to give Jarvis a scheduled instruction). */
 export type JarvisToolkit = readonly McpTool[] & {
   readonly sendPrompt: (session: Session, prompt: string, when: 'auto' | 'now' | 'queue') => Promise<string>
+  /** D54: reverts Jarvis's last reversible action (also the panel's Undo button). */
+  readonly undoLast: () => Promise<string>
+}
+
+interface UndoStep {
+  readonly label: string
+  readonly run: () => void | Promise<void>
 }
 
 export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
   const find = (id: Id): Session | undefined => deps.getData().sessions.find((s) => s.id === id)
+
+  // D54: undo. Each reversible action records how to put things back; removals are not undoable (they ask first).
+  const undoStack: UndoStep[] = []
+  function pushUndo(label: string, run: () => void | Promise<void>): void {
+    undoStack.push({ label, run })
+    if (undoStack.length > UNDO_MAX) undoStack.shift()
+  }
+  async function undoLast(): Promise<string> {
+    const step = undoStack.pop()
+    if (step === undefined) return 'Nothing to undo.'
+    try {
+      await step.run()
+    } catch (error) {
+      return `Could not undo "${step.label}": ${error instanceof Error ? error.message : String(error)}`
+    }
+    deps.log('undo', step.label)
+    return `Undone: ${step.label}.${undoStack.length > 0 ? ` Next undo would be: ${undoStack[undoStack.length - 1].label}.` : ''}`
+  }
+  /** Position of a session among its group's sessions (for putting it back). */
+  function indexInGroup(session: Session): number {
+    return deps.getData().sessions
+      .filter((s) => s.groupId === session.groupId && s.worktreeId === undefined)
+      .sort((a, b) => a.order - b.order)
+      .findIndex((s) => s.id === session.id)
+  }
 
   /**
    * Waits until the session's program has started and its screen has settled (or it asks to trust the folder).
@@ -597,6 +632,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
           ...(model !== undefined ? { model } : {})
         })
         deps.log('create_session', `"${session.name}" in ${cwd}`)
+        pushUndo(`create "${session.name}" (close it; it stays in Closed)`, () => deps.controller.closeSession(session.id))
         if (optionalBool(args, 'open') === true) deps.openSession(session.id)
         const created = `Created "${session.name}" (id ${session.id}, ${agent}) in ${cwd}.`
         const prompt = optionalText(args, 'prompt')
@@ -681,6 +717,9 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         if (state?.sleeping === true) return `"${session.name}" is already asleep.`
         if (session.closedAt !== undefined || state?.run !== 'running') return `"${session.name}" is not running (${stateText(session, state)}); nothing to do.`
         deps.controller.sleepSession(session.id)
+        pushUndo(`sleep "${session.name}" (wake it)`, () => {
+          deps.controller.wakeSession(session.id)
+        })
         deps.log('sleep_session', session.name)
         return `"${session.name}" is asleep.`
       }
@@ -692,6 +731,8 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
       run: async (args) => {
         const session = resolveSession(deps.getData(), args.session)
         const did = await startIfNeeded(session)
+        if (did === 'reopened') pushUndo(`reopen "${session.name}" (close it again)`, () => deps.controller.closeSession(session.id))
+        else if (did !== null) pushUndo(`wake "${session.name}" (put it to sleep)`, () => deps.controller.sleepSession(session.id))
         deps.log('wake_session', session.name)
         return did === null ? `"${session.name}" is already running.` : `"${session.name}" ${did === 'woke' ? 'is waking up' : did === 'reopened' ? 'was reopened' : 'is starting'}.`
       }
@@ -716,6 +757,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const session = resolveSession(deps.getData(), args.session)
         if (session.closedAt !== undefined) return `"${session.name}" is already closed.`
         deps.controller.closeSession(session.id)
+        pushUndo(`close "${session.name}" (reopen it)`, () => deps.controller.reopenSession(session.id))
         deps.log('close_session', session.name)
         return `"${session.name}" is closed.`
       }
@@ -860,6 +902,9 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
           ...(optionalText(args, 'label') !== undefined ? { label: optionalText(args, 'label') as string } : {})
         })
         deps.log('schedule_add', `${scheduleWhen(added)}: ${clip(added.instruction, 80)}`)
+        pushUndo(`schedule ${scheduleWhen(added)} (remove it)`, () => {
+          deps.schedules.remove(added.id)
+        })
         const next = nextRun(added, deps.now())
         return `Scheduled (id ${added.id}) ${scheduleWhen(added)}: "${added.instruction}".${next !== null ? ` Next run ${new Date(next).toLocaleString()}.` : ''}`
       }
@@ -892,6 +937,10 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         if (matches.length > 1) throw new Error(`"${ref}" matches ${matches.length} schedules; pass the id.`)
         const removed = deps.schedules.remove(matches[0].id)
         deps.log('schedule_remove', `${scheduleWhen(removed)}: ${clip(removed.instruction, 80)}`)
+        pushUndo(`remove the schedule ${scheduleWhen(removed)} (add it back)`, () => {
+          const back = deps.schedules.add({ instruction: removed.instruction, time: timeText(removed.minutes), days: removed.days.map((d) => DAY_NAMES[d]), once: removed.once, label: removed.label })
+          if (!removed.enabled) deps.schedules.setEnabled(back.id, false)
+        })
         return `Removed the schedule ${scheduleWhen(removed)}: "${removed.instruction}".`
       }
     },
@@ -904,6 +953,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const name = text(args, 'name').trim()
         if (name.length > SESSION_NAME_MAX) throw new Error(`The name is too long (max ${SESSION_NAME_MAX}).`)
         deps.store.renameSession(session.id, name)
+        pushUndo(`rename "${session.name}" to "${name}" (name it back)`, () => deps.store.renameSession(session.id, session.name))
         deps.log('rename_session', `${session.name} -> ${name}`)
         return `Renamed "${session.name}" to "${name}".`
       }
@@ -918,6 +968,10 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const statusName = optionalText(args, 'status')
         const status = statusName === undefined ? null : resolveStatus(data, statusName)
         deps.store.setSessionStatus(session.id, status?.id ?? null)
+        pushUndo(`set the status of "${session.name}" (put the old one back)`, () => {
+          const old = deps.getData().statuses.some((st) => st.id === session.statusId) ? session.statusId : null
+          deps.store.setSessionStatus(session.id, old)
+        })
         deps.log('set_status', `${session.name}: ${status?.name ?? 'none'}`)
         return status === null ? `Cleared the status of "${session.name}".` : `"${session.name}" is now "${status.name}".`
       }
@@ -933,7 +987,12 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const groupName = optionalText(args, 'group')
         const group = groupName === undefined ? null : resolveGroup(data, groupName)
         const index = data.sessions.filter((s) => s.groupId === (group?.id ?? null) && s.id !== session.id).length
+        const oldIndex = Math.max(0, indexInGroup(session))
         deps.store.moveSession(session.id, group?.id ?? null, index)
+        pushUndo(`move "${session.name}" (move it back)`, () => {
+          const oldGroup = session.groupId !== null && deps.getData().groups.some((g) => g.id === session.groupId) ? session.groupId : null
+          deps.store.moveSession(session.id, oldGroup, oldIndex)
+        })
         deps.log('move_to_group', `${session.name}: ${group?.name ?? 'ungrouped'}`)
         return group === null ? `"${session.name}" is ungrouped.` : `Moved "${session.name}" to "${group.name}".`
       }
@@ -944,6 +1003,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
       inputSchema: schema({ name: { type: 'string' } }, ['name']),
       run: async (args) => {
         const group = deps.store.createGroup(text(args, 'name').trim())
+        pushUndo(`create group "${group.name}" (delete it; its sessions become ungrouped)`, () => deps.store.removeGroup(group.id))
         deps.log('create_group', group.name)
         return `Created group "${group.name}".`
       }
@@ -971,6 +1031,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const next = optionalBool(args, 'append') === true && session.notes ? `${session.notes}\n${given}` : given
         if (next.length > NOTES_MAX) throw new Error(`Notes are limited to ${NOTES_MAX} characters.`)
         deps.store.setSessionNotes(session.id, next)
+        pushUndo(`change the notes of "${session.name}" (restore them)`, () => deps.store.setSessionNotes(session.id, session.notes ?? ''))
         deps.log('set_notes', session.name)
         return `Updated the notes of "${session.name}".`
       }
@@ -984,9 +1045,16 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const on = optionalBool(args, 'keep_awake')
         if (on === undefined) throw new Error('"keep_awake" is required.')
         deps.store.setKeepAwake(session.id, on)
+        pushUndo(`turn keep awake ${on ? 'on' : 'off'} for "${session.name}" (switch it back)`, () => deps.store.setKeepAwake(session.id, session.keepAwake === true))
         deps.log('set_keep_awake', `${session.name}: ${on}`)
         return `Keep awake is ${on ? 'on' : 'off'} for "${session.name}".`
       }
+    },
+    {
+      name: 'undo_last_action',
+      description: 'Undoes your last reversible action (sleep, wake, close, create session, rename, status, group, notes, keep awake, create group, schedules), one step per call. Removals cannot be undone.',
+      inputSchema: schema({}),
+      run: async () => undoLast()
     },
     {
       name: 'open_session',
@@ -1001,5 +1069,5 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
       }
     }
   ]
-  return Object.assign(tools, { sendPrompt })
+  return Object.assign(tools, { sendPrompt, undoLast })
 }

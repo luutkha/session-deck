@@ -109,6 +109,10 @@ const api: Api = {
     return ipcRenderer.invoke(IPC.jarvisConfirmReply, requestId, yes)
   },
 
+  undoJarvis(): Promise<string> {
+    return ipcRenderer.invoke(IPC.jarvisUndo)
+  },
+
   getJarvisSchedules(): Promise<readonly JarvisSchedule[]> {
     return ipcRenderer.invoke(IPC.jarvisSchedulesGet)
   },
