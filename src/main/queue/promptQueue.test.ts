@@ -106,6 +106,17 @@ describe('createPromptQueue', () => {
     expect(writes.filter(([, text]) => text !== '\r')).toEqual([['a', 'do 1'], ['a', 'do 2']])
   })
 
+  it('sends to a session idle long enough for Claude\'s "waiting for your input" reminder, but not into a real question (D54)', () => {
+    emit('a', { activity: 'needs-input', activityMessage: 'Claude is waiting for your input' })
+    setQueue('a', [prompt('1')])
+    queue.onQueueChanged('a')
+    expect(writes).toEqual([['a', 'do 1']])
+    emit('b', { activity: 'needs-input', activityMessage: 'Claude needs your permission to use Bash' })
+    setQueue('b', [prompt('2')])
+    queue.onQueueChanged('b')
+    expect(writes).toEqual([['a', 'do 1']])
+  })
+
   it('lets the next prompt go after the guard expires when no new turn was reported', () => {
     emit('a', { activity: 'finished' })
     setQueue('a', [prompt('1'), prompt('2')])

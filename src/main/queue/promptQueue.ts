@@ -1,6 +1,7 @@
 // Prompt queue (D47): prompts the user lined up for a session are typed in one at a time, each when the session's
 // current turn finishes (activity becomes 'finished': the Claude Stop hook or the OpenCode plugin's Stop).
 import type { Id, QueuedPrompt, RuntimeState, Session, StoreData } from '../../shared/types'
+import { isReadyForPrompt } from '../app/activity'
 
 /** Enter follows the text after this pause, so the TUI takes the text as one input and then submits it (autopilot too). */
 export const QUEUE_ENTER_DELAY_MS = 300
@@ -75,7 +76,8 @@ export function createPromptQueue(deps: PromptQueueDeps): PromptQueue {
     if (awaitingTurn.has(id)) return
     const session = findSession(id)
     const state = deps.getRuntime(id)
-    if (!canTypeInto(session, state) || state?.activity !== 'finished') return
+    // A turn that finished, or only Claude's idle reminder since (D54: the reminder is a Notification, not a question).
+    if (!canTypeInto(session, state) || !isReadyForPrompt(state?.activity, state?.activityMessage)) return
     const queue = session?.queue ?? []
     const [next, ...rest] = queue
     if (next === undefined) return
