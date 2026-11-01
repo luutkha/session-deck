@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import type {
   AgentKind,
+  AwaySummary,
   ConversationSearchResult,
   CreateSessionInput,
   Id,
@@ -13,6 +14,8 @@ import type {
   Session,
   StoreData,
   TimelineTurn,
+  UsageState,
+  UsageWindow,
   Worktree
 } from '../../shared/types'
 import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX } from '../../shared/types'
@@ -32,6 +35,11 @@ export const TURN_START_WAIT_MS = 10_000
 /** How long a session Jarvis just woke or started may take to be running again. */
 export const START_GRACE_MS = 15_000
 const POLL_MS = 250
+export const WAIT_DEFAULT_S = 600
+export const WAIT_MAX_S = 1800
+const WAIT_POLL_MS = 1000
+const ANSWER_DEFAULT_CHARS = 4000
+const ANSWER_MAX_CHARS = 20_000
 const ACTIVITY_DEFAULT = 10
 const ACTIVITY_MAX = 50
 const NOTES_MAX = 20_000
@@ -77,6 +85,12 @@ export interface JarvisToolDeps {
   readonly rawOutput: (id: Id) => string
   readonly timeline: (id: Id) => readonly TimelineTurn[]
   readonly search: (query: string) => Promise<ConversationSearchResult>
+  /** D54: the reply to the last prompt from the saved Claude conversation; null when there is none. */
+  readonly lastAnswer: (session: Session) => Promise<string | null>
+  readonly usage: () => UsageState
+  /** Every recorded turn of every session (cost today). */
+  readonly allTurns: () => readonly TimelineTurn[]
+  readonly lastAway: () => AwaySummary | null
   /** Shows the session in the window (like a click on its card). */
   readonly openSession: (id: Id) => void
   /** Asks the user Yes/No in the app; false on No, timeout or no window. */
@@ -180,6 +194,23 @@ function sessionLine(data: StoreData, session: Session, deps: JarvisToolDeps): s
   if (last !== undefined && last.prompt.length > 0) parts.push(`last prompt ${minutesAgo(deps.now(), last.startedAt)}: "${clip(last.prompt, 80)}"`)
   parts.push(`folder ${session.cwd}`)
   return `- ${parts.join(' · ')}`
+}
+
+/** "3 h 20 min", "12 min", "now". */
+function durationText(ms: number): string {
+  const minutes = Math.round(ms / 60_000)
+  if (minutes <= 0) return "now"
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `${hours} h ${minutes % 60} min`
+  return `${Math.round(hours / 24)} days`
+}
+
+/** Working on a turn, or still has queued prompts it will get (a running, awake agent session). */
+function isBusy(session: Session, state: RuntimeState | undefined): boolean {
+  if (state?.activity === "working") return true
+  const typeable = session.closedAt === undefined && state?.run === "running" && state.sleeping !== true
+  return typeable && (session.queue ?? []).length > 0 && state?.activity !== "needs-input"
 }
 
 function resolveFolder(raw: string): string {
@@ -369,6 +400,105 @@ export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
         const names = new Map(deps.getData().sessions.map((s) => [s.id, s.name]))
         const lines = result.hits.slice(0, 30).map((hit) => `- "${names.get(hit.sessionId) ?? 'removed session'}" · ${hit.role === 'user' ? 'user' : 'Claude'} · ${hit.snippet}`)
         return [`${result.hits.length}${result.truncated ? '+' : ''} match(es) in ${result.searchedSessions} conversation(s).`, ...lines].join('\n')
+      }
+    },
+    {
+      name: 'wait_for_session',
+      description: 'Waits until a session is no longer working (its turn finished, it needs an answer, or it stopped), including prompts still in its queue. Use it after send_prompt to act on the result, e.g. "when the tests finish, send the failures to X". Returns "still working" after the timeout; call it again to keep waiting.',
+      inputSchema: schema({
+        session: SESSION_PROP,
+        timeout_seconds: { type: 'integer', description: `How long to wait at most (default ${WAIT_DEFAULT_S}, max ${WAIT_MAX_S}).` }
+      }, ['session']),
+      run: async (args) => {
+        const session = resolveSession(deps.getData(), args.session)
+        const timeout = optionalInt(args, 'timeout_seconds', WAIT_DEFAULT_S, WAIT_MAX_S) * 1000
+        const begin = deps.now()
+        for (;;) {
+          const current = find(session.id)
+          if (current === undefined) throw new Error(`"${session.name}" was removed while waiting.`)
+          const state = deps.getRuntime(session.id)
+          if (!isBusy(current, state)) {
+            const waited = Math.round((deps.now() - begin) / 1000)
+            const asking = state?.activity === 'needs-input' ? ' It is waiting for an answer: use read_screen to see the question.' : ''
+            const answer = agentOf(current) === 'shell' ? ' Use read_screen to see its output.' : ' Use get_last_answer to read its reply.'
+            return `"${current.name}" is ${stateText(current, state)} (waited ${waited} s).${asking}${answer}`
+          }
+          if (deps.now() - begin >= timeout) {
+            return `"${current.name}" is still working after ${Math.round(timeout / 1000)} s. Call wait_for_session again to keep waiting.`
+          }
+          await deps.sleep(WAIT_POLL_MS)
+        }
+      }
+    },
+    {
+      name: 'get_last_answer',
+      description: "Returns the session's reply to its last prompt as text, from the saved conversation (complete, not cut by the screen). For OpenCode and shell sessions it falls back to the screen.",
+      inputSchema: schema({ session: SESSION_PROP, max_chars: { type: 'integer', description: `Default ${ANSWER_DEFAULT_CHARS}, max ${ANSWER_MAX_CHARS}. A longer answer keeps its end.` } }, ['session']),
+      run: async (args) => {
+        const session = resolveSession(deps.getData(), args.session)
+        const max = optionalInt(args, 'max_chars', ANSWER_DEFAULT_CHARS, ANSWER_MAX_CHARS)
+        const state = deps.getRuntime(session.id)
+        const answer = agentOf(session) === 'claude' ? await deps.lastAnswer(session) : null
+        if (answer === null || answer.trim().length === 0) {
+          const screen = await deps.screenText(session.id, SCREEN_LINES_DEFAULT)
+          const why = answer === null ? 'No saved conversation to read' : 'The last prompt has no reply yet'
+          return `${why}; "${session.name}" is ${stateText(session, state)}. Its screen:\n----- screen -----\n${screen || '(nothing on screen yet)'}`
+        }
+        const body = answer.length <= max ? answer : `…(start cut)\n${answer.slice(answer.length - max)}`
+        const busy = state?.activity === 'working' ? ' (it is still working: this may be an earlier or partial reply)' : ''
+        return `Last reply of "${session.name}"${busy}:\n${body}`
+      }
+    },
+    {
+      name: 'get_usage',
+      description: 'Plan usage: the Claude 5-hour and weekly limits (% used, when they reset), OpenCode Go if used, the cost of all sessions today, and the model/context of running sessions.',
+      inputSchema: schema({}),
+      run: async () => {
+        const usage = deps.usage()
+        const now = deps.now()
+        const windowText = (label: string, w: UsageWindow | null | undefined): string | null => {
+          if (w === null || w === undefined) return null
+          const reset = w.resetsAt === null ? '' : `, resets in ${durationText(w.resetsAt * 1000 - now)}`
+          return `${label} ${Math.round(w.usedPercentage)}% used${reset}`
+        }
+        const lines: string[] = []
+        const accounts = usage.accounts ?? (usage.account !== null ? [usage.account] : [])
+        for (const account of accounts) {
+          const name = account.provider === 'opencode-go' ? 'OpenCode Go' : 'Claude plan'
+          const parts = [windowText('5-hour', account.fiveHour), windowText('weekly', account.sevenDay), windowText('monthly', account.monthly)].filter((x): x is string => x !== null)
+          lines.push(`- ${name}: ${parts.join(' · ') || 'no data'} (updated ${minutesAgo(now, account.updatedAt)})`)
+        }
+        if (accounts.length === 0) lines.push('- No plan usage yet: it arrives with the next Claude turn (or a manual refresh in the status bar).')
+        const midnight = new Date(now).setHours(0, 0, 0, 0)
+        const today = deps.allTurns().filter((t) => t.startedAt >= midnight && t.costUsd !== null).reduce((sum, t) => sum + (t.costUsd ?? 0), 0)
+        lines.push(`- Cost of all sessions today: $${today.toFixed(2)}`)
+        const names = new Map(deps.getData().sessions.map((s) => [s.id, s.name]))
+        const running = usage.sessions.filter((u) => names.has(u.sessionId) && deps.getRuntime(u.sessionId)?.run === 'running')
+        for (const u of running.slice(0, 15)) {
+          const ctx = u.contextPercent === null ? '' : ` · context ${Math.round(u.contextPercent)}%`
+          const cost = u.costUsd === null ? '' : ` · $${u.costUsd.toFixed(2)} this session`
+          lines.push(`  - "${names.get(u.sessionId)}": ${u.model ?? 'model unknown'}${ctx}${cost}`)
+        }
+        return lines.join('\n')
+      }
+    },
+    {
+      name: 'get_away_summary',
+      description: 'What happened while the user was away last time (the "While you were away" summary): finished turns, sessions that need the user, slept, hit the limit, cost.',
+      inputSchema: schema({}),
+      run: async () => {
+        const away = deps.lastAway()
+        if (away === null) return 'No away summary yet in this run (it is made when the user comes back after being away).'
+        const now = deps.now()
+        const lines = away.sessions.map((s) => {
+          const parts = [s.finished > 0 ? `${s.finished} turn(s) finished` : null, s.needsYou ? 'NEEDS THE USER' : null, s.slept ? 'slept' : null, s.hitLimit ? 'hit the usage limit' : null, s.costUsd !== null ? `$${s.costUsd.toFixed(2)}` : null].filter((x): x is string => x !== null)
+          return `- "${s.name}": ${parts.join(' · ')}${s.lastPrompt ? ` · last prompt "${clip(s.lastPrompt, 80)}"` : ''}`
+        })
+        const t = away.totals
+        return [
+          `Away from ${minutesAgo(now, away.since)} until ${minutesAgo(now, away.until)}: ${t.finished} finished, ${t.needsYou} need the user, ${t.slept} slept, ${t.hitLimit} hit the limit, $${t.costUsd.toFixed(2)}.`,
+          ...(lines.length > 0 ? lines : ['(nothing happened)'])
+        ].join('\n')
       }
     },
     {

@@ -35,7 +35,7 @@ import { createSleepScheduler } from './sleep/SleepScheduler'
 import { createWorkerHub } from './workers'
 import { createPromptQueue } from './queue/promptQueue'
 import { createLaunchResume, RESUME_FILE_NAME } from './app/launchResume'
-import { createConversationSearch } from './transcripts/conversationSearch'
+import { createConversationSearch, lastAnswer } from './transcripts/conversationSearch'
 import { claudeConfigDir } from './app/transcript'
 import { readdir, stat } from 'node:fs/promises'
 import { IPC } from '../shared/ipc'
@@ -396,6 +396,13 @@ if (!gotTheLock) {
         rawOutput: (id) => pty.replay(id).data,
         timeline: (id) => features.timeline.get(id),
         search: (query) => conversationSearch.search(store.get().sessions, query),
+        lastAnswer: async (session) => {
+          const messages = await conversationSearch.messagesOfSession(session)
+          return messages === null ? null : lastAnswer(messages)
+        },
+        usage: () => usage.getState(),
+        allTurns: () => features.timeline.all(),
+        lastAway: () => features.lastAway(),
         openSession: (id) => focusSession(id),
         startedAt: (id) => ptyStartedAt.get(id),
         lastOutputAt: (id) => ptyLastOutputAt.get(id)

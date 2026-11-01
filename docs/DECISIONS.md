@@ -235,6 +235,9 @@ The user: "i want a session of AI can help to to create/close/sleep/reconnect or
 - **Voice:** skipped for now.
 - **2026-11-01 feedback (supersedes "pinned at the top of the sidebar"):** "i dont see jarvis on code-change mode, and jarvis should live on the right side bar, overlay in all session". Jarvis is now a right-side panel that floats over whatever is on screen, in Ops AND Code mode (and the Code window); it stays open across session, tab and mode switches. Opened with Ctrl+Shift+J, the Jarvis button at the right of the tab bar, or the palette. It is no longer a tab or a sidebar entry. The panel width is resizable.
 
+**D54 · 2026-11-01 · Jarvis round 2** · active
+After "tested good now", asked "what is next step for jarvis"; offered 1) shippable installer + packaged test (+ user name with a space), 2) wait_for_session + get_last_answer, 3) Code mode tools (add repo, create worktree, changes summary), 4) usage + away summary tools, 5) scheduled instructions, 6) voice, OpenCode as Jarvis's engine, undo. The user: "do for: 1, 2,3,4,5,6". Voice was "skip first" in D53; it is now wanted. Built in the order 2, 4, 3, 5, 6, then 1 (the installer last so it contains everything).
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

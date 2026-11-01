@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { tmpdir } from 'node:os'
-import type { QueuedPrompt, RuntimeState, Session, StoreData, TimelineTurn } from '../../shared/types'
+import type { AwaySummary, QueuedPrompt, RuntimeState, Session, StoreData, TimelineTurn, UsageState } from '../../shared/types'
 import { createJarvisTools, READY_TIMEOUT_MS, type JarvisToolDeps } from './jarvisTools'
 
 const session = (id: string, name: string, extra: Partial<Session> = {}): Session => ({
@@ -23,6 +23,9 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
   const raw = new Map<string, string>()
   const turns = new Map<string, TimelineTurn[]>()
   const startTimes = new Map<string, number>()
+  const answers = new Map<string, string>()
+  let usageState: UsageState = { account: null, sessions: [] }
+  let away: AwaySummary | null = null
   const setSession = (id: string, patch: Partial<Session>): void => {
     data = { ...data, sessions: data.sessions.map((s) => (s.id === id ? { ...s, ...patch } : s)) }
   }
@@ -76,6 +79,10 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     rawOutput: (id) => raw.get(id) ?? '',
     timeline: (id) => turns.get(id) ?? [],
     search: async () => ({ hits: [], truncated: false, searchedSessions: 0 }),
+    lastAnswer: async (s) => answers.get(s.id) ?? null,
+    usage: () => usageState,
+    allTurns: () => [...turns.values()].flat(),
+    lastAway: () => away,
     openSession: vi.fn(),
     confirm: vi.fn(async () => options.confirm ?? false),
     startedAt: (id) => startTimes.get(id) ?? 0,
@@ -93,7 +100,11 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     if (tool === undefined) throw new Error(`no tool ${name}`)
     return tool.run(args)
   }
-  return { call, controller, store, deps, writes, raw, states, turns, startTimes, data: () => data, tick: (ms: number) => { clock += ms } }
+  return {
+    call, controller, store, deps, writes, raw, states, turns, startTimes, answers, data: () => data,
+    setUsage: (u: UsageState) => { usageState = u },
+    setAway: (a: AwaySummary | null) => { away = a }
+  }
 }
 
 describe('jarvis tools', () => {
@@ -232,6 +243,70 @@ describe('jarvis tools', () => {
     expect(store.setKeepAwake).toHaveBeenCalledWith('a', true)
     await call('rename_session', { session: 'API', name: 'Backend API' })
     expect(store.renameSession).toHaveBeenCalledWith('a', 'Backend API')
+  })
+
+  it('waits until the turn and the queue are done, then points to the reply', async () => {
+    const { call, states, deps } = setup([session('a', 'API')], [running('a', { activity: 'working' })])
+    const started = deps.now()
+    const realSleep = deps.sleep
+    Object.assign(deps, {
+      sleep: async (ms: number) => {
+        await realSleep(ms)
+        if (deps.now() - started >= 5000) states.set('a', running('a', { activity: 'finished' }))
+      }
+    })
+    const text = await call('wait_for_session', { session: 'API' })
+    expect(text.startsWith('"API" is running, idle (last turn finished) (waited 5 s). Use get_last_answer')).toBe(true)
+  })
+
+  it('stops waiting at the timeout and says to call again; a queued prompt counts as busy', async () => {
+    const { call } = setup([session('a', 'API', { queue: [{ id: 'q', text: 'next', addedAt: 0 }] })], [running('a', { activity: 'finished' })])
+    expect(await call('wait_for_session', { session: 'API', timeout_seconds: 3 })).toBe('"API" is still working after 3 s. Call wait_for_session again to keep waiting.')
+  })
+
+  it('says when the session waits for an answer', async () => {
+    const { call } = setup([session('a', 'API')], [running('a', { activity: 'needs-input', activityMessage: 'Allow Bash?' })])
+    expect(await call('wait_for_session', { session: 'API' })).toContain('waiting for an answer: use read_screen')
+  })
+
+  it('returns the last reply from the saved conversation, keeping the end of a long one', async () => {
+    const { call, answers } = setup([session('a', 'API')], [running('a', { activity: 'finished' })])
+    answers.set('a', 'All 42 tests passed.')
+    expect(await call('get_last_answer', { session: 'API' })).toBe('Last reply of "API":\nAll 42 tests passed.')
+    answers.set('a', 'x'.repeat(50) + 'THE END')
+    expect(await call('get_last_answer', { session: 'API', max_chars: 7 })).toBe('Last reply of "API":\n…(start cut)\nTHE END')
+  })
+
+  it('falls back to the screen without a saved conversation', async () => {
+    const { call } = setup([session('a', 'API', { agent: 'shell' })], [running('a')])
+    const text = await call('get_last_answer', { session: 'API' })
+    expect(text).toContain('No saved conversation to read')
+    expect(text).toContain('screen of a')
+  })
+
+  it('reports plan usage, cost today and running sessions', async () => {
+    const { call, setUsage, turns, deps } = setup([session('a', 'API')], [running('a')])
+    const now = deps.now()
+    setUsage({
+      account: null,
+      accounts: [{ provider: 'claude', fiveHour: { usedPercentage: 45.4, resetsAt: Math.round((now + 90 * 60_000) / 1000) }, sevenDay: { usedPercentage: 84, resetsAt: null }, updatedAt: now }],
+      sessions: [{ sessionId: 'a', model: 'Sonnet 5.5', contextPercent: 12, costUsd: 0.5, effort: null, updatedAt: now }]
+    })
+    turns.set('a', [{ id: 't', sessionId: 'a', prompt: 'x', startedAt: now, endedAt: now, end: 'finished', costUsd: 1.25, neededYou: false }])
+    const text = await call('get_usage')
+    expect(text).toContain('Claude plan: 5-hour 45% used, resets in 1 h 30 min · weekly 84% used')
+    expect(text).toContain('Cost of all sessions today: $1.25')
+    expect(text).toContain('"API": Sonnet 5.5 · context 12% · $0.50 this session')
+  })
+
+  it('reports the away summary, or that there is none yet', async () => {
+    const { call, setAway, deps } = setup([])
+    expect(await call('get_away_summary')).toContain('No away summary yet')
+    const now = deps.now()
+    setAway({ since: now - 3_600_000, until: now - 60_000, sessions: [{ sessionId: 'a', name: 'API', finished: 2, needsYou: true, hitLimit: false, slept: false, costUsd: 0.3, lastPrompt: 'deploy', lastAt: now }], totals: { finished: 2, needsYou: 1, slept: 0, hitLimit: 0, costUsd: 0.3 } })
+    const text = await call('get_away_summary')
+    expect(text).toContain('2 finished, 1 need the user')
+    expect(text).toContain('"API": 2 turn(s) finished · NEEDS THE USER · $0.30 · last prompt "deploy"')
   })
 
   it('shows recent activity with cost today', async () => {

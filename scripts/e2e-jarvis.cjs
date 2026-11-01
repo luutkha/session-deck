@@ -60,7 +60,7 @@ async function main() {
     t.check('initialize answers with the tools capability', init.body?.result?.capabilities?.tools !== undefined, js(init.body))
     const list = await rpc('tools/list', {})
     const names = list.body.result.tools.map((x) => x.name)
-    t.check('23 tools are offered', names.length === 23, names.join(','))
+    t.check('every tool is offered (27)', names.length === 27, names.join(','))
 
     // ---- the pinned sidebar entry before Jarvis exists
     t.check('the tab bar has the Jarvis button, the panel is not open yet', (await waitFor(() => ev(`!!document.querySelector('[data-jarvis-toggle]') || null`), 5000, 200)) === true &&
@@ -80,6 +80,16 @@ async function main() {
 
     const listed = await tool('list_sessions')
     t.check('list_sessions lists it as running', /"jv shell" \(id [^)]+\) · shell · running/.test(listed.text), listed.text)
+
+    // ---- D54: wait / last answer / usage / away
+    const waited = await tool('wait_for_session', { session: 'jv shell', timeout_seconds: 5 })
+    t.check('wait_for_session returns at once for an idle shell, pointing to read_screen', /"jv shell" is running, idle \(waited \d+ s\)\. Use read_screen/.test(waited.text), waited.text)
+    const last = await tool('get_last_answer', { session: 'jv shell' })
+    t.check('get_last_answer falls back to the screen for a shell', /No saved conversation/.test(last.text) && last.text.includes('JARVIS_WAS_HERE'), last.text.slice(-200))
+    const usageText = await tool('get_usage')
+    t.check('get_usage answers with the cost of today', !usageText.error && /Cost of all sessions today: \$\d+\.\d\d/.test(usageText.text), usageText.text)
+    const awayText = await tool('get_away_summary')
+    t.check('get_away_summary answers (none yet in a fresh run)', /No away summary yet/.test(awayText.text), awayText.text)
 
     // ---- sleep / wake (reconnect)
     const slept = await tool('sleep_session', { session: 'jv shell' })

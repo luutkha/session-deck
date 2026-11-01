@@ -38,6 +38,8 @@ export interface FeatureWiring {
   readonly timeline: TimelineService
   readonly autopilot: QuotaAutopilot
   readonly presence: UserPresence
+  /** D54: the last "While you were away" summary of this run (null before the first one). */
+  lastAway(): AwaySummary | null
   onHookEvent(event: HookEvent): void
   /** A Claude turn submitted in this process was cut off by the usage limit. */
   onUsageLimit(id: Id): void
@@ -148,6 +150,7 @@ export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
     timeline,
     autopilot,
     presence,
+    lastAway: () => lastAway,
     onHookEvent: (event) => timeline.onHook(event),
     onUsageLimit: (id) => {
       timeline.onUsageLimit(id)

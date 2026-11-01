@@ -10,7 +10,7 @@ import { assertBoolean, assertNonEmptyString } from '../app/ipcValidation'
 import type { SessionController } from '../app/sessionController'
 import type { SessionStore } from '../store'
 import { createMcpHttpServer } from './mcpHttpServer'
-import { CONFIRM_TIMEOUT_MS, JARVIS_NAME, JARVIS_SYSTEM_PROMPT, jarvisLaunchArgs, jarvisPaths, mcpConfigText } from './jarvisLaunch'
+import { CONFIRM_TIMEOUT_MS, JARVIS_NAME, jarvisLaunchArgs, jarvisSystemPrompt, jarvisPaths, mcpConfigText } from './jarvisLaunch'
 import { createJarvisTools, type ConfirmRequest, type JarvisToolDeps } from './jarvisTools'
 import { isJarvis } from './targets'
 
@@ -128,7 +128,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       }
       const { port } = await server.start()
       await writeFile(paths.mcpConfig, mcpConfigText(port, token), 'utf-8')
-      await writeFile(paths.prompt, JARVIS_SYSTEM_PROMPT, 'utf-8')
+      await writeFile(paths.prompt, jarvisSystemPrompt(tools.map((tool) => tool.name)), 'utf-8')
       started = true
     },
 

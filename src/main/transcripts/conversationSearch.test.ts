@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import type { Session } from '../../shared/types'
-import { createConversationSearch, findInMessages, MAX_HITS_PER_SESSION, parseTranscript } from './conversationSearch'
+import { createConversationSearch, findInMessages, lastAnswer, MAX_HITS_PER_SESSION, parseTranscript } from './conversationSearch'
 
 const line = (obj: unknown): string => JSON.stringify(obj)
 const user = (text: unknown, timestamp = '2026-10-30T10:00:00.000Z', extra: object = {}): string =>
@@ -25,6 +25,15 @@ describe('parseTranscript', () => {
       { role: 'user', text: 'Fix the login bug', at: Date.parse('2026-10-30T10:00:00.000Z') },
       { role: 'assistant', text: 'Looking at auth.ts now', at: Date.parse('2026-10-30T10:00:05.000Z') }
     ])
+  })
+})
+
+describe('lastAnswer (D54)', () => {
+  it('joins every assistant text after the last user message', () => {
+    const m = (role: 'user' | 'assistant', text: string) => ({ role, text, at: null })
+    expect(lastAnswer([m('user', 'a'), m('assistant', 'old'), m('user', 'b'), m('assistant', 'one'), m('assistant', 'two')])).toBe('one\n\ntwo')
+    expect(lastAnswer([m('assistant', 'old'), m('user', 'pending')])).toBe('')
+    expect(lastAnswer([])).toBe('')
   })
 })
 
@@ -98,6 +107,13 @@ describe('createConversationSearch', () => {
     const result = await (service({ [p('a', 'c1')]: many }).search).search([session('s1', 'c1')], 'match')
     expect(result.hits).toHaveLength(MAX_HITS_PER_SESSION)
     expect(result.truncated).toBe(true)
+  })
+
+  it('reads the messages of one Claude session; null for OpenCode or no saved conversation (D54)', async () => {
+    const { search } = service({ [p('a', 'c1')]: [user('hi'), assistant('hello')].join('\n') })
+    expect((await search.messagesOfSession(session('s1', 'c1')))?.map((m) => m.text)).toEqual(['hi', 'hello'])
+    expect(await search.messagesOfSession(session('s2', 'missing'))).toBeNull()
+    expect(await search.messagesOfSession(session('oc', 'c1', { agent: 'opencode' }))).toBeNull()
   })
 
   it('rejects a too short query and copes with no projects folder', async () => {

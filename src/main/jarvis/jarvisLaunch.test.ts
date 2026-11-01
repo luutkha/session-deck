@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { JARVIS_SYSTEM_PROMPT, jarvisLaunchArgs, jarvisPaths, mcpConfigText } from './jarvisLaunch'
+import { jarvisLaunchArgs, jarvisSystemPrompt, jarvisPaths, mcpConfigText } from './jarvisLaunch'
 
 describe('jarvis launch', () => {
   const paths = jarvisPaths('C:/data')
@@ -26,6 +26,8 @@ describe('jarvis launch', () => {
   })
 
   it('names the tools in the system prompt', () => {
-    for (const tool of ['list_sessions', 'send_prompt', 'wake_session', 'remove_session']) expect(JARVIS_SYSTEM_PROMPT).toContain(tool)
+    const prompt = jarvisSystemPrompt(['list_sessions', 'wait_for_session'])
+    expect(prompt).toContain('list_sessions, wait_for_session.')
+    expect(prompt).toContain('mcp__sessiondeck__')
   })
 })

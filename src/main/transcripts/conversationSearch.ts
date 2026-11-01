@@ -88,6 +88,23 @@ export interface ConversationSearchDeps {
 
 export interface ConversationSearch {
   search(sessions: readonly Session[], query: string): Promise<ConversationSearchResult>
+  /** D54: the saved messages of one Claude session (cached like search); null when it has no saved conversation. */
+  messagesOfSession(session: Session): Promise<readonly TranscriptMessage[] | null>
+}
+
+/**
+ * D54: the assistant's reply to the LAST user message: every assistant text after it, joined. Empty when the last
+ * message is the user's (the answer is still being written) or there is none.
+ */
+export function lastAnswer(messages: readonly TranscriptMessage[]): string {
+  let lastUser = -1
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === 'user') {
+      lastUser = i
+      break
+    }
+  }
+  return messages.slice(lastUser + 1).filter((m) => m.role === 'assistant').map((m) => m.text).join('\n\n')
 }
 
 interface CacheEntry {
@@ -136,6 +153,12 @@ export function createConversationSearch(deps: ConversationSearchDeps): Conversa
   }
 
   return {
+    async messagesOfSession(session: Session): Promise<readonly TranscriptMessage[] | null> {
+      if ((session.agent ?? 'claude') !== 'claude' || session.claudeSessionId === undefined) return null
+      const path = (await locate(new Set([session.claudeSessionId]))).get(session.claudeSessionId)
+      return path === undefined ? null : messagesOf(path)
+    },
+
     async search(sessions: readonly Session[], rawQuery: string): Promise<ConversationSearchResult> {
       const query = rawQuery.trim()
       if (query.length < SEARCH_QUERY_MIN || query.length > SEARCH_QUERY_MAX) {
