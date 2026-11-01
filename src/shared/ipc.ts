@@ -1,6 +1,6 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisSchedule, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
+  AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
   Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole
 } from './types'
 
@@ -15,6 +15,8 @@ export const IPC = {
   jarvisSchedulesGet: 'jarvis:schedulesGet', // () -> JarvisSchedule[] (D54)
   jarvisScheduleRemove: 'jarvis:scheduleRemove', // (id) (D54)
   jarvisScheduleSetEnabled: 'jarvis:scheduleSetEnabled', // (id, enabled boolean) (D54)
+  jarvisVoice: 'jarvis:voice', // () -> JarvisVoiceResult: listen for one sentence and send it to Jarvis (D54)
+  jarvisVoiceCancel: 'jarvis:voiceCancel', // () stops listening (D54)
   jarvisUndo: 'jarvis:undo', // () -> string: undoes Jarvis's last reversible action (D54)
   jarvisConfirmReply: 'jarvis:confirmReply', // (requestId, yes boolean): the user's answer to an evJarvisConfirm (D53)
   sessionRename: 'session:rename',
@@ -95,6 +97,7 @@ export const IPC = {
   evQuotaAutopilot: 'ev:quotaAutopilot', // main -> renderer: QuotaAutopilotState changed
   evWorktreeChanges: 'ev:worktreeChanges', // main -> renderer: WorktreeChanges recomputed (after a turn ended in that worktree)
   evWindowState: 'ev:windowState', // main -> renderer: WindowState changed
+  evJarvisReply: 'ev:jarvisReply', // main -> renderer: Jarvis's reply text after a turn (Claude engine), for reading aloud (D54)
   evJarvisSchedules: 'ev:jarvisSchedules', // main -> renderer: JarvisSchedule[] changed (D54)
   evJarvisConfirm: 'ev:jarvisConfirm' // main -> renderer (main window): JarvisConfirmRequest, ask the user Yes/No (D53)
 } as const
@@ -137,6 +140,10 @@ export interface Api {
   /** D53: removes the Jarvis session and starts a fresh one (new conversation). */
   resetJarvis(): Promise<Session>
   jarvisConfirmReply(requestId: string, yes: boolean): Promise<void>
+  /** D54: voice: listen for one sentence and send it to Jarvis; stop listening; Jarvis's replies for reading aloud. */
+  jarvisVoice(): Promise<JarvisVoiceResult>
+  cancelJarvisVoice(): Promise<void>
+  onJarvisReply(cb: (text: string) => void): () => void
   /** D54: undoes Jarvis's last reversible action; returns what happened. */
   undoJarvis(): Promise<string>
   /** D54: Jarvis's scheduled instructions. */

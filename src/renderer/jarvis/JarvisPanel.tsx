@@ -2,7 +2,7 @@
 // Mounted once per window by App (outside the mode workspace), so it survives session, tab and mode switches. The
 // terminal is created on first open and then only slid out of view (never resized to zero), so Claude never redraws
 // for a tiny width while the panel is closed.
-import { Bot, RotateCcw, Undo2, X } from 'lucide-react'
+import { Bot, Mic, RotateCcw, Square, Undo2, Volume2, VolumeX, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import type { Id, RuntimeState, StoreData } from '../../shared/types'
 import { Button } from '../components/ui/button'
@@ -13,6 +13,7 @@ import '../Terminal/Terminal.css'
 import { clampJarvisWidth, findJarvis, JARVIS_WIDTH_DEFAULT, jarvisRowState, parseJarvisWidth } from './jarvisLogic'
 import { closeJarvisPanel, useJarvisPanelOpen } from './jarvisPanelStore'
 import { JarvisSchedules } from './JarvisSchedules'
+import { readSpeakSetting, writeSpeakSetting } from './JarvisSpeaker'
 
 const WIDTH_KEY = 'sessiondeck.jarvis.width.v1'
 const NO_IDS: readonly Id[] = []
@@ -46,6 +47,9 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
   const [width, setWidth] = useState<number>(readWidth)
   // D54: the last Undo result, shown under the header for a few seconds.
   const [notice, setNotice] = useState<string | null>(null)
+  // D54: voice input (listening now) and reading replies aloud.
+  const [listening, setListening] = useState(false)
+  const [speak, setSpeak] = useState<boolean>(readSpeakSetting)
   const jarvis = findJarvis(data)
   const jarvisId = jarvis?.id ?? null
   const state = jarvisId === null ? undefined : runtime.get(jarvisId)
@@ -109,6 +113,26 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
     return (): void => window.clearTimeout(timer)
   }, [notice])
 
+  const talk = useCallback((): void => {
+    if (listening) {
+      void window.api.cancelJarvisVoice()
+      return
+    }
+    setListening(true)
+    setNotice('Listening… say one sentence.')
+    window.api.jarvisVoice().then(
+      (voice): void => setNotice(voice.heard === null ? 'Nothing was understood.' : `Heard: “${voice.heard}”`),
+      (err: unknown): void => setNotice(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err))
+    ).finally((): void => setListening(false))
+  }, [listening])
+
+  const toggleSpeak = useCallback((): void => {
+    setSpeak((current) => {
+      writeSpeakSetting(!current)
+      return !current
+    })
+  }, [])
+
   const undo = useCallback((): void => {
     window.api.undoJarvis().then(setNotice, (err: unknown): void => setNotice(err instanceof Error ? err.message : String(err)))
   }, [])
@@ -146,6 +170,30 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
         <span className="text-[13px] font-medium">Jarvis</span>
         <span className="truncate text-[11px] text-muted-foreground" data-jarvis-state="">{jarvisRowState(jarvis, state)}</span>
         <div className="ml-auto flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={cn('text-muted-foreground', listening && 'bg-destructive/15 text-destructive motion-safe:animate-pulse')}
+                aria-label={listening ? 'Stop listening' : 'Talk to Jarvis'}
+                aria-pressed={listening}
+                data-jarvis-mic=""
+                onClick={talk}
+              >
+                {listening ? <Square size={12} aria-hidden="true" /> : <Mic size={13} aria-hidden="true" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6}>{listening ? 'Stop listening' : 'Talk to Jarvis (Windows speech recognition)'}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-xs" className="text-muted-foreground" aria-label="Read Jarvis's replies aloud" aria-pressed={speak} data-jarvis-speak="" onClick={toggleSpeak}>
+                {speak ? <Volume2 size={13} aria-hidden="true" /> : <VolumeX size={13} aria-hidden="true" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6}>{speak ? 'Replies are read aloud (click to stop)' : 'Read replies aloud'}</TooltipContent>
+          </Tooltip>
           <JarvisSchedules />
           <Tooltip>
             <TooltipTrigger asChild>

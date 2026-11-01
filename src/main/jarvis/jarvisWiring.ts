@@ -4,7 +4,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile, stat, truncate, writeFile } from 'node:fs/promises'
 import { ipcMain } from 'electron'
-import type { JarvisConfirmRequest, JarvisSchedule, Session } from '../../shared/types'
+import type { HookEvent, JarvisConfirmRequest, JarvisSchedule, JarvisVoiceResult, Session } from '../../shared/types'
 import { IPC } from '../../shared/ipc'
 import { assertBoolean, assertNonEmptyString } from '../app/ipcValidation'
 import type { SessionController } from '../app/sessionController'
@@ -16,6 +16,7 @@ import { createJarvisTools, type ConfirmRequest, type JarvisToolDeps } from './j
 import { isJarvis } from './targets'
 import { createScheduleService } from './scheduleService'
 import { scheduleWhen } from './schedules'
+import { createVoiceListener } from './voice'
 
 const ACTION_LOG_MAX_BYTES = 1024 * 1024
 
@@ -40,6 +41,8 @@ export interface JarvisWiring {
   start(): Promise<void>
   /** Trusted Claude launch arguments for a session: only Jarvis gets any. */
   launchExtrasFor(session: Session): LaunchExtras
+  /** D54: a hook event of any session; a finished Jarvis turn (Claude) sends its reply text to the windows. */
+  onHookEvent(event: HookEvent): void
   registerIpc(): void
   stop(): Promise<void>
 }
@@ -95,6 +98,16 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       result = await tools.sendPrompt(session, message, 'auto')
     }
     log('schedule_run', `${scheduleWhen(schedule)}: ${result}`)
+  }
+
+  // D54: voice input (Windows speech recognition) -> the same sender as send_prompt, into Jarvis.
+  const voice = createVoiceListener({ wavFile: () => process.env.SESSIONDECK_VOICE_WAV ?? null, platform: process.platform })
+  async function voiceCommand(): Promise<JarvisVoiceResult> {
+    const heard = await voice.listen()
+    if (heard === null) return { heard: null, result: null }
+    const session = await serial(openJarvis)
+    log('voice', heard)
+    return { heard, result: await tools.sendPrompt(session, heard, 'auto') }
   }
 
   const schedules = createScheduleService({
@@ -182,6 +195,15 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       schedules.start()
     },
 
+    onHookEvent(event: HookEvent): void {
+      if (event.event !== 'Stop') return
+      const session = deps.store.get().sessions.find((s) => s.id === event.sessionId)
+      if (session === undefined || !isJarvis(session) || (session.agent ?? 'claude') !== 'claude') return
+      deps.tools.lastAnswer(session).then((text) => {
+        if (text !== null && text.trim().length > 0) deps.broadcast(IPC.evJarvisReply, text)
+      }).catch((error: unknown) => deps.onError('jarvis reply', error))
+    },
+
     launchExtrasFor(session: Session): LaunchExtras {
       if (!isJarvis(session) || !started) return {}
       if (session.agent === 'opencode') return { opencodeConfig: jarvisOpencodeConfig(port, token, paths.prompt) }
@@ -192,6 +214,8 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       // The renderer shows Jarvis in its own panel (D53); main only makes sure the session exists and runs.
       ipcMain.handle(IPC.jarvisOpen, async (): Promise<Session> => serial(openJarvis))
       ipcMain.handle(IPC.jarvisReset, async (): Promise<Session> => serial(resetJarvis))
+      ipcMain.handle(IPC.jarvisVoice, (): Promise<JarvisVoiceResult> => voiceCommand())
+      ipcMain.handle(IPC.jarvisVoiceCancel, (): void => voice.cancel())
       ipcMain.handle(IPC.jarvisUndo, (): Promise<string> => tools.undoLast())
       ipcMain.handle(IPC.jarvisSchedulesGet, (): readonly JarvisSchedule[] => schedules.list())
       ipcMain.handle(IPC.jarvisScheduleRemove, (_event, rawId: unknown): void => {
@@ -208,6 +232,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
 
     async stop(): Promise<void> {
       schedules.stop()
+      voice.cancel()
       for (const [id] of pending) answer(id, false)
       await server.stop()
     }

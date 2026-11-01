@@ -267,6 +267,7 @@ if (!gotTheLock) {
         controller.handleHookEvent(event)
         features.onHookEvent(event)
         code.onHookEvent(event)
+        jarvis.onHookEvent(event)
       },
       onWorkerEvent: (sessionId, payload) => workers.ingest(sessionId, payload),
       // Bell escalation (D44): the service replays the sound/flash; the desktop notice reuses the same text builder as

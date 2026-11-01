@@ -44,3 +44,26 @@ export function jarvisRowState(session: Session | null, state: RuntimeState | un
   if (state.activity === 'needs-input') return 'Needs you'
   return 'Ready'
 }
+
+/** D54: localStorage key of "read Jarvis's replies aloud" (one setting for the PC, read when a reply arrives). */
+export const JARVIS_SPEAK_KEY = 'sessiondeck.jarvis.speak.v1'
+export const SPEAK_MAX_CHARS = 1200
+
+/**
+ * D54: a reply as plain speech: code blocks become "(code)", markdown marks and link targets go, whitespace collapses;
+ * long text stops at the last sentence end before SPEAK_MAX_CHARS.
+ */
+export function speakableText(reply: string): string {
+  const plain = reply
+    .replace(/```[\s\S]*?```/g, ' (code) ')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
+    .replace(/[*_~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (plain.length <= SPEAK_MAX_CHARS) return plain
+  const cut = plain.slice(0, SPEAK_MAX_CHARS)
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
+  return end > SPEAK_MAX_CHARS / 2 ? cut.slice(0, end + 1) : cut
+}

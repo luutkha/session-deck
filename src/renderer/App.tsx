@@ -20,6 +20,7 @@ import { JarvisConfirm } from './jarvis/JarvisConfirm'
 import { useJarvisShortcut } from './jarvis/useJarvisShortcut'
 import { JarvisPanel } from './jarvis/JarvisPanel'
 import { openJarvisPanel } from './jarvis/jarvisPanelStore'
+import { JarvisSpeaker } from './jarvis/JarvisSpeaker'
 import './styles.css'
 
 /** Plays the user's notification sounds. Mounted in the main window only, so a sound is never played twice. */
@@ -91,6 +92,7 @@ export function App(): ReactElement {
       {isMain ? <AttentionSoundPlayer /> : null}
       <JarvisPanel data={store.data} runtime={store.runtime} />
       {isMain ? <JarvisConfirm /> : null}
+      {isMain ? <JarvisSpeaker /> : null}
       {isMain ? <AwayDialog summary={away.summary} onOpenSession={requestFocus} onClose={away.close} /> : null}
       <QuotaToast />
     </TooltipProvider>

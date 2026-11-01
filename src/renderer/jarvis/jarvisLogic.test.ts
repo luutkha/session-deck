@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RuntimeState, Session, StoreData } from '../../shared/types'
-import { clampJarvisWidth, findJarvis, isJarvisShortcut, JARVIS_WIDTH_DEFAULT, JARVIS_WIDTH_MIN, jarvisRowState, parseJarvisWidth } from './jarvisLogic'
+import { clampJarvisWidth, findJarvis, isJarvisShortcut, JARVIS_WIDTH_DEFAULT, JARVIS_WIDTH_MIN, jarvisRowState, parseJarvisWidth, SPEAK_MAX_CHARS, speakableText } from './jarvisLogic'
 
 const session = (id: string, extra: Partial<Session> = {}): Session => ({
   id, name: id, cwd: 'C:/p', groupId: null, statusId: null, order: 0, createdAt: 0, claudeArgs: [], ...extra
@@ -28,6 +28,14 @@ describe('jarvisLogic', () => {
     expect(parseJarvisWidth('10')).toBe(JARVIS_WIDTH_DEFAULT)
   })
 
+  it('turns a markdown reply into plain speech (D54)', () => {
+    expect(speakableText('## Done' + String.fromCharCode(10) + '- **API** is asleep' + String.fromCharCode(10) + 'Run `npm test` or see [docs](http://x).')).toBe('Done API is asleep Run npm test or see docs.')
+    expect(speakableText('Here: ' + '```ts' + String.fromCharCode(10) + 'const a = 1' + String.fromCharCode(10) + '```' + ' ok')).toBe('Here: (code) ok')
+    const long = 'This is a sentence. '.repeat(100)
+    const spoken = speakableText(long)
+    expect(spoken.length).toBeLessThanOrEqual(SPEAK_MAX_CHARS)
+    expect(spoken.endsWith('.')).toBe(true)
+  })
   it('opens on Ctrl+Shift+J only, never over a dialog', () => {
     expect(isJarvisShortcut(key('J'), false)).toBe(true)
     expect(isJarvisShortcut(key('j'), false)).toBe(true)

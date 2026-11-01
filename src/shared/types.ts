@@ -94,6 +94,12 @@ export interface JarvisSchedule {
   readonly lastRunAt: number | null
 }
 
+/** D54: the result of one voice command: the words heard (null = nothing understood) and what sending them did. */
+export interface JarvisVoiceResult {
+  readonly heard: string | null
+  readonly result: string | null
+}
+
 /** D53: Jarvis asks the user before a destructive action; the renderer answers with jarvisConfirmReply(id, yes). */
 export interface JarvisConfirmRequest {
   readonly id: string

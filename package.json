@@ -71,6 +71,7 @@
     "e2e:jarvis": "node scripts/e2e-jarvis.cjs",
     "e2e:jarvis-real": "node scripts/e2e-jarvis-real.cjs",
     "e2e:jarvis-opencode": "node scripts/e2e-jarvis-opencode.cjs",
+    "e2e:jarvis-voice": "node scripts/e2e-jarvis-voice.cjs",
     "e2e:visual": "node scripts/e2e-visual.cjs"
   },
   "dependencies": {

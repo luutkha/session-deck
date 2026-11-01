@@ -6,6 +6,7 @@ import type {
   ChecklistItem,
   JarvisConfirmRequest,
   JarvisSchedule,
+  JarvisVoiceResult,
   QueuedPrompt,
   SessionPreset,
   ConversationSearchResult,
@@ -107,6 +108,20 @@ const api: Api = {
 
   jarvisConfirmReply(requestId: string, yes: boolean): Promise<void> {
     return ipcRenderer.invoke(IPC.jarvisConfirmReply, requestId, yes)
+  },
+
+  jarvisVoice(): Promise<JarvisVoiceResult> {
+    return ipcRenderer.invoke(IPC.jarvisVoice)
+  },
+
+  cancelJarvisVoice(): Promise<void> {
+    return ipcRenderer.invoke(IPC.jarvisVoiceCancel)
+  },
+
+  onJarvisReply(cb: (text: string) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, text: string) => cb(text)
+    ipcRenderer.on(IPC.evJarvisReply, handler)
+    return () => ipcRenderer.off(IPC.evJarvisReply, handler)
   },
 
   undoJarvis(): Promise<string> {
