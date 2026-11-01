@@ -2,9 +2,9 @@
 // pieces: the MCP server and its tools, the files Jarvis is launched with, the Yes/No round trip to the window, and
 // the jarvis:* IPC. Only the Jarvis session gets the MCP config; the user's ~/.claude is never touched.
 import { randomBytes, randomUUID } from 'node:crypto'
-import { appendFile, mkdir, stat, truncate, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, stat, truncate, writeFile } from 'node:fs/promises'
 import { ipcMain } from 'electron'
-import type { JarvisConfirmRequest, Session } from '../../shared/types'
+import type { JarvisConfirmRequest, JarvisSchedule, Session } from '../../shared/types'
 import { IPC } from '../../shared/ipc'
 import { assertBoolean, assertNonEmptyString } from '../app/ipcValidation'
 import type { SessionController } from '../app/sessionController'
@@ -13,6 +13,8 @@ import { createMcpHttpServer } from './mcpHttpServer'
 import { CONFIRM_TIMEOUT_MS, JARVIS_NAME, jarvisLaunchArgs, jarvisSystemPrompt, jarvisPaths, mcpConfigText } from './jarvisLaunch'
 import { createJarvisTools, type ConfirmRequest, type JarvisToolDeps } from './jarvisTools'
 import { isJarvis } from './targets'
+import { createScheduleService } from './scheduleService'
+import { scheduleWhen } from './schedules'
 
 const ACTION_LOG_MAX_BYTES = 1024 * 1024
 
@@ -21,10 +23,14 @@ export interface JarvisWiringDeps {
   readonly store: SessionStore
   readonly controller: SessionController
   /** Everything the tools need besides what this file provides (confirm, log, ids, clocks). */
-  readonly tools: Omit<JarvisToolDeps, 'confirm' | 'log' | 'newId' | 'now' | 'sleep' | 'getData' | 'controller'>
+  readonly tools: Omit<JarvisToolDeps, 'confirm' | 'log' | 'newId' | 'now' | 'sleep' | 'getData' | 'controller' | 'schedules'>
   /** Sends the Yes/No request to the main window; false when there is no window to ask. */
   readonly sendConfirm: (request: JarvisConfirmRequest) => boolean
   readonly appVersion: string
+  /** Sends an event to every open window (the schedule list). */
+  readonly broadcast: (channel: string, ...args: unknown[]) => void
+  /** A desktop notice (a schedule started). */
+  readonly notify: (title: string, body: string) => void
   readonly onError: (where: string, error: unknown) => void
 }
 
@@ -72,15 +78,45 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     appendFile(paths.log, line, 'utf-8').catch((error: unknown) => deps.onError('jarvis action log', error))
   }
 
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+  // D54: scheduled instructions are given to Jarvis as a prompt (the same sender as send_prompt: start/wake Jarvis,
+  // wait until ready, or queue behind a running turn). A fresh Jarvis may still show its folder-trust question for a
+  // moment (answered by itself), so that answer is retried.
+  async function deliver(schedule: JarvisSchedule): Promise<void> {
+    const session = await serial(openJarvis)
+    const message = `[Scheduled task${schedule.label ? ` "${schedule.label}"` : ''}, ${scheduleWhen(schedule)}] ${schedule.instruction}`
+    deps.notify('Jarvis', `Running the scheduled task: ${schedule.label || schedule.instruction.slice(0, 80)}`)
+    let result = await tools.sendPrompt(session, message, 'auto')
+    for (let attempt = 0; attempt < 3 && /trust its folder/.test(result); attempt += 1) {
+      await sleep(3000)
+      result = await tools.sendPrompt(session, message, 'auto')
+    }
+    log('schedule_run', `${scheduleWhen(schedule)}: ${result}`)
+  }
+
+  const schedules = createScheduleService({
+    readFile: () => readFile(paths.schedules, 'utf-8'),
+    writeFile: (text) => writeFile(paths.schedules, text, 'utf-8'),
+    now: () => Date.now(),
+    newId: () => randomUUID().slice(0, 8),
+    deliver,
+    onChange: (list) => deps.broadcast(IPC.evJarvisSchedules, list),
+    setInterval: (callback, ms) => setInterval(callback, ms),
+    clearInterval: (timer) => clearInterval(timer),
+    onError: deps.onError
+  })
+
   const tools = createJarvisTools({
     ...deps.tools,
+    schedules,
     getData: () => deps.store.get(),
     controller: deps.controller,
     confirm,
     log,
     newId: () => randomUUID(),
     now: () => Date.now(),
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    sleep
   })
   const server = createMcpHttpServer({ token, tools: () => tools, version: deps.appVersion })
 
@@ -130,6 +166,8 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       await writeFile(paths.mcpConfig, mcpConfigText(port, token), 'utf-8')
       await writeFile(paths.prompt, jarvisSystemPrompt(tools.map((tool) => tool.name)), 'utf-8')
       started = true
+      await schedules.load()
+      schedules.start()
     },
 
     claudeArgsFor(session: Session): readonly string[] {
@@ -141,12 +179,21 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       // The renderer shows Jarvis in its own panel (D53); main only makes sure the session exists and runs.
       ipcMain.handle(IPC.jarvisOpen, async (): Promise<Session> => serial(openJarvis))
       ipcMain.handle(IPC.jarvisReset, async (): Promise<Session> => serial(resetJarvis))
+      ipcMain.handle(IPC.jarvisSchedulesGet, (): readonly JarvisSchedule[] => schedules.list())
+      ipcMain.handle(IPC.jarvisScheduleRemove, (_event, rawId: unknown): void => {
+        const removed = schedules.remove(assertNonEmptyString(rawId, 'schedule id', 64))
+        log('schedule_remove (user)', `${scheduleWhen(removed)}: ${removed.instruction.slice(0, 80)}`)
+      })
+      ipcMain.handle(IPC.jarvisScheduleSetEnabled, (_event, rawId: unknown, rawEnabled: unknown): void => {
+        schedules.setEnabled(assertNonEmptyString(rawId, 'schedule id', 64), assertBoolean(rawEnabled, 'enabled'))
+      })
       ipcMain.handle(IPC.jarvisConfirmReply, async (_event, rawId: unknown, rawYes: unknown): Promise<void> => {
         answer(assertNonEmptyString(rawId, 'request id'), assertBoolean(rawYes, 'yes'))
       })
     },
 
     async stop(): Promise<void> {
+      schedules.stop()
       for (const [id] of pending) answer(id, false)
       await server.stop()
     }

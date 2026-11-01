@@ -24,13 +24,15 @@ How to work:
 - For "when X is done, do Y": send_prompt, then wait_for_session, then get_last_answer, then act on it.
 - Use read_screen to see what a session shows (progress, an answer, or a question it is waiting on), and press_keys to
   answer a menu, only when the user asked you to or the answer is obvious and harmless.
+- A message that starts with "[Scheduled task" comes from SessionDeck's scheduler (set up earlier with schedule_add):
+  carry it out with your tools without asking for confirmation of the task itself, then reply with one short summary.
 - You cannot act on yourself (the Jarvis session).
 - Keep replies short: say what you did and anything the user must know. Use the user's language.`
 }
 
-export function jarvisPaths(userDataDir: string): { readonly dir: string; readonly mcpConfig: string; readonly prompt: string; readonly log: string } {
+export function jarvisPaths(userDataDir: string): { readonly dir: string; readonly mcpConfig: string; readonly prompt: string; readonly log: string; readonly schedules: string } {
   const dir = join(userDataDir, 'jarvis')
-  return { dir, mcpConfig: join(dir, 'mcp.json'), prompt: join(dir, 'system-prompt.md'), log: join(dir, 'actions.log') }
+  return { dir, mcpConfig: join(dir, 'mcp.json'), prompt: join(dir, 'system-prompt.md'), log: join(dir, 'actions.log'), schedules: join(dir, 'schedules.json') }
 }
 
 /** The arguments Jarvis is launched with (pure, for tests). */

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { tmpdir } from 'node:os'
 import type { AwaySummary, QueuedPrompt, RuntimeState, Session, StoreData, TimelineTurn, UsageState, WorktreeChanges } from '../../shared/types'
 import { createJarvisTools, READY_TIMEOUT_MS, type JarvisToolDeps } from './jarvisTools'
+import { createScheduleService } from './scheduleService'
 
 const session = (id: string, name: string, extra: Partial<Session> = {}): Session => ({
   id, name, cwd: 'C:/p', groupId: null, statusId: null, order: 0, createdAt: 0, claudeArgs: [], ...extra
@@ -28,6 +29,17 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
   const answers = new Map<string, string>()
   let usageState: UsageState = { account: null, sessions: [] }
   let away: AwaySummary | null = null
+  const scheduleService = createScheduleService({
+    readFile: async () => '',
+    writeFile: async () => undefined,
+    now: () => clock,
+    newId: () => 'sch1',
+    deliver: async () => undefined,
+    onChange: () => undefined,
+    setInterval: () => 0 as unknown as ReturnType<typeof setInterval>,
+    clearInterval: () => undefined,
+    onError: () => undefined
+  })
   const setSession = (id: string, patch: Partial<Session>): void => {
     data = { ...data, sessions: data.sessions.map((s) => (s.id === id ? { ...s, ...patch } : s)) }
   }
@@ -85,6 +97,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     usage: () => usageState,
     allTurns: () => [...turns.values()].flat(),
     lastAway: () => away,
+    schedules: scheduleService,
     code: {
       addRepo: vi.fn(async (folder: string) => {
         const repo = { id: 'r2', name: 'added', path: folder, createdAt: 0, collapsed: false }
@@ -155,6 +168,19 @@ describe('jarvis tools', () => {
     const { call, writes } = setup([session('a', 'API')], [running('a', { activity: 'finished' })])
     expect(await call('send_prompt', { session: 'api', text: 'run the tests' })).toBe('Sent to "API"; it started working.')
     expect(writes).toEqual([['a', 'run the tests'], ['a', '\r']])
+  })
+
+  it('types into a session that only got Claude\'s idle reminder, and calls it idle (D54)', async () => {
+    const { call, writes } = setup([session('a', 'API')], [running('a', { activity: 'needs-input', activityMessage: 'Claude is waiting for your input' })])
+    expect(await call('list_sessions')).toContain('"API" (id a) · claude · running, idle ·')
+    expect(await call('send_prompt', { session: 'API', text: 'go' })).toBe('Sent to "API"; it started working.')
+    expect(writes.map((w) => w[1])).toEqual(['go', '\r'])
+  })
+
+  it('queues behind a real question instead of typing into it', async () => {
+    const { call, writes } = setup([session('a', 'API')], [running('a', { activity: 'needs-input', activityMessage: 'Claude needs your permission to use Bash' })])
+    expect(await call('send_prompt', { session: 'API', text: 'go' })).toContain('it is waiting for an answer right now')
+    expect(writes).toEqual([])
   })
 
   it('queues the prompt while a turn is running', async () => {
@@ -373,6 +399,25 @@ describe('jarvis tools', () => {
     const { call, code } = setup([], [], { confirm: true })
     expect(await call('remove_worktree', { worktree: 'checkout' })).toBe('Worktree "checkout" was removed.')
     expect(code.removeWorktree).toHaveBeenCalledWith('w1')
+  })
+
+  it('adds, lists and removes scheduled instructions', async () => {
+    const { call } = setup([])
+    const added = await call('schedule_add', { instruction: 'wake API and run the tests', time: '09:00', days: 'weekdays', label: 'morning tests' })
+    expect(added).toContain('Scheduled (id sch1) 09:00 weekdays: "wake API and run the tests".')
+    expect(added).toContain('Next run')
+    const listed = await call('schedule_list')
+    expect(listed).toContain('(id sch1) "morning tests" 09:00 weekdays · next ')
+    await expect(call('schedule_add', { instruction: 'x', time: '9 am' })).rejects.toThrow('is not a time')
+    expect(await call('schedule_remove', { schedule: 'Morning Tests' })).toBe('Removed the schedule 09:00 weekdays: "wake API and run the tests".')
+    expect(await call('schedule_list')).toBe('No schedules.')
+  })
+
+  it('gives the scheduler the same prompt sender as send_prompt', async () => {
+    const { deps, writes } = setup([session('a', 'API')], [running('a', { activity: 'finished' })])
+    const toolkit = createJarvisTools(deps)
+    expect(await toolkit.sendPrompt(deps.getData().sessions[0], 'scheduled hello', 'auto')).toBe('Sent to "API"; it started working.')
+    expect(writes.map((w) => w[1])).toEqual(['scheduled hello', '\r'])
   })
 
   it('shows recent activity with cost today', async () => {

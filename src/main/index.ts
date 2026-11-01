@@ -422,6 +422,8 @@ if (!gotTheLock) {
         return true
       },
       appVersion: app.getVersion(),
+      broadcast: sendToWindow,
+      notify: (title, body) => notifier.notifyApp(title, body),
       onError
     })
 

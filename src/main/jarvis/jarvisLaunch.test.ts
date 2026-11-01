@@ -10,7 +10,8 @@ describe('jarvis launch', () => {
       dir: join('C:/data', 'jarvis'),
       mcpConfig: join('C:/data', 'jarvis', 'mcp.json'),
       prompt: join('C:/data', 'jarvis', 'system-prompt.md'),
-      log: join('C:/data', 'jarvis', 'actions.log')
+      log: join('C:/data', 'jarvis', 'actions.log'),
+      schedules: join('C:/data', 'jarvis', 'schedules.json')
     })
   })
 

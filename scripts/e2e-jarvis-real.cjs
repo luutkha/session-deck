@@ -1,5 +1,5 @@
 // E2E (D53) with a REAL Claude: the user talks to Jarvis in plain words and the app changes.
-// Sends TWO short prompts to Jarvis (Sonnet; costs a few cents of the user's plan). Uses a temp profile; the user's
+// Sends TWO short prompts to Jarvis plus ONE scheduled instruction (Sonnet; costs a few cents of the user's plan; ~3 min). Uses a temp profile; the user's
 // ~/.claude is not changed. Run: node scripts/e2e-jarvis-real.cjs   (E2E_SHOT_DIR=<dir> saves screenshots)
 const fs = require('node:fs')
 const os = require('node:os')
@@ -69,6 +69,17 @@ async function main() {
     const log = fs.readFileSync(path.join(app.userData, 'jarvis', 'actions.log'), 'utf8')
     t.check('the action log has create, sleep and remove', /create_session/.test(log) && /sleep_session/.test(log) && /remove_session/.test(log), log)
 
+
+    // ---- D54: a schedule really runs: set 2 minutes ahead through the tool server, then Jarvis carries it out
+    const cfg = JSON.parse(fs.readFileSync(path.join(app.userData, 'jarvis', 'mcp.json'), 'utf8')).mcpServers.sessiondeck
+    const soon = new Date(Date.now() + 2 * 60_000)
+    const soonText = `${String(soon.getHours()).padStart(2, '0')}:${String(soon.getMinutes()).padStart(2, '0')}`
+    const added = await fetch(cfg.url, { method: 'POST', headers: { ...cfg.headers, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'schedule_add', arguments: { instruction: `Create a shell session named "scheduled demo" in the folder ${folder}.`, time: soonText, once: true, label: 'e2e' } } }) }).then((r) => r.json())
+    t.check('a one-time schedule is set for ' + soonText, /Scheduled/.test(added.result.content[0].text), added.result.content[0].text)
+    const ranDemo = await waitFor(async () => (await byName('scheduled demo')) ?? null, 4 * 60_000, 3000)
+    t.check('...at that time Jarvis gets the instruction and creates the session', !!ranDemo && ranDemo.cwd === folder, ranDemo ? '' : fs.readFileSync(path.join(app.userData, 'jarvis', 'actions.log'), 'utf8').split('\n').filter((l) => l.includes('schedule')).join(' | ') + ' || SCREEN: ' + strip((await ev('window.api.ptyReplay(' + JSON.stringify(jarvis.id) + ')')).data).slice(-1500))
+    const schedLog = fs.readFileSync(path.join(app.userData, 'jarvis', 'actions.log'), 'utf8')
+    t.check('...the run is logged and the one-time schedule is done', /schedule_run/.test(schedLog) && JSON.parse(fs.readFileSync(path.join(app.userData, 'jarvis', 'schedules.json'), 'utf8')).schedules[0].enabled === false)
     for (const s of (await store()).data.sessions) await ev(`window.api.removeSession(${js(s.id)})`)
   } catch (error) {
     t.check('no unexpected error', false, String((error && error.stack) || error))

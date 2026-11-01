@@ -5,6 +5,7 @@ import type {
   AppSettings,
   ChecklistItem,
   JarvisConfirmRequest,
+  JarvisSchedule,
   QueuedPrompt,
   SessionPreset,
   ConversationSearchResult,
@@ -106,6 +107,24 @@ const api: Api = {
 
   jarvisConfirmReply(requestId: string, yes: boolean): Promise<void> {
     return ipcRenderer.invoke(IPC.jarvisConfirmReply, requestId, yes)
+  },
+
+  getJarvisSchedules(): Promise<readonly JarvisSchedule[]> {
+    return ipcRenderer.invoke(IPC.jarvisSchedulesGet)
+  },
+
+  removeJarvisSchedule(id: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.jarvisScheduleRemove, id)
+  },
+
+  setJarvisScheduleEnabled(id: string, enabled: boolean): Promise<void> {
+    return ipcRenderer.invoke(IPC.jarvisScheduleSetEnabled, id, enabled)
+  },
+
+  onJarvisSchedules(cb: (schedules: readonly JarvisSchedule[]) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, schedules: readonly JarvisSchedule[]) => cb(schedules)
+    ipcRenderer.on(IPC.evJarvisSchedules, handler)
+    return () => ipcRenderer.off(IPC.evJarvisSchedules, handler)
   },
 
   onJarvisConfirm(cb: (request: JarvisConfirmRequest) => void): () => void {

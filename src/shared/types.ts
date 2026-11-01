@@ -75,6 +75,25 @@ export interface Session {
 /** D53: a special session kind. Only 'jarvis' exists. */
 export type SessionRole = 'jarvis'
 
+/** D54: an instruction SessionDeck gives Jarvis at a local time. */
+export interface JarvisSchedule {
+  readonly id: string
+  /** Short name shown in the list (may be empty). */
+  readonly label: string
+  /** What Jarvis is told, e.g. "wake API and send 'pull and run the tests'". */
+  readonly instruction: string
+  /** Local time, minutes after midnight (0..1439). */
+  readonly minutes: number
+  /** Weekdays 0 = Sunday .. 6; empty = every day. */
+  readonly days: readonly number[]
+  /** Runs once, then stays in the list as done. */
+  readonly once: boolean
+  readonly enabled: boolean
+  readonly createdAt: number
+  /** Epoch ms of the last run; null = never. */
+  readonly lastRunAt: number | null
+}
+
 /** D53: Jarvis asks the user before a destructive action; the renderer answers with jarvisConfirmReply(id, yes). */
 export interface JarvisConfirmRequest {
   readonly id: string

@@ -61,7 +61,7 @@ async function main() {
     t.check('initialize answers with the tools capability', init.body?.result?.capabilities?.tools !== undefined, js(init.body))
     const list = await rpc('tools/list', {})
     const names = list.body.result.tools.map((x) => x.name)
-    t.check('every tool is offered (31)', names.length === 31, names.join(','))
+    t.check('every tool is offered (34)', names.length === 34, names.join(','))
 
     // ---- the pinned sidebar entry before Jarvis exists
     t.check('the tab bar has the Jarvis button, the panel is not open yet', (await waitFor(() => ev(`!!document.querySelector('[data-jarvis-toggle]') || null`), 5000, 200)) === true &&
@@ -159,6 +159,16 @@ async function main() {
     const removedWt = await pendingWt
     t.check('remove_worktree (after Yes) removes it from SessionDeck, the folder stays', /was removed/.test(removedWt.text) && !(await store()).data.worktrees.some((w) => w.name === 'jv feature') && fs.existsSync(wt.path), removedWt.text)
 
+
+    // ---- D54: schedules through the tools and the panel list (no run: the time is hours away)
+    const later = new Date(Date.now() + 3 * 3600_000)
+    const laterText = `${String(later.getHours()).padStart(2, '0')}:${String(later.getMinutes()).padStart(2, '0')}`
+    const sched = await tool('schedule_add', { instruction: 'wake jv shell one and run the tests', time: laterText, days: 'weekdays', label: 'e2e schedule' })
+    const schedId = /\(id ([^)]+)\)/.exec(sched.text)?.[1]
+    t.check('schedule_add stores a schedule', !sched.error && !!schedId && fs.existsSync(path.join(app.userData, 'jarvis', 'schedules.json')), sched.text)
+    const schedList = await tool('schedule_list')
+    t.check('schedule_list shows it with its next run', schedList.text.includes('"e2e schedule"') && /· next /.test(schedList.text), schedList.text)
+    t.check('a bad time is refused', (await tool('schedule_add', { instruction: 'x', time: '9am' })).error)
     // ---- the action log
     const logFile = path.join(app.userData, 'jarvis', 'actions.log')
     const logged = await waitFor(() => (fs.existsSync(logFile) && fs.readFileSync(logFile, 'utf8').includes('remove_session') ? fs.readFileSync(logFile, 'utf8') : null), 3000, 200)
@@ -207,6 +217,22 @@ async function main() {
     t.check('...and closes it', (await waitFor(async () => (await panelState()) === 'closed' || null, 3000, 200)) === true)
     await click(modeButton('Ops'), 'Ops mode')
     await sleep(500)
+
+    // ---- D54: the panel's schedule list (pause, delete)
+    await pressJ()
+    await waitFor(async () => (await panelState()) === 'open' || null, 3000, 200)
+    await click(`document.querySelector('[data-jarvis-schedules]')`, 'Schedules button')
+    const row = await waitFor(() => ev(`document.querySelector('[data-schedule-id]')?.innerText ?? null`), 5000, 200)
+    t.check('the panel lists the schedule', !!row && row.includes('wake jv shell one and run the tests') && row.includes('weekdays'), String(row))
+    await click(`document.querySelector('[data-schedule-id] [aria-label="Pause schedule"]')`, 'Pause')
+    const paused = await waitFor(async () => ((await tool('schedule_list')).text.includes('paused') ? true : null), 5000, 300)
+    t.check('Pause in the list pauses it', paused === true)
+    await click(`document.querySelector('[data-schedule-id] [aria-label="Delete schedule"]')`, 'Delete')
+    t.check('Delete in the list removes it', (await waitFor(async () => ((await tool('schedule_list')).text === 'No schedules.' ? true : null), 5000, 300)) === true)
+    await app.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' })
+    await app.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' })
+    await sleep(300)
+    await pressJ()
 
     const again = await ev('window.api.openJarvis()')
     t.check('opening Jarvis again reuses the same session', again.id === jarvis.id && (await store()).data.sessions.filter((s) => s.role === 'jarvis').length === 1)

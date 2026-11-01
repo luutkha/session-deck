@@ -11,6 +11,7 @@ import type {
   CreateWorktreeInput,
   CreateWorktreeResult,
   Id,
+  JarvisSchedule,
   QueuedPrompt,
   Repo,
   RepoBranches,
@@ -26,10 +27,13 @@ import type {
 import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX, WORKTREE_NAME_MAX } from '../../shared/types'
 import { canTypeInto, queuedText, QUEUE_ENTER_DELAY_MS } from '../queue/promptQueue'
 import { isTrustPrompt } from '../app/trustPrompt'
+import { isIdleReminder } from '../app/activity'
 import { stripAnsi } from '../app/outputSignals'
 import type { McpTool } from './mcpProtocol'
 import { resolveGroup, resolveSession, resolveStatus, targetSessions } from './targets'
 import { SCREEN_LINES_DEFAULT, SCREEN_LINES_MAX } from './screenText'
+import { nextRun, scheduleWhen } from './schedules'
+import type { ScheduleInput } from './scheduleService'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
 export const READY_MIN_RUN_MS = 3000
@@ -97,6 +101,12 @@ export interface JarvisToolDeps {
   /** Every recorded turn of every session (cost today). */
   readonly allTurns: () => readonly TimelineTurn[]
   readonly lastAway: () => AwaySummary | null
+  /** D54: Jarvis's scheduled instructions (scheduleService). */
+  readonly schedules: {
+    list(): readonly JarvisSchedule[]
+    add(input: ScheduleInput): JarvisSchedule
+    remove(id: string): JarvisSchedule
+  }
   /** D54: Code mode, the same paths as the IPC (codeWiring). */
   readonly code: {
     addRepo(folder: string): Promise<Repo>
@@ -169,7 +179,9 @@ export function stateText(session: Session, state: RuntimeState | undefined): st
   }
   switch (state.activity) {
     case 'working': return 'running, working on a turn'
-    case 'needs-input': return `running, WAITING FOR AN ANSWER${state.activityMessage ? `: "${state.activityMessage}"` : ''}`
+    case 'needs-input':
+      if (isIdleReminder(state.activityMessage)) return 'running, idle'
+      return `running, WAITING FOR AN ANSWER${state.activityMessage ? `: "${state.activityMessage}"` : ''}`
     case 'finished': return 'running, idle (last turn finished)'
     default: return 'running, idle'
   }
@@ -213,7 +225,7 @@ function sessionLine(data: StoreData, session: Session, deps: JarvisToolDeps): s
 /** "3 h 20 min", "12 min", "now". */
 function durationText(ms: number): string {
   const minutes = Math.round(ms / 60_000)
-  if (minutes <= 0) return "now"
+  if (minutes <= 0) return 'now'
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
   if (hours < 48) return `${hours} h ${minutes % 60} min`
@@ -222,9 +234,14 @@ function durationText(ms: number): string {
 
 /** Working on a turn, or still has queued prompts it will get (a running, awake agent session). */
 function isBusy(session: Session, state: RuntimeState | undefined): boolean {
-  if (state?.activity === "working") return true
-  const typeable = session.closedAt === undefined && state?.run === "running" && state.sleeping !== true
-  return typeable && (session.queue ?? []).length > 0 && state?.activity !== "needs-input"
+  if (state?.activity === 'working') return true
+  const typeable = session.closedAt === undefined && state?.run === 'running' && state.sleeping !== true
+  return typeable && (session.queue ?? []).length > 0 && !isAsking(state)
+}
+
+/** Really waiting for an answer (a permission or a question), not just Claude's idle reminder. */
+function isAsking(state: RuntimeState | undefined): boolean {
+  return state?.activity === 'needs-input' && !isIdleReminder(state.activityMessage)
 }
 
 function resolveFolder(raw: string): string {
@@ -262,7 +279,12 @@ export function isTypeable(session: Session | undefined, state: RuntimeState | u
 
 type ReadyResult = 'ready' | 'trust' | 'stopped' | 'timeout'
 
-export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
+/** The tools, plus the prompt sender they use (also used to give Jarvis a scheduled instruction). */
+export type JarvisToolkit = readonly McpTool[] & {
+  readonly sendPrompt: (session: Session, prompt: string, when: 'auto' | 'now' | 'queue') => Promise<string>
+}
+
+export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
   const find = (id: Id): Session | undefined => deps.getData().sessions.find((s) => s.id === id)
 
   /**
@@ -328,7 +350,8 @@ export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
     while (deps.now() < deadline) {
       await deps.sleep(POLL_MS)
       const activity = deps.getRuntime(session.id)?.activity
-      if (activity === 'working' || activity === 'needs-input' || deps.timeline(session.id).length > before) {
+      const latest = deps.getRuntime(session.id)
+      if (activity === 'working' || isAsking(latest) || deps.timeline(session.id).length > before) {
         return `Sent to "${session.name}"; it started working.`
       }
     }
@@ -343,9 +366,10 @@ export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
     const started = await startIfNeeded(session)
     const current = find(session.id) ?? session
     const activity = deps.getRuntime(session.id)?.activity
-    if (when === 'auto' && started === null && (activity === 'working' || activity === 'needs-input')) {
+    const asking = isAsking(deps.getRuntime(session.id))
+    if (when === 'auto' && started === null && (activity === 'working' || asking)) {
       const queued = addToQueue(current, prompt)
-      return activity === 'needs-input'
+      return asking
         ? `${queued} Note: it is waiting for an answer right now; use read_screen and press_keys to answer it.`
         : queued
     }
@@ -442,7 +466,7 @@ export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
           const state = deps.getRuntime(session.id)
           if (!isBusy(current, state)) {
             const waited = Math.round((deps.now() - begin) / 1000)
-            const asking = state?.activity === 'needs-input' ? ' It is waiting for an answer: use read_screen to see the question.' : ''
+            const asking = isAsking(state) ? ' It is waiting for an answer: use read_screen to see the question.' : ''
             const answer = agentOf(current) === 'shell' ? ' Use read_screen to see its output.' : ' Use get_last_answer to read its reply.'
             return `"${current.name}" is ${stateText(current, state)} (waited ${waited} s).${asking}${answer}`
           }
@@ -818,6 +842,60 @@ export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
       }
     },
     {
+      name: 'schedule_add',
+      description: 'Schedules an instruction for YOU (Jarvis) at a local time, every day, on some weekdays, or once. At that time SessionDeck gives you the instruction as a message and you carry it out with your tools. Example: time "09:00", days "weekdays", instruction "wake API and send it \'pull and run the tests\'". The app must be running at that time.',
+      inputSchema: schema({
+        instruction: { type: 'string', description: 'What to do then, in plain words, complete enough to act on alone.' },
+        time: { type: 'string', description: 'HH:MM, 24-hour, local time.' },
+        days: { description: 'Omit or "every day"; "weekdays"; "weekends"; or day names like ["mon","wed"].' },
+        once: { type: 'boolean', description: 'Run only once (the next time it comes).' },
+        label: { type: 'string', description: 'Short name for the list.' }
+      }, ['instruction', 'time']),
+      run: async (args) => {
+        const added = deps.schedules.add({
+          instruction: text(args, 'instruction'),
+          time: text(args, 'time'),
+          days: args.days,
+          once: optionalBool(args, 'once') === true,
+          ...(optionalText(args, 'label') !== undefined ? { label: optionalText(args, 'label') as string } : {})
+        })
+        deps.log('schedule_add', `${scheduleWhen(added)}: ${clip(added.instruction, 80)}`)
+        const next = nextRun(added, deps.now())
+        return `Scheduled (id ${added.id}) ${scheduleWhen(added)}: "${added.instruction}".${next !== null ? ` Next run ${new Date(next).toLocaleString()}.` : ''}`
+      }
+    },
+    {
+      name: 'schedule_list',
+      description: 'Lists the scheduled instructions: when, what, whether paused, last and next run.',
+      inputSchema: schema({}),
+      run: async () => {
+        const list = deps.schedules.list()
+        if (list.length === 0) return 'No schedules.'
+        const now = deps.now()
+        return list.map((s) => {
+          const next = s.enabled ? nextRun(s, now) : null
+          const state = !s.enabled ? (s.once && s.lastRunAt !== null ? 'done' : 'paused') : next !== null ? `next ${new Date(next).toLocaleString()}` : 'no next run'
+          const last = s.lastRunAt !== null ? ` · last ran ${minutesAgo(now, s.lastRunAt)}` : ''
+          return `- (id ${s.id})${s.label ? ` "${s.label}"` : ''} ${scheduleWhen(s)} · ${state}${last} · "${clip(s.instruction, 120)}"`
+        }).join('\n')
+      }
+    },
+    {
+      name: 'schedule_remove',
+      description: 'Removes a scheduled instruction (by id, or by its label).',
+      inputSchema: schema({ schedule: { type: 'string', description: 'Schedule id or label.' } }, ['schedule']),
+      run: async (args) => {
+        const ref = text(args, 'schedule').trim()
+        const list = deps.schedules.list()
+        const matches = list.filter((s) => s.id === ref || (s.label.length > 0 && s.label.toLowerCase() === ref.toLowerCase()))
+        if (matches.length === 0) throw new Error(`No schedule matches "${ref}". Use schedule_list to see the ids.`)
+        if (matches.length > 1) throw new Error(`"${ref}" matches ${matches.length} schedules; pass the id.`)
+        const removed = deps.schedules.remove(matches[0].id)
+        deps.log('schedule_remove', `${scheduleWhen(removed)}: ${clip(removed.instruction, 80)}`)
+        return `Removed the schedule ${scheduleWhen(removed)}: "${removed.instruction}".`
+      }
+    },
+    {
       name: 'rename_session',
       description: 'Renames a session.',
       inputSchema: schema({ session: SESSION_PROP, name: { type: 'string' } }, ['session', 'name']),
@@ -923,5 +1001,5 @@ export function createJarvisTools(deps: JarvisToolDeps): readonly McpTool[] {
       }
     }
   ]
-  return tools
+  return Object.assign(tools, { sendPrompt })
 }

@@ -1,6 +1,6 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, JarvisConfirmRequest, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
+  AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisSchedule, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
   Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole
 } from './types'
 
@@ -12,6 +12,9 @@ export const IPC = {
   sessionFork: 'session:fork', // (id) -> Session: a new Claude session on a copy of this conversation (D52)
   jarvisOpen: 'jarvis:open', // () -> Session: the Jarvis session, created (and started) on first use; a closed one is reopened (D53)
   jarvisReset: 'jarvis:reset', // () -> Session: Jarvis starts over with a new conversation (D53)
+  jarvisSchedulesGet: 'jarvis:schedulesGet', // () -> JarvisSchedule[] (D54)
+  jarvisScheduleRemove: 'jarvis:scheduleRemove', // (id) (D54)
+  jarvisScheduleSetEnabled: 'jarvis:scheduleSetEnabled', // (id, enabled boolean) (D54)
   jarvisConfirmReply: 'jarvis:confirmReply', // (requestId, yes boolean): the user's answer to an evJarvisConfirm (D53)
   sessionRename: 'session:rename',
   sessionSetStatus: 'session:setStatus',
@@ -91,6 +94,7 @@ export const IPC = {
   evQuotaAutopilot: 'ev:quotaAutopilot', // main -> renderer: QuotaAutopilotState changed
   evWorktreeChanges: 'ev:worktreeChanges', // main -> renderer: WorktreeChanges recomputed (after a turn ended in that worktree)
   evWindowState: 'ev:windowState', // main -> renderer: WindowState changed
+  evJarvisSchedules: 'ev:jarvisSchedules', // main -> renderer: JarvisSchedule[] changed (D54)
   evJarvisConfirm: 'ev:jarvisConfirm' // main -> renderer (main window): JarvisConfirmRequest, ask the user Yes/No (D53)
 } as const
 
@@ -132,6 +136,11 @@ export interface Api {
   /** D53: removes the Jarvis session and starts a fresh one (new conversation). */
   resetJarvis(): Promise<Session>
   jarvisConfirmReply(requestId: string, yes: boolean): Promise<void>
+  /** D54: Jarvis's scheduled instructions. */
+  getJarvisSchedules(): Promise<readonly JarvisSchedule[]>
+  removeJarvisSchedule(id: string): Promise<void>
+  setJarvisScheduleEnabled(id: string, enabled: boolean): Promise<void>
+  onJarvisSchedules(cb: (schedules: readonly JarvisSchedule[]) => void): () => void
   onJarvisConfirm(cb: (request: JarvisConfirmRequest) => void): () => void
   /** D52: finds text in the saved Claude conversations of SessionDeck's sessions (read-only). */
   searchConversations(query: string): Promise<ConversationSearchResult>

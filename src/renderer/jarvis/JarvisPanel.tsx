@@ -12,6 +12,7 @@ import { useTerminalPanes } from '../Terminal/useTerminalPanes'
 import '../Terminal/Terminal.css'
 import { clampJarvisWidth, findJarvis, JARVIS_WIDTH_DEFAULT, jarvisRowState, parseJarvisWidth } from './jarvisLogic'
 import { closeJarvisPanel, useJarvisPanelOpen } from './jarvisPanelStore'
+import { JarvisSchedules } from './JarvisSchedules'
 
 const WIDTH_KEY = 'sessiondeck.jarvis.width.v1'
 const NO_IDS: readonly Id[] = []
@@ -132,6 +133,7 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
         <span className="text-[13px] font-medium">Jarvis</span>
         <span className="truncate text-[11px] text-muted-foreground" data-jarvis-state="">{jarvisRowState(jarvis, state)}</span>
         <div className="ml-auto flex items-center gap-0.5">
+          <JarvisSchedules />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" className="text-muted-foreground" aria-label="New Jarvis conversation" onClick={newConversation}>
