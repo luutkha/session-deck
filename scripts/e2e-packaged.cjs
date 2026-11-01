@@ -108,6 +108,18 @@ async function main() {
     const left = sessionProcs()
     check.check('closing leaves no session process tree behind', !!gone, gone ? '' : describe(left))
 
+    // D54: Jarvis's tool server works in the packaged build, and read_screen renders with @xterm/headless (a
+    // dependency added for Jarvis: this fails if electron-builder left it out).
+    const cfgFile = path.join(app.userData, 'jarvis', 'mcp.json')
+    check.check('Jarvis: the MCP config is written', fs.existsSync(cfgFile))
+    const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8')).mcpServers.sessiondeck
+    const rpc = (method, params) => fetch(cfg.url, { method: 'POST', headers: { ...cfg.headers, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) }).then((r) => r.json())
+    const tools = await rpc('tools/list', {})
+    check.check('Jarvis: the tool server lists its tools', (tools.result?.tools?.length ?? 0) >= 30, String(tools.result?.tools?.length))
+    const screenText = await rpc('tools/call', { name: 'read_screen', arguments: { session: 'packaged probe', lines: 30 } })
+    const screenShown = screenText.result?.content?.[0]?.text ?? ''
+    check.check('Jarvis: read_screen renders the terminal (headless xterm is packaged)', screenText.result?.isError !== true && /----- screen -----/.test(screenShown) && /claude/i.test(screenShown), screenShown.slice(-300))
+
     const errorsLog = path.join(app.userData, 'main-errors.log')
     check.check('no main-process errors logged', !fs.existsSync(errorsLog), fs.existsSync(errorsLog) ? fs.readFileSync(errorsLog, 'utf8').slice(0, 300) : '')
   } catch (error) {

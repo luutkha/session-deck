@@ -633,6 +633,7 @@ SessionDeck
 | `e2e.cjs` | SES-1/2/3, TRM-10, ATT-1 | Smoke: window, create/rename/status, real Claude PTY, hooks → attention, colours, close |
 | `e2e-close.cjs` | SES-6/7/8 | Close / reopen / instant reopen / remove |
 | `e2e-jarvis.cjs` | JRV-1..5 | MCP endpoint (token, every tool), wait/last answer/usage/away tools, Code tools on a temp git repo (add, list, create worktree, changes, remove with Yes), tools on Shell sessions, ambiguity, in-app Yes/No, action log, the panel (Ctrl+Shift+J, tab-bar button, Ops + Code, mode switch, close keeps size, never a tab), palette, settings, reset |
+| `e2e-spaces.cjs` | SEC / JRV-2 | Data folder and session folder WITH SPACES (a user name like "John Smith"): a Claude session and Jarvis start, `/mcp` shows SessionDeck's tools; `EXE=` runs it on the packaged build |
 | `e2e-jarvis-voice.cjs` | JRV-8 | WAV made by Windows TTS → recognized ("list my sessions") → sent to an OpenCode Jarvis; a Stop hook + temp-config transcript → spoken as plain words only with the toggle on |
 | `e2e-jarvis-opencode.cjs` | JRV-5 | Real OpenCode, free model: Jarvis on OpenCode creates a session through the tools; switching back gives one new Claude Jarvis |
 | `e2e-jarvis-real.cjs` | JRV-1/3/4/6 | Real Claude (2 prompts + 1 schedule): plain-words create + sleep, remove with the in-app Yes, a one-time schedule 2 min ahead really runs |

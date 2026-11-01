@@ -2,8 +2,8 @@
 
 This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Feature tree + matrices (rules, code path, tests): `docs/FEATURES.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
 
-## State: Jarvis (D53) shipped on top of D47–D52 (2026-11-01)
-The installer `release/SessionDeck-Setup-0.0.3.exe` predates Jarvis (rebuild with `npm run dist` when the user asks).
+## State: Jarvis round 2 (D54) shipped; installer rebuilt (2026-11-01)
+Installer `release/SessionDeck-Setup-0.0.3.exe` (unsigned, SmartScreen warns; version number not bumped) built with everything through D54. `e2e:packaged` 15/15 (now also checks Jarvis's tool server and that `@xterm/headless` is packaged: `read_screen` renders), `e2e-spaces.cjs` 4/4 on the dev build and on the packaged exe (paths with spaces, e.g. a "John Smith" user folder).
 
 ## Jarvis round 2 (2026-11-01, D54)
 - **Wait / answer / usage / away tools:** `wait_for_session`, `get_last_answer` (`ConversationSearch.messagesOfSession` + `lastAnswer` in `transcripts/conversationSearch.ts`, same size+mtime cache as search), `get_usage` (`UsageService` state + `timeline.all()` for cost today), `get_away_summary` (`FeatureWiring.lastAway()`). The system prompt is now generated from the tool list (`jarvisSystemPrompt`). Verified: unit, `e2e-jarvis.cjs` 46/46.
