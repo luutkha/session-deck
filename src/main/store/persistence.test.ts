@@ -420,6 +420,11 @@ describe('parseStoreData closedAt', () => {
     expect(parsed.sessions[0].closedAt).toBe(0)
   })
 
+  it('keeps the Jarvis role and drops any other role value (D53)', () => {
+    expect(parseStoreData(storeWith({ ...baseSession, role: 'jarvis' })).sessions[0].role).toBe('jarvis')
+    expect('role' in parseStoreData(storeWith({ ...baseSession, role: 'admin' })).sessions[0]).toBe(false)
+  })
+
   it('loads an old file without closedAt and leaves it undefined', () => {
     const parsed = parseStoreData(storeWith({ ...baseSession }))
     expect(parsed.sessions[0].closedAt).toBeUndefined()

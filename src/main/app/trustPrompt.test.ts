@@ -3,7 +3,7 @@ import {
   appendTrustBuffer,
   isTrustPrompt,
   shouldAnswerTrustPrompt,
-  TRUST_ANSWER_INPUT,
+  TRUST_ANSWER_KEYS,
   TRUST_BUFFER_MAX
 } from './trustPrompt'
 
@@ -93,8 +93,8 @@ describe('appendTrustBuffer', () => {
   })
 })
 
-describe('TRUST_ANSWER_INPUT', () => {
-  it('is the Down + Enter sequence the real TUI expects', () => {
-    expect(TRUST_ANSWER_INPUT).toBe('\x1b[B\r')
+describe('TRUST_ANSWER_KEYS', () => {
+  it('is Down, then Enter as a separate key (the real TUI drops an Enter sent with the arrow)', () => {
+    expect(TRUST_ANSWER_KEYS).toEqual(['\x1b[B', '\r'])
   })
 })

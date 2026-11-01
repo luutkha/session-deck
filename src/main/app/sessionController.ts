@@ -12,7 +12,7 @@ import { STOPPING_ERROR_PREFIX } from './retryWhileStopping'
 import { logMainError } from './errorLog'
 import { activityFromHook, type ActivitySnapshot } from './activity'
 import { detectOutputSignals, findUsageLimitLine, stripAnsi } from './outputSignals'
-import { appendTrustBuffer, isTrustPrompt, shouldAnswerTrustPrompt, TRUST_ANSWER_INPUT } from './trustPrompt'
+import { appendTrustBuffer, isTrustPrompt, shouldAnswerTrustPrompt, TRUST_ANSWER_DELAY_MS, TRUST_ANSWER_KEYS, TRUST_KEY_GAP_MS } from './trustPrompt'
 import { createAutoStatusApplier } from '../automation/applyAutoStatus'
 
 const MAX_FALLBACK_ATTEMPTS = 1
@@ -40,6 +40,8 @@ export interface SessionControllerDeps {
    * UserPromptSubmit hook event in the running process, so a resumed session that redraws an old message is ignored.
    */
   readonly onUsageLimit?: (id: Id) => void
+  /** D53: extra trusted Claude launch arguments for a session (Jarvis's MCP config, prompt and model). */
+  readonly extraClaudeArgs?: (session: Session) => readonly string[]
 }
 
 export interface SessionController {
@@ -104,6 +106,11 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     onError: (where, error) => logMainError(userDataDir, where, error)
   })
 
+  /** Launch options of a session, with the extra arguments of D53 (Jarvis). */
+  function startOptions(session: Session, everStarted: boolean, forkFrom?: string): StartOptions {
+    return buildStartOptions(session, everStarted, attention, shellProgram(), forkFrom, deps.extraClaudeArgs?.(session) ?? [])
+  }
+
   function findSession(id: Id): Session | undefined {
     return store.get().sessions.find((s) => s.id === id)
   }
@@ -130,7 +137,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       startState.set(sessionId, { ...state, fallbackAttempts: state.fallbackAttempts + 1 })
       store.setClaudeSessionId(sessionId, randomUUID())
       const rotated = findSession(sessionId) ?? session
-      pty.restart(buildStartOptions(rotated, false, attention))
+      pty.restart(startOptions(rotated, false))
       runtime.markRunning(sessionId)
       return true
     }
@@ -138,7 +145,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
 
     if (fallback && state.fallbackAttempts < MAX_FALLBACK_ATTEMPTS) {
       startState.set(sessionId, { ...state, fallbackAttempts: state.fallbackAttempts + 1 })
-      pty.restart(buildStartOptions(session, false, attention))
+      pty.restart(startOptions(session, false))
       runtime.markRunning(session.id)
       return true
     }
@@ -169,12 +176,29 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       enabled: store.getSettings().code.autoTrustWorktrees,
       agent: session.agent,
       worktreeId: session.worktreeId,
+      jarvis: session.role === 'jarvis',
       firstStart: true,
       answered: false
     })
     if (!allowed) return
     trustAnswered.add(id)
-    pty.write(id, TRUST_ANSWER_INPUT)
+    pressTrustKey(id, 0)
+  }
+
+  /** Types the answer one key at a time; stops when the process ended or restarted (its trust state was cleared). */
+  function pressTrustKey(id: Id, index: number): void {
+    const key = TRUST_ANSWER_KEYS[index]
+    if (key === undefined) return
+    setTimeout(() => {
+      if (!trustAnswered.has(id) || !pty.isRunning(id)) return
+      try {
+        pty.write(id, key)
+      } catch (error) {
+        logMainError(userDataDir, 'trust prompt auto-answer', error)
+        return
+      }
+      pressTrustKey(id, index + 1)
+    }, index === 0 ? TRUST_ANSWER_DELAY_MS : TRUST_KEY_GAP_MS)
   }
 
   // Remote Control: a Claude process driven from claude.ai/code or the phone gets no local keystrokes, so two facts
@@ -324,7 +348,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         startTime: Date.now()
       }
       startState.set(sessionWithId.id, state)
-      const opts: StartOptions = buildStartOptions(sessionWithId, mode === 'resume', attention, shellProgram(), forkFrom)
+      const opts: StartOptions = startOptions(sessionWithId, mode === 'resume', forkFrom)
       pty.start(opts)
       runtime.markRunning(sessionWithId.id)
       if (mode === 'new') trustFirstStart.add(sessionWithId.id)
@@ -529,7 +553,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       startState.set(id, state)
 
       try {
-        pty.restart(buildStartOptions(sessionWithId, true, attention, shellProgram()))
+        pty.restart(startOptions(sessionWithId, true))
       } catch (error) {
         // Put back the previous start state so a stale "everStarted" does not block a later start.
         if (previousState) {

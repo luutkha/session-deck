@@ -855,17 +855,43 @@ describe('sessionController', () => {
       return { ...setup, session }
     }
 
-    it('types Down + Enter into a fresh Claude worktree session when the setting is on', () => {
-      const { pty, session } = codeSessionSetup(true)
-      pty.fireData(session.id, MENU)
-      expect(pty.writesOf(session.id)).toContain('\x1b[B\r')
+    it('types Down, then Enter separately, into a fresh Claude worktree session when the setting is on', () => {
+      vi.useFakeTimers()
+      try {
+        const { pty, session } = codeSessionSetup(true)
+        pty.fireData(session.id, MENU)
+        expect(pty.writesOf(session.id)).toEqual([])
+        vi.advanceTimersByTime(1000)
+        expect(pty.writesOf(session.id)).toEqual(['\x1b[B', '\r'])
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('answers only once per process', () => {
-      const { pty, session } = codeSessionSetup(true)
-      pty.fireData(session.id, MENU)
-      pty.fireData(session.id, MENU)
-      expect(pty.writesOf(session.id)).toEqual(['\x1b[B\r'])
+      vi.useFakeTimers()
+      try {
+        const { pty, session } = codeSessionSetup(true)
+        pty.fireData(session.id, MENU)
+        pty.fireData(session.id, MENU)
+        vi.advanceTimersByTime(2000)
+        expect(pty.writesOf(session.id)).toEqual(['\x1b[B', '\r'])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('always answers the Jarvis session (D53), even with the setting off', () => {
+      vi.useFakeTimers()
+      try {
+        const { controller, pty } = setupController([], { settings: trustSettings(false) })
+        const session = controller.createSession({ cwd: tempDir(), role: 'jarvis' })
+        pty.fireData(session.id, MENU)
+        vi.advanceTimersByTime(1000)
+        expect(pty.writesOf(session.id)).toEqual(['\x1b[B', '\r'])
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('does nothing while the setting is off (default)', () => {

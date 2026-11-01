@@ -54,7 +54,8 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       launch: { resumeRunning: false },
       away: { enabled: false, afterMinutes: 30 },
       reminder: { enabled: false, afterMinutes: 5 },
-      code: { worktreesRoot: '', shell: 'pwsh' as const, autoTrustWorktrees: true }
+      code: { worktreesRoot: '', shell: 'pwsh' as const, autoTrustWorktrees: true },
+      jarvis: { model: 'opus' }
     }
     const data = parseStoreData(storeWith(settings))
     expect(data.settings).toEqual(settings)
@@ -67,6 +68,19 @@ describe('parseStoredSettings / parseStoreData settings', () => {
 
   it('a launch.resumeRunning that is not a boolean drops the stored settings', () => {
     expect(parseStoreData(storeWith({ launch: { resumeRunning: 'yes' } })).settings).toBeUndefined()
+  })
+
+  it('settings saved before Jarvis existed give Jarvis Sonnet (D53)', () => {
+    expect(parseStoreData(storeWith({ hub: { scrollToBusiest: true } })).settings?.jarvis).toEqual({ model: 'sonnet' })
+  })
+
+  it('the Jarvis model accepts aliases, full ids and empty, and rejects shell characters', () => {
+    const data = baseData()
+    for (const model of ['opus', 'claude-sonnet-5-5', 'sonnet[1m]', '']) {
+      expect(updateSettings(data, { jarvis: { model } }).settings?.jarvis?.model).toBe(model)
+    }
+    expect(() => updateSettings(data, { jarvis: { model: 'sonnet & calc' } })).toThrow('jarvis.model')
+    expect(parseStoreData(storeWith({ jarvis: { model: 'a|b' } })).settings).toBeUndefined()
   })
 
   it('settings saved before the code section existed get the code defaults', () => {

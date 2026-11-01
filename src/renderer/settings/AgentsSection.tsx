@@ -1,5 +1,6 @@
 import { useEffect, useState, type KeyboardEvent, type ReactElement } from 'react'
 import type { AppSettings, SettingsPatch } from '../../shared/types'
+import { JARVIS_MODEL_MAX, JARVIS_MODEL_RE } from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,6 +22,19 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
   useEffect((): void => {
     setModelText(agents.opencodeModel)
   }, [agents.opencodeModel])
+
+  // D53: Jarvis's Claude model (Sonnet by default).
+  const [jarvisModel, setJarvisModel] = useState<string>(settings.jarvis.model)
+  useEffect((): void => {
+    setJarvisModel(settings.jarvis.model)
+  }, [settings.jarvis.model])
+  const jarvisModelError = JARVIS_MODEL_RE.test(jarvisModel.trim()) ? null : 'Use letters, digits and . _ : [ ] - only.'
+
+  function commitJarvisModel(): void {
+    const value = jarvisModel.trim()
+    if (jarvisModelError !== null || value === settings.jarvis.model) return
+    void applyPatch({ jarvis: { model: value } })
+  }
 
   const modelValidation = validateOpenCodeModel(modelText)
   const modelError = modelValidation.ok ? null : modelValidation.error
@@ -88,6 +102,42 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
         ) : (
           <p className="text-xs text-muted-foreground">
             Empty uses OpenCode&apos;s own default model. Used only for OpenCode sessions.
+          </p>
+        )}
+      </div>
+
+      <Separator />
+
+      <div className="flex flex-col gap-1">
+        <Label htmlFor="agents-jarvis-model" className="text-[13px] font-medium text-foreground">
+          Jarvis model
+        </Label>
+        <Input
+          id="agents-jarvis-model"
+          type="text"
+          value={jarvisModel}
+          onChange={(event): void => setJarvisModel(event.target.value)}
+          onBlur={commitJarvisModel}
+          onKeyDown={(event): void => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              commitJarvisModel()
+            }
+          }}
+          placeholder="sonnet"
+          maxLength={JARVIS_MODEL_MAX}
+          aria-label="Jarvis model"
+          aria-invalid={jarvisModelError !== null}
+          className="text-xs"
+        />
+        {jarvisModelError !== null ? (
+          <p role="alert" className="text-xs text-destructive">
+            {jarvisModelError}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Claude model for Jarvis: sonnet, opus, haiku or a full model id. Empty uses Claude&apos;s default. Applies
+            the next time Jarvis starts.
           </p>
         )}
       </div>

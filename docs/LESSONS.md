@@ -82,3 +82,11 @@ Things that cost time once. Read before touching the area. Add an entry when a b
 
 ## A pane has exactly ONE host element
 xterm opens into one DOM element for its whole life; `handleViewportRef` ignores any later element for an already-opened pane (and one that mounts before the pane exists). A second component rendering its own `TerminalPane` for the same session (the first GridView overlay did) gets an empty viewport while the real xterm sits in the hidden workspace pane. The old grid e2e only counted `.terminal-pane__viewport` divs and the pty replay, so it passed. Render every layout through `TerminalWorkspace` and assert `.xterm` has a size inside each cell.
+
+## Jarvis (D53)
+- **2026-11-01 · Claude Code 2.1.316 drops an Enter that arrives in the same write as an arrow key.** The folder-trust auto-answer wrote `[B` at once: the highlight moved to "Yes" and snapped back, the menu stayed open forever. The e2e fake accepted the single write, so `e2e:trust` passed against a behaviour the real TUI no longer has. Send keys as separate writes with a pause (the e2e harness always did), and when a fake stands in for a TUI, re-check it against the real binary after a CLI update.
+- **`--mcp-config <file>` with `type: "http"` needs no approval and no `~/.claude` change.** Claude listed `sessiondeck · 23 tools` as connected on the first start; the server must answer `initialize` with JSON (no event stream needed), notifications with 202 and GET with 405.
+- **The prompt queue's `canTypeInto` excludes Shell sessions on purpose** (queues are for agents). Reusing it for Jarvis made every Shell tool call fail with "not running"; Jarvis has its own `isTypeable`.
+- **A woken session is still "sleeping" until its old process has exited** (`wakeAfterExit`). A tool that checks the state right after `wakeSession` sees "not running"; wait for a process started after the wake, with a grace period.
+- **A session created in main and focused right away may not be in the renderer's store yet.** `App.requestFocus` keeps it pending until the store update arrives.
+- **Node/Python one-liners that write `` into a file can write a real CR byte.** A test string `''` became an unterminated literal; use the Edit tool for escapes or `chr(92)` in Python.

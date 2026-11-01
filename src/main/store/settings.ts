@@ -12,6 +12,8 @@ import type {
   StoreData
 } from '../../shared/types'
 import {
+  JARVIS_MODEL_MAX,
+  JARVIS_MODEL_RE,
   MAX_REMINDER_MINUTES,
   MAX_SLEEP_MINUTES,
   MIN_REMINDER_MINUTES,
@@ -20,7 +22,7 @@ import {
 } from '../../shared/types'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
 
-export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'launch', 'away', 'reminder', 'code'] as const
+export const SETTINGS_SECTIONS = ['autoStatus', 'tray', 'quota', 'sleep', 'agents', 'hub', 'launch', 'away', 'reminder', 'code', 'jarvis'] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 const AUTO_STATUS_KEYS = ['working', 'needsInput', 'finished'] as const
@@ -48,6 +50,9 @@ const isResetAction: FieldCheck = (value) => RESET_ACTIONS.includes(value)
 /** The OpenCode model may be empty (OpenCode's own default). */
 const isOpencodeModelString: FieldCheck = (value) =>
   typeof value === 'string' && value.length <= MAX_OPENCODE_MODEL_LENGTH && OPENCODE_MODEL_RE.test(value)
+
+const isJarvisModel: FieldCheck = (value) =>
+  typeof value === 'string' && value.length <= JARVIS_MODEL_MAX && JARVIS_MODEL_RE.test(value)
 
 const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, FieldCheck>> } = {
   autoStatus: {
@@ -99,6 +104,9 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
     worktreesRoot: isString,
     shell: isShellKind,
     autoTrustWorktrees: isBoolean
+  },
+  jarvis: {
+    model: isJarvisModel
   }
 }
 
@@ -270,6 +278,9 @@ export function settingsProblem(settings: AppSettings): string | null {
 
   if (typeof settings.hub.scrollToBusiest !== 'boolean') return 'hub.scrollToBusiest must be a boolean'
   if (typeof settings.launch.resumeRunning !== 'boolean') return 'launch.resumeRunning must be a boolean'
+  if (!isJarvisModel(settings.jarvis.model)) {
+    return `jarvis.model must be a model name of at most ${JARVIS_MODEL_MAX} characters (letters, digits, ._:[]-), or empty`
+  }
 
   return null
 }
@@ -305,6 +316,7 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
   const away = pickSectionFields('away', raw.away)
   const reminder = pickSectionFields('reminder', raw.reminder)
   const code = pickSectionFields('code', raw.code)
+  const jarvis = pickSectionFields('jarvis', raw.jarvis)
   if (
     autoStatus === null ||
     tray === null ||
@@ -315,7 +327,8 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
     launch === null ||
     away === null ||
     reminder === null ||
-    code === null
+    code === null ||
+    jarvis === null
   ) {
     return undefined
   }
@@ -330,7 +343,8 @@ export function parseStoredSettings(raw: unknown, statuses: readonly StatusDef[]
     launch: launch as Partial<AppSettings['launch']>,
     away: away as Partial<AwaySettings>,
     reminder: reminder as Partial<ReminderSettings>,
-    code: code as Partial<CodeSettings>
+    code: code as Partial<CodeSettings>,
+    jarvis: jarvis as Partial<AppSettings['jarvis']>
   })
   const merged = { ...resolved, code: normalizeCode(resolved.code) }
   if (settingsProblem(merged) !== null) return undefined
@@ -366,7 +380,8 @@ export function updateSettings(data: StoreData, patch: SettingsPatch): StoreData
     launch: { ...current.launch, ...definedFields(patch.launch) },
     away: { ...current.away, ...definedFields(patch.away) },
     reminder: { ...current.reminder, ...definedFields(patch.reminder) },
-    code: { ...current.code, ...definedFields(patch.code) }
+    code: { ...current.code, ...definedFields(patch.code) },
+    jarvis: { ...current.jarvis, ...definedFields(patch.jarvis) }
   }
   const next: AppSettings = { ...merged, code: normalizeCode(merged.code) }
 

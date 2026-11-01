@@ -1,7 +1,7 @@
 # SessionDeck feature reference
 
 > **What this file is.** The complete feature inventory of SessionDeck, in tree + matrix form, built so an agent can go from "which feature?" to its rules, its code path and its tests in one lookup. It complements, and does not replace:
-> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D52).
+> - `docs/DECISIONS.md` - *why* a feature exists and what the user chose (D01-D53).
 > - `HANDOFF.md` — the narrative state of each feature, including known gaps.
 > - `docs/CODEMAP.md` — folder-level map.
 > - `docs/LESSONS.md` — mistakes already paid for.
@@ -184,6 +184,12 @@ SessionDeck
 │   ├── PAL-2  Items and groups
 │   ├── PAL-3  Filtering and ranking
 │   └── PAL-4  Command execution and focus return
+├── JRV  Jarvis (AI that controls the app)
+│   ├── JRV-1  Jarvis session (pinned entry, Ctrl+Shift+J, palette)
+│   ├── JRV-2  MCP tool server (local, token, only for Jarvis)
+│   ├── JRV-3  Tools (see / lifecycle / prompts / organize)
+│   ├── JRV-4  Confirm before destructive tools
+│   └── JRV-5  Jarvis model setting
 ├── WRK  OpenCode worker tabs
 │   ├── WRK-1  Worker plugin injection
 │   ├── WRK-2  Worker events and heartbeat
@@ -217,6 +223,7 @@ SessionDeck
 | WIN | `renderer/mode/modeLogic.ts` | `main/app/windowRegistry.ts` |
 | SET | `shared/types.ts` (`DEFAULT_APP_SETTINGS`) | `main/store/settings.ts`, `main/store/persistence.ts` |
 | PAL | `renderer/palette/paletteItems.ts` | — (renderer only) |
+| JRV | `renderer/jarvis/jarvisLogic.ts`, `main/jarvis/targets.ts` | `main/jarvis/jarvisWiring.ts`, `jarvisTools.ts`, `mcpHttpServer.ts` |
 | WRK | `renderer/workers/workerLogic.ts` | `main/workers/WorkerHub.ts` |
 | SEC | — | `main/app/ipcValidation.ts`, `main/attention/HookServer.ts` |
 
@@ -393,7 +400,7 @@ SessionDeck
 | COD-8 | File diff | Shipped | Click a changed file | Unified diff for **one listed path only** (main re-validates); binary → `binary: true`, empty diff; cut at 512 KB (`truncated`); renderer parses hunks. | `main/git/worktreeFileDiff.ts`; `renderer/code/changes/parseUnifiedDiff.ts`, `DiffView.tsx` | `worktreeFileDiff.test.ts`, `parseUnifiedDiff.test.ts`; e2e `e2e:codemode` |
 | COD-9 | Changes refresh cadence | Shipped | Continuous | Recompute 1.5 s after a Stop hook in that worktree, on open, every 10 s while the panel is visible, every 30 s for row counts; a changed result is pushed to all windows (`ev:worktreeChanges`) only when the content key differs. | `main/app/codeWiring.ts` → `CHANGES_AFTER_TURN_MS`, `changesKey`; `renderer/code/changes/useWorktreeChanges.ts` | `codeWiring.test.ts`, `changesLoad.test.ts`; e2e `e2e:codemode` |
 | COD-10 | Pop-out Code window | Shipped | "Open Code in its own window" / "Move Code back" | Second BrowserWindow with `--sessiondeck-window=code`; `windowRole` fixes the renderer to Code; while popped out the main window shows Ops; docking returns Code to the main switch; focus requests route to the owning window. | `main/app/windowRegistry.ts`; `shared/ipc.ts` → `CODE_WINDOW_ARG`; `renderer/mode/useUiMode.ts` | `windowRegistry.test.ts`, `modeLogic.test.ts`; e2e `e2e:codemode` |
-| COD-11 | Trust-prompt auto-answer | Shipped (opt-in) | Settings > Code switch, default OFF | When on, a fresh Claude session in a new worktree gets Down + Enter at Claude's folder-trust menu. Only `mode === 'new'`, only Claude, only with `worktreeId`, once per process; detection needs both menu labels in the last 4,000 stripped chars; resumed/restarted/Ops/OpenCode/Shell never answered. | `main/app/trustPrompt.ts`; `main/app/sessionController.ts`; `shared/types.ts` → `CodeSettings.autoTrustWorktrees`; `renderer/settings/CodeSection.tsx` | `trustPrompt.test.ts`, `sessionController.test.ts`, `settings.code.test.ts`; e2e `e2e:trust` |
+| COD-11 | Trust-prompt auto-answer | Shipped (opt-in) | Settings > Code switch, default OFF | When on, a fresh Claude session in a new worktree gets Down, then Enter (two writes 0.5 s / 0.4 s apart: Claude Code 2.1.316 drops an Enter sent in the same write as the arrow) at Claude's folder-trust menu. Only `mode === 'new'`, only Claude, only with `worktreeId`, once per process; detection needs both menu labels in the last 4,000 stripped chars; resumed/restarted/Ops/OpenCode/Shell never answered. Exception: the Jarvis session (JRV-1) is always answered. | `main/app/trustPrompt.ts`; `main/app/sessionController.ts`; `shared/types.ts` → `CodeSettings.autoTrustWorktrees`; `renderer/settings/CodeSection.tsx` | `trustPrompt.test.ts`, `sessionController.test.ts`, `settings.code.test.ts`; e2e `e2e:trust` |
 
 ### 2.13 WIN — Windows, tray & app lifecycle
 
@@ -436,6 +443,16 @@ SessionDeck
 | WRK-4 | Worker tabs and view | Shipped | Claude session with workers | Read-only tabs; finished tabs close 2 min after ending unless being read; `×` only hides; selecting any session or the Hub leaves the worker view; an empty view explains that plugin-less (`--pure`) processes are invisible and suggests a restart. | `renderer/workers/useWorkers.ts`, `WorkerTabs.tsx`, `WorkerView.tsx`, `workerLogic.ts` | `workerLogic.test.ts`; e2e `e2e:workers` |
 | WRK-5 | Worker limitations | Gap | — | `opencode --pure` (no plugins) invisible; Claude sessions opened before the feature need a restart; workers started from an OpenCode session inside the app are not covered; no interactive worker terminal and no resume-from-tab (deferred). | — | See `HANDOFF.md` |
 
+### 2.18 JRV — Jarvis (D53)
+
+| ID | Feature | Status | Trigger / entry | Rules (must-know) | Code | Tests |
+|---|---|---|---|---|---|---|
+| JRV-1 | Jarvis session | Shipped | Sidebar entry under Hub (Ops), `Ctrl+Shift+J` anywhere, palette "Open Jarvis" / "Jarvis: start a new conversation" | ONE Claude session with `Session.role = 'jarvis'` (only main can create it: IPC `session:create` rejects `role`). Created on first open in `<userData>/jarvis` (name "Jarvis"); a closed one is reopened; open/reset are serialized in main and shown by a focus request (switches to Ops). Its folder-trust question is always answered (Down, then Enter). It is left out of the sidebar lists and the Hub board (`withoutJarvis`), stays a normal tab/terminal. "New conversation" removes it and creates a fresh one. | `main/jarvis/jarvisWiring.ts`; `renderer/jarvis/*`; `Sidebar/SidebarNav.tsx`, `Sidebar.tsx`; `App.tsx` (shortcut, pending focus) | `jarvisLogic.test.ts`, `sessionController.test.ts` (trust), `persistence.test.ts`, `ipcValidation.test.ts`; e2e `e2e-jarvis.cjs`, `e2e-jarvis-real.cjs` |
+| JRV-2 | MCP tool server | Shipped | App start (before resume-on-launch) | `POST /mcp` on `127.0.0.1:<random>`, `Authorization: Bearer <per-run token>`, JSON-RPC 2.0 (initialize, ping, tools/list, tools/call), plain JSON answers, notifications 202, GET 405, 1 MB body cap. `<userData>/jarvis/mcp.json` + `system-prompt.md` are rewritten each run. Only Jarvis is launched with `--mcp-config <mcp.json> --append-system-prompt-file <prompt> --model <m>` (via `SessionControllerDeps.extraClaudeArgs`); the user's `~/.claude` is never changed. | `main/jarvis/mcpProtocol.ts`, `mcpHttpServer.ts`, `jarvisLaunch.ts`; `main/app/startOptions.ts` (`extraArgs`); `main/index.ts` | `mcpProtocol.test.ts`, `mcpHttpServer.test.ts`, `jarvisLaunch.test.ts`; e2e `e2e-jarvis.cjs` |
+| JRV-3 | Tools | Shipped | Jarvis calls them | 23 tools: `list_sessions`, `read_screen` (pty replay drawn in `@xterm/headless`), `get_activity`, `search_conversations`, `create_session` (folder or preset, optional first prompt), `send_prompt` (auto: wake/start if needed, type when the screen settled, queue while working; now; queue), `broadcast_prompt`, `press_keys`, `sleep_session`, `wake_session` (sleeping→wake, stopped→start, closed→reopen), `restart_session`, `close_session`, `fork_session`, `remove_session`, `remove_worktree`, `rename_session`, `set_status`, `move_to_group`, `create_group`, `remove_group`, `set_notes`, `set_keep_awake`, `open_session`. Same controller/store/queue paths as the UI. Names resolve by id, exact name, or a unique part; ambiguity is an error listing candidates; Jarvis is never a target. Typing never goes into a folder-trust question. Every action is appended to `<userData>/jarvis/actions.log` (reset past 1 MB). | `main/jarvis/jarvisTools.ts`, `targets.ts`, `screenText.ts` | `jarvisTools.test.ts`, `targets.test.ts`, `screenText.test.ts`; e2e `e2e-jarvis.cjs` (shell sessions), `e2e-jarvis-real.cjs` |
+| JRV-4 | Confirm destructive tools | Shipped | `remove_session`, `remove_worktree`, `remove_group` | Main shows the window and sends `ev:jarvisConfirm`; the main window shows the Orca ConfirmDialog (queue, one at a time); the answer comes back via `jarvis:confirmReply`. No window, Cancel or 120 s without an answer = No, and Jarvis is told nothing changed. | `main/jarvis/jarvisWiring.ts` (`confirm`); `renderer/jarvis/JarvisConfirm.tsx` | `jarvisTools.test.ts`; e2e both Jarvis suites |
+| JRV-5 | Jarvis model | Shipped | Settings > Agents "Jarvis model" | `jarvis.model`, default `sonnet`; alias or full id, letters/digits/`._:[]-` only (it reaches cmd.exe), empty = Claude's default. Applies at Jarvis's next start. | `shared/types.ts` (`JarvisSettings`), `main/store/settings.ts`; `renderer/settings/AgentsSection.tsx` | `settings.test.ts`; e2e `e2e-jarvis.cjs` |
+
 ### 2.17 SEC — Robustness & security
 
 | ID | Feature | Status | Trigger / entry | Rules (must-know) | Code | Tests |
@@ -468,6 +485,7 @@ SessionDeck
 | `preset:save` / `preset:remove` | SES-16 | `presets.upsertPreset`, `presets.removePreset` |
 | `session:setQueue` / `session:sendQueuedNow` | SES-15 | `sessionNotes.setSessionQueue`, `promptQueue.sendNow` |
 | `session:setActive` | SES-13 | `activeSessions` |
+| `jarvis:open` / `jarvis:reset` / `jarvis:confirmReply` | JRV-1 / JRV-4 | `jarvisWiring` |
 | `session:sleep` | SES-9 | `sessionController` |
 | `group:create` / `group:rename` / `group:remove` / `group:setCollapsed` / `group:reorder` | SES-4 | `reducers` |
 | `status:upsert` / `status:remove` / `status:reorder` | SES-3 | `reducers` |
@@ -504,6 +522,7 @@ SessionDeck
 | `ev:quotaAutopilot` | `QuotaAutopilotState` | USE-9 |
 | `ev:worktreeChanges` | `WorktreeChanges` | COD-9 |
 | `ev:windowState` | `WindowState` | COD-10 / WIN-2 |
+| `ev:jarvisConfirm` | `JarvisConfirmRequest` (main window only) | JRV-4 |
 
 ### 3.3 localStorage keys
 
@@ -539,6 +558,7 @@ SessionDeck
 | `quota-markers.json` | USE-5 | Alert markers per window instance |
 | `quota-autopilot.json` | USE-7/8 | Held sessions + reset time |
 | `resume-on-launch.json` | SES-17 | Ids of the sessions running at quit/crash (`{version:1, ids}`) |
+| `jarvis/` | JRV-1/2/3 | Jarvis's folder: `mcp.json` (port + token, rewritten each run), `system-prompt.md`, `actions.log` |
 | `sessiondeck-attention/sessiondeck-worker-plugin/` | WRK-1 | Worker plugin package (package.json + index.mjs) |
 | `sessiondeck-attention/sessiondeck-opencode-plugin/` | AGT-2 | OpenCode session plugin package (package.json + index.mjs) |
 | `sessiondeck-attention/` | ATT-1 | Private hook settings / status |
@@ -557,6 +577,7 @@ SessionDeck
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab | Anywhere | TAB-3 |
 | `Ctrl+K` | Command palette | Outside terminal and text inputs | PAL-1 |
 | `Ctrl+Shift+K` | Command palette | Anywhere except over a dialog | PAL-1 |
+| `Ctrl+Shift+J` | Open Jarvis | Anywhere except over a dialog (plain `Ctrl+J` stays a newline for Claude) | JRV-1 |
 | `Ctrl+C` / `Ctrl+Shift+C` / `Ctrl+V` | Copy / copy / paste | Terminal | TRM-3 |
 | `Ctrl+Shift+F` | Find in the terminal (visible pane) | Terminal / grid view | TRM-12 |
 | `↑` / `↓`, `Enter`, `Delete` | Sidebar navigation | Sidebar focused | NAV-9 |
@@ -586,6 +607,7 @@ SessionDeck
 | `agents.opencodeModel` | `''` | AGT-2 |
 | `hub.scrollToBusiest` | `true` | HUB-6 |
 | `launch.resumeRunning` | `true` | SES-17 |
+| `jarvis.model` | `sonnet` | JRV-5 |
 | `away.enabled` / `.afterMinutes` | `true` / `15` | TML-5 |
 | `code.worktreesRoot` | `''` (home default) | COD-5 |
 | `code.shell` | `powershell` | AGT-3 |
@@ -598,6 +620,8 @@ SessionDeck
 |---|---|---|
 | `e2e.cjs` | SES-1/2/3, TRM-10, ATT-1 | Smoke: window, create/rename/status, real Claude PTY, hooks → attention, colours, close |
 | `e2e-close.cjs` | SES-6/7/8 | Close / reopen / instant reopen / remove |
+| `e2e-jarvis.cjs` | JRV-1..5 | MCP endpoint (token, 23 tools), tools on Shell sessions, ambiguity, in-app Yes/No, action log, Ctrl+Shift+J, palette, settings, reset |
+| `e2e-jarvis-real.cjs` | JRV-1/3/4 | Real Claude (2 prompts): plain-words create + sleep, remove with the in-app Yes |
 | `e2e-resume.cjs` | SES-12 | Kill + relaunch, same conversation |
 | `e2e-dialogs.cjs` | SES-1/2, SET-1 | New Session + Statuses dialogs through real input; unsafe args rejected |
 | `e2e-robust.cjs` | SEC-1, SET-3 | Late/bogus IPC, malformed create, save on quit |

@@ -22,6 +22,8 @@ function fakeHandlers(): PaletteHandlers {
     showCosts: vi.fn(),
     forkSession: vi.fn(),
     searchConversations: vi.fn(),
+    openJarvis: vi.fn(),
+    resetJarvis: vi.fn(),
     setStatus: vi.fn(),
     switchMode: vi.fn(),
     popOutCode: vi.fn(),
@@ -80,6 +82,13 @@ describe('runPaletteCommand: session and view commands', () => {
     expect(handlers.forkSession).toHaveBeenCalledWith('s1')
     runPaletteCommand({ kind: 'search-conversations' }, handlers, api)
     expect(handlers.searchConversations).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens Jarvis and starts it over (D53)', () => {
+    runPaletteCommand({ kind: 'open-jarvis' }, handlers, api)
+    expect(handlers.openJarvis).toHaveBeenCalledTimes(1)
+    runPaletteCommand({ kind: 'reset-jarvis' }, handlers, api)
+    expect(handlers.resetJarvis).toHaveBeenCalledTimes(1)
   })
 
   it('opens the cost report for show-costs', () => {

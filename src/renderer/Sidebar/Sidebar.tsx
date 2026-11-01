@@ -31,6 +31,7 @@ import { SessionsHeader } from './SessionsHeader'
 import { SessionList } from './SessionList'
 import { SidebarNav } from './SidebarNav'
 import { DEFAULT_GROUP_NAME, toggleStatusFilter } from './uiLogic'
+import { findJarvis, jarvisRowState, withoutJarvis } from '../jarvis/jarvisLogic'
 import { ignoreRejection } from './ignoreRejection'
 import { useGlobalNewSessionShortcut, useSidebarListKeyDown } from './useSidebarKeyboard'
 import { useLastRuntimeChange } from './useLastRuntimeChange'
@@ -79,7 +80,11 @@ interface PendingRemove {
 }
 
 export function Sidebar(props: SidebarProps): ReactElement {
-  const { data, runtime, activeId, actions, onSelect, onReopen, onNewSession, onEditStatuses } = props
+  const { data: fullData, runtime, activeId, actions, onSelect, onReopen, onNewSession, onEditStatuses } = props
+  // D53: Jarvis has its own pinned entry; every list below works on the other sessions.
+  const data = useMemo((): StoreData => withoutJarvis(fullData), [fullData])
+  const jarvis = findJarvis(fullData)
+  const jarvisState = jarvis === null ? undefined : runtime.get(jarvis.id)
 
   const internalLastChange = useLastRuntimeChange(runtime)
   const lastChange: ReadonlyMap<Id, number> = props.runtimeLastChange ?? internalLastChange
@@ -324,6 +329,14 @@ export function Sidebar(props: SidebarProps): ReactElement {
         onNewSession={onNewSession}
         onOpenHub={props.onOpenHub}
         hubActive={props.hubActive}
+        jarvis={{
+          state: jarvisRowState(jarvis, jarvisState),
+          active: jarvis !== null && activeId === jarvis.id && props.hubActive !== true,
+          working: jarvisState?.activity === 'working',
+          onOpen: (): void => {
+            window.api.openJarvis().catch((): void => undefined)
+          }
+        }}
       />
       <SessionsHeader
         groupBy={groupBy}

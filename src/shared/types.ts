@@ -68,6 +68,19 @@ export interface Session {
   readonly queue?: readonly QueuedPrompt[]
   /** Code mode (D31): the worktree this session runs in (its cwd is the worktree path). Absent = an Ops session. */
   readonly worktreeId?: Id
+  /** D53: 'jarvis' = the one session that controls the app (pinned in the sidebar, gets SessionDeck's MCP tools). Absent = a normal session. */
+  readonly role?: SessionRole
+}
+
+/** D53: a special session kind. Only 'jarvis' exists. */
+export type SessionRole = 'jarvis'
+
+/** D53: Jarvis asks the user before a destructive action; the renderer answers with jarvisConfirmReply(id, yes). */
+export interface JarvisConfirmRequest {
+  readonly id: string
+  readonly title: string
+  readonly message: string
+  readonly confirmLabel: string
 }
 
 /** Code mode (D31): a git repository the user added. Worktrees are created from it. */
@@ -196,6 +209,8 @@ export interface CreateSessionInput {
   readonly model?: string
   /** Code mode: start the session inside this worktree. Main then uses the worktree path as cwd (input.cwd is ignored). */
   readonly worktreeId?: Id
+  /** D53: main only (the IPC validation rejects this key); set when SessionDeck creates the Jarvis session. */
+  readonly role?: SessionRole
 }
 
 /** Code mode: create a branch + worktree from a repo and start the first session in it. */
@@ -401,6 +416,16 @@ export interface HubSettings {
   readonly scrollToBusiest: boolean
 }
 
+/** D53: the Jarvis session. */
+export interface JarvisSettings {
+  /** Value of Claude's `--model` for Jarvis (an alias like "sonnet" or a full model id). Empty = Claude's own default. */
+  readonly model: string
+}
+
+/** Jarvis model ids: letters, digits and . _ : [ ] - (they reach cmd.exe as a launch argument). */
+export const JARVIS_MODEL_RE = /^[A-Za-z0-9._:[\]-]*$/
+export const JARVIS_MODEL_MAX = 100
+
 /** App launch behaviour (D50). */
 export interface LaunchSettings {
   /** Sessions that were running when SessionDeck quit are resumed in the background on the next launch. */
@@ -486,6 +511,7 @@ export interface AppSettings {
   readonly away: AwaySettings
   readonly reminder: ReminderSettings
   readonly code: CodeSettings
+  readonly jarvis: JarvisSettings
 }
 
 export interface SettingsPatch {
@@ -499,6 +525,7 @@ export interface SettingsPatch {
   readonly away?: Partial<AwaySettings>
   readonly reminder?: Partial<ReminderSettings>
   readonly code?: Partial<CodeSettings>
+  readonly jarvis?: Partial<JarvisSettings>
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -512,7 +539,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   launch: { resumeRunning: true },
   away: { enabled: true, afterMinutes: 15 },
   reminder: { enabled: true, afterMinutes: 10 },
-  code: { worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false }
+  code: { worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false },
+  // D53: "use sonnet first, changeable".
+  jarvis: { model: 'sonnet' }
 }
 
 export const MIN_SLEEP_MINUTES = 1
@@ -533,7 +562,8 @@ export function resolveSettings(stored: Partial<{ [K in keyof AppSettings]: Part
     launch: { ...DEFAULT_APP_SETTINGS.launch, ...(stored?.launch ?? {}) },
     away: { ...DEFAULT_APP_SETTINGS.away, ...(stored?.away ?? {}) },
     reminder: { ...DEFAULT_APP_SETTINGS.reminder, ...(stored?.reminder ?? {}) },
-    code: { ...DEFAULT_APP_SETTINGS.code, ...(stored?.code ?? {}) }
+    code: { ...DEFAULT_APP_SETTINGS.code, ...(stored?.code ?? {}) },
+    jarvis: { ...DEFAULT_APP_SETTINGS.jarvis, ...(stored?.jarvis ?? {}) }
   }
 }
 

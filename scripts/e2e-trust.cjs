@@ -26,7 +26,7 @@ function makeRepo(root) {
 /**
  * Writes a fake `claude` (and the node script it runs) into `binDir`. The stub prints the real trust menu after a
  * short delay, then records every byte it receives as a JSON line in events.log. It stays alive until it is answered
- * or killed, and exits 0 shortly after the Down + Enter answer arrives.
+ * or killed, and exits 0 shortly after the Down, then Enter answer arrives.
  */
 function writeFakeClaude(binDir) {
   const events = path.join(binDir, 'events.log')
@@ -44,10 +44,12 @@ const record = (event, data) => fs.appendFileSync(events, JSON.stringify({ t: Da
 record('start')
 if (process.stdin.isTTY) process.stdin.setRawMode(true)
 process.stdin.resume()
+let sawDown = false
 process.stdin.on('data', (chunk) => {
   const text = chunk.toString('utf8')
   record('data', text)
-  if (text.includes('\\x1b[B\\r')) {
+  if (text.includes('\\x1b[B')) sawDown = true
+  if (sawDown && text.includes('\\r')) {
     record('answered')
     setTimeout(() => process.exit(0), 200)
   }
@@ -134,7 +136,8 @@ async function main() {
     const answered = await waitFor(() => eventsOf(eventsFile).find((e) => e.id === on.session.id && e.event === 'answered'), 20000, 300)
     t.check('the fresh worktree prompt is answered automatically', !!answered, answered ? 'after ' + String(answered.t) : '')
     const onData = eventsOf(eventsFile).filter((e) => e.id === on.session.id && e.event === 'data')
-    t.check('the answer is exactly Down + Enter (the menu default is No, exit)', onData.length === 1 && onData[0].data === '\x1b[B\r', js(onData))
+    // Two writes: the real TUI drops an Enter that arrives in the same write as the arrow (Claude Code 2.1.316).
+    t.check('the answer is exactly Down, then Enter (the menu default is No, exit)', onData.length === 2 && onData[0].data === '\x1b[B' && onData[1].data === '\r', js(onData))
     t.check('the answer is typed only once per process', eventsOf(eventsFile).filter((e) => e.id === on.session.id && e.event === 'answered').length === 1)
 
     const persisted = (await store()).data.settings

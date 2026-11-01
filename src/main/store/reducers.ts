@@ -145,7 +145,8 @@ export function createSession(
     createdAt: meta.now,
     claudeArgs,
     ...agentFieldsFor(input, meta.id),
-    ...(worktreeId !== undefined ? { worktreeId } : {})
+    ...(worktreeId !== undefined ? { worktreeId } : {}),
+    ...(input.role === 'jarvis' ? { role: 'jarvis' as const } : {})
   }
 
   return {

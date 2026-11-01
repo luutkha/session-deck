@@ -4,6 +4,7 @@ import type {
   AwaySettings,
   CodeSettings,
   HubSettings,
+  JarvisSettings,
   LaunchSettings,
   QuotaSettings,
   ReminderSettings,
@@ -38,7 +39,7 @@ function sectionOf(obj: Record<string, unknown>, name: SettingsSection): Record<
 }
 
 /**
- * IPC payload check for settings:update. Accepts an object with the keys autoStatus / tray / quota / sleep / agents / hub / launch / away / reminder / code;
+ * IPC payload check for settings:update. Accepts an object with the keys autoStatus / tray / quota / sleep / agents / hub / launch / away / reminder / code / jarvis;
  * each section is an object with known keys only and primitive values (booleans, integers, status id or null).
  * Range rules and status existence are checked by the store reducer. Throws `Invalid settings: <reason>`.
  */
@@ -63,6 +64,7 @@ export function asSettingsPatch(raw: unknown): SettingsPatch {
   const away = sectionOf(obj, 'away')
   const reminder = sectionOf(obj, 'reminder')
   const code = sectionOf(obj, 'code')
+  const jarvis = sectionOf(obj, 'jarvis')
 
   return {
     ...(autoStatus !== undefined ? { autoStatus: autoStatus as Partial<AutoStatusSettings> } : {}),
@@ -74,6 +76,7 @@ export function asSettingsPatch(raw: unknown): SettingsPatch {
     ...(launch !== undefined ? { launch: launch as Partial<LaunchSettings> } : {}),
     ...(away !== undefined ? { away: away as Partial<AwaySettings> } : {}),
     ...(reminder !== undefined ? { reminder: reminder as Partial<ReminderSettings> } : {}),
-    ...(code !== undefined ? { code: code as Partial<CodeSettings> } : {})
+    ...(code !== undefined ? { code: code as Partial<CodeSettings> } : {}),
+    ...(jarvis !== undefined ? { jarvis: jarvis as Partial<JarvisSettings> } : {})
   }
 }

@@ -16,6 +16,8 @@ import type { ModeChrome } from './mode/ModeTitleBar'
 import { decideFocus, needsYouCounts, sessionMode } from './mode/modeLogic'
 import { useUiMode } from './mode/useUiMode'
 import type { FocusRequest } from './mode/useWorkspaceNav'
+import { JarvisConfirm } from './jarvis/JarvisConfirm'
+import { useJarvisShortcut } from './jarvis/useJarvisShortcut'
 import './styles.css'
 
 /** Plays the user's notification sounds. Mounted in the main window only, so a sound is never played twice. */
@@ -31,12 +33,19 @@ export function App(): ReactElement {
   const ui = useUiMode()
   const away = useAwaySummary()
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null)
+  // A focus request for a session this window has not received yet (just created in main, e.g. Jarvis, D53).
+  const [pendingFocus, setPendingFocus] = useState<Id | null>(null)
   const isMain = ui.role === 'main'
+  useJarvisShortcut()
 
   /** Shows a session from outside the workspace: switches mode first when it belongs to the other one. */
   const requestFocus = useCallback((id: Id): void => {
     const session = store.data?.sessions.find((s: Session): boolean => s.id === id)
-    if (session === undefined) return
+    if (session === undefined) {
+      setPendingFocus(id)
+      return
+    }
+    setPendingFocus(null)
     const decision = decideFocus(ui.mode, sessionMode(session), ui.codePoppedOut)
     if (decision.switchTo !== undefined) ui.setMode(decision.switchTo)
     setFocusRequest({ id })
@@ -45,6 +54,9 @@ export function App(): ReactElement {
   // Tray menu and desktop notification clicks (main sends them to the window that should show the session).
   useEffect(() => window.api?.onFocusSession?.(requestFocus), [requestFocus])
   const clearFocus = useCallback((): void => setFocusRequest(null), [])
+  useEffect((): void => {
+    if (pendingFocus !== null && store.data?.sessions.some((s: Session): boolean => s.id === pendingFocus)) requestFocus(pendingFocus)
+  }, [pendingFocus, store.data?.sessions, requestFocus])
 
   const counts = useMemo(() => needsYouCounts(store.data, store.runtime), [store.data, store.runtime])
   const chrome: ModeChrome = {
@@ -70,6 +82,7 @@ export function App(): ReactElement {
         onShowAwaySummary={away.showLast}
       />
       {isMain ? <AttentionSoundPlayer /> : null}
+      {isMain ? <JarvisConfirm /> : null}
       {isMain ? <AwayDialog summary={away.summary} onOpenSession={requestFocus} onClose={away.close} /> : null}
       <QuotaToast />
     </TooltipProvider>

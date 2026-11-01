@@ -1,6 +1,6 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
+  AppSettings, ChecklistItem, JarvisConfirmRequest, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
   Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole
 } from './types'
 
@@ -10,6 +10,9 @@ export const IPC = {
   sessionCreate: 'session:create',
   conversationSearch: 'conversation:search', // (query 2..200 chars) -> ConversationSearchResult: text in past Claude conversations (D52)
   sessionFork: 'session:fork', // (id) -> Session: a new Claude session on a copy of this conversation (D52)
+  jarvisOpen: 'jarvis:open', // () -> Session: the Jarvis session, created (and started) on first use; a closed one is reopened (D53)
+  jarvisReset: 'jarvis:reset', // () -> Session: Jarvis starts over with a new conversation (D53)
+  jarvisConfirmReply: 'jarvis:confirmReply', // (requestId, yes boolean): the user's answer to an evJarvisConfirm (D53)
   sessionRename: 'session:rename',
   sessionSetStatus: 'session:setStatus',
   sessionMove: 'session:move', // to group + index
@@ -87,7 +90,8 @@ export const IPC = {
   evAwaySummary: 'ev:awaySummary', // main -> renderer: AwaySummary (non-empty) when the user comes back
   evQuotaAutopilot: 'ev:quotaAutopilot', // main -> renderer: QuotaAutopilotState changed
   evWorktreeChanges: 'ev:worktreeChanges', // main -> renderer: WorktreeChanges recomputed (after a turn ended in that worktree)
-  evWindowState: 'ev:windowState' // main -> renderer: WindowState changed
+  evWindowState: 'ev:windowState', // main -> renderer: WindowState changed
+  evJarvisConfirm: 'ev:jarvisConfirm' // main -> renderer (main window): JarvisConfirmRequest, ask the user Yes/No (D53)
 } as const
 
 /** Buffered output for reattach. `seq` = sequence number of the last chunk included (0 if none).
@@ -123,6 +127,12 @@ export interface Api {
   setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void>
   /** D52: a new Claude session that continues a copy of this session's conversation. */
   forkSession(id: Id): Promise<Session>
+  /** D53: the Jarvis session (created and started on first use). */
+  openJarvis(): Promise<Session>
+  /** D53: removes the Jarvis session and starts a fresh one (new conversation). */
+  resetJarvis(): Promise<Session>
+  jarvisConfirmReply(requestId: string, yes: boolean): Promise<void>
+  onJarvisConfirm(cb: (request: JarvisConfirmRequest) => void): () => void
   /** D52: finds text in the saved Claude conversations of SessionDeck's sessions (read-only). */
   searchConversations(query: string): Promise<ConversationSearchResult>
   /** D47: types one queued prompt now (running, awake Claude/OpenCode session only) and removes it from the queue. */

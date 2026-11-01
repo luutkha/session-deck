@@ -181,6 +181,8 @@ describe('ipcValidation', () => {
 
     it('throws for unknown keys', () => {
       expect(() => asCreateSessionInput({ cwd: '/home', unknown: 'value' })).toThrow('Invalid createSession input: unknown key "unknown"')
+      // D53: only main creates the Jarvis session.
+      expect(() => asCreateSessionInput({ cwd: '/home', role: 'jarvis' })).toThrow('unknown key "role"')
     })
 
     it('throws for non-array claudeArgs', () => {

@@ -4,6 +4,7 @@ import { IPC } from '../shared/ipc'
 import type {
   AppSettings,
   ChecklistItem,
+  JarvisConfirmRequest,
   QueuedPrompt,
   SessionPreset,
   ConversationSearchResult,
@@ -93,6 +94,24 @@ const api: Api = {
 
   forkSession(id: Id): Promise<Session> {
     return ipcRenderer.invoke(IPC.sessionFork, id)
+  },
+
+  openJarvis(): Promise<Session> {
+    return ipcRenderer.invoke(IPC.jarvisOpen)
+  },
+
+  resetJarvis(): Promise<Session> {
+    return ipcRenderer.invoke(IPC.jarvisReset)
+  },
+
+  jarvisConfirmReply(requestId: string, yes: boolean): Promise<void> {
+    return ipcRenderer.invoke(IPC.jarvisConfirmReply, requestId, yes)
+  },
+
+  onJarvisConfirm(cb: (request: JarvisConfirmRequest) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, request: JarvisConfirmRequest) => cb(request)
+    ipcRenderer.on(IPC.evJarvisConfirm, handler)
+    return () => ipcRenderer.off(IPC.evJarvisConfirm, handler)
   },
 
   setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void> {

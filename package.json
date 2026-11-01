@@ -68,6 +68,8 @@
     "e2e:resume-launch": "node scripts/e2e-resume-launch.cjs",
     "e2e:costs": "node scripts/e2e-costs.cjs",
     "e2e:fork-search-real": "node scripts/e2e-fork-search-real.cjs",
+    "e2e:jarvis": "node scripts/e2e-jarvis.cjs",
+    "e2e:jarvis-real": "node scripts/e2e-jarvis-real.cjs",
     "e2e:visual": "node scripts/e2e-visual.cjs"
   },
   "dependencies": {
@@ -78,6 +80,7 @@
     "@xterm/addon-unicode11": "^0.8.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/headless": "^5.5.0",
     "@xterm/xterm": "^5.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

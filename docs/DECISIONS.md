@@ -226,6 +226,14 @@ Feature 6 of the D46 list.
 - **Fork (Claude only):** right-click "Fork session" or the palette. Uses Claude Code's own `--resume <parent> --fork-session --session-id <new>`, checked first with the real CLI: the fork gets the history, the original conversation is not changed. A session with no saved conversation cannot be forked (clear message).
 - **Search:** palette "Search conversations" reads the saved Claude transcripts of SessionDeck's sessions (read-only, cached), shows highlighted excerpts newest first, and a hit opens the session. OpenCode conversations are not searched in v1 (different storage).
 
+**D53 · 2026-11-01 · Jarvis: an AI session that controls the app** · active
+The user: "i want a session of AI can help to to create/close/sleep/reconnect or put prompt in the sesssion if i tell it, Like Jarvis of Ironman, it should be help me to controll all things of the apps if i request". Plan answers: "1. call it Jarvis 2. use sonnet first, changeable 3. no, include them 4. skip first".
+- **Jarvis** is one special Claude Code session (pinned at the top of the sidebar, Ctrl+J, palette). It runs on the user's plan, not an API key. The name "Hub" stays with the status board.
+- **Tools:** SessionDeck serves a local MCP server (127.0.0.1, random port, per-run secret token). Only Jarvis gets it, through Claude's own `--mcp-config` + `--append-system-prompt-file` launch flags; the user's `~/.claude` is never changed. Tools call the same controller/store paths as the UI.
+- **Model:** Sonnet by default, changeable in Settings > Jarvis.
+- **Destructive actions are included** (remove a session, a worktree, a group); each one asks the user Yes/No in an in-app dialog first. Jarvis cannot act on itself.
+- **Voice:** skipped for now.
+
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.
 

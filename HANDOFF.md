@@ -1,8 +1,19 @@
-# SessionDeck handoff (updated 2026-10-31)
+# SessionDeck handoff (updated 2026-11-01)
 
 This file = current state of the code. Decisions the user made: `docs/DECISIONS.md`. Feature tree + matrices (rules, code path, tests): `docs/FEATURES.md`. Gotchas: `docs/LESSONS.md`. Also README.md (run/test), DESIGN.md (Orca-style UI spec) and PLAN.md (original architecture).
 
-## State: D47–D52 shipped; fresh installer built for the user's hands-on test round (2026-10-31)
+## State: Jarvis (D53) shipped on top of D47–D52 (2026-11-01)
+The installer `release/SessionDeck-Setup-0.0.3.exe` predates Jarvis (rebuild with `npm run dist` when the user asks).
+
+## Jarvis: an AI session that controls the app (2026-11-01, D53)
+- **What:** one Claude session (`Session.role = 'jarvis'`, folder `<userData>/jarvis`, name "Jarvis") pinned in the Ops sidebar under Hub, opened with Ctrl+Shift+J or the palette. The user types requests in plain words; Jarvis acts through SessionDeck's MCP tools.
+- **Main:** `main/jarvis/` — `mcpProtocol.ts` (JSON-RPC: initialize/ping/tools/list/tools/call), `mcpHttpServer.ts` (127.0.0.1, random port, Bearer token per run, POST /mcp only), `jarvisTools.ts` (23 tools over controller/store/queue/timeline/search; `waitUntilReady` types only after the screen settled, waits for a woken process, refuses the folder-trust menu), `targets.ts` (id / exact / unique-partial names; Jarvis excluded), `screenText.ts` (`@xterm/headless` renders the pty replay), `jarvisLaunch.ts` (paths, `--mcp-config … --append-system-prompt-file … --model …`, system prompt), `jarvisWiring.ts` (server start before resume-on-launch, launch files, confirm round trip with 120 s timeout, action log, serialized `jarvis:open`/`jarvis:reset`). The controller takes `extraClaudeArgs` and passes them to `buildStartOptions(…, extraArgs)`.
+- **Renderer:** `renderer/jarvis/` (`jarvisLogic.ts` pure, `useJarvisShortcut.ts` mounted once per window in `App.tsx`, `JarvisConfirm.tsx` main window only). Sidebar and Hub use `withoutJarvis`; `SidebarNav` draws the entry. `App.requestFocus` keeps a pending id until the store has the session (Jarvis is created in main a moment before the focus request). Settings > Agents "Jarvis model" (`jarvis.model`, default `sonnet`).
+- **Also fixed:** the folder-trust auto-answer (COD-11) sent `[B` in one write, which Claude Code 2.1.316 ignores (menu stays open). Now Down, then Enter as separate writes (0.5 s / 0.4 s); `e2e-trust`'s fake now records two writes.
+- **Not done (v1):** voice ("skip first"), Code-mode worktree creation from Jarvis, OpenCode as Jarvis's agent. The plan's "Jarvis tag in the Activity tab" became `<userData>/jarvis/actions.log` plus the tool calls shown in Jarvis's own terminal.
+- **Verified:** unit (`main/jarvis/*.test.ts` 36, `jarvisLogic.test.ts` 3, trust/controller/settings/persistence/ipc additions; 3,262+ total), `e2e-jarvis.cjs` 34/34, `e2e-jarvis-real.cjs` 9/9 with real Claude (Sonnet 5.5: "create a shell session … then put it to sleep", then "remove …" with the in-app Yes), plus the regression list in the commit.
+
+## Previous state: D47–D52 shipped; fresh installer built for the user's hands-on test round (2026-10-31)
 Installer `release/SessionDeck-Setup-0.0.3.exe` (unsigned, SmartScreen warns) built from `0cabb33`+docs; `e2e:packaged` 12/12. Final regression before the build: every suite listed in the D47–D52 sections plus `trust` 15, `termview` 15, `grid` 10, `workers` 11, `opencode` 12 (+1 SKIP: clipboard unavailable), `usage-both` 23, `notes` 11, `annotate` 13, `links` 11, `reminder` 17; 3,219 unit tests.
 
 ## Previous state: v1 feature-complete, Orca-style UI done

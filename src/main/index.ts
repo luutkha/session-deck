@@ -39,6 +39,8 @@ import { createConversationSearch } from './transcripts/conversationSearch'
 import { claudeConfigDir } from './app/transcript'
 import { readdir, stat } from 'node:fs/promises'
 import { IPC } from '../shared/ipc'
+import { createJarvisWiring } from './jarvis/jarvisWiring'
+import { renderScreenText } from './jarvis/screenText'
 import { errorMessage } from '../shared/guards'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -316,7 +318,9 @@ if (!gotTheLock) {
         sendToWindow(IPC.evPtyData, id, data, seq)
       },
       userDataDir: userData,
-      onUsageLimit: (id) => features.onUsageLimit(id)
+      onUsageLimit: (id) => features.onUsageLimit(id),
+      // Only Jarvis gets extra arguments (D53); `jarvis` is created below, before any session can start.
+      extraClaudeArgs: (session) => jarvis.claudeArgsFor(session)
     })
 
     // Prompt queue (D47): the next queued prompt is typed in when a session's turn finishes.
@@ -345,6 +349,59 @@ if (!gotTheLock) {
         relaySound('', 'quota')
         notifier.notifyApp(CONTINUE_FAILED_TITLE, continueFailedBody(sessionName))
       },
+      onError
+    })
+
+    const conversationSearch = createConversationSearch({
+      configDir: claudeConfigDir,
+      readdir: (dir) => readdir(dir),
+      stat: async (file) => {
+        try {
+          const info = await stat(file)
+          return { size: info.size, mtimeMs: info.mtimeMs }
+        } catch {
+          return null
+        }
+      },
+      readFile: (file) => readFile(file, 'utf-8')
+    })
+
+    // Jarvis (D53): when each session's process started and last printed, so a prompt is typed only once it settled.
+    const ptyStartedAt = new Map<string, number>()
+    const ptyLastOutputAt = new Map<string, number>()
+    pty.onStart((id: string) => ptyStartedAt.set(id, Date.now()))
+    pty.onData((id: string) => ptyLastOutputAt.set(id, Date.now()))
+    store.subscribe((data) => {
+      const live = new Set(data.sessions.map((s) => s.id))
+      for (const map of [ptyStartedAt, ptyLastOutputAt]) for (const id of map.keys()) if (!live.has(id)) map.delete(id)
+    })
+
+    const jarvis = createJarvisWiring({
+      userDataDir: userData,
+      store,
+      controller,
+      tools: {
+        getRuntime: (id) => runtime.get(id),
+        store,
+        queueChanged: (id) => promptQueue.onQueueChanged(id),
+        screenText: (id, lines) => {
+          const size = pty.size(id) ?? { cols: 120, rows: 30 }
+          return renderScreenText(pty.replay(id).data, size.cols, size.rows, lines)
+        },
+        rawOutput: (id) => pty.replay(id).data,
+        timeline: (id) => features.timeline.get(id),
+        search: (query) => conversationSearch.search(store.get().sessions, query),
+        openSession: (id) => focusSession(id),
+        startedAt: (id) => ptyStartedAt.get(id),
+        lastOutputAt: (id) => ptyLastOutputAt.get(id)
+      },
+      sendConfirm: (request) => {
+        if (mainWindow === null || mainWindow.isDestroyed()) return false
+        showMainWindow(mainWindow)
+        mainWindow.webContents.send(IPC.evJarvisConfirm, request)
+        return true
+      },
+      appVersion: app.getVersion(),
       onError
     })
 
@@ -383,6 +440,8 @@ if (!gotTheLock) {
 
     await features.loadTimeline()
     await attention.start()
+    // Before any session starts: Jarvis's launch files must exist when it is resumed below.
+    await jarvis.start().catch((error: unknown) => onError('jarvis start', error))
     // Test seam: lets an end-to-end script reach the hook server of this run. Does nothing unless the variable is set.
     if (process.env.SESSIONDECK_E2E_ENDPOINT_FILE) {
       writeFile(process.env.SESSIONDECK_E2E_ENDPOINT_FILE, JSON.stringify(attention.endpoint()), 'utf-8').catch((error: unknown) => onError('e2e endpoint file', error))
@@ -418,19 +477,7 @@ if (!gotTheLock) {
       usageRefresher,
       workers,
       promptQueue,
-      conversationSearch: createConversationSearch({
-        configDir: claudeConfigDir,
-        readdir: (dir) => readdir(dir),
-        stat: async (file) => {
-          try {
-            const info = await stat(file)
-            return { size: info.size, mtimeMs: info.mtimeMs }
-          } catch {
-            return null
-          }
-        },
-        readFile: (file) => readFile(file, 'utf-8')
-      }),
+      conversationSearch,
       broadcast: sendToWindow,
       windowForSender: (senderId) => {
         const role = windows.roleOf(senderId)
@@ -452,6 +499,7 @@ if (!gotTheLock) {
     const autopilotLoaded = features.startAutopilot()
     features.registerIpc()
     code.registerIpc()
+    jarvis.registerIpc()
     await autopilotLoaded
 
     // Tray icon and menu, close-to-tray (the window is hidden, sessions keep running). Never throws.
@@ -481,6 +529,7 @@ if (!gotTheLock) {
       sleepScheduler.stop()
       clearInterval(workerSweep)
       promptQueue.stop()
+      await runShutdownStep('jarvis', () => jarvis.stop())
       await runShutdownStep('timeline + autopilot', () => features.shutdown())
       await runShutdownStep('code mode', () => code.shutdown())
       await runShutdownStep('close Code window', () => windows.closeCode())

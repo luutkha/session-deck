@@ -19,6 +19,8 @@ export type PaletteCommand =
   | { readonly kind: 'show-costs' }
   | { readonly kind: 'fork-session'; readonly id: Id }
   | { readonly kind: 'search-conversations' }
+  | { readonly kind: 'open-jarvis' }
+  | { readonly kind: 'reset-jarvis' }
   | { readonly kind: 'sleep'; readonly id: Id }
   | { readonly kind: 'set-keep-awake'; readonly id: Id; readonly keepAwake: boolean }
   | { readonly kind: 'set-status'; readonly id: Id; readonly statusId: Id }
@@ -352,6 +354,23 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
       run: { kind: 'open-grid' }
     })
   }
+  // D53: Jarvis lives in Ops mode; opening it from Code switches the main window to Ops (main's focus request).
+  items.push({
+    id: 'action:open-jarvis',
+    group: 'Actions',
+    label: 'Open Jarvis',
+    detail: 'The assistant that controls SessionDeck (Ctrl+Shift+J)',
+    keywords: 'jarvis assistant ai agent control hub chat',
+    run: { kind: 'open-jarvis' }
+  })
+  items.push({
+    id: 'action:reset-jarvis',
+    group: 'Actions',
+    label: 'Jarvis: start a new conversation',
+    detail: 'Jarvis forgets the current conversation and starts fresh',
+    keywords: 'jarvis reset clear new conversation restart assistant',
+    run: { kind: 'reset-jarvis' }
+  })
   items.push({
     id: 'action:search-conversations',
     group: 'Actions',

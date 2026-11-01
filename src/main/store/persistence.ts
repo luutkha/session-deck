@@ -108,7 +108,9 @@ function parseSession(raw: unknown, index: number): Session {
     ...(checklist !== undefined ? { checklist } : {}),
     ...(queue !== undefined ? { queue } : {}),
     // Checked by parseStoreData: a present worktreeId is a non-empty string of a stored worktree.
-    ...(raw.worktreeId !== undefined ? { worktreeId: raw.worktreeId as string } : {})
+    ...(raw.worktreeId !== undefined ? { worktreeId: raw.worktreeId as string } : {}),
+    // D53: any other value is dropped (the session becomes a normal one).
+    ...(raw.role === 'jarvis' ? { role: 'jarvis' as const } : {})
   }
 
   return session

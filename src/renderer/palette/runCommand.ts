@@ -20,6 +20,9 @@ export interface PaletteHandlers {
   readonly forkSession: (id: Id) => void | Promise<void>
   /** D52: opens the conversation search. */
   readonly searchConversations: () => void
+  /** D53: opens Jarvis (created on first use), or starts it over with a new conversation. */
+  readonly openJarvis: () => void | Promise<void>
+  readonly resetJarvis: () => void | Promise<void>
   readonly setStatus: (id: Id, statusId: Id) => void | Promise<void>
   /** Mode switch (main window). */
   readonly switchMode: (mode: UiMode) => void
@@ -78,6 +81,10 @@ function runSessionCommand(
       return attempt(command, () => handlers.forkSession(command.id))
     case 'search-conversations':
       return attempt(command, () => handlers.searchConversations())
+    case 'open-jarvis':
+      return attempt(command, () => handlers.openJarvis())
+    case 'reset-jarvis':
+      return attempt(command, () => handlers.resetJarvis())
     case 'set-status':
       return attempt(command, () => handlers.setStatus(command.id, command.statusId))
     case 'switch-mode':

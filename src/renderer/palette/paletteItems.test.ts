@@ -157,6 +157,8 @@ describe('buildPaletteItems: sessions group', () => {
       'New session',
       'Open Hub',
       'Open grid view',
+      'Open Jarvis',
+      'Jarvis: start a new conversation',
       'Search conversations',
       'Show cost report',
       'Open Settings',
@@ -176,6 +178,8 @@ describe('buildPaletteItems: actions group', () => {
       'New session',
       'Open Hub',
       'Open grid view',
+      'Open Jarvis',
+      'Jarvis: start a new conversation',
       'Search conversations',
       'Show cost report',
       'Open Settings',
@@ -185,6 +189,8 @@ describe('buildPaletteItems: actions group', () => {
     ])
     expect(byId(items, 'action:new-session').run).toEqual({ kind: 'new-session' })
     expect(byId(items, 'action:open-settings').run).toEqual({ kind: 'open-settings' })
+    expect(byId(items, 'action:open-jarvis').run).toEqual({ kind: 'open-jarvis' })
+    expect(byId(items, 'action:reset-jarvis').run).toEqual({ kind: 'reset-jarvis' })
   })
 
   it('offers the away summary with its detail and search keywords', () => {

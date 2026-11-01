@@ -184,6 +184,12 @@ export class PtyManager {
     return this.processes.has(id)
   }
 
+  /** The terminal size of a running session (D53 read_screen), or null when it is not running. */
+  size(id: Id): { readonly cols: number; readonly rows: number } | null {
+    const proc = this.processes.get(id)
+    return proc ? { cols: proc.cols, rows: proc.rows } : null
+  }
+
   dispose(): void {
     this.killAll()
     this.processes.clear()

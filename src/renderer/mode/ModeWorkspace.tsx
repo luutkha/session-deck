@@ -11,6 +11,7 @@ import { useTermView } from '../Terminal/useTermView'
 import { applyTerminalFontSize } from '../Terminal/paneFactory'
 import type { GridPreset } from '../grid/gridLogic'
 import { HubView } from '../hub/HubView'
+import { withoutJarvis } from '../jarvis/jarvisLogic'
 import { NotesPanel } from '../notes'
 import { progress } from '../notes/checklistLogic'
 import { CommandPalette } from '../palette/CommandPalette'
@@ -265,7 +266,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
               {loaded && view === 'hub' && data !== null ? (
                 <div className="absolute inset-0 z-10 bg-background">
                   <HubView
-                    data={data}
+                    data={withoutJarvis(data)}
                     runtime={runtime}
                     lastChange={lastChange}
                     activeId={activeId}

@@ -44,7 +44,9 @@ export function buildStartOptions(
   attention: AttentionService,
   shell: ShellKind = 'powershell',
   /** D52: first start of a fork; see chooseClaudeLaunch. */
-  forkFrom?: string
+  forkFrom?: string,
+  /** D53: trusted Claude arguments added after SessionDeck's own (Jarvis: MCP config, system prompt, model). */
+  extraArgs: readonly string[] = []
 ): StartOptions {
   if (session.agent === 'shell') {
     return buildShellStartOptions(session, attention, shell)
@@ -59,7 +61,7 @@ export function buildStartOptions(
     cwd: session.cwd,
     // Sessions always run in yolo mode (no permission prompts) unless the user already chose a permission flag.
     claudeArgs: hasPermissionFlag(userArgs) ? userArgs : [YOLO_FLAG, ...userArgs],
-    internalArgs: [...attention.claudeArgs(), ...chosen.args],
+    internalArgs: [...attention.claudeArgs(), ...chosen.args, ...extraArgs],
     // Any `opencode` started from this terminal loads the worker plugin and shows up as a read-only worker tab.
     env: { ...attention.envFor(session.id), ...attention.workerEnv() },
     cols: INITIAL_COLS,
