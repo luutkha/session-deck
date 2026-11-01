@@ -7,7 +7,7 @@ import type { RuntimeRegistry } from './runtimeRegistry'
 import { shouldFallbackToNew, shouldRotateSessionId, REPLAY_TAIL_CHARS } from './claudeLaunch'
 import { transcriptExists } from './transcript'
 import { randomUUID } from 'node:crypto'
-import { buildStartOptions, validateCwd } from './startOptions'
+import { buildStartOptions, validateCwd, type LaunchExtras } from './startOptions'
 import { STOPPING_ERROR_PREFIX } from './retryWhileStopping'
 import { logMainError } from './errorLog'
 import { activityFromHook, type ActivitySnapshot } from './activity'
@@ -40,8 +40,8 @@ export interface SessionControllerDeps {
    * UserPromptSubmit hook event in the running process, so a resumed session that redraws an old message is ignored.
    */
   readonly onUsageLimit?: (id: Id) => void
-  /** D53: extra trusted Claude launch arguments for a session (Jarvis's MCP config, prompt and model). */
-  readonly extraClaudeArgs?: (session: Session) => readonly string[]
+  /** D53/D54: what a session adds to its launch (Jarvis: Claude arguments or OpenCode config keys). */
+  readonly launchExtras?: (session: Session) => LaunchExtras
 }
 
 export interface SessionController {
@@ -108,7 +108,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
 
   /** Launch options of a session, with the extra arguments of D53 (Jarvis). */
   function startOptions(session: Session, everStarted: boolean, forkFrom?: string): StartOptions {
-    return buildStartOptions(session, everStarted, attention, shellProgram(), forkFrom, deps.extraClaudeArgs?.(session) ?? [])
+    return buildStartOptions(session, everStarted, attention, shellProgram(), forkFrom, deps.launchExtras?.(session) ?? {})
   }
 
   function findSession(id: Id): Session | undefined {

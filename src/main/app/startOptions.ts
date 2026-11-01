@@ -7,6 +7,13 @@ import { OPENCODE_PLUGIN_ENV_VAR, applyConfigPatch } from '../opencode'
 
 export const YOLO_FLAG = '--dangerously-skip-permissions'
 
+/** D53/D54: what a special session (Jarvis) adds to its launch: trusted Claude arguments, or OpenCode config keys. */
+export interface LaunchExtras {
+  readonly claudeArgs?: readonly string[]
+  /** Top-level keys merged into the session's OPENCODE_CONFIG_CONTENT (e.g. mcp, instructions). */
+  readonly opencodeConfig?: Readonly<Record<string, unknown>>
+}
+
 /** Arguments that keep a shell interactive and quiet: no banner for PowerShell, nothing for cmd. */
 const SHELL_ARGS: Record<ShellKind, readonly string[]> = {
   powershell: ['-NoLogo'],
@@ -45,14 +52,14 @@ export function buildStartOptions(
   shell: ShellKind = 'powershell',
   /** D52: first start of a fork; see chooseClaudeLaunch. */
   forkFrom?: string,
-  /** D53: trusted Claude arguments added after SessionDeck's own (Jarvis: MCP config, system prompt, model). */
-  extraArgs: readonly string[] = []
+  /** D53/D54: Jarvis's extra Claude arguments (MCP config, system prompt, model) or OpenCode config keys. */
+  extras: LaunchExtras = {}
 ): StartOptions {
   if (session.agent === 'shell') {
     return buildShellStartOptions(session, attention, shell)
   }
   if (session.agent === 'opencode') {
-    return buildOpencodeStartOptions(session, attention)
+    return buildOpencodeStartOptions(session, attention, extras.opencodeConfig)
   }
   const chosen = chooseClaudeLaunch({ claudeSessionId: session.claudeSessionId!, everStarted, ...(forkFrom !== undefined ? { forkFrom } : {}) })
   const userArgs = session.claudeArgs ?? []
@@ -61,7 +68,7 @@ export function buildStartOptions(
     cwd: session.cwd,
     // Sessions always run in yolo mode (no permission prompts) unless the user already chose a permission flag.
     claudeArgs: hasPermissionFlag(userArgs) ? userArgs : [YOLO_FLAG, ...userArgs],
-    internalArgs: [...attention.claudeArgs(), ...chosen.args, ...extraArgs],
+    internalArgs: [...attention.claudeArgs(), ...chosen.args, ...(extras.claudeArgs ?? [])],
     // Any `opencode` started from this terminal loads the worker plugin and shows up as a read-only worker tab.
     env: { ...attention.envFor(session.id), ...attention.workerEnv() },
     cols: INITIAL_COLS,
@@ -103,7 +110,9 @@ export function buildShellStartOptions(
  */
 export function buildOpencodeStartOptions(
   session: Session,
-  attention: AttentionService
+  attention: AttentionService,
+  /** D54: extra top-level config keys (Jarvis on OpenCode: its MCP server and instructions). */
+  configPatch?: Readonly<Record<string, unknown>>
 ): StartOptions {
   const internalArgs: string[] = ['--standalone']
   if (session.opencodeSessionId !== undefined && session.opencodeSessionId.length > 0) {
@@ -113,6 +122,9 @@ export function buildOpencodeStartOptions(
   const key = OPENCODE_PLUGIN_ENV_VAR
   if (typeof session.model === 'string' && session.model.length > 0) {
     env[key] = applyConfigPatch(env[key], { model: session.model })
+  }
+  if (configPatch !== undefined) {
+    env[key] = applyConfigPatch(env[key], { ...configPatch })
   }
   return {
     sessionId: session.id,

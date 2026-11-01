@@ -325,7 +325,7 @@ if (!gotTheLock) {
       userDataDir: userData,
       onUsageLimit: (id) => features.onUsageLimit(id),
       // Only Jarvis gets extra arguments (D53); `jarvis` is created below, before any session can start.
-      extraClaudeArgs: (session) => jarvis.claudeArgsFor(session)
+      launchExtras: (session) => jarvis.launchExtrasFor(session)
     })
 
     // Prompt queue (D47): the next queued prompt is typed in when a session's turn finishes.

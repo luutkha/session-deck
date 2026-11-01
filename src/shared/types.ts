@@ -439,6 +439,10 @@ export interface HubSettings {
 export interface JarvisSettings {
   /** Value of Claude's `--model` for Jarvis (an alias like "sonnet" or a full model id). Empty = Claude's own default. */
   readonly model: string
+  /** D54: which agent runs Jarvis. Changing it starts a new Jarvis conversation on the next open. */
+  readonly agent: 'claude' | 'opencode'
+  /** D54: "provider/model" when Jarvis runs on OpenCode; empty = OpenCode's own default. */
+  readonly opencodeModel: string
 }
 
 /** Jarvis model ids: letters, digits and . _ : [ ] - (they reach cmd.exe as a launch argument). */
@@ -560,7 +564,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   reminder: { enabled: true, afterMinutes: 10 },
   code: { worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false },
   // D53: "use sonnet first, changeable".
-  jarvis: { model: 'sonnet' }
+  jarvis: { model: 'sonnet', agent: 'claude', opencodeModel: '' }
 }
 
 export const MIN_SLEEP_MINUTES = 1

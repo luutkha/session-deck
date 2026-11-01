@@ -36,6 +36,19 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
     void applyPatch({ jarvis: { model: value } })
   }
 
+  // D54: Jarvis on OpenCode and its model.
+  const [jarvisOcModel, setJarvisOcModel] = useState<string>(settings.jarvis.opencodeModel)
+  useEffect((): void => {
+    setJarvisOcModel(settings.jarvis.opencodeModel)
+  }, [settings.jarvis.opencodeModel])
+  const jarvisOcValidation = validateOpenCodeModel(jarvisOcModel)
+  const jarvisOcError = jarvisOcValidation.ok ? null : jarvisOcValidation.error
+
+  function commitJarvisOcModel(): void {
+    if (!jarvisOcValidation.ok || jarvisOcValidation.value === settings.jarvis.opencodeModel) return
+    void applyPatch({ jarvis: { opencodeModel: jarvisOcValidation.value } })
+  }
+
   const modelValidation = validateOpenCodeModel(modelText)
   const modelError = modelValidation.ok ? null : modelValidation.error
 
@@ -108,9 +121,59 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
 
       <Separator />
 
+      <div className="space-y-1.5">
+        <span className="text-[13px] font-medium text-foreground">Jarvis engine</span>
+        <AgentPicker
+          value={settings.jarvis.agent}
+          onChange={(agent): void => {
+            if (agent === 'claude' || agent === 'opencode') void applyPatch({ jarvis: { agent } })
+          }}
+          ariaLabel="Jarvis engine"
+        />
+        <p className="text-xs text-muted-foreground">
+          Which agent runs Jarvis. OpenCode allows cheaper or free models. Changing it starts a new Jarvis conversation
+          the next time you open Jarvis.
+        </p>
+      </div>
+
+      {settings.jarvis.agent === 'opencode' ? (
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="agents-jarvis-opencode-model" className="text-[13px] font-medium text-foreground">
+            Jarvis OpenCode model
+          </Label>
+          <Input
+            id="agents-jarvis-opencode-model"
+            type="text"
+            value={jarvisOcModel}
+            onChange={(event): void => setJarvisOcModel(event.target.value)}
+            onBlur={commitJarvisOcModel}
+            onKeyDown={(event): void => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                commitJarvisOcModel()
+              }
+            }}
+            placeholder="provider/model, e.g. opencode/deepseek-v4.1-flash-free"
+            maxLength={MAX_OPENCODE_MODEL_LENGTH}
+            aria-label="Jarvis OpenCode model"
+            aria-invalid={jarvisOcError !== null}
+            className="text-xs"
+          />
+          {jarvisOcError !== null ? (
+            <p role="alert" className="text-xs text-destructive">
+              {jarvisOcError}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Empty uses OpenCode&apos;s own default. Changing it starts a new Jarvis conversation.
+            </p>
+          )}
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-1">
         <Label htmlFor="agents-jarvis-model" className="text-[13px] font-medium text-foreground">
-          Jarvis model
+          Jarvis model (Claude)
         </Label>
         <Input
           id="agents-jarvis-model"

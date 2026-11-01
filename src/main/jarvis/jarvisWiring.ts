@@ -10,7 +10,8 @@ import { assertBoolean, assertNonEmptyString } from '../app/ipcValidation'
 import type { SessionController } from '../app/sessionController'
 import type { SessionStore } from '../store'
 import { createMcpHttpServer } from './mcpHttpServer'
-import { CONFIRM_TIMEOUT_MS, JARVIS_NAME, jarvisLaunchArgs, jarvisSystemPrompt, jarvisPaths, mcpConfigText } from './jarvisLaunch'
+import { CONFIRM_TIMEOUT_MS, JARVIS_NAME, jarvisLaunchArgs, jarvisOpencodeConfig, jarvisSystemPrompt, jarvisPaths, mcpConfigText } from './jarvisLaunch'
+import type { LaunchExtras } from '../app/startOptions'
 import { createJarvisTools, type ConfirmRequest, type JarvisToolDeps } from './jarvisTools'
 import { isJarvis } from './targets'
 import { createScheduleService } from './scheduleService'
@@ -38,7 +39,7 @@ export interface JarvisWiring {
   /** Starts the MCP server and writes the launch files. Call before any session can start (resume on launch). */
   start(): Promise<void>
   /** Trusted Claude launch arguments for a session: only Jarvis gets any. */
-  claudeArgsFor(session: Session): readonly string[]
+  launchExtrasFor(session: Session): LaunchExtras
   registerIpc(): void
   stop(): Promise<void>
 }
@@ -48,6 +49,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
   const token = randomBytes(32).toString('hex')
   const pending = new Map<string, { resolve: (yes: boolean) => void; timer: ReturnType<typeof setTimeout> }>()
   let started = false
+  let port = 0
 
   function confirm(request: ConfirmRequest): Promise<boolean> {
     const id = randomUUID()
@@ -134,6 +136,13 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
 
   async function openJarvis(): Promise<Session> {
     if (!started) throw new Error('Jarvis is not ready yet.')
+    const settings = deps.store.getSettings().jarvis
+    const wantModel = settings.agent === 'opencode' ? settings.opencodeModel : ''
+    const current = findJarvis()
+    // D54: the engine (or OpenCode model) changed in Settings: the old conversation cannot move, start a new Jarvis.
+    if (current !== undefined && ((current.agent ?? 'claude') !== settings.agent || (settings.agent === 'opencode' && (current.model ?? '') !== wantModel))) {
+      deps.controller.removeSession(current.id)
+    }
     const existing = findJarvis()
     if (existing !== undefined) {
       // The panel shows a running Jarvis: a closed one is reopened, a sleeping one woken, a stopped one started.
@@ -144,7 +153,10 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       return deps.store.get().sessions.find((s) => s.id === existing.id) ?? existing
     }
     await mkdir(paths.dir, { recursive: true })
-    return deps.controller.createSession({ cwd: paths.dir, name: JARVIS_NAME, agent: 'claude', claudeArgs: [], role: 'jarvis' })
+    return deps.controller.createSession({
+      cwd: paths.dir, name: JARVIS_NAME, agent: settings.agent, claudeArgs: [], role: 'jarvis',
+      ...(wantModel.length > 0 ? { model: wantModel } : {})
+    })
   }
 
   async function resetJarvis(): Promise<Session> {
@@ -162,7 +174,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       } catch {
         // no log yet
       }
-      const { port } = await server.start()
+      port = (await server.start()).port
       await writeFile(paths.mcpConfig, mcpConfigText(port, token), 'utf-8')
       await writeFile(paths.prompt, jarvisSystemPrompt(tools.map((tool) => tool.name)), 'utf-8')
       started = true
@@ -170,9 +182,10 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       schedules.start()
     },
 
-    claudeArgsFor(session: Session): readonly string[] {
-      if (!isJarvis(session) || !started) return []
-      return jarvisLaunchArgs(paths, deps.store.getSettings().jarvis.model)
+    launchExtrasFor(session: Session): LaunchExtras {
+      if (!isJarvis(session) || !started) return {}
+      if (session.agent === 'opencode') return { opencodeConfig: jarvisOpencodeConfig(port, token, paths.prompt) }
+      return { claudeArgs: jarvisLaunchArgs(paths, deps.store.getSettings().jarvis.model) }
     },
 
     registerIpc(): void {

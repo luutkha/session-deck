@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { jarvisLaunchArgs, jarvisSystemPrompt, jarvisPaths, mcpConfigText } from './jarvisLaunch'
+import { jarvisLaunchArgs, jarvisOpencodeConfig, jarvisSystemPrompt, jarvisPaths, mcpConfigText } from './jarvisLaunch'
 
 describe('jarvis launch', () => {
   const paths = jarvisPaths('C:/data')
@@ -23,6 +23,13 @@ describe('jarvis launch', () => {
   it('points Claude at the local HTTP server with the bearer token', () => {
     expect(JSON.parse(mcpConfigText(4321, 'tok'))).toEqual({
       mcpServers: { sessiondeck: { type: 'http', url: 'http://127.0.0.1:4321/mcp', headers: { Authorization: 'Bearer tok' } } }
+    })
+  })
+
+  it('gives OpenCode the same server as a remote MCP entry plus the instructions file (D54)', () => {
+    expect(jarvisOpencodeConfig(4321, 'tok', 'C:/data/jarvis/system-prompt.md')).toEqual({
+      mcp: { sessiondeck: { type: 'remote', url: 'http://127.0.0.1:4321/mcp', headers: { Authorization: 'Bearer tok' }, enabled: true } },
+      instructions: ['C:/data/jarvis/system-prompt.md']
     })
   })
 

@@ -55,7 +55,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       away: { enabled: false, afterMinutes: 30 },
       reminder: { enabled: false, afterMinutes: 5 },
       code: { worktreesRoot: '', shell: 'pwsh' as const, autoTrustWorktrees: true },
-      jarvis: { model: 'opus' }
+      jarvis: { model: 'opus', agent: 'opencode' as const, opencodeModel: 'opencode/deepseek-v4.1-flash-free' }
     }
     const data = parseStoreData(storeWith(settings))
     expect(data.settings).toEqual(settings)
@@ -71,7 +71,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
   })
 
   it('settings saved before Jarvis existed give Jarvis Sonnet (D53)', () => {
-    expect(parseStoreData(storeWith({ hub: { scrollToBusiest: true } })).settings?.jarvis).toEqual({ model: 'sonnet' })
+    expect(parseStoreData(storeWith({ hub: { scrollToBusiest: true } })).settings?.jarvis).toEqual({ model: 'sonnet', agent: 'claude', opencodeModel: '' })
   })
 
   it('the Jarvis model accepts aliases, full ids and empty, and rejects shell characters', () => {
@@ -81,6 +81,8 @@ describe('parseStoredSettings / parseStoreData settings', () => {
     }
     expect(() => updateSettings(data, { jarvis: { model: 'sonnet & calc' } })).toThrow('jarvis.model')
     expect(parseStoreData(storeWith({ jarvis: { model: 'a|b' } })).settings).toBeUndefined()
+    expect(() => updateSettings(data, { jarvis: { agent: 'shell' as never } })).toThrow()
+    expect(updateSettings(data, { jarvis: { agent: 'opencode', opencodeModel: 'opencode/x-free' } }).settings?.jarvis).toMatchObject({ agent: 'opencode', opencodeModel: 'opencode/x-free' })
   })
 
   it('settings saved before the code section existed get the code defaults', () => {

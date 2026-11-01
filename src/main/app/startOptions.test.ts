@@ -69,6 +69,11 @@ describe('buildStartOptions opencode branch', () => {
     expect(buildOpencodeStartOptions(ocSession({ agent: 'opencode', model: '' }), attention).env.OPENCODE_CONFIG_CONTENT).toBe('{}')
   })
 
+  it('merges extra config keys for Jarvis on OpenCode (D54), next to the model', () => {
+    const opts = buildOpencodeStartOptions(ocSession({ agent: 'opencode', model: 'p/m' }), attention, { mcp: { sessiondeck: { type: 'remote' } }, instructions: ['C:/j/p.md'] })
+    expect(JSON.parse(opts.env.OPENCODE_CONFIG_CONTENT)).toEqual({ model: 'p/m', mcp: { sessiondeck: { type: 'remote' } }, instructions: ['C:/j/p.md'] })
+  })
+
   it('user claudeArgs are validated but NEVER forwarded to opencode (they are Claude flags)', () => {
     const opts = buildOpencodeStartOptions(ocSession({ agent: 'opencode', claudeArgs: ['--continue'] }), attention)
     expect(opts.claudeArgs).toEqual([])

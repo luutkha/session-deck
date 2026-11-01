@@ -106,7 +106,9 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
     autoTrustWorktrees: isBoolean
   },
   jarvis: {
-    model: isJarvisModel
+    model: isJarvisModel,
+    agent: isAgentKind,
+    opencodeModel: isOpencodeModelString
   }
 }
 
@@ -280,6 +282,10 @@ export function settingsProblem(settings: AppSettings): string | null {
   if (typeof settings.launch.resumeRunning !== 'boolean') return 'launch.resumeRunning must be a boolean'
   if (!isJarvisModel(settings.jarvis.model)) {
     return `jarvis.model must be a model name of at most ${JARVIS_MODEL_MAX} characters (letters, digits, ._:[]-), or empty`
+  }
+  if (settings.jarvis.agent !== 'claude' && settings.jarvis.agent !== 'opencode') return 'jarvis.agent must be "claude" or "opencode"'
+  if (!isOpencodeModelString(settings.jarvis.opencodeModel)) {
+    return `jarvis.opencodeModel must be a model id of at most ${MAX_OPENCODE_MODEL_LENGTH} characters (letters, digits, ._:/@+-), or empty`
   }
 
   return null

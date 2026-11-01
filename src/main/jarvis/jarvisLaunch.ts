@@ -11,7 +11,7 @@ export const CONFIRM_TIMEOUT_MS = 120_000
 /** The instructions appended to Jarvis's system prompt; `toolNames` = every tool the MCP server offers. */
 export function jarvisSystemPrompt(toolNames: readonly string[]): string {
   return `You are Jarvis, the assistant built into SessionDeck, a desktop app that runs many Claude Code, OpenCode and shell sessions.
-The user talks to you to control the app. You act through the "${MCP_SERVER_NAME}" MCP tools (mcp__${MCP_SERVER_NAME}__*):
+The user talks to you to control the app. You act through the "${MCP_SERVER_NAME}" MCP tools (in Claude Code: mcp__${MCP_SERVER_NAME}__*):
 ${toolNames.join(', ')}.
 
 How to work:
@@ -38,6 +38,14 @@ export function jarvisPaths(userDataDir: string): { readonly dir: string; readon
 /** The arguments Jarvis is launched with (pure, for tests). */
 export function jarvisLaunchArgs(paths: { readonly mcpConfig: string; readonly prompt: string }, model: string): readonly string[] {
   return ['--mcp-config', paths.mcpConfig, '--append-system-prompt-file', paths.prompt, ...(model.length > 0 ? ['--model', model] : [])]
+}
+
+/** D54: the OPENCODE_CONFIG_CONTENT keys for a Jarvis running on OpenCode (verified with OpenCode 2.1.4). */
+export function jarvisOpencodeConfig(port: number, token: string, promptPath: string): Record<string, unknown> {
+  return {
+    mcp: { [MCP_SERVER_NAME]: { type: 'remote', url: `http://127.0.0.1:${port}${MCP_PATH}`, headers: { Authorization: `Bearer ${token}` }, enabled: true } },
+    instructions: [promptPath]
+  }
 }
 
 export function mcpConfigText(port: number, token: string): string {

@@ -189,7 +189,7 @@ SessionDeck
 │   ├── JRV-2  MCP tool server (local, token, only for Jarvis)
 │   ├── JRV-3  Tools (see / lifecycle / prompts / organize)
 │   ├── JRV-4  Confirm before destructive tools
-│   ├── JRV-5  Jarvis model setting
+│   ├── JRV-5  Jarvis engine + model settings (Claude or OpenCode)
 │   ├── JRV-6  Scheduled instructions
 │   └── JRV-7  Undo
 ├── WRK  OpenCode worker tabs
@@ -455,7 +455,7 @@ SessionDeck
 | JRV-4 | Confirm destructive tools | Shipped | `remove_session`, `remove_worktree`, `remove_group` | Main shows the window and sends `ev:jarvisConfirm`; the main window shows the Orca ConfirmDialog (queue, one at a time); the answer comes back via `jarvis:confirmReply`. No window, Cancel or 120 s without an answer = No, and Jarvis is told nothing changed. | `main/jarvis/jarvisWiring.ts` (`confirm`); `renderer/jarvis/JarvisConfirm.tsx` | `jarvisTools.test.ts`; e2e both Jarvis suites |
 | JRV-6 | Scheduled instructions | Shipped | Ask Jarvis ("every weekday at 9:00 …"); the clock button in the panel header lists them | `schedule_add` / `schedule_list` / `schedule_remove` tools; `<userData>/jarvis/schedules.json` (max 50; instruction ≤2000, label ≤60; local HH:MM; days = every day / weekdays / weekends / names; once). Checked every 30 s; a run more than 15 min late (app closed, PC asleep) is skipped; a run is marked before delivery (never twice), a one-time one is then disabled. Delivery = Jarvis is opened/started and gets "[Scheduled task …] <instruction>" through the same sender as `send_prompt` (queued behind a running Jarvis turn; trust question retried), plus a desktop notice. Panel list: pause / resume / delete (IPC `jarvis:schedules*`, event `ev:jarvisSchedules`). | `main/jarvis/schedules.ts` (pure), `scheduleService.ts`, `jarvisWiring.ts` (`deliver`); `shared/jarvisSchedule.ts`; `renderer/jarvis/JarvisSchedules.tsx` | `schedules.test.ts`, `jarvisTools.test.ts`; e2e `e2e-jarvis.cjs` (tools + list UI), `e2e-jarvis-real.cjs` (a real run 2 min ahead) |
 | JRV-7 | Undo | Shipped | Ask Jarvis ("undo that") → `undo_last_action`; the Undo button in the panel header | In-memory stack (last 20, this run) of inverses recorded by sleep (→ wake), wake (→ sleep, or close for a reopen), close (→ reopen), create_session (→ close), rename, set_status, move_to_group (old group + position), set_notes, set_keep_awake, create_group (→ delete), schedule_add (→ remove), schedule_remove (→ add back). One step per call, newest first; says what it undid and what is next; a gone target is reported, not thrown. Removals and worktree creation are not undoable. | `main/jarvis/jarvisTools.ts` (`pushUndo`, `undoLast`); IPC `jarvis:undo`; `renderer/jarvis/JarvisPanel.tsx` | `jarvisTools.test.ts`; e2e `e2e-jarvis.cjs` |
-| JRV-5 | Jarvis model | Shipped | Settings > Agents "Jarvis model" | `jarvis.model`, default `sonnet`; alias or full id, letters/digits/`._:[]-` only (it reaches cmd.exe), empty = Claude's default. Applies at Jarvis's next start. | `shared/types.ts` (`JarvisSettings`), `main/store/settings.ts`; `renderer/settings/AgentsSection.tsx` | `settings.test.ts`; e2e `e2e-jarvis.cjs` |
+| JRV-5 | Jarvis engine + model | Shipped | Settings > Agents "Jarvis engine", "Jarvis OpenCode model", "Jarvis model (Claude)" | `jarvis.agent` (`claude` default \| `opencode`, D54), `jarvis.opencodeModel` (provider/model, empty = OpenCode default), `jarvis.model` (Claude `--model`, default `sonnet`; letters/digits/`._:[]-` only since it reaches cmd.exe). OpenCode Jarvis gets `mcp.sessiondeck` (type remote, Bearer header) + `instructions: [system-prompt.md]` merged into its `OPENCODE_CONFIG_CONTENT` (`LaunchExtras.opencodeConfig`; verified OpenCode 2.1.4 calls the tools). Changing the engine or the OpenCode model replaces Jarvis with a new conversation on the next open; the Claude model applies at Jarvis's next start. | `shared/types.ts` (`JarvisSettings`), `main/store/settings.ts`; `renderer/settings/AgentsSection.tsx` | `settings.test.ts`; e2e `e2e-jarvis.cjs` |
 
 ### 2.17 SEC — Robustness & security
 
@@ -615,6 +615,7 @@ SessionDeck
 | `hub.scrollToBusiest` | `true` | HUB-6 |
 | `launch.resumeRunning` | `true` | SES-17 |
 | `jarvis.model` | `sonnet` | JRV-5 |
+| `jarvis.agent` / `jarvis.opencodeModel` | `claude` / `''` | JRV-5 |
 | `away.enabled` / `.afterMinutes` | `true` / `15` | TML-5 |
 | `code.worktreesRoot` | `''` (home default) | COD-5 |
 | `code.shell` | `powershell` | AGT-3 |
@@ -628,6 +629,7 @@ SessionDeck
 | `e2e.cjs` | SES-1/2/3, TRM-10, ATT-1 | Smoke: window, create/rename/status, real Claude PTY, hooks → attention, colours, close |
 | `e2e-close.cjs` | SES-6/7/8 | Close / reopen / instant reopen / remove |
 | `e2e-jarvis.cjs` | JRV-1..5 | MCP endpoint (token, every tool), wait/last answer/usage/away tools, Code tools on a temp git repo (add, list, create worktree, changes, remove with Yes), tools on Shell sessions, ambiguity, in-app Yes/No, action log, the panel (Ctrl+Shift+J, tab-bar button, Ops + Code, mode switch, close keeps size, never a tab), palette, settings, reset |
+| `e2e-jarvis-opencode.cjs` | JRV-5 | Real OpenCode, free model: Jarvis on OpenCode creates a session through the tools; switching back gives one new Claude Jarvis |
 | `e2e-jarvis-real.cjs` | JRV-1/3/4/6 | Real Claude (2 prompts + 1 schedule): plain-words create + sleep, remove with the in-app Yes, a one-time schedule 2 min ahead really runs |
 | `e2e-resume.cjs` | SES-12 | Kill + relaunch, same conversation |
 | `e2e-dialogs.cjs` | SES-1/2, SET-1 | New Session + Statuses dialogs through real input; unsafe args rejected |
