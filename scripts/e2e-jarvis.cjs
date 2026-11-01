@@ -1,5 +1,6 @@
 // E2E (D53): Jarvis's tools against the real built app, called over its MCP endpoint exactly the way Claude calls them,
-// plus the UI: the pinned sidebar entry, Ctrl+Shift+J, the in-app Yes/No for destructive tools, palette, settings.
+// plus the UI: the right-side Jarvis panel in Ops and Code mode, Ctrl+Shift+J, the tab-bar button, the in-app Yes/No for
+// destructive tools, palette, settings.
 // The tool calls use Shell sessions (no model, no quota). Ctrl+Shift+J starts the real `claude` for Jarvis in the run's
 // temp profile; no prompt is sent to it. Run: node scripts/e2e-jarvis.cjs   (E2E_SHOT_DIR=<dir> saves screenshots)
 const fs = require('node:fs')
@@ -62,7 +63,8 @@ async function main() {
     t.check('23 tools are offered', names.length === 23, names.join(','))
 
     // ---- the pinned sidebar entry before Jarvis exists
-    t.check('the sidebar shows the Jarvis entry ("Not started")', (await waitFor(() => ev(`document.querySelector('[data-jarvis-state]')?.innerText ?? null`), 5000, 200)) === 'Not started')
+    t.check('the tab bar has the Jarvis button, the panel is not open yet', (await waitFor(() => ev(`!!document.querySelector('[data-jarvis-toggle]') || null`), 5000, 200)) === true &&
+      (await ev(`document.querySelector('[data-jarvis-panel]')?.getAttribute('data-jarvis-panel') ?? 'none'`)) === 'none')
 
     // ---- create + first prompt (a Shell session: no model)
     const created = await tool('create_session', { folder, name: 'jv shell', agent: 'shell', prompt: 'echo JARVIS_WAS_HERE' })
@@ -123,25 +125,54 @@ async function main() {
     const logged = await waitFor(() => (fs.existsSync(logFile) && fs.readFileSync(logFile, 'utf8').includes('remove_session') ? fs.readFileSync(logFile, 'utf8') : null), 3000, 200)
     t.check('actions are written to <userData>/jarvis/actions.log', !!logged && logged.includes('create_session') && logged.includes('sleep_session'))
 
-    // ---- Ctrl+Shift+J opens Jarvis (real claude, no prompt)
+    // ---- Ctrl+Shift+J opens the Jarvis panel over the current session (real claude, no prompt)
+    const panelState = () => ev(`document.querySelector('[data-jarvis-panel]')?.getAttribute('data-jarvis-panel') ?? 'none'`)
+    const pressJ = async () => {
+      await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'J', code: 'KeyJ', windowsVirtualKeyCode: 74, modifiers: CTRL | SHIFT })
+      await app.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'J', code: 'KeyJ', windowsVirtualKeyCode: 74, modifiers: CTRL | SHIFT })
+      await sleep(300)
+    }
+    const modeButton = (label) => `[...document.querySelectorAll('[aria-label=Mode] button, [aria-label=Mode] [role=radio]')].find((b) => b.innerText.trim().startsWith(${js(label)}))`
+    const tabBefore = await ev(`document.querySelector('[role=tab][aria-selected=true]')?.getAttribute('data-tab-id') ?? null`)
     await ev('document.activeElement && document.activeElement.blur(); true')
-    await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'J', code: 'KeyJ', windowsVirtualKeyCode: 74, modifiers: CTRL | SHIFT })
-    await app.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'J', code: 'KeyJ', windowsVirtualKeyCode: 74, modifiers: CTRL | SHIFT })
+    await pressJ()
+    t.check('Ctrl+Shift+J opens the Jarvis panel', (await waitFor(async () => (await panelState()) === 'open' || null, 5000, 200)) === true)
     const jarvis = await waitFor(async () => (await store()).data.sessions.find((s) => s.role === 'jarvis') ?? null, 10000, 300)
-    t.check('Ctrl+Shift+J creates the Jarvis session (named Jarvis, in <userData>/jarvis)', !!jarvis && jarvis.name === 'Jarvis' && jarvis.cwd === path.join(app.userData, 'jarvis'))
-    t.check('...and shows it in a tab', !!(await waitFor(async () => (await ev(`document.querySelector('[role=tab][aria-selected=true]')?.getAttribute('data-tab-id') ?? null`)) === jarvis.id, 6000, 200)))
-    t.check('...the sidebar entry is highlighted', (await waitFor(() => ev(`document.querySelector('[data-jarvis-entry]')?.getAttribute('aria-pressed') === 'true' || null`), 5000, 200)) === true)
-    t.check('Jarvis is not listed among the sidebar sessions', !(await ev(`[...document.querySelectorAll('[role=treeitem]')].some((n) => n.innerText.trim().startsWith('Jarvis'))`)))
+    t.check('...creating the Jarvis session (named Jarvis, in <userData>/jarvis)', !!jarvis && jarvis.name === 'Jarvis' && jarvis.cwd === path.join(app.userData, 'jarvis'))
+    const panelBox = await waitFor(() => ev(`(() => { const p = document.querySelector('[data-jarvis-panel=open]'); const x = p?.querySelector('.xterm'); if (!p || !x) return null; const a = p.getBoundingClientRect(); const b = x.getBoundingClientRect(); return { right: Math.round(a.right), left: Math.round(a.left), win: window.innerWidth, xw: Math.round(b.width), xh: Math.round(b.height) } })()`), 10000, 300)
+    t.check('...on the right side, over the page, with a sized terminal', !!panelBox && panelBox.right === panelBox.win && panelBox.left > panelBox.win / 4 && panelBox.xw > 200 && panelBox.xh > 200, js(panelBox))
+    t.check('...without opening a tab: the session on screen stays the same', (await ev(`document.querySelector('[role=tab][aria-selected=true]')?.getAttribute('data-tab-id') ?? null`)) === tabBefore)
+    t.check('Jarvis is never a tab or a sidebar card', !(await ev(`[...document.querySelectorAll('[role=tab]')].some((n) => n.getAttribute('data-tab-id') === ${js(jarvis.id)})`)) &&
+      !(await ev(`[...document.querySelectorAll('[role=treeitem]')].some((n) => n.innerText.trim().startsWith('Jarvis'))`)))
+    t.check('the tab-bar button shows the panel is open', (await ev(`document.querySelector('[data-jarvis-toggle]')?.getAttribute('aria-pressed')`)) === 'true')
     const ready = await waitFor(async () => {
       const s = strip((await ev(`window.api.ptyReplay(${js(jarvis.id)})`)).data).slice(-3000)
       return /bypass\s*permissions/i.test(s) ? s : null
     }, 60000, 1000)
     t.check('Jarvis\'s Claude starts past the folder-trust question by itself', !!ready)
+    t.check('the panel draws the terminal (WebGL canvas, no DOM text to read)', !!(await waitFor(() => ev(`(() => { const c = document.querySelector('[data-jarvis-panel] .xterm-screen canvas'); return c && c.getBoundingClientRect().height > 100 ? true : null })()`), 10000, 300)))
+    await shot('jarvis-panel-ops')
+
+    // ---- Code mode: the panel stays open across the mode switch and works there too
+    await click(modeButton('Code'), 'Code mode')
+    await sleep(800)
+    t.check('switching to Code mode keeps the panel open', (await panelState()) === 'open' && !!(await ev(`!!document.querySelector('[data-jarvis-panel=open] .xterm')`)))
+    await shot('jarvis-panel-code')
+    await click(`document.querySelector('[data-jarvis-toggle]')`, 'Jarvis button (Code)')
+    t.check('Code mode has the Jarvis button; it closes the panel', (await waitFor(async () => (await panelState()) === 'closed' || null, 3000, 200)) === true)
+    const kept = await ev(`(() => { const x = document.querySelector('[data-jarvis-panel] .xterm'); return x ? Math.round(x.getBoundingClientRect().width) : 0 })()`)
+    t.check('closing keeps the terminal at its size (no redraw at a tiny width)', kept > 200, String(kept))
+    await pressJ()
+    t.check('Ctrl+Shift+J opens it again in Code mode', (await waitFor(async () => (await panelState()) === 'open' || null, 3000, 200)) === true)
+    await pressJ()
+    t.check('...and closes it', (await waitFor(async () => (await panelState()) === 'closed' || null, 3000, 200)) === true)
+    await click(modeButton('Ops'), 'Ops mode')
+    await sleep(500)
+
     const again = await ev('window.api.openJarvis()')
     t.check('opening Jarvis again reuses the same session', again.id === jarvis.id && (await store()).data.sessions.filter((s) => s.role === 'jarvis').length === 1)
     const self = await tool('close_session', { session: 'Jarvis' })
     t.check('Jarvis\'s tools cannot act on Jarvis', self.error && /No session matches "Jarvis"/.test(self.text), self.text)
-    await shot('jarvis-open')
 
     // ---- palette and settings
     await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'K', code: 'KeyK', windowsVirtualKeyCode: 75, modifiers: CTRL | SHIFT })

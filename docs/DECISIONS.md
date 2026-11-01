@@ -233,6 +233,7 @@ The user: "i want a session of AI can help to to create/close/sleep/reconnect or
 - **Model:** Sonnet by default, changeable in Settings > Jarvis.
 - **Destructive actions are included** (remove a session, a worktree, a group); each one asks the user Yes/No in an in-app dialog first. Jarvis cannot act on itself.
 - **Voice:** skipped for now.
+- **2026-11-01 feedback (supersedes "pinned at the top of the sidebar"):** "i dont see jarvis on code-change mode, and jarvis should live on the right side bar, overlay in all session". Jarvis is now a right-side panel that floats over whatever is on screen, in Ops AND Code mode (and the Code window); it stays open across session, tab and mode switches. Opened with Ctrl+Shift+J, the Jarvis button at the right of the tab bar, or the palette. It is no longer a tab or a sidebar entry. The panel width is resizable.
 
 ### Suggested but not chosen (offer again only if relevant)
 Prompt queue ("send when finished"), session presets, changes/diff panel per session (offered 2026-10-22, not picked), copy Remote Control link, broadcast a prompt to several sessions, per-session cost view, auto-reopen sessions on launch, search inside conversation history, fork a session, light theme, code signing, auto-update.

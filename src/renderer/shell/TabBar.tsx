@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactElement } from 'react'
-import { Columns2, LayoutDashboard, LayoutGrid, NotebookPen, PanelLeft, Plus } from 'lucide-react'
+import { Bot, Columns2, LayoutDashboard, LayoutGrid, NotebookPen, PanelLeft, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -15,6 +15,7 @@ import { Tab } from './Tab'
 import { TitleBarRegion } from './TitleBarRegion'
 import { WorkerTabs, type WorkerTabsProps } from '../workers/WorkerTabs'
 import type { TabModel } from './tabStatus'
+import { toggleJarvisPanel, useJarvisPanelOpen } from '../jarvis/jarvisPanelStore'
 
 export interface TabBarSplit {
   /** A split layout (2+ panes) is currently shown. */
@@ -67,6 +68,7 @@ function findTabElement(strip: HTMLElement | null, id: Id): HTMLElement | null {
 export function TabBar(props: TabBarProps): ReactElement {
   const { tabs, activeId, sidebarCollapsed, onShowSidebar, onNewSession } = props
   const stripRef = useRef<HTMLDivElement | null>(null)
+  const jarvisOpen = useJarvisPanelOpen()
 
   // Keep the active tab visible when it changes (keyboard cycling, new tabs, sidebar picks).
   useEffect((): void => {
@@ -260,6 +262,27 @@ export function TabBar(props: TabBarProps): ReactElement {
           </TooltipTrigger>
           <TooltipContent side="bottom" sideOffset={6}>
             New session
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      <div className="app-no-drag flex shrink-0 items-center border-l border-border px-1.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="xs"
+              className={cn('gap-1 px-1.5 text-muted-foreground', jarvisOpen && 'bg-accent text-foreground')}
+              aria-label="Jarvis"
+              aria-pressed={jarvisOpen}
+              data-jarvis-toggle=""
+              onClick={toggleJarvisPanel}
+            >
+              <Bot size={14} aria-hidden="true" />
+              <span className="text-[12px]">Jarvis</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={6}>
+            Jarvis controls SessionDeck for you (Ctrl+Shift+J)
           </TooltipContent>
         </Tooltip>
       </div>

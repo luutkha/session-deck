@@ -100,16 +100,15 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     if (!started) throw new Error('Jarvis is not ready yet.')
     const existing = findJarvis()
     if (existing !== undefined) {
+      // The panel shows a running Jarvis: a closed one is reopened, a sleeping one woken, a stopped one started.
+      const state = deps.tools.getRuntime(existing.id)
       if (existing.closedAt !== undefined) deps.controller.reopenSession(existing.id)
+      else if (state?.sleeping === true) deps.controller.wakeSession(existing.id)
+      else if (state === undefined || state.run !== 'running') deps.controller.resumeInBackground(existing.id)
       return deps.store.get().sessions.find((s) => s.id === existing.id) ?? existing
     }
     await mkdir(paths.dir, { recursive: true })
     return deps.controller.createSession({ cwd: paths.dir, name: JARVIS_NAME, agent: 'claude', claudeArgs: [], role: 'jarvis' })
-  }
-
-  function show(session: Session): Session {
-    deps.tools.openSession(session.id)
-    return session
   }
 
   async function resetJarvis(): Promise<Session> {
@@ -139,9 +138,9 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     },
 
     registerIpc(): void {
-      // The session is shown by main (a focus request), which also switches the window to Ops mode when needed.
-      ipcMain.handle(IPC.jarvisOpen, async (): Promise<Session> => serial(async () => show(await openJarvis())))
-      ipcMain.handle(IPC.jarvisReset, async (): Promise<Session> => serial(async () => show(await resetJarvis())))
+      // The renderer shows Jarvis in its own panel (D53); main only makes sure the session exists and runs.
+      ipcMain.handle(IPC.jarvisOpen, async (): Promise<Session> => serial(openJarvis))
+      ipcMain.handle(IPC.jarvisReset, async (): Promise<Session> => serial(resetJarvis))
       ipcMain.handle(IPC.jarvisConfirmReply, async (_event, rawId: unknown, rawYes: unknown): Promise<void> => {
         answer(assertNonEmptyString(rawId, 'request id'), assertBoolean(rawYes, 'yes'))
       })

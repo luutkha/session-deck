@@ -18,6 +18,8 @@ import { useUiMode } from './mode/useUiMode'
 import type { FocusRequest } from './mode/useWorkspaceNav'
 import { JarvisConfirm } from './jarvis/JarvisConfirm'
 import { useJarvisShortcut } from './jarvis/useJarvisShortcut'
+import { JarvisPanel } from './jarvis/JarvisPanel'
+import { openJarvisPanel } from './jarvis/jarvisPanelStore'
 import './styles.css'
 
 /** Plays the user's notification sounds. Mounted in the main window only, so a sound is never played twice. */
@@ -33,7 +35,7 @@ export function App(): ReactElement {
   const ui = useUiMode()
   const away = useAwaySummary()
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null)
-  // A focus request for a session this window has not received yet (just created in main, e.g. Jarvis, D53).
+  // A focus request for a session this window has not received yet (just created in main).
   const [pendingFocus, setPendingFocus] = useState<Id | null>(null)
   const isMain = ui.role === 'main'
   useJarvisShortcut()
@@ -46,6 +48,11 @@ export function App(): ReactElement {
       return
     }
     setPendingFocus(null)
+    // Jarvis (D53) is in no mode: it is shown in its panel.
+    if (session.role === 'jarvis') {
+      openJarvisPanel()
+      return
+    }
     const decision = decideFocus(ui.mode, sessionMode(session), ui.codePoppedOut)
     if (decision.switchTo !== undefined) ui.setMode(decision.switchTo)
     setFocusRequest({ id })
@@ -82,6 +89,7 @@ export function App(): ReactElement {
         onShowAwaySummary={away.showLast}
       />
       {isMain ? <AttentionSoundPlayer /> : null}
+      <JarvisPanel data={store.data} runtime={store.runtime} />
       {isMain ? <JarvisConfirm /> : null}
       {isMain ? <AwayDialog summary={away.summary} onOpenSession={requestFocus} onClose={away.close} /> : null}
       <QuotaToast />

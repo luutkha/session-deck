@@ -1,4 +1,4 @@
-import { Bot, LayoutDashboard, Plus, Search } from 'lucide-react'
+import { LayoutDashboard, Plus, Search } from 'lucide-react'
 import { useEffect, useRef, type ReactElement } from 'react'
 import type { Id } from '../../shared/types'
 import { Button } from '../components/ui/button'
@@ -15,19 +15,7 @@ export interface SidebarNavProps {
   /** Opens the Hub board (sessions by status). Omitted = no Hub entry. */
   readonly onOpenHub?: () => void
   readonly hubActive?: boolean
-  /** D53: the pinned Jarvis entry. Omitted = none. */
-  readonly jarvis?: JarvisNavEntry
 }
-
-export interface JarvisNavEntry {
-  /** Short state ("Ready", "Working…", "Not started"...). */
-  readonly state: string
-  readonly active: boolean
-  readonly working: boolean
-  readonly onOpen: () => void
-}
-
-const KBD = 'rounded border border-sidebar-border/80 bg-worktree-sidebar-accent px-1 py-px text-[9px] tracking-tight shadow-none'
 
 export function SidebarNav(props: SidebarNavProps): ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -72,33 +60,6 @@ export function SidebarNav(props: SidebarNavProps): ReactElement {
         >
           <LayoutDashboard className="size-4 shrink-0 text-sidebar-foreground/40" strokeWidth={1.75} aria-hidden="true" />
           <span className="flex-1 text-left">Hub</span>
-        </Button>
-      )}
-      {props.jarvis !== undefined && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={props.jarvis.onOpen}
-          aria-label="Open Jarvis"
-          aria-pressed={props.jarvis.active}
-          data-jarvis-entry=""
-          title="Jarvis controls SessionDeck for you: ask it to create, sleep, wake, close sessions or send them prompts."
-          className={cn(
-            'h-7 w-full justify-start gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium tracking-tight hover:bg-worktree-sidebar-accent hover:text-worktree-sidebar-accent-foreground',
-            props.jarvis.active ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground' : 'text-sidebar-foreground/70'
-          )}
-        >
-          <Bot className={cn('size-4 shrink-0 text-sidebar-foreground/40', props.jarvis.working && 'text-sky-400 motion-safe:animate-pulse')} strokeWidth={1.75} aria-hidden="true" />
-          <span className="text-left">Jarvis</span>
-          <span className="truncate text-[11px] font-normal text-sidebar-foreground/40" data-jarvis-state="">{props.jarvis.state}</span>
-          <span className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-sidebar-foreground/40">
-            <span className={KBD}>Ctrl</span>
-            <span className="text-[9px]">+</span>
-            <span className={KBD}>Shift</span>
-            <span className="text-[9px]">+</span>
-            <span className={KBD}>J</span>
-          </span>
         </Button>
       )}
       <div

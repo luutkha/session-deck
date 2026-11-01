@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react'
 import type { Id, RuntimeState, Session, StoreData, UiMode, WindowRole } from '../../shared/types'
 import { buildPaletteItems, type PaletteCommand, type PaletteItem } from '../palette/paletteItems'
 import { runPaletteCommand } from '../palette/runCommand'
+import { openJarvisPanel } from '../jarvis/jarvisPanelStore'
 import { usePaletteShortcut } from '../palette/usePaletteShortcut'
 import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SessionActions } from '../state/useSessionStore'
@@ -119,9 +120,12 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       showAwaySummary: input.onShowAwaySummary,
       showCosts: (): void => setCostsOpen(true),
       searchConversations: (): void => setSearchOpen(true),
-      // D53: main shows Jarvis itself (a focus request, which also switches the mode when needed).
-      openJarvis: async (): Promise<void> => { await window.api.openJarvis() },
-      resetJarvis: async (): Promise<void> => { await window.api.resetJarvis() },
+      // D53: Jarvis lives in this window's right-side panel.
+      openJarvis: openJarvisPanel,
+      resetJarvis: async (): Promise<void> => {
+        openJarvisPanel()
+        await window.api.resetJarvis()
+      },
       forkSession,
       setStatus: (id, statusId): void | Promise<void> => actions.setSessionStatus(id, statusId),
       switchMode: input.onSwitchMode,

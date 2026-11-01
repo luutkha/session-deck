@@ -63,6 +63,12 @@ describe('otherMode', () => {
 })
 
 describe('dataForMode', () => {
+  it('leaves Jarvis out of both modes (it lives in its own panel, D53)', () => {
+    const data = store([session({ id: 'a' }), session({ id: 'j', role: 'jarvis' })])
+    expect(dataForMode(data, 'ops').sessions.map((s) => s.id)).toEqual(['a'])
+    expect(dataForMode(data, 'code').sessions).toEqual([])
+  })
+
   it('keeps every field of the store and filters only the sessions', () => {
     const data = store([session({ id: 'a' })])
     const ops = dataForMode(data, 'ops')

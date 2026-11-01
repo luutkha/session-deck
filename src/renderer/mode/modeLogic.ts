@@ -34,9 +34,12 @@ export function otherMode(mode: UiMode): UiMode {
   return mode === 'ops' ? 'code' : 'ops'
 }
 
-/** The store as one mode sees it: every field kept, sessions limited to that mode. */
+/**
+ * The store as one mode sees it: every field kept, sessions limited to that mode. Jarvis (D53) belongs to no mode:
+ * it lives in its own panel, so it is never a tab, a sidebar card, a Hub card or a needs-you item.
+ */
 export function dataForMode(data: StoreData, mode: UiMode): StoreData {
-  return { ...data, sessions: data.sessions.filter((session: Session): boolean => sessionMode(session) === mode) }
+  return { ...data, sessions: data.sessions.filter((session: Session): boolean => session.role !== 'jarvis' && sessionMode(session) === mode) }
 }
 
 /** Ops keeps the base key (so existing users keep their state); Code gets its own key. */

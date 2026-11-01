@@ -185,7 +185,7 @@ SessionDeck
 │   ├── PAL-3  Filtering and ranking
 │   └── PAL-4  Command execution and focus return
 ├── JRV  Jarvis (AI that controls the app)
-│   ├── JRV-1  Jarvis session (pinned entry, Ctrl+Shift+J, palette)
+│   ├── JRV-1  Jarvis session + right-side panel (Ops and Code, Ctrl+Shift+J, tab-bar button, palette)
 │   ├── JRV-2  MCP tool server (local, token, only for Jarvis)
 │   ├── JRV-3  Tools (see / lifecycle / prompts / organize)
 │   ├── JRV-4  Confirm before destructive tools
@@ -447,7 +447,7 @@ SessionDeck
 
 | ID | Feature | Status | Trigger / entry | Rules (must-know) | Code | Tests |
 |---|---|---|---|---|---|---|
-| JRV-1 | Jarvis session | Shipped | Sidebar entry under Hub (Ops), `Ctrl+Shift+J` anywhere, palette "Open Jarvis" / "Jarvis: start a new conversation" | ONE Claude session with `Session.role = 'jarvis'` (only main can create it: IPC `session:create` rejects `role`). Created on first open in `<userData>/jarvis` (name "Jarvis"); a closed one is reopened; open/reset are serialized in main and shown by a focus request (switches to Ops). Its folder-trust question is always answered (Down, then Enter). It is left out of the sidebar lists and the Hub board (`withoutJarvis`), stays a normal tab/terminal. "New conversation" removes it and creates a fresh one. | `main/jarvis/jarvisWiring.ts`; `renderer/jarvis/*`; `Sidebar/SidebarNav.tsx`, `Sidebar.tsx`; `App.tsx` (shortcut, pending focus) | `jarvisLogic.test.ts`, `sessionController.test.ts` (trust), `persistence.test.ts`, `ipcValidation.test.ts`; e2e `e2e-jarvis.cjs`, `e2e-jarvis-real.cjs` |
+| JRV-1 | Jarvis session + panel | Shipped | `Ctrl+Shift+J` (toggle), the Jarvis button at the right of the tab bar (both modes), palette "Open Jarvis" / "Jarvis: start a new conversation" | ONE Claude session with `Session.role = 'jarvis'` (only main can create it: IPC `session:create` rejects `role`), created on first open in `<userData>/jarvis` (name "Jarvis"); `jarvis:open` creates, reopens, wakes or starts it (serialized in main, no focus request). Shown ONLY in a right-side overlay panel (per window, mounted by `App` outside the mode workspace: stays open across session, tab and Ops/Code switches), never as a tab, sidebar card, Hub card or needs-you item (`dataForMode` filters it). Terminal created on first open, slid out (not resized) on close; width drag-resizable 340 px..75% of the window, remembered. Main counts it as always on screen (no ping/bell, never auto-slept). Its folder-trust question is always answered (Down, then Enter). "New conversation" removes it and creates a fresh one. | `main/jarvis/jarvisWiring.ts`; `main/index.ts` (`onScreenSessionIds`); `renderer/jarvis/JarvisPanel.tsx`, `jarvisPanelStore.ts`, `jarvisLogic.ts`, `useJarvisShortcut.ts`; `shell/TabBar.tsx`; `mode/modeLogic.ts` → `dataForMode`; `App.tsx` | `jarvisLogic.test.ts`, `sessionController.test.ts` (trust), `persistence.test.ts`, `ipcValidation.test.ts`; e2e `e2e-jarvis.cjs`, `e2e-jarvis-real.cjs` |
 | JRV-2 | MCP tool server | Shipped | App start (before resume-on-launch) | `POST /mcp` on `127.0.0.1:<random>`, `Authorization: Bearer <per-run token>`, JSON-RPC 2.0 (initialize, ping, tools/list, tools/call), plain JSON answers, notifications 202, GET 405, 1 MB body cap. `<userData>/jarvis/mcp.json` + `system-prompt.md` are rewritten each run. Only Jarvis is launched with `--mcp-config <mcp.json> --append-system-prompt-file <prompt> --model <m>` (via `SessionControllerDeps.extraClaudeArgs`); the user's `~/.claude` is never changed. | `main/jarvis/mcpProtocol.ts`, `mcpHttpServer.ts`, `jarvisLaunch.ts`; `main/app/startOptions.ts` (`extraArgs`); `main/index.ts` | `mcpProtocol.test.ts`, `mcpHttpServer.test.ts`, `jarvisLaunch.test.ts`; e2e `e2e-jarvis.cjs` |
 | JRV-3 | Tools | Shipped | Jarvis calls them | 23 tools: `list_sessions`, `read_screen` (pty replay drawn in `@xterm/headless`), `get_activity`, `search_conversations`, `create_session` (folder or preset, optional first prompt), `send_prompt` (auto: wake/start if needed, type when the screen settled, queue while working; now; queue), `broadcast_prompt`, `press_keys`, `sleep_session`, `wake_session` (sleeping→wake, stopped→start, closed→reopen), `restart_session`, `close_session`, `fork_session`, `remove_session`, `remove_worktree`, `rename_session`, `set_status`, `move_to_group`, `create_group`, `remove_group`, `set_notes`, `set_keep_awake`, `open_session`. Same controller/store/queue paths as the UI. Names resolve by id, exact name, or a unique part; ambiguity is an error listing candidates; Jarvis is never a target. Typing never goes into a folder-trust question. Every action is appended to `<userData>/jarvis/actions.log` (reset past 1 MB). | `main/jarvis/jarvisTools.ts`, `targets.ts`, `screenText.ts` | `jarvisTools.test.ts`, `targets.test.ts`, `screenText.test.ts`; e2e `e2e-jarvis.cjs` (shell sessions), `e2e-jarvis-real.cjs` |
 | JRV-4 | Confirm destructive tools | Shipped | `remove_session`, `remove_worktree`, `remove_group` | Main shows the window and sends `ev:jarvisConfirm`; the main window shows the Orca ConfirmDialog (queue, one at a time); the answer comes back via `jarvis:confirmReply`. No window, Cancel or 120 s without an answer = No, and Jarvis is told nothing changed. | `main/jarvis/jarvisWiring.ts` (`confirm`); `renderer/jarvis/JarvisConfirm.tsx` | `jarvisTools.test.ts`; e2e both Jarvis suites |
@@ -577,7 +577,7 @@ SessionDeck
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab | Anywhere | TAB-3 |
 | `Ctrl+K` | Command palette | Outside terminal and text inputs | PAL-1 |
 | `Ctrl+Shift+K` | Command palette | Anywhere except over a dialog | PAL-1 |
-| `Ctrl+Shift+J` | Open Jarvis | Anywhere except over a dialog (plain `Ctrl+J` stays a newline for Claude) | JRV-1 |
+| `Ctrl+Shift+J` | Open / close the Jarvis panel | Anywhere, both modes, except over a dialog (plain `Ctrl+J` stays a newline for Claude) | JRV-1 |
 | `Ctrl+C` / `Ctrl+Shift+C` / `Ctrl+V` | Copy / copy / paste | Terminal | TRM-3 |
 | `Ctrl+Shift+F` | Find in the terminal (visible pane) | Terminal / grid view | TRM-12 |
 | `↑` / `↓`, `Enter`, `Delete` | Sidebar navigation | Sidebar focused | NAV-9 |
@@ -620,7 +620,7 @@ SessionDeck
 |---|---|---|
 | `e2e.cjs` | SES-1/2/3, TRM-10, ATT-1 | Smoke: window, create/rename/status, real Claude PTY, hooks → attention, colours, close |
 | `e2e-close.cjs` | SES-6/7/8 | Close / reopen / instant reopen / remove |
-| `e2e-jarvis.cjs` | JRV-1..5 | MCP endpoint (token, 23 tools), tools on Shell sessions, ambiguity, in-app Yes/No, action log, Ctrl+Shift+J, palette, settings, reset |
+| `e2e-jarvis.cjs` | JRV-1..5 | MCP endpoint (token, 23 tools), tools on Shell sessions, ambiguity, in-app Yes/No, action log, the panel (Ctrl+Shift+J, tab-bar button, Ops + Code, mode switch, close keeps size, never a tab), palette, settings, reset |
 | `e2e-jarvis-real.cjs` | JRV-1/3/4 | Real Claude (2 prompts): plain-words create + sleep, remove with the in-app Yes |
 | `e2e-resume.cjs` | SES-12 | Kill + relaunch, same conversation |
 | `e2e-dialogs.cjs` | SES-1/2, SET-1 | New Session + Statuses dialogs through real input; unsafe args rejected |

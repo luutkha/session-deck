@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RuntimeState, Session, StoreData } from '../../shared/types'
-import { findJarvis, isJarvisShortcut, jarvisRowState, withoutJarvis } from './jarvisLogic'
+import { clampJarvisWidth, findJarvis, isJarvisShortcut, JARVIS_WIDTH_DEFAULT, JARVIS_WIDTH_MIN, jarvisRowState, parseJarvisWidth } from './jarvisLogic'
 
 const session = (id: string, extra: Partial<Session> = {}): Session => ({
   id, name: id, cwd: 'C:/p', groupId: null, statusId: null, order: 0, createdAt: 0, claudeArgs: [], ...extra
@@ -10,12 +10,22 @@ const key = (k: string, extra: Partial<{ ctrlKey: boolean; shiftKey: boolean; al
   ({ key: k, ctrlKey: true, shiftKey: true, altKey: false, metaKey: false, ...extra })
 
 describe('jarvisLogic', () => {
-  it('finds Jarvis and leaves it out of the lists', () => {
+  it('finds Jarvis', () => {
     expect(findJarvis(data)?.id).toBe('j')
-    expect(withoutJarvis(data).sessions.map((s) => s.id)).toEqual(['a'])
-    const plain = { ...data, sessions: [session('a')] }
-    expect(withoutJarvis(plain)).toBe(plain)
+    expect(findJarvis({ ...data, sessions: [session('a')] })).toBeNull()
     expect(findJarvis(null)).toBeNull()
+  })
+
+  it('keeps the panel width between the minimum and 75% of the window', () => {
+    expect(clampJarvisWidth(600, 1600)).toBe(600)
+    expect(clampJarvisWidth(100, 1600)).toBe(JARVIS_WIDTH_MIN)
+    expect(clampJarvisWidth(1500, 1600)).toBe(1200)
+    expect(clampJarvisWidth(Number.NaN, 1600)).toBe(JARVIS_WIDTH_DEFAULT)
+    expect(clampJarvisWidth(500, 300)).toBe(JARVIS_WIDTH_MIN)
+    expect(parseJarvisWidth('640')).toBe(640)
+    expect(parseJarvisWidth(null)).toBe(JARVIS_WIDTH_DEFAULT)
+    expect(parseJarvisWidth('wide')).toBe(JARVIS_WIDTH_DEFAULT)
+    expect(parseJarvisWidth('10')).toBe(JARVIS_WIDTH_DEFAULT)
   })
 
   it('opens on Ctrl+Shift+J only, never over a dialog', () => {

@@ -33,10 +33,10 @@ async function main() {
       await sleep(400)
     }
 
-    // ---- open Jarvis from the sidebar entry
-    await click(`document.querySelector('[data-jarvis-entry]')`, 'Jarvis entry')
+    // ---- open the Jarvis panel from the tab-bar button
+    await click(`document.querySelector('[data-jarvis-toggle]')`, 'Jarvis button')
     const jarvis = await waitFor(async () => (await store()).data.sessions.find((s) => s.role === 'jarvis') ?? null, 10000, 300)
-    t.check('clicking the sidebar entry opens Jarvis', !!jarvis)
+    t.check('the Jarvis button opens the panel with Jarvis', !!jarvis && (await ev(`document.querySelector('[data-jarvis-panel]')?.getAttribute('data-jarvis-panel')`)) === 'open')
     const ready = await waitFor(async () => /bypass\s*permissions/i.test(strip((await ev(`window.api.ptyReplay(${js(jarvis.id)})`)).data).slice(-3000)), 90000, 1000)
     t.check('Jarvis\'s Claude is ready (folder trust answered by itself)', !!ready)
     await sleep(2500)

@@ -284,9 +284,14 @@ if (!gotTheLock) {
       }
     })
 
-    /** Every session visible in an OPEN window: main and Code can show different sessions. */
+    /**
+     * Every session visible in an OPEN window: main and Code can show different sessions. Jarvis (D53) always counts:
+     * it is the user's own assistant panel, so it never pings, never shows a bell and is never put to sleep.
+     */
     function onScreenSessionIds(): ReadonlySet<string> {
-      return new Set(activeSessions.all())
+      const ids = new Set(activeSessions.all())
+      for (const session of store.get().sessions) if (session.role === 'jarvis') ids.add(session.id)
+      return ids
     }
 
     /** A session the user can see right now (in any open window): its bell still shows, but it never pings. */
