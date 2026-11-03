@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactElement } from 'react'
-import { Bot, Columns2, LayoutDashboard, LayoutGrid, NotebookPen, PanelLeft, Plus } from 'lucide-react'
+import { Bot, Columns2, LayoutDashboard, LayoutGrid, NotebookPen, PanelLeft, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -34,6 +34,8 @@ export interface TabBarGrid {
   readonly active: boolean
   readonly preset: string | null
   readonly onOpenGrid: (preset: string) => void
+  /** D55: back to the single terminal view (shown while the grid is on). */
+  readonly onExitGrid: () => void
 }
 
 export interface TabBarProps {
@@ -201,8 +203,35 @@ export function TabBar(props: TabBarProps): ReactElement {
                   {preset}
                 </DropdownMenuItem>
               ))}
+              {props.grid.active ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem data-grid-exit="" onSelect={(): void => props.grid?.onExitGrid()}>
+                    Exit grid
+                  </DropdownMenuItem>
+                </>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
+          {props.grid.active ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="text-muted-foreground"
+                  aria-label="Exit grid"
+                  data-grid-exit-button=""
+                  onClick={(): void => props.grid?.onExitGrid()}
+                >
+                  <X size={14} aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={6}>
+                Exit grid (back to one terminal)
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
       )}
       {props.split !== undefined && (

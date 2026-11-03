@@ -38,6 +38,8 @@ export interface WorkspaceNav {
   readonly selectSession: (id: Id) => void
   readonly reopenSession: (id: Id) => void
   readonly activateTab: (id: Id) => void
+  /** D55: leaves the grid for the single terminal view; the focused cell's session stays on screen. */
+  readonly exitGrid: () => void
   /** A session was created: open and activate its tab. */
   readonly openCreated: (sessionId: Id) => void
   readonly notesOpen: boolean
@@ -116,6 +118,15 @@ export function useWorkspaceNav(options: WorkspaceNavOptions): WorkspaceNav {
     tabs.activate(id)
   }, [grid, keys.view, split, tabs.activate, workers.select])
 
+  const exitGrid = useCallback((): void => {
+    const focused = grid.activeId
+    setView('terminal')
+    if (focused !== null) {
+      split.showInPane(focused)
+      tabs.activate(focused)
+    }
+  }, [grid.activeId, setView, split, tabs.activate])
+
   const openCreated = useCallback((sessionId: Id): void => {
     setView('terminal')
     tabs.open(sessionId)
@@ -136,6 +147,7 @@ export function useWorkspaceNav(options: WorkspaceNavOptions): WorkspaceNav {
     selectSession,
     reopenSession,
     activateTab,
+    exitGrid,
     openCreated,
     notesOpen,
     toggleNotes,

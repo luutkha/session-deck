@@ -12,6 +12,8 @@ export interface PaletteHandlers {
   readonly newFromPreset: (presetId: Id) => void | Promise<void>
   readonly openHub: () => void
   readonly openGrid: () => void
+  /** D55: leaves the grid view. */
+  readonly exitGrid: () => void
   readonly openSettings: () => void
   readonly showAwaySummary: () => void
   /** D51: opens the cost report. */
@@ -71,6 +73,8 @@ function runSessionCommand(
       return attempt(command, () => handlers.openHub())
     case 'open-grid':
       return attempt(command, () => handlers.openGrid())
+    case 'exit-grid':
+      return attempt(command, () => handlers.exitGrid())
     case 'open-settings':
       return attempt(command, () => handlers.openSettings())
     case 'show-away-summary':

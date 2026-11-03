@@ -33,10 +33,10 @@ Feature domains (IDs in `FEATURES.md`):
 | Domain | In short |
 |---|---|
 | SES sessions | create/rename/status/move, close & reopen, sleep & wake, keep awake, restart, conversation resume, resume on launch (D50), prompt queue (D47), presets (D49), fork (D52), conversation search (D52) |
-| TRM terminal | xterm WebGL + node-pty ConPTY, copy/paste/right-click rules (D21), image paste and file drop, links (D12), split panes, grid (D32), zoom/scrollback, search (D41) |
+| TRM terminal | xterm WebGL + node-pty ConPTY, copy/paste/right-click rules (D21), image paste and file drop, links (D12), split panes, grid with Exit grid (D32/D55), zoom/scrollback, search (D41) |
 | NAV sidebar | groups, workspaces by folder (D20), group-by status, search/filter, keyboard, bulk select + actions incl. broadcast prompt (D42/D48) |
 | ATT attention | Stop/Notification hooks only (D11), Orca bell + Needs you (D22), sounds (D05), desktop notices, repeat while unread (D44), on-screen = every window (D40) |
-| HUB / TAB / PAL | Hub board by status (D05/D24), tabs per folder (D18), working spinner, command palette (D28) |
+| HUB / TAB / PAL | Hub board by status (D05/D24), tabs per folder, only running and awake sessions (D18/D55), working spinner, command palette (D28) |
 | NTS / TML | notes + checklist (D06/D17), timeline + "While you were away" (D29/D38), cost over time (D51) |
 | USE quota | plan bars for Claude + OpenCode Go (D37), manual refresh (D07), quota guard, hands-off autopilot (D30/D33/D39) |
 | AUT sleep | auto status (D08), idle sleep (D14), sleep everything when idle (D26) |

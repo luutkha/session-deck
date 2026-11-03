@@ -138,6 +138,25 @@ async function main() {
     await sleep(1500)
     const restored = await waitFor(() => ev('!!document.querySelector(\'[data-testid="grid-view"][data-grid-preset="2x2"]\')'), 8000, 300)
     t.check('the restart restores the grid preset and assignments', !!restored && (await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')) >= 2)
+
+    // ---- D55: leave the grid with the X button, then with the menu item; the layout is kept
+    const gridGone = () => waitFor(() => ev('!document.querySelector(\'[data-testid="grid-view"]\')'), 5000, 200)
+    const visiblePane = 'Array.from(document.querySelectorAll(".terminal-pane__viewport")).some((v) => { const r = v.getBoundingClientRect(); return r.width > 0 && r.height > 0 })'
+    t.check('the Exit grid button shows while the grid is on', (await ev('!!document.querySelector("[data-grid-exit-button]")')) === true)
+    await click('[data-grid-exit-button]')
+    t.check('the Exit grid button brings back the single terminal view', !!(await gridGone()) && (await ev(visiblePane)) === true)
+    t.check('the Exit grid button is hidden outside the grid', (await ev('!!document.querySelector("[data-grid-exit-button]")')) === false)
+    await setPreset('2x2')
+    t.check('reopening the grid keeps the cells', (await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')) >= 2)
+    await waitFor(async () => {
+      if (await ev('!document.querySelector(\'[data-testid="grid-view"]\')')) return true
+      await pointerClick('[aria-label="Grid view"]')
+      await sleep(250)
+      await click('[data-grid-exit]')
+      await sleep(400)
+      return null
+    }, 10000, 300)
+    t.check('the Exit grid menu item leaves the grid', !!(await gridGone()))
   } catch (error) {
     t.check('run completed without exception', false, String(error && error.stack || error))
   } finally {

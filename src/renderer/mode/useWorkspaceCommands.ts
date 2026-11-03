@@ -116,6 +116,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       },
       openHub: (): void => nav.setView('hub'),
       openGrid: (): void => nav.setView('grid'),
+      exitGrid: nav.exitGrid,
       openSettings: (): void => setSettingsSection('general'),
       showAwaySummary: input.onShowAwaySummary,
       showCosts: (): void => setCostsOpen(true),

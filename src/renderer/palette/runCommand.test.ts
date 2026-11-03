@@ -17,6 +17,7 @@ function fakeHandlers(): PaletteHandlers {
     newFromPreset: vi.fn(),
     openHub: vi.fn(),
     openGrid: vi.fn(),
+    exitGrid: vi.fn(),
     openSettings: vi.fn(),
     showAwaySummary: vi.fn(),
     showCosts: vi.fn(),
@@ -104,6 +105,11 @@ describe('runPaletteCommand: session and view commands', () => {
   it('opens the grid view for open-grid', () => {
     runPaletteCommand({ kind: 'open-grid' }, handlers, api)
     expect(handlers.openGrid).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the grid view for exit-grid (D55)', () => {
+    runPaletteCommand({ kind: 'exit-grid' }, handlers, api)
+    expect(handlers.exitGrid).toHaveBeenCalledTimes(1)
   })
 
   it('opens Settings for open-settings', () => {

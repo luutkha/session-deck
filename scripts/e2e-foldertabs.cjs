@@ -24,6 +24,16 @@ async function main() {
     await click('same-one'); await sleep(800)
     names = await tabs()
     t.check('switching back brings the folder group back without the other folder', names.length === 2 && !names.some((n) => n.includes('lone-other')), names.join(' | '))
+    // D55: only running, awake sessions keep a tab (the one on screen always does).
+    await app.evaluate(`window.api.sleepSession(${JSON.stringify(b.id)})`)
+    names = await waitFor(async () => { const n = await tabs(); return n.length === 1 ? n : null }, 15000, 300)
+    t.check('a sleeping session of the folder loses its tab', !!names && names[0].includes('same-one'), String(names && names.join(' | ')))
+    await click('same-two')
+    names = await waitFor(async () => { const n = await tabs(); return n.length === 2 ? n : null }, 15000, 300)
+    t.check('the session on screen keeps its tab, and waking it brings the tab back', !!names, String(names && names.join(' | ')))
+    await app.evaluate(`window.api.closeSession(${JSON.stringify(a.id)})`)
+    names = await waitFor(async () => { const n = await tabs(); return n.length === 1 && n[0].includes('same-two') ? n : null }, 15000, 300)
+    t.check('a stopped session of the folder loses its tab', !!names, String(names && names.join(' | ')))
   } catch (e) {
     t.check('run completed without exception', false, String(e.message || e))
   } finally {

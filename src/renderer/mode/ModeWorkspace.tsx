@@ -97,7 +97,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
     [sessions]
   )
   const visibleIds = useMemo((): ReadonlySet<Id> => new Set(split.layout.paneIds), [split.layout.paneIds])
-  const barIds = useMemo(() => projectTabIds(ids, sessions ?? [], activeId), [ids, sessions, activeId])
+  const barIds = useMemo(() => projectTabIds(ids, sessions ?? [], activeId, runtime), [ids, sessions, activeId, runtime])
   const tabModels = useMemo(() => buildTabModels(barIds, sessions ?? [], runtime), [barIds, sessions, runtime])
   const needsYou = useMemo(() => needsYouItems(sessions ?? [], runtime), [sessions, runtime])
   const activeState = activeId === null ? undefined : runtime.get(activeId)
@@ -231,7 +231,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
               onOpenGrid: (preset: string): void => {
                 nav.grid.setPreset(preset as GridPreset)
                 nav.setView('grid')
-              }
+              },
+              onExitGrid: nav.exitGrid
             }}
             split={{
               active: split.split,

@@ -14,6 +14,7 @@ export type PaletteCommand =
   | { readonly kind: 'new-from-preset'; readonly presetId: Id }
   | { readonly kind: 'open-hub' }
   | { readonly kind: 'open-grid' }
+  | { readonly kind: 'exit-grid' }
   | { readonly kind: 'open-settings' }
   | { readonly kind: 'show-away-summary' }
   | { readonly kind: 'show-costs' }
@@ -352,6 +353,15 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
       detail: 'See several sessions at once (1x1 to 3x2)',
       keywords: 'grid layout panes multiple',
       run: { kind: 'open-grid' }
+    })
+  } else {
+    items.push({
+      id: 'action:exit-grid',
+      group: 'Actions',
+      label: 'Exit grid view',
+      detail: 'Back to one terminal (the grid is kept for next time)',
+      keywords: 'grid close leave single terminal',
+      run: { kind: 'exit-grid' }
     })
   }
   // D53: Jarvis lives in Ops mode; opening it from Code switches the main window to Ops (main's focus request).

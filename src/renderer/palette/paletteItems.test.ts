@@ -206,6 +206,14 @@ describe('buildPaletteItems: actions group', () => {
     expect(items.some((item: PaletteItem): boolean => item.label === 'Open Hub')).toBe(false)
     expect(items.some((item: PaletteItem): boolean => item.label === 'New session')).toBe(true)
   })
+
+  it('offers Exit grid view only while the grid is the view (D55)', () => {
+    const inGrid = buildPaletteItems(input({ view: 'grid' }))
+    expect(inGrid.find((item: PaletteItem): boolean => item.id === 'action:exit-grid')?.run).toEqual({ kind: 'exit-grid' })
+    expect(inGrid.some((item: PaletteItem): boolean => item.id === 'action:open-grid')).toBe(false)
+    const inTerminal = buildPaletteItems(input({ view: 'terminal' }))
+    expect(inTerminal.some((item: PaletteItem): boolean => item.id === 'action:exit-grid')).toBe(false)
+  })
 })
 
 describe('buildPaletteItems: this session group', () => {
