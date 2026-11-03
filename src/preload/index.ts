@@ -5,6 +5,7 @@ import type {
   AppSettings,
   ChecklistItem,
   JarvisConfirmRequest,
+  JarvisUiCommand,
   JarvisSchedule,
   JarvisVoiceResult,
   QueuedPrompt,
@@ -150,6 +151,16 @@ const api: Api = {
     const handler = (_event: Electron.IpcRendererEvent, request: JarvisConfirmRequest) => cb(request)
     ipcRenderer.on(IPC.evJarvisConfirm, handler)
     return () => ipcRenderer.off(IPC.evJarvisConfirm, handler)
+  },
+
+  onJarvisUi(cb: (command: JarvisUiCommand) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, command: JarvisUiCommand) => cb(command)
+    ipcRenderer.on(IPC.evJarvisUi, handler)
+    return () => ipcRenderer.off(IPC.evJarvisUi, handler)
+  },
+
+  jarvisUiReply(commandId: string, ok: boolean, text: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.jarvisUiReply, commandId, ok, text)
   },
 
   setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void> {

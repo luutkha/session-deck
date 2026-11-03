@@ -1,6 +1,7 @@
 // Pure logic for diff annotations (Code mode only, D31 scope): the user comments on a diff line and one
 // click sends the comments into the worktree's session as a ready-to-apply prompt. No React, no IPC
 // (same discipline as splitLogic.ts); the localStorage helpers are guarded like shellPrefs.ts.
+import { formatReviewMessage } from '../../../shared/reviewComments'
 
 export interface DiffAnnotation {
   /** Runtime id (uuid at call site); removing uses it. */
@@ -21,8 +22,6 @@ export const ANNOTATION_MAX_TEXT = 500
 export const ANNOTATIONS_MAX_PER_WORKTREE = 50
 
 const STORAGE_PREFIX = 'sessiondeck.annotate.v1.'
-const FOOTER = 'Please apply these fixes.'
-const HEADER = 'Review comments on the current changes (file — line):'
 
 /** localStorage key of one worktree's draft comments; they survive restarts and crashes. */
 export function annotationsStorageKey(worktreeId: string): string {
@@ -79,9 +78,7 @@ export function annotationForLine(
 
 /** The prompt the Send button types into the session; null when there is nothing to send. */
 export function formatAnnotationMessage(annotations: readonly DiffAnnotation[]): string | null {
-  if (annotations.length === 0) return null
-  const lines = annotations.map((a) => `- ${a.path}:${a.line === null ? '?' : String(a.line)} — ${a.text}`)
-  return [HEADER, ...lines, FOOTER].join('\n')
+  return formatReviewMessage(annotations)
 }
 
 export function serializeAnnotations(annotations: readonly DiffAnnotation[]): string {

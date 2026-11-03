@@ -108,6 +108,27 @@ export interface JarvisConfirmRequest {
   readonly confirmLabel: string
 }
 
+/** D55: a window-side action Jarvis asks for (main resolves names to ids first; the renderer runs it with the UI's own hooks). */
+export type JarvisUiAction =
+  | { readonly kind: 'state' }
+  | { readonly kind: 'mode'; readonly mode: UiMode }
+  | { readonly kind: 'view'; readonly view: 'terminal' | 'grid' | 'hub' }
+  | { readonly kind: 'grid'; readonly preset?: string; readonly cells?: readonly (Id | null)[] }
+  | { readonly kind: 'split'; readonly how: 'right' | 'down' | 'unsplit' }
+  | { readonly kind: 'openToSide'; readonly id: Id; readonly direction: 'right' | 'down' }
+  | { readonly kind: 'sidebar'; readonly open: boolean }
+  | { readonly kind: 'sidePanel'; readonly open: boolean; readonly tab?: 'notes' | 'activity' | 'queue' | 'changes' }
+  | { readonly kind: 'dialog'; readonly name: 'settings' | 'costs' | 'search' | 'away' | 'palette' | 'newSession' | 'none'; readonly section?: string }
+  | { readonly kind: 'zoom'; readonly action: 'in' | 'out' | 'reset' }
+  | { readonly kind: 'worker'; readonly op: 'show' | 'dismiss' | 'leave'; readonly workerId?: string }
+
+/** D55: one window command from Jarvis; `mode` = the mode the targets live in (the window switches to it first). */
+export interface JarvisUiCommand {
+  readonly id: string
+  readonly mode?: UiMode
+  readonly action: JarvisUiAction
+}
+
 /** Code mode (D31): a git repository the user added. Worktrees are created from it. */
 export interface Repo {
   readonly id: Id

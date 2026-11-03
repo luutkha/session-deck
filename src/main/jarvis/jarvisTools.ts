@@ -21,7 +21,6 @@ import type {
   TimelineTurn,
   UsageState,
   UsageWindow,
-  Worktree,
   WorktreeChanges
 } from '../../shared/types'
 import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX, WORKTREE_NAME_MAX } from '../../shared/types'
@@ -30,11 +29,14 @@ import { isTrustPrompt } from '../app/trustPrompt'
 import { isIdleReminder } from '../app/activity'
 import { stripAnsi } from '../app/outputSignals'
 import type { McpTool } from './mcpProtocol'
-import { resolveGroup, resolveSession, resolveStatus, targetSessions } from './targets'
+import { resolveGroup, resolveRepo, resolveSession, resolveStatus, resolveWorktree, targetSessions } from './targets'
+import { clip, optionalBool, optionalInt, optionalText, schema, SESSION_PROP, text } from './toolArgs'
 import { SCREEN_LINES_DEFAULT, SCREEN_LINES_MAX } from './screenText'
 import { nextRun, scheduleWhen, timeText } from './schedules'
 import { DAY_NAMES } from '../../shared/jarvisSchedule'
 import type { ScheduleInput } from './scheduleService'
+import { createAppTools, type JarvisAppDeps } from './appTools'
+import { createUiTools, type JarvisUi } from './uiTools'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
 export const READY_MIN_RUN_MS = 3000
@@ -130,41 +132,10 @@ export interface JarvisToolDeps {
   readonly newId: () => string
   /** One line per action, for the Jarvis action log. */
   readonly log: (tool: string, detail: string) => void
-}
-
-// ---------- argument helpers
-
-function text(args: Readonly<Record<string, unknown>>, key: string): string {
-  const value = args[key]
-  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`"${key}" is required.`)
-  return value
-}
-
-function optionalText(args: Readonly<Record<string, unknown>>, key: string): string | undefined {
-  const value = args[key]
-  if (value === undefined || value === null) return undefined
-  if (typeof value !== 'string') throw new Error(`"${key}" must be text.`)
-  return value.trim().length === 0 ? undefined : value
-}
-
-function optionalBool(args: Readonly<Record<string, unknown>>, key: string): boolean | undefined {
-  const value = args[key]
-  if (value === undefined || value === null) return undefined
-  if (typeof value !== 'boolean') throw new Error(`"${key}" must be true or false.`)
-  return value
-}
-
-function optionalInt(args: Readonly<Record<string, unknown>>, key: string, fallback: number, max: number): number {
-  const value = args[key]
-  if (value === undefined || value === null) return fallback
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`"${key}" must be a positive whole number.`)
-  return Math.min(value, max)
-}
-
-const SESSION_PROP = { type: 'string', description: 'Session name (or part of it) or id. Ask the user when a name matches several sessions.' }
-
-function schema(properties: Record<string, unknown>, required: readonly string[] = []): Record<string, unknown> {
-  return { type: 'object', properties, required, additionalProperties: false }
+  /** D55: the rest of the app (settings, queue, checklist, statuses, presets, quota, Code mode extras, windows). */
+  readonly app: JarvisAppDeps
+  /** D55: asks a window to change what is on screen; resolves with what it did. */
+  readonly ui: JarvisUi
 }
 
 // ---------- describing state
@@ -190,10 +161,6 @@ export function stateText(session: Session, state: RuntimeState | undefined): st
   }
 }
 
-function clip(value: string, max: number): string {
-  const flat = value.replace(/\s+/g, ' ').trim()
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
-}
 
 function minutesAgo(now: number, at: number): string {
   const minutes = Math.round((now - at) / 60_000)
@@ -255,23 +222,7 @@ function resolveFolder(raw: string): string {
   return expanded
 }
 
-function resolveRepo(data: StoreData, ref: string): Repo {
-  const repos = data.repos ?? []
-  const want = ref.trim().toLowerCase()
-  const found = repos.filter((r) => r.id === ref.trim() || r.name.toLowerCase() === want || r.path.toLowerCase() === want)
-  if (found.length === 1) return found[0]
-  if (found.length === 0) throw new Error(`No repository matches "${ref}". Repositories: ${repos.map((r) => `"${r.name}"`).join(', ') || '(none; use add_repo)'}`)
-  throw new Error(`"${ref}" matches several repositories: ${found.map((r) => `"${r.name}" (${r.path})`).join(', ')}. Pass the path or id.`)
-}
 
-function resolveWorktree(data: StoreData, ref: string): Worktree {
-  const worktrees = data.worktrees ?? []
-  const want = ref.trim().toLowerCase()
-  const found = worktrees.filter((w) => w.id === ref.trim() || w.name.toLowerCase() === want || w.branch.toLowerCase() === want)
-  if (found.length === 1) return found[0]
-  if (found.length === 0) throw new Error(`No worktree matches "${ref}".`)
-  throw new Error(`"${ref}" matches several worktrees: ${found.map((w) => `"${w.name}" (id ${w.id})`).join(', ')}. Pass the id.`)
-}
 
 // ---------- typing into a session
 
@@ -1069,5 +1020,12 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
       }
     }
   ]
+  // D55: the app-wide and on-screen tools share the undo stack and the prompt sender.
+  const tool = (name: string): McpTool => {
+    const found = tools.find((t) => t.name === name)
+    if (found === undefined) throw new Error(`No tool "${name}".`)
+    return found
+  }
+  tools.push(...createAppTools(deps, { pushUndo, sendPrompt, tool }), ...createUiTools(deps))
   return Object.assign(tools, { sendPrompt, undoLast })
 }

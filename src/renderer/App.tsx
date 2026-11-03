@@ -21,6 +21,7 @@ import { useJarvisShortcut } from './jarvis/useJarvisShortcut'
 import { JarvisPanel } from './jarvis/JarvisPanel'
 import { openJarvisPanel } from './jarvis/jarvisPanelStore'
 import { JarvisSpeaker } from './jarvis/JarvisSpeaker'
+import { useJarvisUi } from './jarvis/useJarvisUi'
 import './styles.css'
 
 /** Plays the user's notification sounds. Mounted in the main window only, so a sound is never played twice. */
@@ -40,6 +41,7 @@ export function App(): ReactElement {
   const [pendingFocus, setPendingFocus] = useState<Id | null>(null)
   const isMain = ui.role === 'main'
   useJarvisShortcut()
+  useJarvisUi(ui)
 
   /** Shows a session from outside the workspace: switches mode first when it belongs to the other one. */
   const requestFocus = useCallback((id: Id): void => {

@@ -1,7 +1,7 @@
 // Which session (or group, status) Jarvis means (D53). The model names things the way the user does; an id always
 // wins, then an exact name, then a unique partial name. Ambiguity is an error that lists the candidates, so Jarvis
 // asks the user instead of guessing. Jarvis itself is never a target.
-import type { Group, Session, StatusDef, StoreData } from '../../shared/types'
+import type { Group, Repo, Session, StatusDef, StoreData, Worktree } from '../../shared/types'
 
 export function isJarvis(session: Pick<Session, 'role'>): boolean {
   return session.role === 'jarvis'
@@ -42,4 +42,22 @@ export function resolveGroup(data: StoreData, ref: string): Group {
 
 export function resolveStatus(data: StoreData, ref: string): StatusDef {
   return pick(data.statuses, ref, 'status')
+}
+
+export function resolveRepo(data: StoreData, ref: string): Repo {
+  const repos = data.repos ?? []
+  const want = ref.trim().toLowerCase()
+  const found = repos.filter((r) => r.id === ref.trim() || r.name.toLowerCase() === want || r.path.toLowerCase() === want)
+  if (found.length === 1) return found[0]
+  if (found.length === 0) throw new Error(`No repository matches "${ref}". Repositories: ${repos.map((r) => `"${r.name}"`).join(', ') || '(none; use add_repo)'}`)
+  throw new Error(`"${ref}" matches several repositories: ${found.map((r) => `"${r.name}" (${r.path})`).join(', ')}. Pass the path or id.`)
+}
+
+export function resolveWorktree(data: StoreData, ref: string): Worktree {
+  const worktrees = data.worktrees ?? []
+  const want = ref.trim().toLowerCase()
+  const found = worktrees.filter((w) => w.id === ref.trim() || w.name.toLowerCase() === want || w.branch.toLowerCase() === want)
+  if (found.length === 1) return found[0]
+  if (found.length === 0) throw new Error(`No worktree matches "${ref}".`)
+  throw new Error(`"${ref}" matches several worktrees: ${found.map((w) => `"${w.name}" (id ${w.id})`).join(', ')}. Pass the id.`)
 }

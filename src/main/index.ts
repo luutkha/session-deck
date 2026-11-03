@@ -42,6 +42,8 @@ import { IPC } from '../shared/ipc'
 import { createJarvisWiring } from './jarvis/jarvisWiring'
 import { renderScreenText } from './jarvis/screenText'
 import { errorMessage } from '../shared/guards'
+import { asChecklist, asPreset, assertNonEmptyString, assertStatusDef } from './app/ipcValidation'
+import { asSettingsPatch } from './app/settingsValidation'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -412,6 +414,35 @@ if (!gotTheLock) {
           changes: (worktreeId) => code.changes(worktreeId),
           removeWorktree: (worktreeId) => code.removeWorktree(worktreeId)
         },
+        // D55: the rest of the app, through the same functions (and validation) as the IPC handlers.
+        app: {
+          getSettings: () => store.getSettings(),
+          updateSettings: (raw) => store.updateSettings(asSettingsPatch(raw)),
+          setChecklist: (id, raw) => store.setSessionChecklist(id, asChecklist(raw)),
+          sendQueuedNow: (id, promptId) => promptQueue.sendNow(id, promptId),
+          renameGroup: (id, name) => store.renameGroup(id, assertNonEmptyString(name, 'group name')),
+          setGroupCollapsed: (id, collapsed) => store.setGroupCollapsed(id, collapsed),
+          reorderGroups: (order) => store.reorderGroups(order),
+          upsertStatus: (raw) => store.upsertStatus(assertStatusDef(raw)),
+          removeStatus: (id) => store.removeStatus(id),
+          reorderStatuses: (order) => store.reorderStatuses(order),
+          savePreset: (raw) => store.savePreset(asPreset(raw)),
+          removePreset: (id) => store.removePreset(id),
+          clearAttention: (id) => attention.clear(id),
+          markUnread: (id) => attention.markUnread(id),
+          refreshUsage: () => usageRefresher.refresh(),
+          autopilot: {
+            state: async () => features.autopilot.getState(),
+            sleepIdle: async () => features.autopilot.sleepIdle(),
+            wake: async (sendContinue) => features.autopilot.wake({ sendContinue })
+          },
+          removeRepo: (id) => code.removeRepo(id),
+          fileDiff: (worktreeId, filePath) => code.fileDiff(worktreeId, filePath),
+          workers: () => workers.getWorkers(),
+          windowState: () => windows.state(),
+          popOutCode: () => { windows.popOutCode() },
+          dockCode: () => windows.dockCode()
+        },
         openSession: (id) => focusSession(id),
         startedAt: (id) => ptyStartedAt.get(id),
         lastOutputAt: (id) => ptyLastOutputAt.get(id)
@@ -420,6 +451,14 @@ if (!gotTheLock) {
         if (mainWindow === null || mainWindow.isDestroyed()) return false
         showMainWindow(mainWindow)
         mainWindow.webContents.send(IPC.evJarvisConfirm, request)
+        return true
+      },
+      // D55: a Code-mode command goes to the popped-out Code window when there is one, everything else to the main window.
+      sendUi: (command) => {
+        const codeWin = windows.code()
+        const target = command.mode === 'code' && codeWin !== null ? codeWin : mainWindow
+        if (target === null || target.isDestroyed()) return false
+        target.webContents.send(IPC.evJarvisUi, command)
         return true
       },
       appVersion: app.getVersion(),

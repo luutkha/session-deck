@@ -1,6 +1,6 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
-  AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
+  AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisUiCommand, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
   Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole
 } from './types'
 
@@ -19,6 +19,7 @@ export const IPC = {
   jarvisVoiceCancel: 'jarvis:voiceCancel', // () stops listening (D54)
   jarvisUndo: 'jarvis:undo', // () -> string: undoes Jarvis's last reversible action (D54)
   jarvisConfirmReply: 'jarvis:confirmReply', // (requestId, yes boolean): the user's answer to an evJarvisConfirm (D53)
+  jarvisUiReply: 'jarvis:uiReply', // (commandId, ok boolean, text <= 20000): the window's answer to an evJarvisUi (D55)
   sessionRename: 'session:rename',
   sessionSetStatus: 'session:setStatus',
   sessionMove: 'session:move', // to group + index
@@ -99,7 +100,8 @@ export const IPC = {
   evWindowState: 'ev:windowState', // main -> renderer: WindowState changed
   evJarvisReply: 'ev:jarvisReply', // main -> renderer: Jarvis's reply text after a turn (Claude engine), for reading aloud (D54)
   evJarvisSchedules: 'ev:jarvisSchedules', // main -> renderer: JarvisSchedule[] changed (D54)
-  evJarvisConfirm: 'ev:jarvisConfirm' // main -> renderer (main window): JarvisConfirmRequest, ask the user Yes/No (D53)
+  evJarvisConfirm: 'ev:jarvisConfirm', // main -> renderer (main window): JarvisConfirmRequest, ask the user Yes/No (D53)
+  evJarvisUi: 'ev:jarvisUi' // main -> renderer (one window): JarvisUiCommand, change what is on screen (D55)
 } as const
 
 /** Buffered output for reattach. `seq` = sequence number of the last chunk included (0 if none).
@@ -152,6 +154,9 @@ export interface Api {
   setJarvisScheduleEnabled(id: string, enabled: boolean): Promise<void>
   onJarvisSchedules(cb: (schedules: readonly JarvisSchedule[]) => void): () => void
   onJarvisConfirm(cb: (request: JarvisConfirmRequest) => void): () => void
+  /** D55: Jarvis changes what is on screen; the window answers with jarvisUiReply. */
+  onJarvisUi(cb: (command: JarvisUiCommand) => void): () => void
+  jarvisUiReply(commandId: string, ok: boolean, text: string): Promise<void>
   /** D52: finds text in the saved Claude conversations of SessionDeck's sessions (read-only). */
   searchConversations(query: string): Promise<ConversationSearchResult>
   /** D47: types one queued prompt now (running, awake Claude/OpenCode session only) and removes it from the queue. */

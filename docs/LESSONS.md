@@ -65,6 +65,8 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - **A woken session is still "sleeping" until its old process exits** (`wakeAfterExit`). After `wakeSession`, wait for a process started after the wake (with a grace period) before typing.
 - **A session created in main and focused right away may not be in the renderer's store yet.** `App.requestFocus` keeps the id pending until the store update arrives.
 - **Jarvis belongs to no mode.** It is filtered out in `dataForMode` and mounted at the `App` level. Main counts it as always on screen, so its finished turns never ping and it is never auto-slept.
+- **A screen command can arrive while the workspace remounts.** `App` mounts one `ModeWorkspace` keyed by mode, so after a mode switch the old handler is gone and the new one registers on mount. `useJarvisUi` waits for the workspace of the wanted mode (`workspaceUiFor`) instead of running against whatever is registered.
+- **The side panel reads its tab only on mount.** Changing the stored tab from outside does nothing until `NotesPanel` remounts; Jarvis bumps an epoch in its key.
 - **Changing the engine cannot move a conversation.** `openJarvis` replaces a Jarvis whose engine or OpenCode model no longer matches Settings.
 
 ## Tests and e2e

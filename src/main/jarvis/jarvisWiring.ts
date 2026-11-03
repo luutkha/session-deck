@@ -4,7 +4,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile, stat, truncate, writeFile } from 'node:fs/promises'
 import { ipcMain } from 'electron'
-import type { HookEvent, JarvisConfirmRequest, JarvisSchedule, JarvisVoiceResult, Session } from '../../shared/types'
+import type { HookEvent, JarvisConfirmRequest, JarvisSchedule, JarvisUiAction, JarvisUiCommand, JarvisVoiceResult, Session, UiMode } from '../../shared/types'
 import { IPC } from '../../shared/ipc'
 import { assertBoolean, assertNonEmptyString } from '../app/ipcValidation'
 import type { SessionController } from '../app/sessionController'
@@ -19,15 +19,19 @@ import { scheduleWhen } from './schedules'
 import { createVoiceListener } from './voice'
 
 const ACTION_LOG_MAX_BYTES = 1024 * 1024
+/** D55: how long a window may take to carry out a screen command (a mode switch remounts the workspace). */
+const UI_TIMEOUT_MS = 10_000
 
 export interface JarvisWiringDeps {
   readonly userDataDir: string
   readonly store: SessionStore
   readonly controller: SessionController
   /** Everything the tools need besides what this file provides (confirm, log, ids, clocks). */
-  readonly tools: Omit<JarvisToolDeps, 'confirm' | 'log' | 'newId' | 'now' | 'sleep' | 'getData' | 'controller' | 'schedules'>
+  readonly tools: Omit<JarvisToolDeps, 'confirm' | 'log' | 'newId' | 'now' | 'sleep' | 'getData' | 'controller' | 'schedules' | 'ui'>
   /** Sends the Yes/No request to the main window; false when there is no window to ask. */
   readonly sendConfirm: (request: JarvisConfirmRequest) => boolean
+  /** D55: sends a screen command to the window that shows that mode; false when there is no window. */
+  readonly sendUi: (command: JarvisUiCommand) => boolean
   readonly appVersion: string
   /** Sends an event to every open window (the schedule list). */
   readonly broadcast: (channel: string, ...args: unknown[]) => void
@@ -76,6 +80,32 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     clearTimeout(entry.timer)
     pending.delete(id)
     entry.resolve(yes)
+  }
+
+  // D55: a screen command goes to the window, which answers with jarvis:uiReply (ok + what it did).
+  const pendingUi = new Map<string, { resolve: (text: string) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  function ui(mode: UiMode | undefined, action: JarvisUiAction): Promise<string> {
+    const id = randomUUID()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingUi.delete(id)
+        reject(new Error('The SessionDeck window did not answer. Is it open?'))
+      }, UI_TIMEOUT_MS)
+      pendingUi.set(id, { resolve, reject, timer })
+      if (!deps.sendUi({ id, ...(mode !== undefined ? { mode } : {}), action })) {
+        clearTimeout(timer)
+        pendingUi.delete(id)
+        reject(new Error('There is no SessionDeck window to change.'))
+      }
+    })
+  }
+  function uiAnswer(id: string, ok: boolean, text: string): void {
+    const entry = pendingUi.get(id)
+    if (entry === undefined) return
+    clearTimeout(entry.timer)
+    pendingUi.delete(id)
+    if (ok) entry.resolve(text)
+    else entry.reject(new Error(text))
   }
 
   function log(tool: string, detail: string): void {
@@ -127,6 +157,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     schedules,
     getData: () => deps.store.get(),
     controller: deps.controller,
+    ui,
     confirm,
     log,
     newId: () => randomUUID(),
@@ -228,12 +259,17 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       ipcMain.handle(IPC.jarvisConfirmReply, async (_event, rawId: unknown, rawYes: unknown): Promise<void> => {
         answer(assertNonEmptyString(rawId, 'request id'), assertBoolean(rawYes, 'yes'))
       })
+      ipcMain.handle(IPC.jarvisUiReply, async (_event, rawId: unknown, rawOk: unknown, rawText: unknown): Promise<void> => {
+        const text = typeof rawText === 'string' ? rawText.slice(0, 20_000) : ''
+        uiAnswer(assertNonEmptyString(rawId, 'command id'), assertBoolean(rawOk, 'ok'), text)
+      })
     },
 
     async stop(): Promise<void> {
       schedules.stop()
       voice.cancel()
       for (const [id] of pending) answer(id, false)
+      for (const [id] of pendingUi) uiAnswer(id, false, 'SessionDeck is closing.')
       await server.stop()
     }
   }

@@ -1,6 +1,6 @@
 // One mode's workspace (D31): sidebar, tab bar, terminals, Hub, worker view, side panel, status bar, dialogs and palette.
 // Ops and Code each get their own instance (App mounts one at a time, keyed by mode) with mode-scoped storage keys.
-import { useEffect, useMemo, useRef, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Sidebar } from '../Sidebar'
 import { useLastRuntimeChange } from '../Sidebar/useLastRuntimeChange'
 import { CodeSidebar } from '../code/sidebar/CodeSidebar'
@@ -39,6 +39,9 @@ import { ModeTitleBar, type ModeChrome } from './ModeTitleBar'
 import { useWorkspaceCommands } from './useWorkspaceCommands'
 import { useWorkspaceNav, type FocusRequest } from './useWorkspaceNav'
 import { WorkspaceDialogs } from './WorkspaceDialogs'
+import { registerWorkspaceUi } from '../jarvis/jarvisUiBridge'
+import { runWorkspaceAction, type WorkspaceUiContext } from '../jarvis/workspaceUi'
+import { readSidePanelTab, resolveSidePanelTab, storeSidePanelTab, type SidePanelTab } from '../timeline/sidePanelTab'
 
 const SIDEBAR_WIDTH_CLASS = 'w-[300px]'
 const EMPTY_STORE: StoreData = { version: 1, sessions: [], groups: [], statuses: [], groupOrder: [] }
@@ -148,6 +151,67 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
       }
     }
   }, [termViewApi.termView.zoomPercent, panes.panesRef])
+  // D55: Jarvis changes the screen through the same hooks as the buttons. A new side-panel tab remounts the panel.
+  const [sidePanelEpoch, setSidePanelEpoch] = useState(0)
+  const jarvisUi = useRef<WorkspaceUiContext | null>(null)
+  jarvisUi.current = {
+    mode,
+    view,
+    setView: nav.setView,
+    exitGrid: nav.exitGrid,
+    names: paneNames,
+    activeId,
+    barIds,
+    openTab: tabs.open,
+    grid: nav.grid,
+    split: {
+      paneIds: split.layout.paneIds,
+      canSplit: split.canSplit,
+      splitRight: split.splitRight,
+      splitDown: split.splitDown,
+      unsplit: split.unsplit,
+      openToSide: (id: Id, direction: 'right' | 'down'): void => { split.openToSide(id, direction === 'down' ? 'column' : 'row') }
+    },
+    sidebarOpen,
+    setSidebarOpen,
+    sidePanel: {
+      open: nav.notesOpen,
+      tab: resolveSidePanelTab(readSidePanelTab(keys.sidePanel), activeSession?.worktreeId !== undefined),
+      hasChanges: activeSession?.worktreeId !== undefined,
+      setOpen: (open: boolean): void => {
+        if (!open) nav.closeNotes()
+        else if (!nav.notesOpen) nav.toggleNotes()
+      },
+      setTab: (tab: SidePanelTab): void => {
+        storeSidePanelTab(tab, keys.sidePanel)
+        setSidePanelEpoch((n: number): number => n + 1)
+      }
+    },
+    dialogs: {
+      settings: commands.settingsSection,
+      costs: commands.costsOpen,
+      search: commands.searchOpen,
+      palette: commands.paletteOpen,
+      openSettings: commands.setSettingsSection,
+      setCosts: commands.setCostsOpen,
+      setSearch: commands.setSearchOpen,
+      setPalette: commands.setPaletteOpen,
+      showAway: props.onShowAwaySummary,
+      openNew: (): void => { if (mode === 'code') commands.openNewWorktree(); else commands.openNew() }
+    },
+    zoom: { percent: termViewApi.termView.zoomPercent, step: termViewApi.zoom },
+    workers: {
+      visible: workers.visible.map((w) => ({ id: w.id, name: w.name })),
+      selectedId: workers.selected?.id ?? null,
+      select: workers.select,
+      dismiss: workers.dismiss
+    }
+  }
+  useEffect(() => registerWorkspaceUi(mode, (action) => {
+    if (jarvisUi.current === null) throw new Error('The window is still loading.')
+    return runWorkspaceAction(action, jarvisUi.current)
+  }), [mode])
+
   const checklist = progress(activeSession?.checklist ?? [])
   const notesBadge = checklist.total > 0 ? `${checklist.done}/${checklist.total}` : null
   const loaded = data !== null
@@ -309,7 +373,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
             </div>
             {nav.notesOpen && view === 'terminal' && activeSession !== null ? (
               <NotesPanel
-                key={activeSession.id}
+                key={`${activeSession.id}:${String(sidePanelEpoch)}`}
                 session={activeSession}
                 actions={actions}
                 onClose={nav.closeNotes}

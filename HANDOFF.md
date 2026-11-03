@@ -14,7 +14,8 @@ Where the details live:
 
 ## 1. State
 
-- **Shipped through D54** (Jarvis round 2). No open work in progress; the working tree is clean and pushed (`main`, `84bf042`).
+- **Shipped through D55** (exit grid, tab bar for running and awake sessions only, Jarvis controls the whole app: 65 tools). Committed on `main`, not pushed. No open work in progress.
+- **D55 verification (dev build):** 3,329 unit tests (203 files), both typechecks clean, `e2e-jarvis-control` 33/33 (new), `e2e-jarvis` 60/60, `e2e-grid` 15/15, `e2e-foldertabs` 6/6, `e2e-annotate` 13/13, `e2e-codemode` 34/34. The installer was not rebuilt (still `84bf042`).
 - **Installer:** `release/SessionDeck-Setup-0.0.3.exe`, built from `84bf042`. Unsigned (SmartScreen warns: "More info" → "Run anyway"). The version number was not bumped since 0.0.3; installing over an existing copy replaces it and keeps the user's data.
 - **Verification baseline at that build:** 3,299 unit tests (202 files), both typechecks clean, `e2e:packaged` 15/15 (includes Jarvis's tool server and headless screen rendering), `e2e-spaces` 4/4 on the dev build and on the packaged exe, every Jarvis suite green (`e2e-jarvis` 60, `e2e-jarvis-real` 12, `e2e-jarvis-opencode` 5, `e2e-jarvis-voice` 10), and the regression list in the `84bf042` commit message.
 
@@ -42,7 +43,7 @@ Feature domains (IDs in `FEATURES.md`):
 | AUT sleep | auto status (D08), idle sleep (D14), sleep everything when idle (D26) |
 | AGT agents | Claude (always yolo, D10), OpenCode (D15, plugin via `OPENCODE_CONFIG_CONTENT`, `--standalone`), Shell (Code mode), worker tabs (D19) |
 | COD Code mode | repos, worktrees, Shell, Changes + diff, annotations (D34), previews (D35), pop-out window, opt-in trust answer (D43) |
-| JRV Jarvis | right-side panel (Ctrl+Shift+J, tab-bar button), 35 MCP tools, confirm for destructive tools, schedules, undo, Claude or OpenCode engine, voice (talk + read aloud) |
+| JRV Jarvis | right-side panel (Ctrl+Shift+J, tab-bar button), 65 MCP tools that reach the whole app incl. the screen (D55), confirm for destructive tools, schedules, undo, Claude or OpenCode engine, voice (talk + read aloud) |
 | WIN / SET / SEC | tray, close-to-tray, login item, logs; validated store/settings; validated IPC, token-checked local servers, process-tree kill |
 
 ---
@@ -82,6 +83,7 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Date | Round | Decisions | Key commits |
 |---|---|---|---|
+| 2026-11-03 | Exit grid, tab bar only for running and awake sessions, Jarvis controls the whole app (30 new tools, screen commands) | D55 | `82c7a64`, Jarvis tools commit |
 | 2026-11-01 | Jarvis round 2: wait/answer/usage/away tools, Code tools, schedules, undo, OpenCode engine, voice, packaged + spaces checks; fix: idle-reminder blocked the prompt queue | D54 | `028114e` … `84bf042`, fix `b75d256` |
 | 2026-11-01 | Jarvis: MCP tool server, tools, confirm, panel over every session in both modes; fix: trust answer as two keys | D53 | `a8eb8e8`, `02d790d` |
 | 2026-10-31 | Prompt queue, broadcast, presets, resume on launch, cost over time, fork + search; installer for hands-on testing | D46–D52 | `f891ae3` … `8e7c1ed` |

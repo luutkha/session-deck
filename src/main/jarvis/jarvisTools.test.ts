@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { tmpdir } from 'node:os'
-import type { AwaySummary, QueuedPrompt, RuntimeState, Session, StoreData, TimelineTurn, UsageState, WorktreeChanges } from '../../shared/types'
+import type { AppSettings, AwaySummary, JarvisUiAction, QueuedPrompt, RuntimeState, Session, StoreData, TimelineTurn, UiMode, UsageState, WorktreeChanges } from '../../shared/types'
+import { DEFAULT_APP_SETTINGS } from '../../shared/types'
 import { createJarvisTools, READY_TIMEOUT_MS, type JarvisToolDeps } from './jarvisTools'
 import { createScheduleService } from './scheduleService'
 
@@ -15,6 +16,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
   let data: StoreData = {
     sessions,
     groups: [{ id: 'g1', name: 'Backend', collapsed: false }],
+    groupOrder: ['g1'],
     statuses: [{ id: 'st1', name: 'Review', color: '#fff' }],
     repos: [{ id: 'r1', name: 'shop', path: 'C:/src/shop', createdAt: 0, collapsed: false }],
     worktrees: [{ id: 'w1', repoId: 'r1', name: 'checkout', branch: 'checkout', path: 'C:/wt/checkout', baseBranch: 'main', baseCommit: '0'.repeat(40), createdAt: 0, collapsed: false }],
@@ -29,6 +31,9 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
   const answers = new Map<string, string>()
   let usageState: UsageState = { account: null, sessions: [] }
   let away: AwaySummary | null = null
+  let settings: AppSettings = DEFAULT_APP_SETTINGS
+  let codePoppedOut = false
+  const uiCalls: Array<{ mode: UiMode | undefined; action: JarvisUiAction }> = []
   const scheduleService = createScheduleService({
     readFile: async () => '',
     writeFile: async () => undefined,
@@ -133,7 +138,48 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
       clock += ms
     },
     newId: () => 'q1',
-    log: vi.fn()
+    log: vi.fn(),
+    app: {
+      getSettings: vi.fn(() => settings),
+      updateSettings: vi.fn((patch: unknown) => {
+        const p = patch as Record<string, Record<string, unknown>>
+        const next = { ...settings } as unknown as Record<string, Record<string, unknown>>
+        for (const [section, fields] of Object.entries(p)) {
+          if (next[section] === undefined) throw new Error(`Invalid settings: unknown section "${section}"`)
+          next[section] = { ...next[section], ...fields }
+        }
+        settings = next as unknown as AppSettings
+        return settings
+      }),
+      setChecklist: vi.fn((id: string, items: unknown) => setSession(id, { checklist: items as Session['checklist'] })),
+      sendQueuedNow: vi.fn(),
+      renameGroup: vi.fn(),
+      setGroupCollapsed: vi.fn(),
+      reorderGroups: vi.fn(),
+      upsertStatus: vi.fn(),
+      removeStatus: vi.fn(),
+      reorderStatuses: vi.fn(),
+      savePreset: vi.fn(),
+      removePreset: vi.fn(),
+      clearAttention: vi.fn(),
+      markUnread: vi.fn(),
+      refreshUsage: vi.fn(async () => ({ ok: true as const })),
+      autopilot: {
+        state: vi.fn(async () => ({ sleptForQuota: ['a'], stoppedAtLimit: [], resetsAt: null })),
+        sleepIdle: vi.fn(async () => ['a']),
+        wake: vi.fn(async () => ['a'])
+      },
+      removeRepo: vi.fn(),
+      fileDiff: vi.fn(async (worktreeId: string, path: string) => ({ worktreeId, path, diff: '@@ -1 +1 @@\n-old\n+new\n', binary: false, truncated: false })),
+      workers: vi.fn(() => [{ id: 'wk1', name: 'tests runner', model: 'm', status: 'running' as const, statusDetail: '', startedAt: 0, finishedAt: null, costUsd: 0.5, tokens: 1, dir: 'C:/p', ownerSessionIds: ['a'], lines: [] }]),
+      windowState: vi.fn(() => ({ codePoppedOut })),
+      popOutCode: vi.fn(),
+      dockCode: vi.fn()
+    },
+    ui: vi.fn(async (mode: UiMode | undefined, action: JarvisUiAction) => {
+      uiCalls.push({ mode, action })
+      return `ui ${action.kind}`
+    })
   }
   const tools = createJarvisTools(deps)
   const call = (name: string, args: Record<string, unknown> = {}): Promise<string> => {
@@ -144,7 +190,11 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
   return {
     call, controller, store, deps, code: deps.code as unknown as Record<string, ReturnType<typeof vi.fn>>, writes, raw, states, turns, startTimes, answers, data: () => data,
     setUsage: (u: UsageState) => { usageState = u },
-    setAway: (a: AwaySummary | null) => { away = a }
+    setAway: (a: AwaySummary | null) => { away = a },
+    app: deps.app as unknown as Record<string, ReturnType<typeof vi.fn>> & { autopilot: Record<string, ReturnType<typeof vi.fn>> },
+    uiCalls,
+    settings: () => settings,
+    setCodePoppedOut: (v: boolean) => { codePoppedOut = v }
   }
 }
 
@@ -468,5 +518,208 @@ describe('jarvis tools', () => {
     const text = await call('get_activity', { session: 'API' })
     expect(text).toContain('1 turn(s) recorded')
     expect(text).toContain('finished · 30 s · $0.25 · "fix bug"')
+  })
+})
+
+describe('Jarvis app tools (D55)', () => {
+  it('offers every new tool exactly once', () => {
+    const t = setup([session('a', 'API')])
+    const names = ['get_settings', 'update_settings', 'queue_list', 'queue_change', 'checklist_get', 'checklist_change', 'group_change', 'status_change', 'preset_change', 'bulk_action', 'needs_you', 'set_read', 'refresh_usage', 'quota_autopilot', 'cost_report', 'remove_repo', 'file_diff', 'send_review_comments', 'list_workers', 'code_window', 'get_screen_state', 'switch_mode', 'set_view', 'set_grid', 'split_view', 'show_sidebar', 'side_panel', 'open_dialog', 'terminal_zoom', 'worker_tab']
+    for (const name of names) expect(t.call(name, {}).catch(() => 'ok')).toBeDefined()
+    const all = createJarvisTools(t.deps).map((tool) => tool.name)
+    expect(new Set(all).size).toBe(all.length)
+    for (const name of names) expect(all).toContain(name)
+  })
+
+  it('reads settings and changes them through the validated path, with undo', async () => {
+    const t = setup([session('a', 'API')])
+    expect(await t.call('get_settings', { section: 'sleep' })).toContain('"')
+    await expect(t.call('get_settings', { section: 'nope' })).rejects.toThrow('No settings section')
+    const before = t.settings().tray
+    const key = Object.keys(before)[0]
+    const out = await t.call('update_settings', { changes: { tray: { [key]: 'changed' } } })
+    expect(out).toContain('Settings saved')
+    expect(t.app.updateSettings).toHaveBeenCalledWith({ tray: { [key]: 'changed' } })
+    expect(await t.call('undo_last_action')).toContain('Undone: change settings tray')
+    expect(t.app.updateSettings).toHaveBeenLastCalledWith({ tray: { [key]: (before as unknown as Record<string, unknown>)[key] } })
+    await expect(t.call('update_settings', { changes: 'x' })).rejects.toThrow('must be an object')
+    await expect(t.call('update_settings', { changes: { bogus: {} } })).rejects.toThrow('unknown section')
+  })
+
+  it('edits the prompt queue: add at a position, move, remove, clear, send now; undo restores', async () => {
+    const t = setup([session('a', 'API', { queue: [{ id: 'x', text: 'first', addedAt: 0 }] })], [running('a')])
+    expect(await t.call('queue_change', { session: 'API', action: 'add', text: 'zero', position: 1 })).toContain('number 1')
+    expect(t.data().sessions[0].queue?.map((q) => q.text)).toEqual(['zero', 'first'])
+    expect(t.deps.queueChanged).toHaveBeenCalledWith('a')
+    await t.call('queue_change', { session: 'API', action: 'move', item: 'zero', to: 2 })
+    expect(t.data().sessions[0].queue?.map((q) => q.text)).toEqual(['first', 'zero'])
+    expect(await t.call('queue_list', { session: 'API' })).toContain('2. zero')
+    await t.call('queue_change', { session: 'API', action: 'remove', item: 1 })
+    expect(t.data().sessions[0].queue?.map((q) => q.text)).toEqual(['zero'])
+    await t.call('undo_last_action')
+    expect(t.data().sessions[0].queue?.map((q) => q.text)).toEqual(['first', 'zero'])
+    await t.call('queue_change', { session: 'API', action: 'send_now', item: '2' })
+    expect(t.app.sendQueuedNow).toHaveBeenCalledWith('a', 'q1')
+    expect(await t.call('queue_change', { session: 'API', action: 'clear' })).toContain('Cleared 2')
+    await expect(t.call('queue_change', { session: 'API', action: 'remove', item: 3 })).rejects.toThrow('no queued prompt number 3')
+  })
+
+  it('edits the checklist and undoes it', async () => {
+    const t = setup([session('a', 'API', { checklist: [{ id: 'c1', text: 'write tests', done: false }] })])
+    await t.call('checklist_change', { session: 'API', action: 'add', items: ['ship it', ' '] })
+    expect(t.data().sessions[0].checklist?.map((c) => c.text)).toEqual(['write tests', 'ship it'])
+    await t.call('checklist_change', { session: 'API', action: 'check', item: 'tests' })
+    expect(t.data().sessions[0].checklist?.[0].done).toBe(true)
+    expect(await t.call('checklist_get', { session: 'API' })).toContain('1/2 done')
+    await t.call('undo_last_action')
+    expect(t.data().sessions[0].checklist?.[0].done).toBe(false)
+    await expect(t.call('checklist_change', { session: 'API', action: 'add', items: [] })).rejects.toThrow('Give "items"')
+  })
+
+  it('renames, collapses and reorders groups, with undo', async () => {
+    const t = setup([session('a', 'API')])
+    await t.call('group_change', { action: 'rename', group: 'Backend', name: 'Server' })
+    expect(t.app.renameGroup).toHaveBeenCalledWith('g1', 'Server')
+    await t.call('undo_last_action')
+    expect(t.app.renameGroup).toHaveBeenLastCalledWith('g1', 'Backend')
+    await t.call('group_change', { action: 'collapse', group: 'Backend' })
+    expect(t.app.setGroupCollapsed).toHaveBeenCalledWith('g1', true)
+    await t.call('group_change', { action: 'reorder', order: ['Backend'] })
+    expect(t.app.reorderGroups).toHaveBeenCalledWith(['g1'])
+  })
+
+  it('creates, updates and reorders statuses; removing one asks first', async () => {
+    const t = setup([session('a', 'API', { statusId: 'st1' })])
+    await t.call('status_change', { action: 'create', name: 'Blocked', color: '#ff0000' })
+    expect(t.app.upsertStatus).toHaveBeenCalledWith({ id: 'q1', name: 'Blocked', color: '#ff0000' })
+    await t.call('undo_last_action')
+    expect(t.app.removeStatus).toHaveBeenCalledWith('q1')
+    await t.call('status_change', { action: 'update', status: 'Review', color: '#00ff00' })
+    expect(t.app.upsertStatus).toHaveBeenLastCalledWith({ id: 'st1', name: 'Review', color: '#00ff00' })
+    expect(await t.call('status_change', { action: 'remove', status: 'Review' })).toContain('did not allow')
+    expect(t.app.removeStatus).toHaveBeenCalledTimes(1)
+    const yes = setup([session('a', 'API')], [], { confirm: true })
+    expect(await yes.call('status_change', { action: 'remove', status: 'Review' })).toContain('was deleted')
+    expect(yes.app.removeStatus).toHaveBeenCalledWith('st1')
+  })
+
+  it('lists, saves and removes presets', async () => {
+    const t = setup([session('a', 'API')], [], { confirm: true })
+    expect(await t.call('preset_change', { action: 'list' })).toContain('"api"')
+    await t.call('preset_change', { action: 'save', name: 'web', folder: 'C:/web', agent: 'opencode', model: 'x/y', group: 'Backend' })
+    expect(t.app.savePreset).toHaveBeenCalledWith({ id: 'q1', name: 'web', cwd: 'C:/web', agent: 'opencode', model: 'x/y', claudeArgs: [], groupId: 'g1', statusId: null })
+    await t.call('preset_change', { action: 'save', name: 'api', remote_control: false })
+    expect(t.app.savePreset).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'p1', claudeArgs: [] }))
+    await t.call('undo_last_action')
+    expect(t.app.savePreset).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'p1', claudeArgs: ['--remote-control'] }))
+    await expect(t.call('preset_change', { action: 'save', name: 'new-one' })).rejects.toThrow('"folder" is required')
+    expect(await t.call('preset_change', { action: 'remove', name: 'api' })).toContain('was deleted')
+    expect(t.app.removePreset).toHaveBeenCalledWith('p1')
+  })
+
+  it('runs a bulk action through the single-session tools and reports each one', async () => {
+    const t = setup([session('a', 'API', { groupId: 'g1' }), session('b', 'Web', { groupId: 'g1' }), session('c', 'Docs')], [running('a'), running('b'), running('c', { sleeping: true })])
+    const out = await t.call('bulk_action', { action: 'sleep', which: 'running', group: 'Backend' })
+    expect(out).toContain('2 session(s)')
+    expect(t.controller.sleepSession.mock.calls.map((c) => c[0])).toEqual(['a', 'b'])
+    await t.call('bulk_action', { action: 'set_status', value: 'Review', sessions: ['Docs'] })
+    expect(t.store.setSessionStatus).toHaveBeenCalledWith('c', 'st1')
+    await t.call('bulk_action', { action: 'mark_unread', which: 'sleeping' })
+    expect(t.app.markUnread).toHaveBeenCalledWith('c')
+    expect(await t.call('bulk_action', { action: 'wake', which: 'closed' })).toContain('No sessions match')
+    await expect(t.call('bulk_action', { action: 'sleep' })).rejects.toThrow('Say which sessions')
+  })
+
+  it('lists who needs the user and marks read or unread', async () => {
+    const t = setup([session('a', 'API'), session('b', 'Web')], [running('a', { attention: 'permission', activityMessage: 'Allow Bash?' }), running('b')])
+    const out = await t.call('needs_you')
+    expect(out).toContain('"API": waiting for permission')
+    expect(out).toContain('Allow Bash?')
+    expect(out).not.toContain('Web')
+    await t.call('set_read', { session: 'API', read: true })
+    expect(t.app.clearAttention).toHaveBeenCalledWith('a')
+  })
+
+  it('refreshes usage, drives the quota autopilot and reports costs', async () => {
+    const t = setup([session('a', 'API')], [running('a')])
+    expect(await t.call('refresh_usage')).toContain('Refreshed.')
+    t.app.refreshUsage.mockResolvedValueOnce({ ok: false, error: { kind: 'consent', message: 'Allow it first', retryAfterMs: null } })
+    await expect(t.call('refresh_usage')).rejects.toThrow('Allow it first')
+    expect(await t.call('quota_autopilot', { action: 'status' })).toContain('Held for the quota (asleep): "API"')
+    expect(await t.call('quota_autopilot', { action: 'sleep_idle' })).toContain('"API"')
+    expect(await t.call('quota_autopilot', { action: 'wake_held' })).toContain('Woke')
+    expect(t.app.autopilot.wake).toHaveBeenCalledWith(true)
+    const now = t.deps.now()
+    t.turns.set('a', [{ id: 't', sessionId: 'a', prompt: 'x', startedAt: now, endedAt: now, end: 'finished', costUsd: 1.25, neededYou: false }] as TimelineTurn[])
+    const costs = await t.call('cost_report', { days: 2 })
+    expect(costs).toContain('$1.25 in total')
+    expect(costs).toContain('"API": $1.25')
+  })
+
+  it('Code mode: removes a repo after a Yes, shows a file diff, sends review comments', async () => {
+    const t = setup([session('ws1', 'checkout', { worktreeId: 'w1' })], [running('ws1')], { confirm: true })
+    expect(await t.call('remove_repo', { repo: 'shop' })).toContain('was removed')
+    expect(t.app.removeRepo).toHaveBeenCalledWith('r1')
+    expect(await t.call('file_diff', { worktree: 'checkout', path: 'src/a.ts' })).toContain('+new')
+    t.startTimes.set('ws1', 0)
+    const sent = await t.call('send_review_comments', { worktree: 'checkout', comments: [{ path: 'src/a.ts', line: 3, text: 'rename this' }] })
+    expect(sent).toContain('checkout')
+    const typed = t.writes.filter(([id]) => id === 'ws1').map(([, text]) => text).join('')
+    expect(typed).toContain('Review comments on the current changes')
+    expect(typed).toContain('- src/a.ts:3 — rename this')
+    await expect(t.call('send_review_comments', { worktree: 'checkout', comments: [] })).rejects.toThrow('Give 1 to')
+  })
+
+  it('lists workers and pops out or docks the Code window', async () => {
+    const t = setup([session('a', 'API')])
+    expect(await t.call('list_workers', { session: 'API' })).toContain('"tests runner"')
+    expect(await t.call('code_window', { action: 'dock' })).toContain('not open')
+    await t.call('code_window', { action: 'pop_out' })
+    expect(t.app.popOutCode).toHaveBeenCalled()
+  })
+})
+
+describe('Jarvis screen tools (D55)', () => {
+  it('sends screen actions to the window with the mode of their sessions', async () => {
+    const t = setup([session('a', 'API'), session('b', 'Web'), session('w', 'checkout', { worktreeId: 'w1' })])
+    expect(await t.call('get_screen_state')).toContain('Code window: docked')
+    await t.call('set_view', { view: 'hub' })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: undefined, action: { kind: 'view', view: 'hub' } })
+    await t.call('set_grid', { preset: '2x1', cells: ['API', null] })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'grid', preset: '2x1', cells: ['a', null] } })
+    await expect(t.call('set_grid', { cells: ['API', 'checkout'] })).rejects.toThrow('different modes')
+    await expect(t.call('set_grid', { preset: '1x1', cells: ['API', 'Web'] })).rejects.toThrow('has 1 cell')
+    await expect(t.call('set_grid', { cells: ['API', 'API'] })).rejects.toThrow('one cell only')
+    await t.call('split_view', { how: 'down', session: 'checkout' })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'openToSide', id: 'w', direction: 'down' } })
+    await t.call('open_dialog', { name: 'settings', page: 'quota' })
+    expect(t.uiCalls.at(-1)?.action).toEqual({ kind: 'dialog', name: 'settings', section: 'quota' })
+    await t.call('terminal_zoom', { action: 'in', steps: 3 })
+    expect(t.uiCalls.filter((c) => c.action.kind === 'zoom')).toHaveLength(3)
+  })
+
+  it('switch_mode brings the popped-out Code window forward instead', async () => {
+    const t = setup([session('a', 'API')])
+    t.setCodePoppedOut(true)
+    expect(await t.call('switch_mode', { mode: 'code' })).toContain('own window')
+    expect(t.app.popOutCode).toHaveBeenCalled()
+    expect(t.uiCalls).toHaveLength(0)
+    await t.call('switch_mode', { mode: 'ops' })
+    expect(t.uiCalls.at(-1)?.action).toEqual({ kind: 'mode', mode: 'ops' })
+  })
+
+  it('opens the side panel for a session (shows it first) and refuses Changes outside a worktree', async () => {
+    const t = setup([session('a', 'API')])
+    await t.call('side_panel', { open: true, tab: 'queue', session: 'API' })
+    expect(t.deps.openSession).toHaveBeenCalledWith('a')
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'sidePanel', open: true, tab: 'queue' } })
+    await expect(t.call('side_panel', { open: true, tab: 'changes', session: 'API' })).rejects.toThrow('not in a worktree')
+  })
+
+  it('shows or dismisses a worker tab by name', async () => {
+    const t = setup([session('a', 'API')])
+    await t.call('worker_tab', { op: 'show', worker: 'tests' })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'worker', op: 'show', workerId: 'wk1' } })
+    await expect(t.call('worker_tab', { op: 'dismiss', worker: 'nope' })).rejects.toThrow('No worker matches')
   })
 })

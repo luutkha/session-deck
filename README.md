@@ -25,7 +25,7 @@ A Windows desktop app for running and managing many [Claude Code](https://claude
 - Code mode can pop out into its own window.
 
 **Jarvis** (Ctrl+Shift+J, or the Jarvis button in the tab bar)
-- A right-side panel over every session, in both modes. Ask in plain words: create, close, sleep, wake, restart or fork sessions; send prompts and wait for results; read a session's screen or last answer; manage groups, statuses and notes; create worktrees; check usage.
+- A right-side panel over every session, in both modes. Ask in plain words: create, close, sleep, wake, restart or fork sessions; send prompts and wait for results; read a session's screen or last answer; manage groups, statuses and notes; create worktrees; check usage. It controls the whole app: what is on screen (mode, Hub, grid, split, sidebar, side panel, dialogs, zoom), settings, prompt queues, checklists, presets, bulk actions, the quota autopilot, costs, diffs and review comments.
 - Removals ask you first in the app. An Undo button reverts Jarvis's last actions.
 - Scheduled instructions, e.g. "every weekday at 9:00, wake API and run the tests".
 - Voice: a mic button (Windows speech recognition, offline) and replies read aloud.
@@ -51,6 +51,7 @@ Requires Node 22+, Windows (primary target) and the `claude` CLI on PATH, logged
 | `npx electron-vite build` then `node scripts/e2e-<name>.cjs` | one real-app suite per feature, driven over CDP with a temp profile |
 | `npm run e2e` | smoke: window, create/rename/status, real `claude` in a PTY, hooks → attention, close |
 | `npm run e2e:jarvis` | Jarvis: MCP tool server, tools on real sessions, confirm dialog, panel in Ops and Code, schedules, undo |
+| `npm run e2e:jarvis-control` | Jarvis controls the whole app (D55): screen, settings, queue, checklist, groups, statuses, presets, bulk |
 | `npm run e2e:packaged` | the packaged app (`release/win-unpacked`), including Jarvis |
 | `npm run e2e:spaces` | the app and Jarvis with paths that contain spaces |
 
