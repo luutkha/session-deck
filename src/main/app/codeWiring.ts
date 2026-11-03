@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { CreateWorktreeResult, FileDiff, FilePreview, HookEvent, Id, Repo, RepoBranches, Worktree, WorktreeChanges } from '../../shared/types'
 import { IPC } from '../../shared/ipc'
 import type { SessionStore } from '../store'
-import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, readWorktreeChanges, readWorktreePreview, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
+import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, resolveCommit, readWorktreeChanges, readWorktreePreview, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
 import { asCreateWorktreeInput, assertBoolean, assertId, assertNonEmptyString } from './ipcValidation'
 import type { SessionController } from './sessionController'
 import { errorMessage } from '../../shared/guards'
@@ -110,12 +110,26 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     const input = asCreateWorktreeInput(raw)
     const repo = repoOrThrow(input.repoId)
     const name = validateWorktreeName(input.name)
-    const configured = store.getSettings().code.worktreesRoot
-    const root = configured.length > 0 ? configured : defaultWorktreesRoot(deps.homedir)
-    const created = await createGitWorktree({ repoPath: repo.path, repoName: repo.name, root, name, baseBranch: input.baseBranch })
-    const worktree = store.addWorktree({
-      repoId: repo.id, name, branch: created.branch, path: created.path, baseBranch: input.baseBranch, baseCommit: created.baseCommit
-    })
+    let worktree: Worktree
+    if (input.source === 'main') {
+      // D57: the repo's own folder as a workspace. No branch is created; nothing on disk changes.
+      const open = (store.get().worktrees ?? []).find((w) => w.repoId === repo.id && w.main === true)
+      if (open !== undefined) throw new Error(`The repository folder is already open in SessionDeck as "${open.name}".`)
+      const head = await listBranches(repo.path)
+      const branch = head.current ?? 'HEAD'
+      const baseCommit = await resolveCommit(repo.path, 'HEAD')
+      worktree = store.addWorktree({ repoId: repo.id, name, branch, path: repo.path, baseBranch: branch, baseCommit, main: true })
+    } else {
+      const configured = store.getSettings().code.worktreesRoot
+      const root = configured.length > 0 ? configured : defaultWorktreesRoot(deps.homedir)
+      const created = await createGitWorktree({
+        repoPath: repo.path, repoName: repo.name, root, name, baseBranch: input.baseBranch,
+        ...(input.source === 'existing' && input.branch !== undefined ? { existingBranch: input.branch } : {})
+      })
+      worktree = store.addWorktree({
+        repoId: repo.id, name: created.name, branch: created.branch, path: created.path, baseBranch: input.baseBranch, baseCommit: created.baseCommit
+      })
+    }
     try {
       const session = controller.createSession({
         cwd: worktree.path, agent: input.agent, worktreeId: worktree.id, ...(input.model !== undefined ? { model: input.model } : {})

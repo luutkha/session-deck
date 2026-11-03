@@ -40,6 +40,7 @@ function NewDialogView(props: WorkspaceDialogsProps & { readonly data: StoreData
       return (
         <NewWorktreeDialog
           repos={data.repos ?? []}
+          worktrees={data.worktrees ?? []}
           defaultRepoId={newDialog.repoId}
           settings={settings}
           onClose={onCloseNew}

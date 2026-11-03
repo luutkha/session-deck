@@ -70,6 +70,7 @@
     "e2e:fork-search-real": "node scripts/e2e-fork-search-real.cjs",
     "e2e:jarvis": "node scripts/e2e-jarvis.cjs",
     "e2e:jarvis-control": "node scripts/e2e-jarvis-control.cjs",
+    "e2e:worktree-sources": "node scripts/e2e-worktree-sources.cjs",
     "e2e:jarvis-real": "node scripts/e2e-jarvis-real.cjs",
     "e2e:jarvis-opencode": "node scripts/e2e-jarvis-opencode.cjs",
     "e2e:jarvis-voice": "node scripts/e2e-jarvis-voice.cjs",

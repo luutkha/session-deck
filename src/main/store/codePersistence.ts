@@ -38,7 +38,8 @@ function parseWorktree(raw: unknown): Worktree | undefined {
     baseBranch: raw.baseBranch as string,
     baseCommit: raw.baseCommit as string,
     createdAt: raw.createdAt,
-    collapsed: raw.collapsed
+    collapsed: raw.collapsed,
+    ...(raw.main === true ? { main: true } : {})
   }
 }
 

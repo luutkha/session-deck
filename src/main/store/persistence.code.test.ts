@@ -172,3 +172,14 @@ describe('store round trip with repos, worktrees and shell sessions', () => {
     expect(loaded.data).toEqual(old)
   })
 })
+
+describe('the repo-folder workspace flag (D57)', () => {
+  it('keeps main: true and drops any other value', () => {
+    const data = parseStoreData(file({
+      repos: [repo('r1')],
+      worktrees: [{ ...worktree('w1', 'r1', '/repos/r1'), main: true }, { ...worktree('w2', 'r1'), main: 'yes' }]
+    }))
+    expect(data.worktrees?.[0].main).toBe(true)
+    expect(data.worktrees?.[1]).not.toHaveProperty('main')
+  })
+})

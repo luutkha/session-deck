@@ -57,6 +57,23 @@ export async function resolveRepoRoot(folder: string, run: GitRun = runGit): Pro
   return normalisePath(top)
 }
 
+/** D57: the branch of every worktree of the repo (main one included); detached and bare entries are left out. */
+export async function listCheckedOutBranches(
+  repoPath: string,
+  run: GitRun = runGit
+): Promise<readonly { readonly branch: string; readonly path: string }[]> {
+  const result = await run(['worktree', 'list', '--porcelain'], { cwd: repoPath })
+  const found: { branch: string; path: string }[] = []
+  let current: string | null = null
+  for (const line of result.stdout.split(/\r?\n/)) {
+    if (line.startsWith('worktree ')) current = normalisePath(line.slice('worktree '.length).trim())
+    else if (line.startsWith('branch refs/heads/') && current !== null) {
+      found.push({ branch: line.slice('branch refs/heads/'.length).trim(), path: current })
+    } else if (line.trim() === '') current = null
+  }
+  return found
+}
+
 /** Local branches (sorted) and the branch checked out in the repository (null when HEAD is detached). */
 export async function listBranches(repoPath: string, run: GitRun = runGit): Promise<RepoBranches> {
   const refs = await run(['for-each-ref', '--format=%(refname:short)', 'refs/heads'], { cwd: repoPath })
@@ -68,7 +85,7 @@ export async function listBranches(repoPath: string, run: GitRun = runGit): Prom
   const head = await run(['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: repoPath, okCodes: [0, 1] })
   const headName = head.stdout.trim()
   const current = head.code === 0 && headName !== '' ? headName : null
-  return { current, branches }
+  return { current, branches, checkedOut: await listCheckedOutBranches(repoPath, run) }
 }
 
 /** True when refs/heads/<branch> exists. */

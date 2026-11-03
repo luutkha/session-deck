@@ -35,7 +35,7 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - **A terminal that hides must not shrink.** `display: none` / width 0 makes xterm fit to a few columns and resizes the pty, so Claude redraws for that width. Slide out with `translate-x-full` + `invisible`.
 - **xterm search reports counts only with decorations on**, and one search addon searches one `Terminal`: capture the pane when the bar opens and close the bar on a tab switch.
 - **The terminal draws with WebGL: `.xterm-rows` has no text.** Read terminal content through `window.api.ptyReplay` (or render the replay with `@xterm/headless`, as Jarvis's `read_screen` does); check the canvas size for "is it drawn".
-- **`os.tmpdir()` can be an 8.3 short path** (`C:\Users\KHALT_~1\...`); the Claude arg allow-list rejects `~`, so resolve with `fs.realpathSync.native` before passing a temp file as an argument.
+- **`os.tmpdir()` can be an 8.3 short path** (`C:\Users\KHALT_~1\...`); the Claude arg allow-list rejects `~`, so resolve with `fs.realpathSync.native` before passing a temp file as an argument. Git reports the long path, so tests comparing a temp repo path with what the app stored must compare real paths too.
 - **Paths with spaces** (a "John Smith" user folder) reach `claude` through `cmd.exe /d /c`; node-pty quotes them correctly. `e2e-spaces.cjs` proves it on the dev build and the packaged exe.
 - **Windows 11 accepts `C:\dir\con` as a folder, but git cannot make the branch `con`.** Make every branch SEGMENT safe (`branchNameFor`); test with a real `git worktree add`.
 - **The OS clipboard can be dead even though the app runs** (remote/headless sessions), and it comes and goes. Clipboard e2es preflight write+read on every run and report SKIP.
@@ -84,4 +84,5 @@ Things that cost time once. Read the section for the area before touching it. Ad
 
 ## Tooling in this environment
 - **Shell quoting mangles code.** Heredocs, `sed`, `node -e` and `python -c` lose backslashes, `$1`-style text and quotes, and can write real CR/LF bytes into string literals. Write code with the Write/Edit tools, or put the script in a file and run the file.
+- **A retry loop that spawns git per attempt is slow on Windows.** The worktree name search tried up to 99 names with one `git show-ref` each (5 s, a test timeout); read all branches once (`for-each-ref`) and check the set.
 - **Files are CRLF in the working tree.** Multi-line search/replace from a script must use the file's own line ending (`s.includes('\r\n') ? '\r\n' : '\n'`), or the match silently fails.

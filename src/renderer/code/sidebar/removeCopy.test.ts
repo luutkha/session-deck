@@ -27,6 +27,9 @@ describe('repoRemoveMessage', () => {
 })
 
 describe('worktreeRemoveMessage', () => {
+  it('says the repository folder is not touched for the repo-folder workspace (D57)', () => {
+    expect(worktreeRemoveMessage('app', 0, 'C:/src/app', true)).toBe('removes app from SessionDeck. The repository folder is not touched: C:/src/app')
+  })
   it('names the stopped sessions and the folder that stays on disk', () => {
     expect(worktreeRemoveMessage('Refunds', 1, 'C:\\wt\\refunds')).toBe(
       'Stops its 1 session and removes Refunds from SessionDeck. The folder and branch stay on disk: C:\\wt\\refunds'

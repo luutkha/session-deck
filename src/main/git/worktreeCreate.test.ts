@@ -3,7 +3,8 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { WORKTREE_NAME_MAX } from '../../shared/types'
 import { cleanupTempDirs, git, makeRepo, makeTempDir } from './testRepo'
-import { createGitWorktree, defaultWorktreesRoot } from './worktreeCreate'
+import { createGitWorktree, defaultWorktreesRoot, nameCandidate } from './worktreeCreate'
+import { listBranches } from './repoInfo'
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/
 
@@ -58,12 +59,46 @@ describe('createGitWorktree', () => {
     expect(git(repo, 'rev-parse', created.branch)).toBe(git(repo, 'rev-parse', 'release-1'))
   })
 
-  it('rejects a second worktree whose name maps to an existing branch', async () => {
+  it('gives a second worktree with the same name the next free name, branch and folder (D57, like Orca)', async () => {
     const root = makeTempDir('dup')
-    await createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'Dup Name', baseBranch: 'main' })
+    const first = await createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'Dup Name', baseBranch: 'main' })
+    const second = await createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'dup name', baseBranch: 'main' })
+    const third = await createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'Dup Name', baseBranch: 'main' })
+    expect(first.branch).toBe('dup-name')
+    expect([second.name, second.branch, path.basename(second.path)]).toEqual(['dup name-2', 'dup-name-2', 'dup-name-2'])
+    expect(third.branch).toBe('dup-name-3')
+    expect(existsSync(path.join(third.path, 'README.md'))).toBe(true)
+  })
+
+  it('skips a name whose branch exists even when its folder is free', async () => {
+    git(repo, 'branch', 'only-branch')
+    const root = makeTempDir('branchonly')
+    const created = await createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'only branch', baseBranch: 'main' })
+    expect(created.branch).toBe('only-branch-2')
+  })
+
+  it('checks out an existing branch in a new worktree, with changes against the base (D57)', async () => {
+    git(repo, 'branch', 'feature-x')
+    const root = makeTempDir('existing')
+    const created = await createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'Feature X', baseBranch: 'main', existingBranch: 'feature-x' })
+    expect(created.branch).toBe('feature-x')
+    expect(git(created.path, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('feature-x')
+    expect(created.baseCommit).toBe(mainSha)
+    expect((await listBranches(repo)).checkedOut?.some((c) => c.branch === 'feature-x' && c.path === created.path)).toBe(true)
+  })
+
+  it('refuses a branch that is already open in another worktree, naming where', async () => {
+    const root = makeTempDir('busy')
+    const open = await createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'busy one', baseBranch: 'main' })
     await expect(
-      createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'dup name', baseBranch: 'main' })
-    ).rejects.toThrow('A branch named "dup-name" already exists in this repository.')
+      createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'again', baseBranch: 'main', existingBranch: 'busy-one' })
+    ).rejects.toThrow(`Branch "busy-one" is already open in ${open.path}`)
+    await expect(
+      createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'main again', baseBranch: 'main', existingBranch: 'main' })
+    ).rejects.toThrow('Branch "main" is already open in')
+    await expect(
+      createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'ghost', baseBranch: 'main', existingBranch: 'no-such' })
+    ).rejects.toThrow('Branch not found: no-such')
   })
 
   it('adds a -2 suffix when the folder is already taken', async () => {
@@ -89,7 +124,15 @@ describe('createGitWorktree', () => {
     }
     await expect(
       createGitWorktree({ repoPath: repo, repoName: 'repo', root, name: 'Full Folder', baseBranch: 'main' })
-    ).rejects.toThrow('No free folder name for this worktree.')
+    ).rejects.toThrow('No free name for this worktree: "Full Folder" up to "Full Folder-99" are taken.')
+  })
+
+  it('keeps a suffixed name within the name limit', () => {
+    expect(nameCandidate('abc', 1)).toBe('abc')
+    expect(nameCandidate('abc', 2)).toBe('abc-2')
+    const long = 'x'.repeat(WORKTREE_NAME_MAX)
+    expect(nameCandidate(long, 12)).toHaveLength(WORKTREE_NAME_MAX)
+    expect(nameCandidate(long, 12).endsWith('-12')).toBe(true)
   })
 
   it('rejects when the base branch does not exist', async () => {

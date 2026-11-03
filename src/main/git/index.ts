@@ -2,7 +2,7 @@
 export { branchNameFor, folderNameFor, repoFolderName, validateWorktreeName } from './branchName'
 export { GIT_FATAL_EXIT_CODE, GIT_MAX_BYTES, GIT_TIMEOUT_MS, GitError, runGit } from './gitRunner'
 export type { GitResult, GitRun, GitRunOptions } from './gitRunner'
-export { branchExists, listBranches, resolveCommit, resolveRepoRoot } from './repoInfo'
+export { branchExists, listBranches, listCheckedOutBranches, resolveCommit, resolveRepoRoot } from './repoInfo'
 export { createGitWorktree, defaultWorktreesRoot } from './worktreeCreate'
 export type { CreatedGitWorktree, CreateGitWorktreeInput } from './worktreeCreate'
 export { diffBase, readWorktreeChanges } from './worktreeChanges'

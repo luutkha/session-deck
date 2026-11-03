@@ -156,9 +156,14 @@ export interface Worktree {
   readonly baseCommit: string
   readonly createdAt: number // epoch ms
   readonly collapsed: boolean
+  /** D57: the repo's own folder (its main checkout), opened as a workspace; no branch was created for it. */
+  readonly main?: boolean
 }
 
 export const WORKTREE_NAME_MAX = 60
+
+/** D57: where a Code mode workspace comes from. new = a new branch from baseBranch; existing = an existing local branch; main = the repo's own folder. */
+export type WorktreeSource = 'new' | 'existing' | 'main'
 
 /** Persisted document (JSON on disk). Runtime-only data (run state, attention) is NOT persisted. */
 /** One match in a past conversation (D52 conversation search). */
@@ -264,8 +269,12 @@ export interface CreateWorktreeInput {
   readonly repoId: Id
   /** 1..WORKTREE_NAME_MAX chars; the branch and folder name are derived from it (see branchNameFor). */
   readonly name: string
-  /** An existing local branch of the repo. */
+  /** An existing local branch of the repo: the new branch starts from it, and changes are shown against it. */
   readonly baseBranch: string
+  /** D57: absent = 'new'. */
+  readonly source?: WorktreeSource
+  /** D57, source 'existing': the local branch to check out (it must not be open in another worktree). */
+  readonly branch?: string
   /** Agent of the first session started in the new worktree. */
   readonly agent: AgentKind
   /** OpenCode only: "provider/model". */
@@ -283,6 +292,8 @@ export interface RepoBranches {
   readonly current: string | null
   /** Local branch names (refs/heads), sorted. */
   readonly branches: readonly string[]
+  /** D57: branches checked out in a worktree (the main one included), with its folder. Git allows one worktree per branch. */
+  readonly checkedOut?: readonly { readonly branch: string; readonly path: string }[]
 }
 
 /** How a file differs from the worktree's base. */

@@ -150,3 +150,32 @@ describe('checkModel', () => {
     expect(result.ok).toBe(false)
   })
 })
+
+describe('D57 workspace sources', () => {
+  it('marks branches already open in a worktree and finds the first free one', async () => {
+    const { existingBranchChoices, firstFreeBranch } = await import('./worktreeDialogLogic')
+    const choices = existingBranchChoices(['dev', 'feat', 'main'], [{ branch: 'main', path: 'C:/repo' }, { branch: 'dev', path: 'C:/wt/dev' }])
+    expect(choices).toEqual([
+      { branch: 'dev', openIn: 'C:/wt/dev' },
+      { branch: 'feat', openIn: null },
+      { branch: 'main', openIn: 'C:/repo' }
+    ])
+    expect(firstFreeBranch(choices)).toBe('feat')
+    expect(firstFreeBranch(existingBranchChoices(['main'], [{ branch: 'main', path: 'C:/repo' }]))).toBeNull()
+    expect(existingBranchChoices(['x'], undefined)).toEqual([{ branch: 'x', openIn: null }])
+  })
+
+  it('finds the repo folder workspace of a repo', async () => {
+    const { openRepoFolder } = await import('./worktreeDialogLogic')
+    const w = (id: string, repoId: string, main?: boolean) => ({ id, repoId, main }) as unknown as import('../../../shared/types').Worktree
+    expect(openRepoFolder([w('a', 'r1'), w('b', 'r1', true)], 'r1')?.id).toBe('b')
+    expect(openRepoFolder([w('b', 'r1', true)], 'r2')).toBeNull()
+  })
+
+  it('compares an existing branch with the default base, never with itself', async () => {
+    const { compareBaseFor } = await import('./worktreeDialogLogic')
+    expect(compareBaseFor('feat', 'main', ['feat', 'main'])).toBe('main')
+    expect(compareBaseFor('main', 'main', ['dev', 'main'])).toBe('dev')
+    expect(compareBaseFor('main', 'main', ['main'])).toBe('main')
+  })
+})

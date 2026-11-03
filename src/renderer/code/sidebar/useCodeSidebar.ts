@@ -80,7 +80,7 @@ export function useCodeSidebar(input: CodeSidebarControllerInput): CodeSidebarCo
     (worktree: Worktree): void => {
       setPending({
         title: 'Remove worktree',
-        message: worktreeRemoveMessage(worktree.name, worktreeSessionCount(data, worktree.id), worktree.path),
+        message: worktreeRemoveMessage(worktree.name, worktreeSessionCount(data, worktree.id), worktree.path, worktree.main === true),
         confirmLabel: 'Remove',
         onConfirm: (): void => {
           setPending(null)

@@ -429,6 +429,18 @@ describe('jarvis tools', () => {
     expect(writes.map((w) => w[1])).toEqual(['fix the login', '\r'])
   })
 
+  it('opens an existing branch or the repo folder, and refuses a branch open elsewhere (D57)', async () => {
+    const { call, code } = setup([])
+    code.branches.mockResolvedValue({ current: 'main', branches: ['dev', 'main'], checkedOut: [{ branch: 'main', path: 'C:/src/shop' }] })
+    await call('create_worktree', { repo: 'shop', existing_branch: 'dev' })
+    expect(code.createWorktree).toHaveBeenLastCalledWith({ repoId: 'r1', name: 'dev', baseBranch: 'main', agent: 'claude', source: 'existing', branch: 'dev' })
+    await call('create_worktree', { repo: 'shop', repo_folder: true })
+    expect(code.createWorktree).toHaveBeenLastCalledWith({ repoId: 'r1', name: 'shop', baseBranch: 'main', agent: 'claude', source: 'main' })
+    await expect(call('create_worktree', { repo: 'shop', existing_branch: 'main' })).rejects.toThrow('Branch "main" is already open in C:/src/shop')
+    await expect(call('create_worktree', { repo: 'shop', existing_branch: 'dev', repo_folder: true })).rejects.toThrow('not both')
+    await expect(call('create_worktree', { repo: 'shop' })).rejects.toThrow('"name" is required')
+  })
+
   it('refuses an unknown base branch or repo', async () => {
     const { call, code } = setup([])
     await expect(call('create_worktree', { repo: 'shop', name: 'x', base_branch: 'nope' })).rejects.toThrow('No local branch "nope" in "shop". Branches: dev, main')

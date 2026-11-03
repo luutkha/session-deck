@@ -1,5 +1,5 @@
 // Pure rules for the Code mode dialogs (name checks, base branch default, path hint, agent and model). No React.
-import { WORKTREE_NAME_MAX, type AgentKind, type CreateSessionInput, type Worktree } from '../../../shared/types'
+import { WORKTREE_NAME_MAX, type AgentKind, type CreateSessionInput, type Id, type Worktree } from '../../../shared/types'
 import { validateOpenCodeModel } from '../../Sidebar/dialogLogic'
 
 /** Session names follow the Ops rule (validateName in Sidebar/inlineEditValidation). */
@@ -111,4 +111,36 @@ export function checkModel(agent: AgentKind, modelRaw: string): ModelCheck {
     return { ok: false, error: result.error }
   }
   return { ok: true, model: result.value.length > 0 ? result.value : undefined }
+}
+
+// ---- D57: where the workspace comes from (new branch, existing branch, the repo's own folder)
+
+export interface BranchChoice {
+  readonly branch: string
+  /** The folder where the branch is already checked out; null = free to open. Git allows one worktree per branch. */
+  readonly openIn: string | null
+}
+
+/** Every local branch, with where it is already open (a busy branch cannot be opened in a new worktree). */
+export function existingBranchChoices(
+  branches: readonly string[],
+  checkedOut: readonly { readonly branch: string; readonly path: string }[] | undefined
+): readonly BranchChoice[] {
+  return branches.map((branch) => ({ branch, openIn: checkedOut?.find((c) => c.branch === branch)?.path ?? null }))
+}
+
+/** The first branch that is free to open, or null. */
+export function firstFreeBranch(choices: readonly BranchChoice[]): string | null {
+  return choices.find((c) => c.openIn === null)?.branch ?? null
+}
+
+/** The SessionDeck workspace that already shows the repo's own folder, if any. */
+export function openRepoFolder(worktrees: readonly Worktree[], repoId: Id | null): Worktree | null {
+  return worktrees.find((w) => w.repoId === repoId && w.main === true) ?? null
+}
+
+/** Base to compare an existing branch with: the default base, unless that is the branch itself. */
+export function compareBaseFor(branch: string | null, defaultBase: string | null, branches: readonly string[]): string | null {
+  if (defaultBase !== null && defaultBase !== branch) return defaultBase
+  return branches.find((b) => b !== branch) ?? defaultBase
 }

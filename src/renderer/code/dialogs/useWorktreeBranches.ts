@@ -23,6 +23,9 @@ export interface WorktreeBranches {
   /** The chosen base branch: the user's pick, else the default (see pickBaseBranch). null = none. */
   readonly base: string | null
   readonly chooseBase: (branch: string) => void
+  /** D57: the branch checked out in the repo folder (null = detached or not loaded) and where each branch is open. */
+  readonly current: string | null
+  readonly checkedOut: readonly { readonly branch: string; readonly path: string }[]
 }
 
 /**
@@ -62,6 +65,8 @@ export function useWorktreeBranches(repoId: Id | null): WorktreeBranches {
     base,
     chooseBase: (branch: string): void => {
       if (repoId !== null) setChoice({ repoId, branch })
-    }
+    },
+    current: repoBranches?.current ?? null,
+    checkedOut: repoBranches?.checkedOut ?? []
   }
 }

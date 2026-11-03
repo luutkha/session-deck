@@ -246,6 +246,16 @@ After "tested good now", asked "what is next step for jarvis"; offered 1) shippa
 - **Tab bar (refines D18):** a project's tab bar shows only sessions that are running and awake. Sleeping or exited sessions lose their tab from the bar, except the session on screen. They come back when they run again; the sidebar still lists them.
 - **Jarvis (extends D53/D54), "do all":** tools for screen and views (mode, view, grid, split, tabs, sidebar, side panel), settings (read, change, open), prompt queue, checklist, groups (rename, reorder, collapse) and statuses, presets, bulk actions, usage refresh and quota autopilot, cost report, Code mode (remove repo, file diff, diff comments, pop out/dock), mark read/unread, needs-you list, worker tabs, terminal zoom. Same paths as the UI; removals confirm; reversible actions undo.
 
+**D56 · 2026-11-03 · Code mode on a non-git folder: skipped** · active
+"for the code mode, currently i can not create workspace on non-git folder". Offered: set up git for the folder (git init + first commit), plain folder workspaces without worktrees, or both. The user: "skip it". Code mode stays git-only; Add repository still refuses a non-git folder. (Orca has folder workspaces; offer again only if the user brings it up.)
+
+**D57 · 2026-11-03 · Worktrees like Orca: auto-suffix, reuse a branch, the repo's own folder** · active
+"i can not create 2 worktree in the same folder or same branch, i want u to check how Orca handle". Orca (stablyai/orca, read 2026-11-03) never fails on a taken name (branch and folder get -2, -3 ... together), can check out an existing branch in a new worktree ("Reuse branch"), refuses a branch already checked out in another worktree (git forbids it), and lists the repo's own folder as the main worktree. Offered the three; the user: "all three, but keep them in the code-mode only".
+- A taken worktree name becomes name-2, name-3 ... for both branch and folder; the final branch is shown.
+- New worktree can use an existing local branch; a branch open in another worktree (or the main checkout) is refused with its name.
+- The repo's own folder can be opened as a workspace (the main checkout): sessions run on the checked-out branch, no new branch; "Remove" only takes it out of SessionDeck.
+- Code mode only: Ops mode is unchanged (D09/D31). Jarvis's create_worktree follows the same rules.
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 

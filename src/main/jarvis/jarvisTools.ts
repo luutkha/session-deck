@@ -758,7 +758,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
           lines.push(`- repo "${repo.name}" (id ${repo.id}) · ${repo.path}${branchText}`)
           for (const w of (data.worktrees ?? []).filter((x) => x.repoId === repo.id)) {
             const sessions = data.sessions.filter((s) => s.worktreeId === w.id).map((s) => `"${s.name}"`)
-            lines.push(`  - worktree "${w.name}" (id ${w.id}) · branch ${w.branch} from ${w.baseBranch} · ${w.path} · sessions: ${sessions.join(', ') || '(none)'}`)
+            lines.push(`  - ${w.main === true ? 'repo folder' : 'worktree'} "${w.name}" (id ${w.id}) · branch ${w.branch}${w.main === true ? '' : ` from ${w.baseBranch}`} · ${w.path} · sessions: ${sessions.join(', ') || '(none)'}`)
           }
         }
         return lines.join('\n')
@@ -776,31 +776,49 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'create_worktree',
-      description: 'Code mode: creates a new branch + git worktree from a repository and starts a session in it (optionally with a first prompt). The branch and folder names come from the worktree name.',
+      description: 'Code mode: creates a workspace in a repository and starts a session in it (optionally with a first prompt). Default: a new branch + git worktree named after "name" (a taken name gets -2, -3 ...). existing_branch: open a local branch you already have in its own worktree (refused when it is open in another worktree; git allows one). repo_folder=true: use the repository folder itself, on its checked-out branch (once per repo; nothing is created).',
       inputSchema: schema({
         repo: { type: 'string', description: 'Repository name, path or id (see list_repos).' },
-        name: { type: 'string', description: `Worktree name, 1 to ${WORKTREE_NAME_MAX} characters, e.g. "login fix".` },
+        name: { type: 'string', description: `Worktree name, 1 to ${WORKTREE_NAME_MAX} characters, e.g. "login fix". Default: the branch name (existing_branch) or the repo name (repo_folder).` },
+        existing_branch: { type: 'string', description: 'Open this existing local branch instead of creating one.' },
+        repo_folder: { type: 'boolean', description: 'Use the repository folder itself.' },
         base_branch: { type: 'string', description: 'Local branch to start from (default: the branch checked out in the repo).' },
         agent: { type: 'string', enum: ['claude', 'opencode', 'shell'], description: 'Default claude.' },
         model: { type: 'string', description: 'OpenCode only: provider/model.' },
         prompt: { type: 'string', description: 'First prompt, typed in when the session is ready.' },
         open: { type: 'boolean', description: 'Show the new session (default false).' }
-      }, ['repo', 'name']),
+      }, ['repo']),
       run: async (args) => {
         const data = deps.getData()
         const repo = resolveRepo(data, text(args, 'repo'))
-        const name = text(args, 'name').trim()
+        const existing = optionalText(args, 'existing_branch')?.trim()
+        const repoFolder = optionalBool(args, 'repo_folder') === true
+        if (existing !== undefined && repoFolder) throw new Error('Give existing_branch or repo_folder, not both.')
+        const name = (optionalText(args, 'name') ?? (repoFolder ? repo.name : existing) ?? '').trim()
+        if (name.length === 0) throw new Error('"name" is required for a new branch.')
         const agentArg = optionalText(args, 'agent') ?? 'claude'
         if (!['claude', 'opencode', 'shell'].includes(agentArg)) throw new Error('"agent" must be claude, opencode or shell.')
         const branches = await deps.code.branches(repo.id)
-        const base = optionalText(args, 'base_branch')?.trim() ?? branches.current
+        if (existing !== undefined && !branches.branches.includes(existing)) throw new Error(`No local branch "${existing}" in "${repo.name}". Branches: ${branches.branches.join(', ')}`)
+        const busy = existing === undefined ? undefined : branches.checkedOut?.find((c) => c.branch === existing)
+        if (busy !== undefined) throw new Error(`Branch "${existing}" is already open in ${busy.path}. Git allows a branch in one worktree only: use that workspace, or another branch.`)
+        const defaultBase = existing !== undefined && branches.current === existing ? branches.branches.find((b) => b !== existing) ?? existing : branches.current
+        const base = optionalText(args, 'base_branch')?.trim() ?? defaultBase
         if (base === null) throw new Error(`"${repo.name}" has no branch checked out (detached HEAD). Say which base_branch to use: ${branches.branches.join(', ')}`)
         if (!branches.branches.includes(base)) throw new Error(`No local branch "${base}" in "${repo.name}". Branches: ${branches.branches.join(', ')}`)
         const model = agentArg === 'opencode' ? optionalText(args, 'model') : undefined
-        const { worktree, session } = await deps.code.createWorktree({ repoId: repo.id, name, baseBranch: base, agent: agentArg as AgentKind, ...(model !== undefined ? { model } : {}) })
-        deps.log('create_worktree', `${repo.name}: ${worktree.name} (${worktree.branch})`)
+        const { worktree, session } = await deps.code.createWorktree({
+          repoId: repo.id, name, baseBranch: base, agent: agentArg as AgentKind,
+          ...(repoFolder ? { source: 'main' as const } : existing !== undefined ? { source: 'existing' as const, branch: existing } : {}),
+          ...(model !== undefined ? { model } : {})
+        })
+        deps.log('create_worktree', `${repo.name}: ${worktree.name} (${worktree.branch})${repoFolder ? ' repo folder' : existing !== undefined ? ' existing branch' : ''}`)
         if (optionalBool(args, 'open') === true) deps.openSession(session.id)
-        const created = `Created worktree "${worktree.name}" on branch ${worktree.branch} (from ${base}) at ${worktree.path}, with session "${session.name}" (id ${session.id}).`
+        const created = repoFolder
+          ? `Opened the repository folder ${worktree.path} (branch ${worktree.branch}) as "${worktree.name}", with session "${session.name}" (id ${session.id}).`
+          : existing !== undefined
+            ? `Opened branch ${worktree.branch} in worktree "${worktree.name}" at ${worktree.path} (changes against ${base}), with session "${session.name}" (id ${session.id}).`
+            : `Created worktree "${worktree.name}" on branch ${worktree.branch} (from ${base}) at ${worktree.path}, with session "${session.name}" (id ${session.id}).${worktree.name !== name ? ` ("${name}" was taken, so it is "${worktree.name}".)` : ''}`
         const prompt = optionalText(args, 'prompt')
         return prompt === undefined ? created : `${created} ${await sendPrompt(session, prompt, 'auto')}`
       }

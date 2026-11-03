@@ -20,7 +20,7 @@ A Windows desktop app for running and managing many [Claude Code](https://claude
 - A quota autopilot sleeps idle sessions at the limit, wakes them at the reset, and types "continue" for you.
 
 **Code mode**
-- Add git repos and create worktrees, each with its sessions (Claude, OpenCode or a plain shell).
+- Add git repos and create worktrees, each with its sessions (Claude, OpenCode or a plain shell). Start a worktree from a new branch (a taken name becomes name-2), from a branch you already have, or use the repository folder itself.
 - A Changes panel with diffs per file. Comment on diff lines and send the comments to the agent. Rendered Markdown and image previews.
 - Code mode can pop out into its own window.
 
@@ -51,6 +51,7 @@ Requires Node 22+, Windows (primary target) and the `claude` CLI on PATH, logged
 | `npx electron-vite build` then `node scripts/e2e-<name>.cjs` | one real-app suite per feature, driven over CDP with a temp profile |
 | `npm run e2e` | smoke: window, create/rename/status, real `claude` in a PTY, hooks → attention, close |
 | `npm run e2e:jarvis` | Jarvis: MCP tool server, tools on real sessions, confirm dialog, panel in Ops and Code, schedules, undo |
+| `npm run e2e:worktree-sources` | Code mode workspaces (D57): taken name gets -2, existing branch, repo folder |
 | `npm run e2e:jarvis-control` | Jarvis controls the whole app (D55): screen, settings, queue, checklist, groups, statuses, presets, bulk |
 | `npm run e2e:packaged` | the packaged app (`release/win-unpacked`), including Jarvis |
 | `npm run e2e:spaces` | the app and Jarvis with paths that contain spaces |

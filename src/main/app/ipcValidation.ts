@@ -165,6 +165,8 @@ const ALLOWED_CREATE_WORKTREE_KEYS: ReadonlySet<string> = new Set<string>([
   'repoId',
   'name',
   'baseBranch',
+  'source',
+  'branch',
   'agent',
   'model'
 ])
@@ -208,6 +210,12 @@ export function asCreateWorktreeInput(raw: unknown): CreateWorktreeInput {
   const repoId = assertId(obj.repoId, 'repoId')
   const name = assertWorktreeName(obj.name)
   const baseBranch = assertBaseBranch(obj.baseBranch)
+  const source = obj.source === undefined ? 'new' : obj.source
+  if (source !== 'new' && source !== 'existing' && source !== 'main') {
+    throw new Error('Invalid createWorktree input: source must be "new", "existing" or "main"')
+  }
+  // D57: an existing branch has the same rules as a base branch (a plain local branch name).
+  const branch = source === 'existing' ? assertBaseBranch(obj.branch) : undefined
   const agent = assertAgentKind(obj.agent, 'createWorktree input')
   // The model only applies to OpenCode; for other agents it is dropped.
   const model =
@@ -217,6 +225,8 @@ export function asCreateWorktreeInput(raw: unknown): CreateWorktreeInput {
     repoId,
     name,
     baseBranch,
+    ...(source !== 'new' ? { source } : {}),
+    ...(branch !== undefined ? { branch } : {}),
     agent,
     ...(model !== undefined && model.length > 0 ? { model } : {})
   }

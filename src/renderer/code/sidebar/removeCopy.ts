@@ -13,7 +13,8 @@ export function repoRemoveMessage(repoName: string, sessionCount: number): strin
   return `${stopsPrefix(sessionCount)}removes ${repoName} and its worktrees from SessionDeck. Folders and branches stay on disk.`
 }
 
-export function worktreeRemoveMessage(worktreeName: string, sessionCount: number, path: string): string {
+export function worktreeRemoveMessage(worktreeName: string, sessionCount: number, path: string, repoFolder = false): string {
+  if (repoFolder) return `${stopsPrefix(sessionCount)}removes ${worktreeName} from SessionDeck. The repository folder is not touched: ${path}`
   return `${stopsPrefix(sessionCount)}removes ${worktreeName} from SessionDeck. The folder and branch stay on disk: ${path}`
 }
 

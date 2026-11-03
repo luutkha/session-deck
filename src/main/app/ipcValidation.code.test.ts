@@ -14,6 +14,16 @@ describe('asCreateWorktreeInput', () => {
     })
   })
 
+  it('accepts the D57 sources and drops "branch" unless the source is existing', () => {
+    expect(asCreateWorktreeInput({ ...base, source: 'existing', branch: 'feat/x' })).toMatchObject({ source: 'existing', branch: 'feat/x' })
+    expect(asCreateWorktreeInput({ ...base, source: 'main' })).toMatchObject({ source: 'main' })
+    expect(asCreateWorktreeInput({ ...base, source: 'new' })).not.toHaveProperty('source')
+    expect(asCreateWorktreeInput({ ...base, source: 'main', branch: 'x' })).not.toHaveProperty('branch')
+    expect(() => asCreateWorktreeInput({ ...base, source: 'bogus' })).toThrow('source must be')
+    expect(() => asCreateWorktreeInput({ ...base, source: 'existing' })).toThrow('Invalid base branch')
+    expect(() => asCreateWorktreeInput({ ...base, source: 'existing', branch: '--force' })).toThrow('Invalid base branch')
+  })
+
   it('accepts branch names with slashes, dots and dashes', () => {
     expect(asCreateWorktreeInput({ ...base, baseBranch: 'release/2.0-rc' }).baseBranch).toBe('release/2.0-rc')
   })

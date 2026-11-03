@@ -86,6 +86,11 @@ export function CodeWorktreeRow({ node, view }: CodeWorktreeRowProps): ReactElem
               )}
               <GitBranch className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden="true" />
               <span className="min-w-0 truncate font-medium">{worktree.name}</span>
+              {worktree.main === true && (
+                <span data-repo-folder="" title="The repository folder itself (no new branch)" className="shrink-0 rounded-sm border border-border px-1 text-[10px] text-muted-foreground">
+                  repo folder
+                </span>
+              )}
               {showBranch && (
                 <span className="min-w-0 truncate text-[11px] text-muted-foreground/60">{worktree.branch}</span>
               )}
