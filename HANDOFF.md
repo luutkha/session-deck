@@ -83,7 +83,7 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Date | Round | Decisions | Key commits |
 |---|---|---|---|
-| 2026-11-03 | Exit grid, tab bar only for running and awake sessions, Jarvis controls the whole app (30 new tools, screen commands) | D55 | `82c7a64`, Jarvis tools commit |
+| 2026-11-03 | Exit grid, tab bar only for running and awake sessions, Jarvis controls the whole app (30 new tools, screen commands) | D55 | `82c7a64`, `7a76138` |
 | 2026-11-01 | Jarvis round 2: wait/answer/usage/away tools, Code tools, schedules, undo, OpenCode engine, voice, packaged + spaces checks; fix: idle-reminder blocked the prompt queue | D54 | `028114e` … `84bf042`, fix `b75d256` |
 | 2026-11-01 | Jarvis: MCP tool server, tools, confirm, panel over every session in both modes; fix: trust answer as two keys | D53 | `a8eb8e8`, `02d790d` |
 | 2026-10-31 | Prompt queue, broadcast, presets, resume on launch, cost over time, fork + search; installer for hands-on testing | D46–D52 | `f891ae3` … `8e7c1ed` |
