@@ -84,7 +84,7 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Date | Round | Decisions | Key commits |
 |---|---|---|---|
-| 2026-11-03 | Code mode worktrees like Orca: auto-suffix, existing branch, repo folder; non-git folders skipped | D56–D57 | this commit |
+| 2026-11-03 | Code mode worktrees like Orca: auto-suffix, existing branch, repo folder; non-git folders skipped | D56–D57 | `cf4c13c` |
 | 2026-11-03 | Exit grid, tab bar only for running and awake sessions, Jarvis controls the whole app (30 new tools, screen commands) | D55 | `82c7a64`, `7a76138` |
 | 2026-11-01 | Jarvis round 2: wait/answer/usage/away tools, Code tools, schedules, undo, OpenCode engine, voice, packaged + spaces checks; fix: idle-reminder blocked the prompt queue | D54 | `028114e` … `84bf042`, fix `b75d256` |
 | 2026-11-01 | Jarvis: MCP tool server, tools, confirm, panel over every session in both modes; fix: trust answer as two keys | D53 | `a8eb8e8`, `02d790d` |
