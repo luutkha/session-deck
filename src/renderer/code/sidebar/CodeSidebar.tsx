@@ -1,6 +1,7 @@
 // Code mode sidebar (D31): repo > worktree > sessions, in Orca's look. Reuses the Ops nav, error banner, Closed
 // section, confirm dialog and keyboard hook; see CodeSessionCard for the one local equivalent.
-import { useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { registerSidebarView, type SidebarViewControl } from '../../jarvis/sidebarView'
 import type { Id, RuntimeState, StoreData } from '../../../shared/types'
 import type { SessionActions } from '../../state/useSessionStore'
 import { ClosedSection } from '../../Sidebar/ClosedSection'
@@ -44,6 +45,24 @@ export function CodeSidebar(props: CodeSidebarProps): ReactElement | null {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const [closedCollapsed, setClosedCollapsed] = useState(true)
+
+  // D58: Jarvis sets the search and the Closed section like the header buttons (repo/worktree collapse is stored).
+  const viewControl = useRef<SidebarViewControl | null>(null)
+  viewControl.current = {
+    state: () => ({ groupBy: null, showWorkspaces: null, search: searchValue, statusFilter: null, closedCollapsed }),
+    statusNames: () => new Map(),
+    setSearch: (value: string): void => {
+      setSearchValue(value)
+      if (value.length > 0) setSearchOpen(true)
+    },
+    setClosedCollapsed
+  }
+  useEffect(() => registerSidebarView({
+    state: () => viewControl.current!.state(),
+    statusNames: () => viewControl.current!.statusNames(),
+    setSearch: (v) => viewControl.current!.setSearch(v),
+    setClosedCollapsed: (v) => viewControl.current!.setClosedCollapsed(v)
+  }), [])
 
   const controller = useCodeSidebar({ data, actions, onSelect, onNewWorktree, onNewSessionInWorktree })
   const model = useCodeTreeModel({ data, searchValue, runtime, runtimeLastChange: props.runtimeLastChange })

@@ -1,5 +1,5 @@
 import { Settings, Tag } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { Id, RuntimeState, Session, StoreData } from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
 import {
@@ -14,8 +14,11 @@ import {
   groupedSessions,
   isClosed,
   pruneStatusFilter,
-  splitClosed
+  splitClosed,
+  workspaceCollapseKey
 } from '../state/selectors'
+import { folderKey } from '../shell/projectTabs'
+import { registerSidebarView, type SidebarViewControl } from '../jarvis/sidebarView'
 import { useMultiSelect } from '../state/useMultiSelect'
 import { useBulkActions } from '../state/useBulkActions'
 import { computeDrop, type DragItem, type DropOver } from '../state/dropTarget'
@@ -300,6 +303,39 @@ export function Sidebar(props: SidebarProps): ReactElement {
       return next
     })
   }, [])
+
+  // D58: Jarvis changes the list view through the same state as the header buttons.
+  const viewControl = useRef<SidebarViewControl | null>(null)
+  viewControl.current = {
+    state: () => ({ groupBy, showWorkspaces, search: searchValue, statusFilter: [...effectiveStatuses], closedCollapsed }),
+    statusNames: () => new Map(data.statuses.map((status): [Id, string] => [status.id, status.name])),
+    setSearch: (value: string): void => {
+      setSearchValue(value)
+      if (value.length > 0) setSearchOpen(true)
+    },
+    setClosedCollapsed,
+    setGroupBy,
+    setShowWorkspaces,
+    setStatusFilter: setSelectedStatuses,
+    setSectionsCollapsed: (collapsed: boolean): void => {
+      setStatusCollapsed(new Map(groupByStatus(data).map((section): [string, boolean] => [section.key, collapsed])))
+      const keys = new Map<string, boolean>()
+      for (const section of groupedSessions(data)) {
+        for (const session of section.sessions) keys.set(workspaceCollapseKey(section.group?.id ?? null, folderKey(session.cwd)), collapsed)
+      }
+      setWorkspaceCollapsed(keys)
+    }
+  }
+  useEffect(() => registerSidebarView({
+    state: () => viewControl.current!.state(),
+    statusNames: () => viewControl.current!.statusNames(),
+    setSearch: (v) => viewControl.current!.setSearch(v),
+    setClosedCollapsed: (v) => viewControl.current!.setClosedCollapsed(v),
+    setGroupBy: (v) => viewControl.current!.setGroupBy?.(v),
+    setShowWorkspaces: (v) => viewControl.current!.setShowWorkspaces?.(v),
+    setStatusFilter: (v) => viewControl.current!.setStatusFilter?.(v),
+    setSectionsCollapsed: (v) => viewControl.current!.setSectionsCollapsed?.(v)
+  }), [])
 
   const newSessionInFolder = useCallback((groupId: Id | null, folder: string): void => {
     onNewSession(groupId, folder)

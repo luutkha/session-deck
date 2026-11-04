@@ -37,6 +37,7 @@ import { DAY_NAMES } from '../../shared/jarvisSchedule'
 import type { ScheduleInput } from './scheduleService'
 import { createAppTools, type JarvisAppDeps } from './appTools'
 import { createUiTools, type JarvisUi } from './uiTools'
+import { createControlTools, type JarvisControlDeps } from './controlTools'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
 export const READY_MIN_RUN_MS = 3000
@@ -136,6 +137,8 @@ export interface JarvisToolDeps {
   readonly app: JarvisAppDeps
   /** D55: asks a window to change what is on screen; resolves with what it did. */
   readonly ui: JarvisUi
+  /** D58: the last parts of the app (Code tree, links, files, the app window). */
+  readonly control: JarvisControlDeps
 }
 
 // ---------- describing state
@@ -1044,6 +1047,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     if (found === undefined) throw new Error(`No tool "${name}".`)
     return found
   }
-  tools.push(...createAppTools(deps, { pushUndo, sendPrompt, tool }), ...createUiTools(deps))
+  const ctx = { pushUndo, sendPrompt, tool }
+  tools.push(...createAppTools(deps, ctx), ...createUiTools(deps), ...createControlTools(deps, ctx))
   return Object.assign(tools, { sendPrompt, undoLast })
 }

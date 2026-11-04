@@ -176,6 +176,17 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
       popOutCode: vi.fn(),
       dockCode: vi.fn()
     },
+    control: {
+      setRepoCollapsed: vi.fn(),
+      setWorktreeCollapsed: vi.fn(),
+      openLink: vi.fn(async (_id: string, link: string) => (link.includes('missing') ? { ok: false, error: 'Not found' } : link.endsWith('.bat') ? { ok: true, kind: 'file' as const, revealed: true } : { ok: true, kind: 'url' as const })),
+      pathKind: vi.fn(async (p: string) => (p.includes('missing') ? null : p.endsWith('dir') ? 'folder' as const : 'file' as const)),
+      copyImage: vi.fn(() => true),
+      loginItem: { get: vi.fn(() => ({ supported: true, openAtLogin: false })), set: vi.fn((on: boolean) => ({ supported: true, openAtLogin: on })) },
+      showWindow: vi.fn(),
+      hideWindow: vi.fn(),
+      quit: vi.fn()
+    },
     ui: vi.fn(async (mode: UiMode | undefined, action: JarvisUiAction) => {
       uiCalls.push({ mode, action })
       return `ui ${action.kind}`
@@ -192,6 +203,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     setUsage: (u: UsageState) => { usageState = u },
     setAway: (a: AwaySummary | null) => { away = a },
     app: deps.app as unknown as Record<string, ReturnType<typeof vi.fn>> & { autopilot: Record<string, ReturnType<typeof vi.fn>> },
+    control: deps.control as unknown as Record<string, ReturnType<typeof vi.fn>> & { loginItem: Record<string, ReturnType<typeof vi.fn>> },
     uiCalls,
     settings: () => settings,
     setCodePoppedOut: (v: boolean) => { codePoppedOut = v }
@@ -733,5 +745,91 @@ describe('Jarvis screen tools (D55)', () => {
     await t.call('worker_tab', { op: 'show', worker: 'tests' })
     expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'worker', op: 'show', workerId: 'wk1' } })
     await expect(t.call('worker_tab', { op: 'dismiss', worker: 'nope' })).rejects.toThrow('No worker matches')
+  })
+})
+
+describe('jarvis tools: the rest of the app (D58)', () => {
+  it('sets notification sounds through the window, checking events, sounds and files', async () => {
+    const t = setup([session('a', 'API')])
+    await t.call('sound_settings', { enabled: false, volume: 40, event: 'done', sound: 'Marimba', test: true })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: undefined, action: { kind: 'sound', enabled: false, volume: 0.4, events: { done: { kind: 'builtin', id: 'marimba' } }, test: 'done' } })
+    await t.call('sound_settings', { event: 'bell', sound: 'C:/sounds/ding.wav' })
+    expect(t.uiCalls.at(-1)?.action).toEqual({ kind: 'sound', events: { bell: { kind: 'file', path: 'C:/sounds/ding.wav' } } })
+    await expect(t.call('sound_settings', { event: 'bell', sound: 'C:/missing.wav' })).rejects.toThrow('No audio file')
+    await expect(t.call('sound_settings', { sound: 'pop' })).rejects.toThrow('which "event"')
+    await expect(t.call('sound_settings', { event: 'done', sound: 'kazoo' })).rejects.toThrow('"sound" must be one of')
+    await expect(t.call('sound_settings', { volume: 150 })).rejects.toThrow('0 to 100')
+  })
+
+  it('changes the sidebar view with status names resolved to ids', async () => {
+    const t = setup([session('a', 'API')])
+    await t.call('sidebar_view', { group_by: 'status', show_folders: false, search: '', status_filter: ['review', 'none'], closed_section: 'expanded', sections: 'collapse_all' })
+    expect(t.uiCalls.at(-1)?.action).toEqual({ kind: 'sidebarView', groupBy: 'status', showWorkspaces: false, search: '', statusFilter: ['st1', null], closedSection: 'expanded', sections: 'collapseAll' })
+    await expect(t.call('sidebar_view', {})).rejects.toThrow('Say what to change')
+    await expect(t.call('sidebar_view', { status_filter: ['nope'] })).rejects.toThrow()
+  })
+
+  it('collapses one worktree, one repo or the whole Code tree, with undo', async () => {
+    const t = setup([session('a', 'API')])
+    expect(await t.call('code_tree', { action: 'collapse', worktree: 'checkout' })).toBe('Worktree "checkout" is collapsed.')
+    expect(t.control.setWorktreeCollapsed).toHaveBeenCalledWith('w1', true)
+    await t.call('code_tree', { action: 'expand' })
+    expect(t.control.setRepoCollapsed).toHaveBeenCalledWith('r1', false)
+    await t.call('undo_last_action')
+    expect(t.control.setRepoCollapsed).toHaveBeenLastCalledWith('r1', false)
+    expect(t.control.setWorktreeCollapsed).toHaveBeenLastCalledWith('w1', false)
+  })
+
+  it('opens a changed file in the Changes panel next to its session', async () => {
+    const t = setup([session('w', 'Checkout', { worktreeId: 'w1' })])
+    await t.call('open_file', { session: 'checkout', path: 'logo.png', view: 'preview' })
+    expect(t.deps.openSession).toHaveBeenCalledWith('w')
+    expect(t.uiCalls.slice(-2)).toEqual([
+      { mode: 'code', action: { kind: 'sidePanel', open: true, tab: 'changes' } },
+      { mode: 'code', action: { kind: 'changesFile', worktreeId: 'w1', path: 'logo.png', view: 'preview' } }
+    ])
+    await t.call('open_file', { worktree: 'checkout', path: 'a.ts' })
+    expect(t.uiCalls.at(-1)?.action).toEqual({ kind: 'changesFile', worktreeId: 'w1', path: 'src/a.ts', view: 'diff' })
+    await expect(t.call('open_file', { session: 'checkout', path: 'nope.ts' })).rejects.toThrow('not among the changed files')
+    const ops = setup([session('a', 'API')])
+    await expect(ops.call('open_file', { session: 'api', path: 'x' })).rejects.toThrow('not in a worktree')
+  })
+
+  it('searches the terminal, switches tabs', async () => {
+    const t = setup([session('a', 'API')])
+    await t.call('terminal_search', { action: 'find', query: 'error', session: 'api' })
+    expect(t.deps.openSession).toHaveBeenCalledWith('a')
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'search', op: 'find', query: 'error' } })
+    await expect(t.call('terminal_search', { action: 'find' })).rejects.toThrow('"query" is required')
+    await t.call('switch_tab', { op: 'close_others' })
+    expect(t.uiCalls.at(-1)?.action).toEqual({ kind: 'tabs', op: 'closeOthers' })
+  })
+
+  it('attaches files as a bracketed paste when the agent asked for it, or an image through the clipboard', async () => {
+    const t = setup([session('a', 'API'), session('o', 'Open', { agent: 'opencode' })], [running('a'), running('o')])
+    t.raw.set('a', '\x1b[?2004l...\x1b[?2004h>')
+    expect(await t.call('attach_files', { session: 'api', paths: ['C:/shots/a b.png', 'C:/src/dir'] })).toContain('Attached 2 file(s)')
+    expect(t.writes.at(-1)).toEqual(['a', '\x1b[200~"C:/shots/a b.png" C:/src/dir \x1b[201~'])
+    await t.call('attach_files', { session: 'open', paths: ['C:/shots/x.png'], image_via_clipboard: true })
+    expect(t.control.copyImage).toHaveBeenCalledWith('C:/shots/x.png')
+    expect(t.writes.at(-1)).toEqual(['o', '\x16'])
+    await expect(t.call('attach_files', { session: 'api', paths: ['C:/missing.txt'] })).rejects.toThrow('Nothing at')
+    await expect(t.call('attach_files', { session: 'api', paths: ['relative.txt'] })).rejects.toThrow('not a full path')
+    t.raw.set('a', '')
+    await t.call('attach_files', { session: 'api', paths: ['C:/x.txt'] })
+    expect(t.writes.at(-1)).toEqual(['a', 'C:/x.txt '])
+  })
+
+  it('opens terminal links and runs the app window actions; quit asks first', async () => {
+    const t = setup([session('a', 'API')])
+    expect(await t.call('open_link', { session: 'api', link: 'https://example.com', reveal: false })).toBe('Opened https://example.com (url).')
+    await expect(t.call('open_link', { session: 'api', link: 'missing.txt' })).rejects.toThrow('Not found')
+    expect(await t.call('open_link', { session: 'api', link: 'run.bat' })).toContain('selected in its folder (programs and scripts are never run)')
+    await t.call('app_window', { action: 'hide' })
+    expect(t.control.hideWindow).toHaveBeenCalled()
+    expect(await t.call('app_window', { action: 'start_on_login' })).toBe('Start on login is on.')
+    expect(t.control.loginItem.set).toHaveBeenCalledWith(true)
+    expect(await t.call('app_window', { action: 'quit' })).toContain('said no')
+    expect(t.control.quit).not.toHaveBeenCalled()
   })
 })

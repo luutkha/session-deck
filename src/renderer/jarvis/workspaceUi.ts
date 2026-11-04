@@ -7,6 +7,8 @@ import type { GridLayout, GridPreset } from '../grid/gridLogic'
 import { GRID_PRESETS } from '../grid/gridLogic'
 import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SidePanelTab } from '../timeline/sidePanelTab'
+import { applySidebarView, describeSidebarView, type SidebarViewControl } from './sidebarView'
+import type { ChangesFileRequest } from '../code/changes/changesRequest'
 
 export interface WorkspaceUiContext {
   readonly mode: UiMode
@@ -62,6 +64,25 @@ export interface WorkspaceUiContext {
     readonly select: (id: string | null) => void
     readonly dismiss: (id: string) => void
   }
+  /** D58: the mounted sidebar's list view (null while it is not mounted). */
+  readonly sidebarView: () => SidebarViewControl | null
+  /** D58: the terminal search bar (Ctrl+Shift+F). */
+  readonly search: {
+    readonly active: boolean
+    readonly query: string
+    readonly label: string
+    readonly open: () => void
+    readonly close: () => void
+    readonly setQuery: (query: string) => void
+    readonly step: (direction: 'next' | 'previous') => void
+  }
+  /** D58: the tab bar (cycle like Ctrl+Tab; closing tabs closes their sessions, like the tab menu). */
+  readonly tabs: {
+    readonly cycle: (delta: 1 | -1) => void
+    readonly close: (id: Id) => void
+  }
+  /** D58: shows one changed file in the Changes panel. */
+  readonly requestChangesFile: (request: ChangesFileRequest) => void
 }
 
 const SETTINGS_SECTIONS: readonly SettingsSection[] = ['general', 'agents', 'code', 'terminal', 'sound', 'automation', 'quota', 'statuses']
@@ -92,6 +113,9 @@ export function describeWorkspace(ctx: WorkspaceUiContext): string {
   lines.push(`Sidebar: ${ctx.sidebarOpen ? 'shown' : 'hidden'}`)
   lines.push(`Side panel: ${ctx.sidePanel.open && ctx.view === 'terminal' && ctx.activeId !== null ? `open on ${ctx.sidePanel.tab}` : 'closed'}`)
   lines.push(`Terminal zoom: ${ctx.zoom.percent}%`)
+  if (ctx.search.active) lines.push(`Terminal search: "${ctx.search.query}"${ctx.search.label.length > 0 ? ` (${ctx.search.label})` : ''}`)
+  const sidebarView = ctx.sidebarView()
+  if (sidebarView !== null) lines.push(describeSidebarView(sidebarView))
   if (ctx.workers.visible.length > 0) {
     lines.push(`Worker tabs: ${ctx.workers.visible.map((w) => `"${w.name}"${w.id === ctx.workers.selectedId ? ' (shown)' : ''}`).join(', ')}`)
   }
@@ -207,6 +231,51 @@ export function runWorkspaceAction(action: JarvisUiAction, ctx: WorkspaceUiConte
       ctx.workers.select(worker.id)
       return `Showing worker "${worker.name}".`
     }
+    case 'sidebarView': {
+      const control = ctx.sidebarView()
+      if (control === null) throw new Error('The sidebar is still loading.')
+      const { kind: _kind, ...view } = action
+      const result = applySidebarView(view, control)
+      if (!ctx.sidebarOpen) ctx.setSidebarOpen(true)
+      return result
+    }
+    case 'search': {
+      if (action.op === 'close') {
+        if (!ctx.search.active) return 'The terminal search is not open.'
+        ctx.search.close()
+        return 'Closed the terminal search.'
+      }
+      if (action.op === 'next' || action.op === 'previous') {
+        if (!ctx.search.active || ctx.search.query.length === 0) throw new Error('No terminal search is open; start one with a query first.')
+        ctx.search.step(action.op)
+        return `Moved to the ${action.op} match of "${ctx.search.query}".`
+      }
+      const query = action.query ?? ''
+      if (query.length === 0) throw new Error('Give the text to search for.')
+      if (ctx.activeId === null) throw new Error('No session is on screen; open one first (open_session).')
+      if (ctx.view === 'hub') ctx.setView('terminal')
+      if (!ctx.search.active) ctx.search.open()
+      ctx.search.setQuery(query)
+      return `Searching ${nameOf(ctx, ctx.activeId)} for "${query}"; the matches are highlighted (get_screen_state shows the count).`
+    }
+    case 'tabs': {
+      if (action.op === 'next' || action.op === 'previous') {
+        if (ctx.barIds.length < 2) throw new Error('There is only one tab in the tab bar.')
+        if (ctx.view !== 'terminal') ctx.setView('terminal')
+        ctx.tabs.cycle(action.op === 'next' ? 1 : -1)
+        return `Switched to the ${action.op} tab.`
+      }
+      const targets = action.op === 'closeAll' ? ctx.barIds : ctx.barIds.filter((id) => id !== ctx.activeId)
+      if (targets.length === 0) return 'There are no other tabs to close.'
+      targets.forEach(ctx.tabs.close)
+      return `Closed ${targets.map((id) => nameOf(ctx, id)).join(', ')} (their sessions close and can be reopened).`
+    }
+    case 'changesFile': {
+      ctx.requestChangesFile({ worktreeId: action.worktreeId, path: action.path, view: action.view })
+      return action.path === null ? 'The Changes panel shows the list of changed files.' : `Showing ${action.path} (${action.view}) in the Changes panel.`
+    }
+    case 'sound':
+      throw new Error('Sounds are set by the window, not the workspace.')
     default:
       throw new Error('Unknown screen action.')
   }

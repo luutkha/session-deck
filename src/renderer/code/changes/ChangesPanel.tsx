@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { subscribeChangesFileRequest, takeChangesFileRequest } from './changesRequest'
 import { ArrowLeft, LoaderCircle, MessageSquare, RefreshCw, SendHorizontal, X } from 'lucide-react'
 import type { AgentKind, ChangedFile, Id, WorktreeChanges } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
@@ -308,10 +309,31 @@ export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProp
     }
   }, [storedPath, list.changes])
 
-  // The preview choice is per file: a different file reviews as a diff first again.
+  // The preview choice is per file: a different file reviews as a diff first again (unless Jarvis asked for the
+  // preview of the file it opened, D58).
+  const nextViewMode = useRef<'diff' | 'preview'>('diff')
   useEffect((): void => {
-    setViewMode('diff')
+    setViewMode(nextViewMode.current)
+    nextViewMode.current = 'diff'
   }, [selectedPath])
+
+  // D58: Jarvis opens a file of this worktree (or goes back to the list).
+  useEffect((): (() => void) => {
+    const apply = (): void => {
+      const request = takeChangesFileRequest(worktreeId)
+      if (request === null) return
+      if (request.path === null) {
+        setSelection(null)
+        return
+      }
+      const preview = request.view === 'preview' && isPreviewable(request.path)
+      if (request.path === storedPath) setViewMode(preview ? 'preview' : 'diff')
+      else nextViewMode.current = preview ? 'preview' : 'diff'
+      setSelection({ worktreeId, path: request.path })
+    }
+    apply()
+    return subscribeChangesFileRequest(apply)
+  }, [worktreeId, storedPath])
 
   function update(next: readonly DiffAnnotation[]): void {
     setAnnotations(next)

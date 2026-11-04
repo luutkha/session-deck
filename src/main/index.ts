@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Notification, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, nativeImage, Notification, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
 import { existsSync } from 'node:fs'
@@ -21,6 +21,7 @@ import { createActiveSessions } from './app/activeSessions'
 import { createCodeWiring } from './app/codeWiring'
 import { logMainError } from './app/errorLog'
 import { createLoginItem } from './app/loginItem'
+import { createAppLinkService } from './links/appLinks'
 import { isQuitting, markQuitting } from './app/quitState'
 import { resolveIconPath } from './app/iconPaths'
 import { attachTrayWiring } from './app/trayWiring'
@@ -384,6 +385,8 @@ if (!gotTheLock) {
       for (const map of [ptyStartedAt, ptyLastOutputAt]) for (const id of map.keys()) if (!live.has(id)) map.delete(id)
     })
 
+    // D58: Jarvis opens terminal links through the same service as a click.
+    const jarvisLinks = createAppLinkService((id) => store.get().sessions.find((s) => s.id === id)?.cwd ?? null)
     const jarvis = createJarvisWiring({
       userDataDir: userData,
       store,
@@ -442,6 +445,33 @@ if (!gotTheLock) {
           windowState: () => windows.state(),
           popOutCode: () => { windows.popOutCode() },
           dockCode: () => windows.dockCode()
+        },
+        // D58: the last parts of the app, through the same functions as the IPC handlers.
+        control: {
+          setRepoCollapsed: (id, collapsed) => store.setRepoCollapsed(id, collapsed),
+          setWorktreeCollapsed: (id, collapsed) => store.setWorktreeCollapsed(id, collapsed),
+          openLink: (id, text, reveal) => jarvisLinks.open(id, text, reveal),
+          pathKind: async (target) => {
+            try {
+              const info = await stat(target)
+              return info.isDirectory() ? 'folder' : 'file'
+            } catch {
+              return null
+            }
+          },
+          copyImage: (target) => {
+            const image = nativeImage.createFromPath(target)
+            if (image.isEmpty()) return false
+            clipboard.writeImage(image)
+            return true
+          },
+          loginItem: createLoginItem(app),
+          showWindow: () => showMainWindow(mainWindow),
+          hideWindow: () => { if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.hide() },
+          quit: () => {
+            markQuitting()
+            app.quit()
+          }
         },
         openSession: (id) => focusSession(id),
         startedAt: (id) => ptyStartedAt.get(id),

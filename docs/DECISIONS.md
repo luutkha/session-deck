@@ -256,6 +256,12 @@ After "tested good now", asked "what is next step for jarvis"; offered 1) shippa
 - The repo's own folder can be opened as a workspace (the main checkout): sessions run on the checked-out branch, no new branch; "Remove" only takes it out of SessionDeck.
 - Code mode only: Ops mode is unchanged (D09/D31). Jarvis's create_worktree follows the same rules.
 
+**D58 · 2026-11-04 · Jarvis controls every part of the app** · active
+Asked "any features that jarvis can not do now?"; the list: sounds, the sidebar list view and the Code tree, a changed file on screen, terminal search, tabs, files and images into a session, terminal links, quit and start on login, its own restart. The user: "i want Jarvis have all the control over the apps, do all for me".
+- New tools: `sound_settings`, `sidebar_view`, `code_tree`, `open_file`, `terminal_search`, `switch_tab`, `attach_files`, `open_link`, `app_window`, `restart_jarvis` (75 tools in all).
+- Same rules as D55: the UI's own paths, quit asks Yes/No first, undo for reversible steps (Code tree collapse, start on login).
+- `open_link` never runs a program or script (it shows it selected in its folder, as a click does). `refresh_usage` does not need the usage-bar consent first (main never checked it; the description said so wrongly).
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 

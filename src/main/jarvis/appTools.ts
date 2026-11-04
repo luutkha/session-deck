@@ -579,7 +579,7 @@ export function createAppTools(deps: JarvisToolDeps, ctx: ToolContext): McpTool[
     // ---------- usage and quota (USE-4, USE-7/8)
     {
       name: 'refresh_usage',
-      description: "Refreshes the plan usage now (like the refresh button on the usage bar), then shows it. Works only after the user allowed manual refresh once in the usage bar.",
+      description: "Refreshes the plan usage now (like the refresh button on the usage bar), then shows it.",
       inputSchema: schema({}),
       run: async () => {
         const result = await app.refreshUsage()

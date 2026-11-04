@@ -25,6 +25,10 @@ function ctx(over: Partial<WorkspaceUiContext> = {}): WorkspaceUiContext {
     },
     zoom: { percent: 100, step: vi.fn() },
     workers: { visible: [{ id: 'wk1', name: 'runner' }], selectedId: null, select: vi.fn(), dismiss: vi.fn() },
+    sidebarView: () => null,
+    search: { active: false, query: '', label: '', open: vi.fn(), close: vi.fn(), setQuery: vi.fn(), step: vi.fn() },
+    tabs: { cycle: vi.fn(), close: vi.fn() },
+    requestChangesFile: vi.fn(),
     ...over
   }
 }
@@ -100,6 +104,46 @@ describe('runWorkspaceAction', () => {
     expect(() => runWorkspaceAction({ kind: 'worker', op: 'dismiss', workerId: 'zz' }, c)).toThrow('no tab')
     runWorkspaceAction({ kind: 'sidebar', open: false }, c)
     expect(c.setSidebarOpen).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('runWorkspaceAction, D58', () => {
+  it('searches the terminal on screen, steps through matches and closes the bar', () => {
+    const c = ctx({ view: 'hub' })
+    expect(runWorkspaceAction({ kind: 'search', op: 'find', query: 'error' }, c)).toContain('Searching "API" for "error"')
+    expect(c.setView).toHaveBeenCalledWith('terminal')
+    expect(c.search.open).toHaveBeenCalled()
+    expect(c.search.setQuery).toHaveBeenCalledWith('error')
+    expect(() => runWorkspaceAction({ kind: 'search', op: 'next' }, ctx())).toThrow('No terminal search is open')
+    const open = ctx({ search: { ...ctx().search, active: true, query: 'error', label: '2/5' } })
+    runWorkspaceAction({ kind: 'search', op: 'previous' }, open)
+    expect(open.search.step).toHaveBeenCalledWith('previous')
+    expect(describeWorkspace(open)).toContain('Terminal search: "error" (2/5)')
+    runWorkspaceAction({ kind: 'search', op: 'close' }, open)
+    expect(open.search.close).toHaveBeenCalled()
+    expect(() => runWorkspaceAction({ kind: 'search', op: 'find', query: 'x' }, ctx({ activeId: null }))).toThrow('No session is on screen')
+  })
+
+  it('cycles tabs and closes the other tabs (not the one on screen)', () => {
+    const c = ctx({ barIds: ['a', 'b', 'c'] })
+    runWorkspaceAction({ kind: 'tabs', op: 'previous' }, c)
+    expect(c.tabs.cycle).toHaveBeenCalledWith(-1)
+    expect(runWorkspaceAction({ kind: 'tabs', op: 'closeOthers' }, c)).toContain('Closed "Web", "c"')
+    expect(c.tabs.close).toHaveBeenCalledTimes(2)
+    expect(c.tabs.close).not.toHaveBeenCalledWith('a')
+    expect(() => runWorkspaceAction({ kind: 'tabs', op: 'next' }, ctx({ barIds: ['a'] }))).toThrow('only one tab')
+  })
+
+  it('asks the Changes panel for a file, and changes the sidebar view through its control', () => {
+    const c = ctx()
+    runWorkspaceAction({ kind: 'changesFile', worktreeId: 'w1', path: 'README.md', view: 'preview' }, c)
+    expect(c.requestChangesFile).toHaveBeenCalledWith({ worktreeId: 'w1', path: 'README.md', view: 'preview' })
+    expect(() => runWorkspaceAction({ kind: 'sidebarView', search: 'x' }, ctx())).toThrow('still loading')
+    const setSearch = vi.fn()
+    const hidden = ctx({ sidebarOpen: false, sidebarView: () => ({ state: () => ({ groupBy: null, showWorkspaces: null, search: '', statusFilter: null, closedCollapsed: true }), statusNames: () => new Map(), setSearch, setClosedCollapsed: vi.fn() }) })
+    runWorkspaceAction({ kind: 'sidebarView', search: 'api' }, hidden)
+    expect(setSearch).toHaveBeenCalledWith('api')
+    expect(hidden.setSidebarOpen).toHaveBeenCalledWith(true)
   })
 })
 

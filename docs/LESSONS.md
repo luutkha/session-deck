@@ -84,5 +84,7 @@ Things that cost time once. Read the section for the area before touching it. Ad
 
 ## Tooling in this environment
 - **Shell quoting mangles code.** Heredocs, `sed`, `node -e` and `python -c` lose backslashes, `$1`-style text and quotes, and can write real CR/LF bytes into string literals. Write code with the Write/Edit tools, or put the script in a file and run the file.
+- **An e2e that creates a worktree must set `code.worktreesRoot` to its temp folder.** Without it the worktree lands in the user's real `~/SessionDeck/worktrees` (D58's first run did; removed by hand).
+- **Do not "test" opening a link in an e2e.** A program or script is never run, but it is shown in Explorer: a window pops up on the user's PC. Test the refused cases (missing path) only.
 - **A retry loop that spawns git per attempt is slow on Windows.** The worktree name search tried up to 99 names with one `git show-ref` each (5 s, a test timeout); read all branches once (`for-each-ref`) and check the set.
 - **Files are CRLF in the working tree.** Multi-line search/replace from a script must use the file's own line ending (`s.includes('\r\n') ? '\r\n' : '\n'`), or the match silently fails.

@@ -1,7 +1,6 @@
-import { app, ipcMain, dialog, shell, type BrowserWindow, type OpenDialogOptions } from 'electron'
-import { stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { createLinkService, MAX_LINK_TEXTS } from '../links'
+import { app, ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'electron'
+import { MAX_LINK_TEXTS } from '../links'
+import { createAppLinkService } from '../links/appLinks'
 import type { AppSettings, ConversationSearchResult, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
@@ -280,21 +279,7 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     return store.updateSettings(asSettingsPatch(raw))
   })
 
-  const links = createLinkService({
-    getSessionCwd: (id) => store.get().sessions.find((s) => s.id === id)?.cwd ?? null,
-    stat: async (target) => {
-      try {
-        const info = await stat(target)
-        return { isFile: info.isFile(), isDirectory: info.isDirectory() }
-      } catch {
-        return null // a missing or unreadable path is simply not a link
-      }
-    },
-    openPath: (target) => shell.openPath(target),
-    openExternal: (url) => shell.openExternal(url),
-    showItemInFolder: (target) => shell.showItemInFolder(target),
-    homedir
-  })
+  const links = createAppLinkService((id) => store.get().sessions.find((s) => s.id === id)?.cwd ?? null)
 
   ipcMain.handle(IPC.linkResolve, async (_event, rawId: unknown, rawTexts: unknown) => {
     const id = assertId(rawId, 'session id')

@@ -4,6 +4,17 @@ import { useEffect, useRef } from 'react'
 import type { JarvisUiCommand, UiMode, WindowRole } from '../../shared/types'
 import { errorMessage } from '../../shared/guards'
 import { workspaceUiFor } from './jarvisUiBridge'
+import { describeSound, runWindowAction, type WindowUiDeps } from './windowUi'
+import { soundStore } from '../sound/soundStore'
+import { getSharedSoundPlayer } from '../sound/soundPlayer'
+
+const WINDOW_DEPS: WindowUiDeps = {
+  sound: {
+    get: () => soundStore.get(),
+    update: (patch) => soundStore.update(patch),
+    play: (choice, volume) => getSharedSoundPlayer().play(choice, volume)
+  }
+}
 
 /** How long a mode switch may take to mount the other workspace. */
 const MOUNT_WAIT_MS = 4000
@@ -34,10 +45,18 @@ export function useJarvisUi(window: JarvisUiWindow): void {
     return api.onJarvisUi((command: JarvisUiCommand): void => {
       void (async (): Promise<void> => {
         try {
+          // D58: window actions (sounds) need no workspace and no mode switch.
+          const own = runWindowAction(command.action, WINDOW_DEPS)
+          if (own !== null) {
+            await api.jarvisUiReply(command.id, true, own)
+            return
+          }
           const target = modeForCommand(command, latest.current)
           if (target !== null && target !== latest.current.mode) latest.current.setMode(target)
           const handler = await workspaceUiFor(target, MOUNT_WAIT_MS)
-          await api.jarvisUiReply(command.id, true, handler(command.action))
+          const result = handler(command.action)
+          await api.jarvisUiReply(command.id, true, command.action.kind === 'state' ? `${result}
+${describeSound(soundStore.get())}` : result)
         } catch (error) {
           await api.jarvisUiReply(command.id, false, errorMessage(error)).catch(() => undefined)
         }

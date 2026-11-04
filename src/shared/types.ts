@@ -121,6 +121,31 @@ export type JarvisUiAction =
   | { readonly kind: 'dialog'; readonly name: 'settings' | 'costs' | 'search' | 'away' | 'palette' | 'newSession' | 'none'; readonly section?: string }
   | { readonly kind: 'zoom'; readonly action: 'in' | 'out' | 'reset' }
   | { readonly kind: 'worker'; readonly op: 'show' | 'dismiss' | 'leave'; readonly workerId?: string }
+  // D58: the rest of the screen.
+  | { readonly kind: 'sound'; readonly enabled?: boolean; readonly volume?: number; readonly events?: Readonly<Partial<Record<SoundEvent, JarvisSoundChoice>>>; readonly test?: SoundEvent }
+  | ({ readonly kind: 'sidebarView' } & JarvisSidebarView)
+  | { readonly kind: 'search'; readonly op: 'find' | 'next' | 'previous' | 'close'; readonly query?: string }
+  | { readonly kind: 'tabs'; readonly op: 'next' | 'previous' | 'closeOthers' | 'closeAll' }
+  | { readonly kind: 'changesFile'; readonly worktreeId: Id; readonly path: string | null; readonly view: 'diff' | 'preview' }
+
+/** D58: a notification sound as Jarvis sets it (same shape as the Settings > Sound choice). */
+export type JarvisSoundChoice =
+  | { readonly kind: 'builtin'; readonly id: string }
+  | { readonly kind: 'file'; readonly path: string }
+  | { readonly kind: 'none' }
+
+/** D58: how the sidebar list looks; every field is optional (only the given ones change). */
+export interface JarvisSidebarView {
+  readonly groupBy?: 'groups' | 'status'
+  readonly showWorkspaces?: boolean
+  /** '' clears the search. */
+  readonly search?: string
+  /** Status ids to show (null = "No status"); [] clears the filter. */
+  readonly statusFilter?: readonly (Id | null)[]
+  readonly closedSection?: 'collapsed' | 'expanded'
+  /** Status sections and folder buckets (groups are stored, see group_change). */
+  readonly sections?: 'collapseAll' | 'expandAll'
+}
 
 /** D55: one window command from Jarvis; `mode` = the mode the targets live in (the window switches to it first). */
 export interface JarvisUiCommand {
@@ -730,6 +755,8 @@ export interface ResolvedLink {
 export interface OpenLinkResult {
   readonly ok: boolean
   readonly kind?: LinkKind
+  /** D58: the file was shown selected in its folder instead of opened (asked for, or a program/script). */
+  readonly revealed?: boolean
   /** User-readable reason when ok is false. */
   readonly error?: string
 }

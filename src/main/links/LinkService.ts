@@ -131,7 +131,7 @@ export function createLinkService(deps: LinkServiceDeps): LinkService {
 
       if (reveal || DANGEROUS_EXTENSIONS.has(win32.extname(link.target).toLowerCase())) {
         deps.showItemInFolder(link.target)
-        return { ok: true, kind: 'file' }
+        return { ok: true, kind: 'file', revealed: true }
       }
       const message = await deps.openPath(link.target)
       return message === '' ? { ok: true, kind: 'file' } : { ok: false, error: `Could not open: ${message}` }

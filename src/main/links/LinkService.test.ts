@@ -190,7 +190,7 @@ describe('LinkService.open', () => {
   it('reveals a file when reveal is true', async () => {
     const h = harness(new Map([['C:\\proj\\src\\a.ts', file()]]))
     const service = createLinkService(h.deps)
-    expect(await service.open('s1', 'src/a.ts', true)).toEqual({ ok: true, kind: 'file' })
+    expect(await service.open('s1', 'src/a.ts', true)).toEqual({ ok: true, kind: 'file', revealed: true })
     expect(h.revealed).toEqual(['C:\\proj\\src\\a.ts'])
     expect(h.opened).toEqual([])
   })
@@ -198,7 +198,7 @@ describe('LinkService.open', () => {
   it('reveals a dangerous extension instead of launching it', async () => {
     const h = harness(new Map([['C:\\proj\\setup.exe', file()]]))
     const service = createLinkService(h.deps)
-    expect(await service.open('s1', 'setup.exe', false)).toEqual({ ok: true, kind: 'file' })
+    expect(await service.open('s1', 'setup.exe', false)).toEqual({ ok: true, kind: 'file', revealed: true })
     expect(h.revealed).toEqual(['C:\\proj\\setup.exe'])
     expect(h.opened).toEqual([])
   })

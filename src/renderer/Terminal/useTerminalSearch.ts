@@ -43,6 +43,8 @@ export interface TerminalSearchApi {
   open(): void
   close(): void
   setQuery(query: string): void
+  /** Moves to the next / previous match (Enter / Shift+Enter in the bar). */
+  step(direction: 'next' | 'previous'): void
   handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void
 }
 
@@ -224,6 +226,7 @@ export function useTerminalSearch(
     open,
     close,
     setQuery,
+    step: cycle,
     handleKeyDown
   }
 }

@@ -41,6 +41,8 @@ import { useWorkspaceNav, type FocusRequest } from './useWorkspaceNav'
 import { WorkspaceDialogs } from './WorkspaceDialogs'
 import { registerWorkspaceUi } from '../jarvis/jarvisUiBridge'
 import { runWorkspaceAction, type WorkspaceUiContext } from '../jarvis/workspaceUi'
+import { sidebarViewControl } from '../jarvis/sidebarView'
+import { requestChangesFile } from '../code/changes/changesRequest'
 import { readSidePanelTab, resolveSidePanelTab, storeSidePanelTab, type SidePanelTab } from '../timeline/sidePanelTab'
 
 const SIDEBAR_WIDTH_CLASS = 'w-[300px]'
@@ -205,7 +207,19 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
       selectedId: workers.selected?.id ?? null,
       select: workers.select,
       dismiss: workers.dismiss
-    }
+    },
+    sidebarView: sidebarViewControl,
+    search: {
+      active: search.active,
+      query: search.query,
+      label: search.label,
+      open: search.open,
+      close: search.close,
+      setQuery: search.setQuery,
+      step: search.step
+    },
+    tabs: { cycle: tabs.cycle, close: tabs.close },
+    requestChangesFile
   }
   useEffect(() => registerWorkspaceUi(mode, (action) => {
     if (jarvisUi.current === null) throw new Error('The window is still loading.')

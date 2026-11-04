@@ -10,12 +10,16 @@ import { assertBoolean, assertNonEmptyString } from '../app/ipcValidation'
 import type { SessionController } from '../app/sessionController'
 import type { SessionStore } from '../store'
 import { createMcpHttpServer } from './mcpHttpServer'
+import type { McpTool } from './mcpProtocol'
 import { CONFIRM_TIMEOUT_MS, JARVIS_NAME, jarvisLaunchArgs, jarvisOpencodeConfig, jarvisSystemPrompt, jarvisPaths, mcpConfigText } from './jarvisLaunch'
 import type { LaunchExtras } from '../app/startOptions'
 import { createJarvisTools, type ConfirmRequest, type JarvisToolDeps } from './jarvisTools'
 import { isJarvis } from './targets'
+import { optionalBool, schema } from './toolArgs'
 import { createScheduleService } from './scheduleService'
 import { scheduleWhen } from './schedules'
+
+const RESTART_DELAY_MS = 2500
 import { createVoiceListener } from './voice'
 
 const ACTION_LOG_MAX_BYTES = 1024 * 1024
@@ -164,7 +168,30 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     now: () => Date.now(),
     sleep
   })
-  const server = createMcpHttpServer({ token, tools: () => tools, version: deps.appVersion })
+  // D58: Jarvis restarts itself (a new conversation, or a changed engine/model from Settings). It answers first and
+  // restarts a moment later, since the restart ends the call that asked for it.
+  const restartTool: McpTool = {
+    name: 'restart_jarvis',
+    description: 'Restarts you (Jarvis) a few seconds after this answer: fresh true starts a new, empty conversation (this one is forgotten); otherwise the same conversation continues. A Jarvis engine or model changed with update_settings (section jarvis) takes effect with this restart.',
+    inputSchema: schema({ fresh: { type: 'boolean' } }),
+    run: async (args) => {
+      const fresh = optionalBool(args, 'fresh') === true
+      log('restart_jarvis', fresh ? 'new conversation' : 'same conversation')
+      setTimeout(() => {
+        serial(async (): Promise<unknown> => {
+          const current = findJarvis()
+          if (fresh || current === undefined) return resetJarvis()
+          const settings = deps.store.getSettings().jarvis
+          const engineChanged = (current.agent ?? 'claude') !== settings.agent || (settings.agent === 'opencode' && (current.model ?? '') !== settings.opencodeModel)
+          if (engineChanged) return openJarvis()
+          return deps.controller.restartSession(current.id)
+        }).catch((error: unknown) => deps.onError('restart_jarvis', error))
+      }, RESTART_DELAY_MS)
+      return fresh ? 'Starting a new Jarvis conversation in a few seconds.' : 'Restarting Jarvis in a few seconds; the conversation continues.'
+    }
+  }
+  const served: readonly McpTool[] = [...tools, restartTool]
+  const server = createMcpHttpServer({ token, tools: () => served, version: deps.appVersion })
 
   function findJarvis(): Session | undefined {
     return deps.store.get().sessions.find(isJarvis)
@@ -220,7 +247,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       }
       port = (await server.start()).port
       await writeFile(paths.mcpConfig, mcpConfigText(port, token), 'utf-8')
-      await writeFile(paths.prompt, jarvisSystemPrompt(tools.map((tool) => tool.name)), 'utf-8')
+      await writeFile(paths.prompt, jarvisSystemPrompt(served.map((tool) => tool.name)), 'utf-8')
       started = true
       await schedules.load()
       schedules.start()

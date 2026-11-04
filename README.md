@@ -26,6 +26,7 @@ A Windows desktop app for running and managing many [Claude Code](https://claude
 
 **Jarvis** (Ctrl+Shift+J, or the Jarvis button in the tab bar)
 - A right-side panel over every session, in both modes. Ask in plain words: create, close, sleep, wake, restart or fork sessions; send prompts and wait for results; read a session's screen or last answer; manage groups, statuses and notes; create worktrees; check usage. It controls the whole app: what is on screen (mode, Hub, grid, split, sidebar, side panel, dialogs, zoom), settings, prompt queues, checklists, presets, bulk actions, the quota autopilot, costs, diffs and review comments.
+- Also the rest of the app: sounds, the sidebar list and Code tree, a changed file's diff or preview on screen, terminal search, tabs, files and images into a session, links in a terminal, the window (hide, start on login, quit after asking) and restarting itself.
 - Removals ask you first in the app. An Undo button reverts Jarvis's last actions.
 - Scheduled instructions, e.g. "every weekday at 9:00, wake API and run the tests".
 - Voice: a mic button (Windows speech recognition, offline) and replies read aloud.
@@ -52,6 +53,7 @@ Requires Node 22+, Windows (primary target) and the `claude` CLI on PATH, logged
 | `npm run e2e` | smoke: window, create/rename/status, real `claude` in a PTY, hooks → attention, close |
 | `npm run e2e:jarvis` | Jarvis: MCP tool server, tools on real sessions, confirm dialog, panel in Ops and Code, schedules, undo |
 | `npm run e2e:worktree-sources` | Code mode workspaces (D57): taken name gets -2, existing branch, repo folder |
+| `npm run e2e:jarvis-app` | Jarvis's D58 tools: sounds, sidebar list, tabs, terminal search, files, links, window, Code tree, file on screen |
 | `npm run e2e:jarvis-control` | Jarvis controls the whole app (D55): screen, settings, queue, checklist, groups, statuses, presets, bulk |
 | `npm run e2e:packaged` | the packaged app (`release/win-unpacked`), including Jarvis |
 | `npm run e2e:spaces` | the app and Jarvis with paths that contain spaces |
