@@ -18,8 +18,8 @@ Where the details live:
 - **D57** (D56: Code mode stays git-only; D57: worktrees like Orca — auto-suffix, existing branch, repo folder; `e2e-worktree-sources` 10/10, 3,343 unit tests).
 - **D55** (exit grid, tab bar for running and awake sessions only, Jarvis controls the whole app: 65 tools). Pushed.
 - **D55 verification (dev build):** 3,329 unit tests (203 files), both typechecks clean, `e2e-jarvis-control` 33/33 (new), `e2e-jarvis` 60/60, `e2e-grid` 15/15, `e2e-foldertabs` 6/6, `e2e-annotate` 13/13, `e2e-codemode` 34/34. The installer was not rebuilt (still `84bf042`).
-- **Installer:** `release/SessionDeck-Setup-0.0.3.exe`, built from `84bf042`. Unsigned (SmartScreen warns: "More info" → "Run anyway"). The version number was not bumped since 0.0.3; installing over an existing copy replaces it and keeps the user's data.
-- **Verification baseline at that build:** 3,299 unit tests (202 files), both typechecks clean, `e2e:packaged` 15/15 (includes Jarvis's tool server and headless screen rendering), `e2e-spaces` 4/4 on the dev build and on the packaged exe, every Jarvis suite green (`e2e-jarvis` 60, `e2e-jarvis-real` 12, `e2e-jarvis-opencode` 5, `e2e-jarvis-voice` 10), and the regression list in the `84bf042` commit message.
+- **Installer:** `release/SessionDeck-Setup-0.0.4.exe`, built 2026-11-04 from the D58 code (`631ad3c` + the 0.0.4 version bump). Unsigned (SmartScreen warns: "More info" → "Run anyway"). Installing over an existing copy replaces it and keeps the user's data. `e2e:packaged` 15/15 (Jarvis lists 75 tools).
+- **Verification baseline at the 0.0.3 build (`84bf042`):** 3,299 unit tests (202 files), both typechecks clean, `e2e:packaged` 15/15 (includes Jarvis's tool server and headless screen rendering), `e2e-spaces` 4/4 on the dev build and on the packaged exe, every Jarvis suite green (`e2e-jarvis` 60, `e2e-jarvis-real` 12, `e2e-jarvis-opencode` 5, `e2e-jarvis-voice` 10), and the regression list in the `84bf042` commit message.
 
 ---
 
@@ -54,7 +54,7 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Area | Gap |
 |---|---|
-| Release | Unsigned installer; version not bumped since 0.0.3; no auto-update (D25 deferred). |
+| Release | Unsigned installer, version 0.0.4 (bumped by hand on request); no auto-update (D25 deferred). |
 | Look | Dark theme only. |
 | Human checks | Sound and taskbar flash are verified through code paths and fakes, not by ear/eye; real-mouse drag-and-drop is covered by pure logic, not simulated drag events. |
 | Quota | `USAGE_LIMIT_PATTERNS` may need new wording (the first real match per process is logged). The OpenCode Go usage path is tested with fakes only (no Go connection on the dev machine). |
