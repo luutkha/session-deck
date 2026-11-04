@@ -1,15 +1,23 @@
 // Settings > Terminal (terminal comfort): zoom (live) and scrollback (new panes). Renderer-only profile in
-// localStorage (`sessiondeck.termview.v1`), shared app-wide.
+// localStorage (`sessiondeck.termview.v1`), shared app-wide. Right-click (D59): Orca's menu or quick copy/paste.
 import { useState, type ReactElement } from 'react'
 import { useTermView } from '../Terminal/useTermView'
 import { SCROLLBACK_MAX, SCROLLBACK_MIN, clampScrollback } from '../Terminal/termView'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { readRightClickMode, storeRightClickMode } from '../Terminal/rightClickPref'
+import type { RightClickMode } from '../Terminal/keymap'
+
+const RIGHT_CLICK_CHOICES: readonly { readonly mode: RightClickMode; readonly label: string }[] = [
+  { mode: 'menu', label: 'Show menu' },
+  { mode: 'paste', label: 'Copy / paste' }
+]
 
 export function TerminalSection(): ReactElement {
   const { termView, setTermView, zoom } = useTermView()
   const [draft, setDraft] = useState(String(termView.scrollbackLines))
   const [error, setError] = useState<string | null>(null)
+  const [rightClick, setRightClick] = useState<RightClickMode>((): RightClickMode => readRightClickMode())
 
   function applyScrollback(): void {
     const parsed = Number(draft)
@@ -23,6 +31,32 @@ export function TerminalSection(): ReactElement {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-[13px] font-medium text-foreground">Right-click</Label>
+        <div className="flex items-center gap-2" role="group" aria-label="Right-click">
+          {RIGHT_CLICK_CHOICES.map((choice) => (
+            <Button
+              key={choice.mode}
+              type="button"
+              size="xs"
+              variant={rightClick === choice.mode ? 'default' : 'outline'}
+              aria-pressed={rightClick === choice.mode}
+              data-right-click={choice.mode}
+              onClick={(): void => {
+                storeRightClickMode(choice.mode)
+                setRightClick(choice.mode)
+              }}
+            >
+              {choice.label}
+            </Button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Show menu: Copy, Paste, Select All, Find, Split, Clear and more. Copy / paste: copies the selection or pastes
+          right away; Ctrl+right-click still shows the menu.
+        </p>
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
           <Label className="text-[13px] font-medium text-foreground">Zoom</Label>

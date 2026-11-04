@@ -98,3 +98,15 @@ export function isRightButton(button: number): boolean {
 export function decideContextMenuAction(hasSelection: boolean): ContextMenuDecision {
   return hasSelection ? 'copy' : 'paste'
 }
+
+/** What a right-click does (D59): Orca's menu, or the quick copy-or-paste of D21. */
+export type RightClickMode = 'menu' | 'paste'
+
+/**
+ * Right-click inside a pane (D59, like Orca): 'menu' opens the terminal menu; 'paste' copies the selection or pastes,
+ * and Ctrl+right-click still opens the menu. Either way the button is never reported to the program (D21).
+ */
+export function decideRightClick(mode: RightClickMode, ctrlKey: boolean, hasSelection: boolean): ContextMenuDecision | 'menu' {
+  if (mode === 'menu' || ctrlKey) return 'menu'
+  return decideContextMenuAction(hasSelection)
+}

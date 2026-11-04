@@ -7,6 +7,8 @@ import { CodeSidebar } from '../code/sidebar/CodeSidebar'
 import { useTerminalPanes } from '../Terminal/useTerminalPanes'
 import { useTerminalSearch } from '../Terminal/useTerminalSearch'
 import { TerminalSearchBar } from '../Terminal/TerminalSearchBar'
+import { TerminalContextMenu } from '../Terminal/TerminalContextMenu'
+import { useTerminalMenu } from '../Terminal/useTerminalMenu'
 import { useTermView } from '../Terminal/useTermView'
 import { applyTerminalFontSize } from '../Terminal/paneFactory'
 import type { GridPreset } from '../grid/gridLogic'
@@ -111,6 +113,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   // Ctrl+Shift+F inside an xterm pane goes through the pane's key handler; the ref bridges it to the hook below
   // (the hook needs the pane registry, which is created here).
   const openSearchRef = useRef<() => void>(() => undefined)
+  // D59: a right-click in a pane opens the terminal menu; the ref bridges the pane to the menu hook below.
+  const openMenuRef = useRef<(id: Id, point: { readonly x: number; readonly y: number }) => void>(() => undefined)
   const panes = useTerminalPanes(
     view === 'grid'
       ? nav.grid.layout.cells.filter((id): id is Id => id !== null)
@@ -120,7 +124,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
     {
       termView: termViewApi.termView,
       onZoom: termViewApi.zoom,
-      onSearch: (): void => openSearchRef.current()
+      onSearch: (): void => openSearchRef.current(),
+      onContextMenu: (id, point): void => openMenuRef.current(id, point)
     }
   )
   // Grid view: the workspace itself draws the cells (one host per xterm); a worker overlay hides it as before.
@@ -146,6 +151,17 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   useEffect((): void => {
     openSearchRef.current = search.open
   }, [search.open])
+  const terminalMenu = useTerminalMenu({
+    panes,
+    sessions: sessions ?? [],
+    focusSession: nav.activateTab,
+    openSearch: search.open,
+    split: view === 'terminal' && split.canSplit ? { splitRight: split.splitRight, splitDown: split.splitDown } : null,
+    splitPaneIds: view === 'terminal' ? split.layout.paneIds : [],
+    removePane: split.removePane,
+    forkSession: commands.forkSession
+  })
+  openMenuRef.current = terminalMenu.open
   useEffect((): void => {
     for (const pane of panes.panesRef.current.values()) {
       if (pane.opened) {
@@ -374,6 +390,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                     : <EmptyState onNewSession={(): void => commands.openNew()} />}
                 </div>
               ) : null}
+              <TerminalContextMenu {...terminalMenu.menu} />
               {search.active ? (
                 <TerminalSearchBar
                   query={search.query}

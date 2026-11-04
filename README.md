@@ -15,6 +15,7 @@ A Windows desktop app for running and managing many [Claude Code](https://claude
 **Seeing what matters**
 - An Orca-style attention bell and a "Needs you" list, with sounds you choose and desktop notices. The alert repeats while a session stays unread.
 - A Hub board by status, a grid of live terminals, split panes, tabs per folder, a command palette (Ctrl+K / Ctrl+Shift+K) and terminal search (Ctrl+Shift+F).
+- Right-click in a terminal for Orca's menu: Copy, Select All, Paste, Find, Fork, Split, Close Pane, Copy Folder Path, Clear Screen. Prefer instant copy/paste? Settings > Terminal > Right-click.
 - The status bar shows plan usage for Claude and OpenCode Go, plus the active session's model, context fill and cost.
 - A per-session timeline, "While you were away", a cost report, and search across past conversations.
 - A quota autopilot sleeps idle sessions at the limit, wakes them at the reset, and types "continue" for you.
@@ -53,6 +54,7 @@ Requires Node 22+, Windows (primary target) and the `claude` CLI on PATH, logged
 | `npm run e2e` | smoke: window, create/rename/status, real `claude` in a PTY, hooks → attention, close |
 | `npm run e2e:jarvis` | Jarvis: MCP tool server, tools on real sessions, confirm dialog, panel in Ops and Code, schedules, undo |
 | `npm run e2e:worktree-sources` | Code mode workspaces (D57): taken name gets -2, existing branch, repo folder |
+| `npm run e2e:termmenu` | The terminal right-click menu (D59): rows, paste once, copy, find, split, close pane, clear, the copy/paste choice |
 | `npm run e2e:jarvis-app` | Jarvis's D58 tools: sounds, sidebar list, tabs, terminal search, files, links, window, Code tree, file on screen |
 | `npm run e2e:jarvis-control` | Jarvis controls the whole app (D55): screen, settings, queue, checklist, groups, statuses, presets, bulk |
 | `npm run e2e:packaged` | the packaged app (`release/win-unpacked`), including Jarvis |

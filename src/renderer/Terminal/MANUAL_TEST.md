@@ -75,7 +75,11 @@ described.
 - [ ] **Ctrl+V and Ctrl+Shift+V paste.** Paste a multi-line block (3+ lines
   with indentation) into an editor (`vim`, `nano`, or `python` REPL):
   lines arrive complete, indentation preserved, no bracketed-paste mangling.
-- [ ] **Right-click copies when there is a selection, pastes otherwise.**
+- [ ] **Right-click opens the terminal menu** (D59): Copy is greyed out without a
+  selection; Paste pastes once (also in Claude's fullscreen UI); Escape closes it
+  and typing goes to the terminal again.
+- [ ] **Settings > Terminal > Right-click > Copy / paste:** right-click copies when
+  there is a selection, pastes otherwise; Ctrl+right-click still shows the menu.
 - [ ] **Ctrl+Backspace** deletes the previous word in the shell.
 - [ ] **Shift+Enter** reaches the app unchanged (no copy/paste interference).
 - [ ] **Ctrl+N, F2, Ctrl+Tab still trigger the app shortcuts** while the

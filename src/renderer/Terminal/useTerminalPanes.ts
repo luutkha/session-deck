@@ -113,6 +113,8 @@ export interface TerminalPanesOptions {
   readonly onZoom?: (action: ZoomAction) => void
   /** Ctrl+Shift+F inside a pane: the owner opens its search bar for the active pane (W3). */
   readonly onSearch?: () => void
+  /** A right-click in a pane (D59): the owner opens the terminal menu for that pane at the point. */
+  readonly onContextMenu?: (id: Id, point: { readonly x: number; readonly y: number }) => void
 }
 
 /**
@@ -151,7 +153,9 @@ export function useTerminalPanes(
         view: buildTerminalView(id, {
           termView: optionsRef.current.termView,
           onZoom: optionsRef.current.onZoom,
-          onSearch: optionsRef.current.onSearch
+          onSearch: optionsRef.current.onSearch,
+          // Read at click time: the owner's callback may change after the pane is built.
+          onContextMenu: (point): void => { optionsRef.current.onContextMenu?.(id, point) }
         }),
         gate: new SeqGate(),
         lastRun: runtime.get(id)?.run ?? null,

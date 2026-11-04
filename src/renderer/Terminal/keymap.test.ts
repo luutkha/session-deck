@@ -1,5 +1,6 @@
 import {
   decideContextMenuAction,
+  decideRightClick,
   isRightButton,
   decideKeyAction,
   type KeyInfo
@@ -169,5 +170,19 @@ describe('decideKeyAction: terminal comfort zoom', () => {
     expect(decideKeyAction(key({ key: '-' }), false)).toBe('allow')
     expect(decideKeyAction(key({ key: '+' }), false)).toBe('allow')
     expect(decideKeyAction(key({ key: '0' }), false)).toBe('allow')
+  })
+})
+
+describe('decideRightClick (D59)', () => {
+  it('menu mode always opens the menu, with or without a selection', () => {
+    expect(decideRightClick('menu', false, false)).toBe('menu')
+    expect(decideRightClick('menu', false, true)).toBe('menu')
+    expect(decideRightClick('menu', true, true)).toBe('menu')
+  })
+
+  it('paste mode copies a selection or pastes, and Ctrl+right-click still opens the menu', () => {
+    expect(decideRightClick('paste', false, true)).toBe('copy')
+    expect(decideRightClick('paste', false, false)).toBe('paste')
+    expect(decideRightClick('paste', true, false)).toBe('menu')
   })
 })

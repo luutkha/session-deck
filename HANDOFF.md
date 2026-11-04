@@ -14,7 +14,8 @@ Where the details live:
 
 ## 1. State
 
-- **Shipped through D58** (Jarvis controls every part of the app: 10 more tools, 75 in all; `e2e-jarvis-app` 21/21, `e2e-jarvis-control` 33/33, `e2e-jarvis` 60/60, 3,358 unit tests). Not pushed.
+- **Shipped through D59** (terminal right-click menu like Orca, with a Settings choice for the old quick copy/paste; `e2e-termmenu` 16/16, `e2e-paste` 4/4, `e2e-imagepaste` 3/3, `e2e-termview` 15/15, `e2e-g1` 14/14, `e2e-grid` 15/15, 3,366 unit tests). Not pushed.
+- **D58** (Jarvis controls every part of the app: 10 more tools, 75 in all; `e2e-jarvis-app` 21/21, `e2e-jarvis-control` 33/33, `e2e-jarvis` 60/60, 3,358 unit tests). Not pushed.
 - **D57** (D56: Code mode stays git-only; D57: worktrees like Orca — auto-suffix, existing branch, repo folder; `e2e-worktree-sources` 10/10, 3,343 unit tests).
 - **D55** (exit grid, tab bar for running and awake sessions only, Jarvis controls the whole app: 65 tools). Pushed.
 - **D55 verification (dev build):** 3,329 unit tests (203 files), both typechecks clean, `e2e-jarvis-control` 33/33 (new), `e2e-jarvis` 60/60, `e2e-grid` 15/15, `e2e-foldertabs` 6/6, `e2e-annotate` 13/13, `e2e-codemode` 34/34. The installer was not rebuilt (still `84bf042`).
@@ -85,6 +86,7 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Date | Round | Decisions | Key commits |
 |---|---|---|---|
+| 2026-11-04 | Terminal right-click menu like Orca (Copy, Select All, Paste, Find, Fork, Split, Close Pane, Copy Folder Path, Clear Screen); Settings choice for quick copy/paste | D59 | this commit |
 | 2026-11-04 | Jarvis controls every part of the app: sounds, sidebar list, Code tree, file on screen, terminal search, tabs, files into a session, links, the window, its own restart | D58 | `13b2dbf` |
 | 2026-11-03 | Code mode worktrees like Orca: auto-suffix, existing branch, repo folder; non-git folders skipped | D56–D57 | `cf4c13c` |
 | 2026-11-03 | Exit grid, tab bar only for running and awake sessions, Jarvis controls the whole app (30 new tools, screen commands) | D55 | `82c7a64`, `7a76138` |

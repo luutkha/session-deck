@@ -8,8 +8,9 @@ import { terminalOptionsFor } from './terminalOptions'
 import { DEFAULT_TERM_VIEW, fontSizeFor, type TermView } from './termView'
 import { registerLinkProvider } from './links/linkProvider'
 import { attachFileDrop, clipboardHasImageOnly, pasteImageKeysFor } from './inputExtras'
+import { readRightClickMode } from './rightClickPref'
 import {
-  decideContextMenuAction,
+  decideRightClick,
   isRightButton,
   decideKeyAction,
   type KeyInfo
@@ -34,6 +35,8 @@ export interface TerminalView {
   onZoom: ((action: ZoomAction) => void) | null
   /** Set by the workspace so Ctrl+Shift+F can open the search bar; absent = swallowed but no bar. */
   onSearch: (() => void) | null
+  /** Set by the workspace (D59): a right-click asks it to open the terminal menu at this point (window coordinates). */
+  onContextMenu: ((point: { readonly x: number; readonly y: number }) => void) | null
   /** The container the terminal was opened into (for live refits); set by openTerminalView. */
   openedElement: HTMLElement | null
 }
@@ -49,7 +52,8 @@ function toKeyInfo(event: KeyboardEvent): KeyInfo {
   }
 }
 
-async function copySelectionToClipboard(term: Terminal): Promise<void> {
+/** Copies the pane's selection (menu, Ctrl+C, right-click) and clears it; nothing selected = nothing happens. */
+export async function copySelectionToClipboard(term: Terminal): Promise<void> {
   const text = term.getSelection()
   if (text.length === 0) {
     return
@@ -64,7 +68,8 @@ async function copySelectionToClipboard(term: Terminal): Promise<void> {
 
 const sessionIds = new WeakMap<Terminal, Id>()
 
-async function pasteClipboardInto(term: Terminal): Promise<void> {
+/** Pastes the clipboard once (menu, Ctrl+V, right-click); an image-only clipboard makes the agent attach it. */
+export async function pasteClipboardInto(term: Terminal): Promise<void> {
   const sessionId = sessionIds.get(term)
   // An image on the clipboard has no text to paste: the agent reads the clipboard itself (Claude: Alt+V, OpenCode: Ctrl+V).
   if (sessionId !== undefined && await clipboardHasImageOnly()) {
@@ -142,6 +147,7 @@ export function buildTerminalView(
     readonly termView?: TermView
     readonly onZoom?: (action: ZoomAction) => void
     readonly onSearch?: () => void
+    readonly onContextMenu?: (point: { readonly x: number; readonly y: number }) => void
   } = {}
 ): TerminalView {
   const term = new Terminal(terminalOptionsFor(options.termView ?? DEFAULT_TERM_VIEW))
@@ -175,6 +181,7 @@ export function buildTerminalView(
     fitFrame: null,
     onZoom: options.onZoom ?? null,
     onSearch: options.onSearch ?? null,
+    onContextMenu: options.onContextMenu ?? null,
     openedElement: null
   }
   attachKeyHandling(view)
@@ -227,11 +234,15 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
 
   element.addEventListener('contextmenu', (event: MouseEvent): void => {
     event.preventDefault()
-    const action = decideContextMenuAction(view.term.hasSelection())
-    if (action === 'copy') {
+    const action = decideRightClick(readRightClickMode(), event.ctrlKey, view.term.hasSelection())
+    if (action === 'menu' && view.onContextMenu !== null) {
+      view.onContextMenu({ x: event.clientX, y: event.clientY })
+    } else if (action === 'copy') {
       void copySelectionToClipboard(view.term)
-    } else {
+    } else if (action === 'paste' || !view.term.hasSelection()) {
       void pasteClipboardInto(view.term)
+    } else {
+      void copySelectionToClipboard(view.term)
     }
   })
 

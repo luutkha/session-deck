@@ -77,8 +77,8 @@ Deferred: a real interactive OpenCode terminal (shared `opencode serve` + `openc
 **D20 · 2026-10-17 · Workspaces inside sidebar groups** · active
 "in grouping, we show the workspace also, base on the root folder that open the session". User accepted all three recommendations: workspace = the folder the session was opened in (`cwd`, not the git root), Groups view only (Status view unchanged), headers shown even for a single workspace, with a "Show workspaces" toggle.
 
-**D21 · 2026-10-18 · The right mouse button belongs to SessionDeck** · active
-"the issue of double paste when right click on claude on this apps still not fixed". Right-click copies a selection or pastes once; it is never forwarded to the program in the pane (Claude's fullscreen UI would paste a second time).
+**D21 · 2026-10-18 · The right mouse button belongs to SessionDeck** · active (what a right-click does: D59)
+"the issue of double paste when right click on claude on this apps still not fixed". The right button is never forwarded to the program in the pane (Claude's fullscreen UI would paste a second time). Quick copy-or-paste is now the "Copy / paste" choice of D59; the default is the menu.
 
 **D22 · 2026-10-19 · Orca-style attention bell** · active
 "currently, the app only show the status, but not show when a session need a attention from me, Orca have a "bell" icon that show it? can we do the same?" Then "1. yes 2. yes, list 3. okie, include it":
@@ -261,6 +261,12 @@ Asked "any features that jarvis can not do now?"; the list: sounds, the sidebar 
 - New tools: `sound_settings`, `sidebar_view`, `code_tree`, `open_file`, `terminal_search`, `switch_tab`, `attach_files`, `open_link`, `app_window`, `restart_jarvis` (75 tools in all).
 - Same rules as D55: the UI's own paths, quit asks Yes/No first, undo for reversible steps (Code tree collapse, start on login).
 - `open_link` never runs a program or script (it shows it selected in its folder, as a click does). `refresh_usage` does not need the usage-bar consent first (main never checked it; the description said so wrongly).
+
+**D59 · 2026-11-04 · Terminal right-click menu like Orca** · active
+"currently, copy and paste to the session stil use native handle, right, i see the orcar right click handle quite good, can u bring it to this app?"
+- Right-click in a terminal opens Orca's menu: Copy (off without a selection), Select All, Paste, Find…, Fork Session (Claude with a saved conversation), Split Terminal Right / Down (when a split is possible), Close Pane (in a split), Copy Folder Path, Clear Screen.
+- Settings > Terminal > Right-click: "Show menu" (default) or "Copy / paste" (the old D21 quick copy-or-paste; Ctrl+right-click still shows the menu), as Orca offers.
+- The right button still never reaches the program (D21); Paste goes through the one paste gate, so it pastes once in Claude's fullscreen UI too. Orca rows SessionDeck has no use for (quick commands, pane/terminal ids, native chat, reset terminal) are left out.
 
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
