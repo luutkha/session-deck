@@ -17,6 +17,8 @@ describe('runGit', () => {
   it('runs git without prompting and with English messages', () => {
     expect(gitEnv().GIT_TERMINAL_PROMPT).toBe('0')
     expect(gitEnv().LC_ALL).toBe('C')
+    // D60: background reads never take index.lock.
+    expect(gitEnv().GIT_OPTIONAL_LOCKS).toBe('0')
     // Everything else of the app's environment is inherited.
     expect(gitEnv().PATH).toBe(process.env.PATH)
   })

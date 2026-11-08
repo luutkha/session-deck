@@ -117,7 +117,7 @@ export function CodeWorktreeRow({ node, view }: CodeWorktreeRowProps): ReactElem
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onSelect={(): void => handlers.onRequestRemoveWorktree(worktree)}>
             <Trash2 className="size-3.5" aria-hidden="true" />
-            <span>Remove worktree from SessionDeck</span>
+            <span>Remove worktree…</span>
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

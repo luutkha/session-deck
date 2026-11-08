@@ -337,6 +337,103 @@ export interface ChangedFile {
   /** Changed line counts; null for binary files (or an untracked file too large to count). */
   readonly additions: number | null
   readonly deletions: number | null
+  /** D60: true = the file also differs from HEAD (staged, unstaged or untracked), so it can still be committed. Absent = committed already. */
+  readonly uncommitted?: boolean
+}
+
+/** D60: where a worktree's branch stands against its remote and base (Changes panel: Push, Create PR, Merge). */
+export interface BranchStatus {
+  readonly worktreeId: Id
+  /** Checked-out branch; null = detached HEAD. */
+  readonly branch: string | null
+  readonly baseBranch: string
+  /** The remote a push goes to (the upstream's remote, else "origin", else the only remote); null = no remote. */
+  readonly remote: string | null
+  /** e.g. "origin/fix-login"; null = the branch was never pushed. */
+  readonly upstream: string | null
+  /** Commits a push would send: ahead of the upstream, or (never pushed) commits on the branch that the base lacks. */
+  readonly ahead: number
+  /** Commits on the upstream the branch lacks (as of the last fetch). */
+  readonly behind: number
+  /** Files that differ from HEAD (what Commit can take). */
+  readonly uncommitted: number
+  /** D57: the repository's own folder (no Merge into base, no delete from disk). */
+  readonly repoFolder: boolean
+  /** The host's new-pull-request page for this branch (GitHub, GitLab, Bitbucket); null = unknown host or no remote. */
+  readonly compareUrl: string | null
+  /** GitHub CLI installed and signed in: Create PR makes the PR itself. */
+  readonly ghReady: boolean
+  /** Readable reason when the status could not be read (other fields are then defaults). */
+  readonly error?: string
+}
+
+/** D60: commit the given changed files of a worktree. */
+export interface CommitInput {
+  readonly worktreeId: Id
+  readonly message: string
+  /** Paths from the Changes list that are uncommitted (1..CHANGES_MAX_FILES). */
+  readonly paths: readonly string[]
+}
+
+export interface CommitResult {
+  readonly sha: string
+  /** First line of the message. */
+  readonly subject: string
+  readonly files: number
+}
+
+export interface PushResult {
+  readonly remote: string
+  readonly branch: string
+}
+
+/** D60: title/body for a PR made with the GitHub CLI (ignored when the browser page is opened instead). */
+export interface PullRequestInput {
+  readonly title?: string
+  readonly body?: string
+}
+
+export interface PullRequestResult {
+  readonly url: string
+  /** true = the GitHub CLI created the PR; false = the host's new-pull-request page was opened in the browser. */
+  readonly created: boolean
+}
+
+export interface MergeResult {
+  readonly merged: boolean
+  /** What happened, in plain words ("Merged fix-login into main.", "Already up to date."). */
+  readonly message: string
+  /** Files that conflicted (the merge was undone). */
+  readonly conflicts?: readonly string[]
+}
+
+/** D60: what removing a worktree from disk would lose (the Remove dialog's warnings). */
+export interface WorktreeRemovalInfo {
+  readonly worktreeId: Id
+  readonly repoFolder: boolean
+  readonly branch: string
+  readonly baseBranch: string
+  readonly path: string
+  readonly uncommitted: number
+  /** The branch's commits are all in the base branch (deleting it loses nothing). */
+  readonly branchMerged: boolean
+  readonly folderExists: boolean
+}
+
+export interface WorktreeRemoveOptions {
+  /** Also `git worktree remove` the folder and delete the branch (never for the repository folder). */
+  readonly deleteFromDisk?: boolean
+  /** With deleteFromDisk: delete even with uncommitted files (they are lost). */
+  readonly discardChanges?: boolean
+  /** With deleteFromDisk: delete the branch even when it has commits the base lacks (`git branch -D`). */
+  readonly deleteUnmergedBranch?: boolean
+}
+
+export interface WorktreeRemoveResult {
+  readonly folderDeleted: boolean
+  readonly branchDeleted: boolean
+  /** Why something stayed on disk, in plain words; absent when everything asked for was done. */
+  readonly note?: string
 }
 
 /** Everything that differs between merge-base(baseBranch, HEAD) and the worktree on disk (committed, staged, unstaged, untracked). */

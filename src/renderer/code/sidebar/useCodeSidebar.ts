@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { Id, Repo, StoreData, Worktree } from '../../../shared/types'
+import type { Id, Repo, StoreData, Worktree, WorktreeRemoveOptions } from '../../../shared/types'
 import type { SessionActions } from '../../state/useSessionStore'
 import { ignoreRejection } from '../../Sidebar/ignoreRejection'
-import { repoRemoveMessage, sessionRemoveCopy, worktreeRemoveMessage } from './removeCopy'
-import { repoSessionCount, worktreeSessionCount } from './codeTree'
+import { repoRemoveMessage, sessionRemoveCopy } from './removeCopy'
+import { repoSessionCount } from './codeTree'
 import type { CodeCommands, CodeTreeHandlers } from './codeTreeView'
 import { useCodeCommands } from './useCodeCommands'
 
@@ -20,6 +20,9 @@ export interface CodeSidebarController {
   readonly handlers: CodeTreeHandlers
   readonly renamingId: Id | null
   readonly pending: PendingRemove | null
+  /** D60: the worktree whose Remove dialog is open (with the delete-from-disk choice), or null. */
+  readonly pendingWorktree: Worktree | null
+  readonly confirmRemoveWorktree: (options: WorktreeRemoveOptions) => void
   readonly cancelPending: () => void
   /** Error from a command of this sidebar (shown in the banner), or null. */
   readonly localError: string | null
@@ -39,10 +42,14 @@ export function useCodeSidebar(input: CodeSidebarControllerInput): CodeSidebarCo
   const { data, actions, onSelect, onNewWorktree, onNewSessionInWorktree } = input
   const [renamingId, setRenamingId] = useState<Id | null>(null)
   const [pending, setPending] = useState<PendingRemove | null>(null)
+  const [pendingWorktree, setPendingWorktree] = useState<Worktree | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const commands = useCodeCommands(setLocalError)
 
-  const cancelPending = useCallback((): void => setPending(null), [])
+  const cancelPending = useCallback((): void => {
+    setPending(null)
+    setPendingWorktree(null)
+  }, [])
   const dismissLocalError = useCallback((): void => setLocalError(null), [])
 
   const requestRemoveSession = useCallback(
@@ -76,20 +83,8 @@ export function useCodeSidebar(input: CodeSidebarControllerInput): CodeSidebarCo
     [data, commands]
   )
 
-  const requestRemoveWorktree = useCallback(
-    (worktree: Worktree): void => {
-      setPending({
-        title: 'Remove worktree',
-        message: worktreeRemoveMessage(worktree.name, worktreeSessionCount(data, worktree.id), worktree.path, worktree.main === true),
-        confirmLabel: 'Remove',
-        onConfirm: (): void => {
-          setPending(null)
-          void commands.removeWorktree(worktree.id)
-        }
-      })
-    },
-    [data, commands]
-  )
+  // D60: its own dialog (RemoveWorktreeDialog), for the delete-from-disk choice.
+  const requestRemoveWorktree = useCallback((worktree: Worktree): void => setPendingWorktree(worktree), [])
 
   const handlers = useMemo(
     (): CodeTreeHandlers => ({
@@ -110,5 +105,11 @@ export function useCodeSidebar(input: CodeSidebarControllerInput): CodeSidebarCo
     [onSelect, actions, requestRemoveSession, requestRemoveRepo, requestRemoveWorktree, onNewWorktree, onNewSessionInWorktree]
   )
 
-  return { commands, handlers, renamingId, pending, cancelPending, localError, dismissLocalError }
+  const confirmRemoveWorktree = useCallback((options: WorktreeRemoveOptions): void => {
+    const worktree = pendingWorktree
+    setPendingWorktree(null)
+    if (worktree !== null) void commands.removeWorktree(worktree.id, options)
+  }, [pendingWorktree, commands])
+
+  return { commands, handlers, renamingId, pending, pendingWorktree, confirmRemoveWorktree, cancelPending, localError, dismissLocalError }
 }

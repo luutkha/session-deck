@@ -6,6 +6,8 @@ import type { SessionStore } from '../store'
 import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, resolveCommit, readWorktreeChanges, readWorktreePreview, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
 import { asCreateWorktreeInput, assertBoolean, assertId, assertNonEmptyString } from './ipcValidation'
 import type { SessionController } from './sessionController'
+import { createCodeGitOps, type CodeGitOps } from './codeGitOps'
+import { asCommitInput, asPullRequestInput, asWorktreeRemoveOptions } from './codeGitValidation'
 import { errorMessage } from '../../shared/guards'
 
 /** A turn that just ended has usually written its files; give the file system a moment before diffing. */
@@ -25,6 +27,10 @@ export interface CodeWiringDeps {
   readonly homedir: string
   readonly now: () => number
   readonly onError: (where: string, error: unknown) => void
+  /** D60: opens a web page in the user's browser (the PR page when the GitHub CLI is not set up). */
+  readonly openExternal: (url: string) => Promise<void>
+  /** D60: GitHub CLI installed and signed in (cached). */
+  readonly ghReady: () => Promise<boolean>
 }
 
 /** Code mode (D31): repos, worktrees and their changes, wired to the store, the controller and IPC. */
@@ -41,6 +47,8 @@ export interface CodeWiring {
   /** D55 (Jarvis): removes a repo with its worktrees and sessions; one file's diff (same paths as the IPC). */
   removeRepo(repoId: Id): void
   fileDiff(rawWorktreeId: unknown, rawPath: unknown): Promise<FileDiff>
+  /** D60: commit, push, pull request, merge, delete from disk (the Changes panel and Jarvis). */
+  readonly git: CodeGitOps
   /** A turn ended in some session: refresh the changes of its worktree and push them to the windows. */
   onHookEvent(event: HookEvent): void
   shutdown(): void
@@ -180,6 +188,15 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     controller.removeRepo(id)
   }
 
+  const git = createCodeGitOps({
+    store,
+    removeFromSessionDeck: removeWorktree,
+    refreshChanges: computeChanges,
+    latestChanges: (id) => latest.get(id),
+    openExternal: deps.openExternal,
+    ghReady: deps.ghReady
+  })
+
   function registerIpc(): void {
     ipcMain.handle(IPC.repoAdd, (_event, raw: unknown) => addRepo(raw))
     ipcMain.handle(IPC.repoRemove, (_event, rawId: unknown): void => removeRepo(assertId(rawId, 'repo id')))
@@ -188,7 +205,14 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     })
     ipcMain.handle(IPC.repoBranches, (_event, rawId: unknown): Promise<RepoBranches> => branches(assertId(rawId, 'repo id')))
     ipcMain.handle(IPC.worktreeCreate, (_event, raw: unknown) => createWorktree(raw))
-    ipcMain.handle(IPC.worktreeRemove, (_event, rawId: unknown): void => removeWorktree(assertId(rawId, 'worktree id')))
+    ipcMain.handle(IPC.worktreeRemove, (_event, rawId: unknown, rawOptions: unknown) =>
+      git.remove(assertId(rawId, 'worktree id'), asWorktreeRemoveOptions(rawOptions)))
+    ipcMain.handle(IPC.worktreeRemovalInfo, (_event, rawId: unknown) => git.removalInfo(assertId(rawId, 'worktree id')))
+    ipcMain.handle(IPC.worktreeBranchStatus, (_event, rawId: unknown) => git.branchStatus(assertId(rawId, 'worktree id')))
+    ipcMain.handle(IPC.worktreeCommit, (_event, raw: unknown) => git.commit(asCommitInput(raw)))
+    ipcMain.handle(IPC.worktreePush, (_event, rawId: unknown) => git.push(assertId(rawId, 'worktree id')))
+    ipcMain.handle(IPC.worktreeCreatePr, (_event, rawId: unknown, raw: unknown) => git.createPr(assertId(rawId, 'worktree id'), asPullRequestInput(raw)))
+    ipcMain.handle(IPC.worktreeMerge, (_event, rawId: unknown) => git.merge(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeSetCollapsed, (_event, rawId: unknown, rawCollapsed: unknown): void => {
       store.setWorktreeCollapsed(assertId(rawId, 'worktree id'), assertBoolean(rawCollapsed, 'collapsed'))
     })
@@ -206,6 +230,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     removeWorktree,
     removeRepo,
     fileDiff,
+    git,
     onHookEvent: (event) => {
       if (event.event !== 'Stop') return
       const worktreeId = store.get().sessions.find((s) => s.id === event.sessionId)?.worktreeId

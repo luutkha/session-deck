@@ -149,7 +149,7 @@ Small, verified steps beat one big change: commit each finished feature before s
 - Drive the UI like a user: CDP mouse/keyboard events (`Input.dispatchMouseEvent` / `dispatchKeyEvent`), `scrollIntoView` before clicking, `data-*` selectors, await state with `waitFor` (never fixed sleeps as assertions).
 - Read terminal output from `window.api.ptyReplay` (the terminal draws with WebGL; there is no DOM text).
 - Fake external programs on PATH (`claude.cmd` + a node stub) when the real tool would change user state or cost money; but re-check the real tool when its version changes.
-- Test seams are env vars read only by the app (`SESSIONDECK_E2E_ENDPOINT_FILE`, `SESSIONDECK_VOICE_WAV`) and are inert when unset.
+- Test seams are env vars read only by the app (`SESSIONDECK_E2E_ENDPOINT_FILE`, `SESSIONDECK_VOICE_WAV`, `SESSIONDECK_E2E_OPENED_URLS_FILE`, `SESSIONDECK_E2E_NO_GH`) and are inert when unset.
 - Real-Claude suites (`*-real.cjs`, `e2e.cjs`, `e2e-bell`, `e2e-notes-usage`) cost the user's plan: keep prompts tiny, say so in the file header, prefer OpenCode free models (`opencode/deepseek-v4.1-flash-free`) when the agent does not matter.
 - Every suite cleans up the sessions it made and kills the app in `finally`.
 

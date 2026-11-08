@@ -4,6 +4,7 @@ import { CHANGES_MAX_FILES, type ChangedFile, type Id, type WorktreeChanges } fr
 import { isDirectory } from './fsCheck'
 import { GIT_FATAL_EXIT_CODE, type GitRun, runGit } from './gitRunner'
 import { countUntrackedAdditions } from './untrackedCount'
+import { parseStatusZ } from './commit'
 import {
   type LineCounts,
   type NameStatusEntry,
@@ -82,15 +83,18 @@ async function collectChanges(wt: WorktreeRef, now: () => number, run: GitRun): 
   if (!(await isDirectory(wt.path))) throw new Error(`Worktree folder not found: ${wt.path}`)
   const base = await diffBase(wt, run)
   const options = { cwd: wt.path }
-  const [numstat, nameStatus, untracked] = await Promise.all([
+  const [numstat, nameStatus, untracked, status] = await Promise.all([
     run(['diff', '--numstat', '-z', '-M', base], options),
     run(['diff', '--name-status', '-z', '-M', base], options),
-    run(['ls-files', '--others', '--exclude-standard', '-z'], options)
+    run(['ls-files', '--others', '--exclude-standard', '-z'], options),
+    run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], options)
   ])
+  // D60: which listed files still differ from HEAD (Commit can take only those).
+  const uncommitted = parseStatusZ(status.stdout)
   const files = [
     ...trackedFiles(numstat.stdout, nameStatus.stdout),
     ...(await untrackedFiles(wt.path, untracked.stdout))
-  ]
+  ].map((file): ChangedFile => (uncommitted.has(file.path) || (file.oldPath !== undefined && uncommitted.has(file.oldPath)) ? { ...file, uncommitted: true } : file))
   return buildChanges(wt.id, files, now())
 }
 

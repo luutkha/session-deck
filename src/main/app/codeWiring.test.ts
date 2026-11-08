@@ -44,7 +44,9 @@ function wiring(store: SessionStore, controller: SessionController): ReturnType<
     broadcast: () => {},
     homedir: tmpdir(),
     now: () => 1000,
-    onError: () => {}
+    onError: () => {},
+    openExternal: async () => {},
+    ghReady: async () => false
   }
   return createCodeWiring(deps)
 }

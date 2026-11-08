@@ -48,7 +48,7 @@ async function main() {
 
     const names = (await rpc('tools/list', {})).result.tools.map((x) => x.name)
     const added = ['sound_settings', 'sidebar_view', 'code_tree', 'open_file', 'terminal_search', 'switch_tab', 'attach_files', 'open_link', 'app_window', 'restart_jarvis']
-    t.check('tools/list offers the D58 tools (75 in all)', names.length === 75 && added.every((n) => names.includes(n)), `${names.length} missing: ${added.filter((n) => !names.includes(n))}`)
+    t.check('tools/list offers the D58 tools (80 in all with D60)', names.length === 80 && added.every((n) => names.includes(n)), `${names.length} missing: ${added.filter((n) => !names.includes(n))}`)
 
     for (const name of ['app alpha', 'app beta']) await tool('create_session', { folder, name, agent: 'shell' })
     await waitFor(async () => (await store()).runtime.filter((r) => r.run === 'running').length >= 2 || null, 15000, 300)

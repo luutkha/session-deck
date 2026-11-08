@@ -46,6 +46,7 @@
     "e2e:codemode": "node scripts/e2e-codemode.cjs",
     "e2e:workspaces": "node scripts/e2e-workspaces.cjs",
     "e2e:sort": "node scripts/e2e-sort.cjs",
+    "e2e:code-git": "node scripts/e2e-code-git.cjs",
     "e2e:workers": "node scripts/e2e-workers.cjs",
     "e2e:annotate": "node scripts/e2e-annotate.cjs",
     "e2e:preview": "node scripts/e2e-preview.cjs",

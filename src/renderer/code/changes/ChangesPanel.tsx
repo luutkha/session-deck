@@ -22,6 +22,8 @@ import { useWorktreeChanges, type WorktreeChangesResult } from './useWorktreeCha
 import { useWorktreeFileDiff } from './useWorktreeFileDiff'
 import { useWorktreeFilePreview } from './useWorktreeFilePreview'
 import { PreviewView } from './PreviewView'
+import { GitSection } from './GitSection'
+import { useGitActions } from './useGitActions'
 import { isPreviewable } from './preview'
 
 export interface ChangesPanelProps {
@@ -179,19 +181,34 @@ function PanelHeader({
   )
 }
 
+/** D60: the commit ticks of the file list. */
+interface Ticks {
+  readonly unticked: ReadonlySet<string>
+  readonly toggle: (path: string) => void
+}
+
 interface ChangesBodyProps {
   readonly list: WorktreeChangesResult
   readonly onSelect: (path: string) => void
+  readonly ticks: Ticks
 }
 
 function fileRows(
   changes: WorktreeChanges,
-  onSelect: (path: string) => void
+  onSelect: (path: string) => void,
+  ticks: Ticks
 ): ReactElement {
+  const anyUncommitted = changes.files.some((file): boolean => file.uncommitted === true)
   return (
     <ul role="listbox" aria-label="Changed files" className="flex flex-col gap-0.5 p-1">
       {changes.files.map((file: ChangedFile): ReactElement => (
-        <ChangeRow key={file.path} file={file} selected={false} onSelect={onSelect} />
+        <ChangeRow
+          key={file.path}
+          file={file}
+          selected={false}
+          onSelect={onSelect}
+          {...(anyUncommitted ? { ticked: !ticks.unticked.has(file.path), onToggleTick: ticks.toggle } : {})}
+        />
       ))}
     </ul>
   )
@@ -203,7 +220,7 @@ function headerTitle(list: WorktreeChangesResult): string {
 }
 
 /** The file list, or the message that replaces it (IPC failure, git problem, no files). */
-function ChangesBody({ list, onSelect }: ChangesBodyProps): ReactElement {
+function ChangesBody({ list, onSelect, ticks }: ChangesBodyProps): ReactElement {
   const { changes } = list
   if (changes === null) {
     return list.error !== null ? (
@@ -221,7 +238,7 @@ function ChangesBody({ list, onSelect }: ChangesBodyProps): ReactElement {
   return (
     <ScrollArea className="min-h-0 flex-1">
       {list.error !== null ? <PanelMessage text={list.error} failed /> : null}
-      {fileRows(changes, onSelect)}
+      {fileRows(changes, onSelect, ticks)}
     </ScrollArea>
   )
 }
@@ -287,6 +304,7 @@ function CommentsStrip({ annotations, target, stale, onRemove, onSend }: Comment
  *  With a target session, diff lines can carry comments that are sent to the session as one prompt. */
 export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProps): ReactElement {
   const list = useWorktreeChanges(worktreeId)
+  const git = useGitActions(worktreeId, list.changes, list.refresh)
   const [selection, setSelection] = useState<Selection | null>(null)
   const [annotations, setAnnotations] = useState<readonly DiffAnnotation[]>((): readonly DiffAnnotation[] =>
     readStoredAnnotations(worktreeId)
@@ -359,10 +377,18 @@ export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProp
           onRefresh={list.refresh}
         />
         {selectedPath === null ? (
-          <ChangesBody
-            list={list}
-            onSelect={(path: string): void => setSelection({ worktreeId, path })}
-          />
+          <>
+            <GitSection
+              git={git}
+              changes={list.changes}
+              {...(target !== undefined ? { onOpenUrl: (url: string): void => { void window.api.openLink(target.sessionId, url, false) } } : {})}
+            />
+            <ChangesBody
+              list={list}
+              onSelect={(path: string): void => setSelection({ worktreeId, path })}
+              ticks={{ unticked: git.unticked, toggle: git.toggleFile }}
+            />
+          </>
         ) : viewMode === 'preview' && previewable ? (
           <PreviewView
             preview={preview.preview}

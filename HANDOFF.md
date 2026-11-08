@@ -14,7 +14,8 @@ Where the details live:
 
 ## 1. State
 
-- **D61 sort sessions** (Sort button in the sidebar header, Ops and Code: Manual, Needs attention, Last active, Newest, Name A–Z; Hub follows; saved `lastActiveAt`; `e2e-sort` 20/20, `e2e-jarvis-app` 23/23, `e2e-bulk` 18/18, `e2e-workspaces` 9/9, `e2e-codemode` 34/34, `e2e-hub` 12/12, `e2e-hubscroll` 7/7, 3,393 unit tests). Not pushed. **D60** (Code mode commit / push / PR / merge / delete from disk) is next, plan approved.
+- **D61 sort sessions** (Sort button in the sidebar header, Ops and Code: Manual, Needs attention, Last active, Newest, Name A–Z; Hub follows; saved `lastActiveAt`; `e2e-sort` 20/20, `e2e-jarvis-app` 23/23, `e2e-bulk` 18/18, `e2e-workspaces` 9/9, `e2e-codemode` 34/34, `e2e-hub` 12/12, `e2e-hubscroll` 7/7, 3,393 unit tests). Not pushed.
+- **D60 Code mode commit / push / PR / merge / delete from disk** (Changes panel: ticks per uncommitted file, commit box, branch line with Push / Create PR / Merge; Remove worktree… can delete folder and branch; Jarvis 80 tools; `e2e-code-git` 29/29 three runs in a row, `e2e-jarvis` 60/60, `e2e-jarvis-control` 33/33, `e2e-jarvis-app` 23/23, `e2e-codemode` 34/34, `e2e-worktree-sources` 10/10, `e2e-annotate` 13/13, 3,447 unit tests). Not pushed. Fixed on the way: background `git status` no longer takes `index.lock` (`GIT_OPTIONAL_LOCKS=0`); an empty folder left by a half-done `git worktree remove` is cleaned up.
 - **Shipped through D59** (terminal right-click menu like Orca, with a Settings choice for the old quick copy/paste, `c031425`; `e2e-termmenu` 16/16, `e2e-paste` 4/4, `e2e-imagepaste` 3/3, `e2e-termview` 15/15, `e2e-g1` 14/14, `e2e-grid` 15/15, 3,366 unit tests). Not pushed.
 - **D58** (Jarvis controls every part of the app: 10 more tools, 75 in all; `e2e-jarvis-app` 21/21, `e2e-jarvis-control` 33/33, `e2e-jarvis` 60/60, 3,358 unit tests). Not pushed.
 - **D57** (D56: Code mode stays git-only; D57: worktrees like Orca — auto-suffix, existing branch, repo folder; `e2e-worktree-sources` 10/10, 3,343 unit tests).
@@ -60,7 +61,7 @@ Feature domains (IDs in `FEATURES.md`):
 | Look | Dark theme only. |
 | Human checks | Sound and taskbar flash are verified through code paths and fakes, not by ear/eye; real-mouse drag-and-drop is covered by pure logic, not simulated drag events. |
 | Quota | `USAGE_LIMIT_PATTERNS` may need new wording (the first real match per process is logged). The OpenCode Go usage path is tested with fakes only (no Go connection on the dev machine). |
-| Code mode | No commit/merge/PR/delete-from-disk (not chosen). Claude still asks "trust this folder" once per new worktree unless Settings > Code opts in (D43). |
+| Code mode | Commit, push, PR, merge and delete-from-disk exist (D60); no fetch/pull button ("behind" is as of the last fetch), no PR without a GitHub/GitLab/Bitbucket remote, gh only for GitHub. Claude still asks "trust this folder" once per new worktree unless Settings > Code opts in (D43). |
 | OpenCode | Worker tabs are read-only; `opencode --pure` processes are invisible to them. |
 | Grid | No visual-regression screenshot state yet (`e2e:grid` covers behaviour). |
 | Jarvis | **Voice:** recognition languages are the ones Windows has installed (en-US, zh-CN on the dev PC). **Reading aloud and `get_last_answer`:** Claude engine only; an OpenCode Jarvis falls back to the screen. **Schedules:** need the app running; a run more than 15 minutes late is skipped. **Undo:** in memory (last 20, this run), removals are final. **Switching engine:** starts a new Jarvis conversation. |
@@ -87,6 +88,7 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Date | Round | Decisions | Key commits |
 |---|---|---|---|
+| 2026-11-08 | Code mode commit, push, PR (gh or browser), merge into base, delete a worktree from disk; Jarvis git tools | D60 | this commit |
 | 2026-11-08 | Sort sessions: Manual, Needs attention, Last active, Newest, Name A–Z (sidebar, Code tree, Hub) | D61 | this commit |
 | 2026-11-04 | Terminal right-click menu like Orca (Copy, Select All, Paste, Find, Fork, Split, Close Pane, Copy Folder Path, Clear Screen); Settings choice for quick copy/paste | D59 | `c031425` |
 | 2026-11-04 | Jarvis controls every part of the app: sounds, sidebar list, Code tree, file on screen, terminal search, tabs, files into a session, links, the window, its own restart | D58 | `13b2dbf` |

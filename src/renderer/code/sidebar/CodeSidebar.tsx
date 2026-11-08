@@ -17,6 +17,8 @@ import { useCodeSidebar } from './useCodeSidebar'
 import { useCodeTreeModel } from './useCodeTreeModel'
 import type { CodeTreeView } from './codeTreeView'
 import { SortMenu } from '../../Sidebar/SortMenu'
+import { RemoveWorktreeDialog } from './RemoveWorktreeDialog'
+import { worktreeSessionCount } from './codeTree'
 import { DEFAULT_SESSION_SORT, type SessionSort } from '../../state/sessionSort'
 import { useSortFreeze } from '../../state/useSessionSort'
 
@@ -155,6 +157,14 @@ export function CodeSidebar(props: CodeSidebarProps): ReactElement | null {
         />
       )}
       <CodeSidebarFooter onEditStatuses={props.onEditStatuses} onOpenSettings={props.onOpenSettings} />
+      {controller.pendingWorktree !== null && (
+        <RemoveWorktreeDialog
+          worktree={controller.pendingWorktree}
+          sessionCount={worktreeSessionCount(data, controller.pendingWorktree.id)}
+          onConfirm={controller.confirmRemoveWorktree}
+          onCancel={controller.cancelPending}
+        />
+      )}
       {controller.pending !== null && (
         <ConfirmDialog
           title={controller.pending.title}

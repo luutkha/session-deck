@@ -1,7 +1,8 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
   AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisUiCommand, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
-  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole
+  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole,
+  BranchStatus, CommitInput, CommitResult, PushResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult
 } from './types'
 
 export const IPC = {
@@ -76,7 +77,13 @@ export const IPC = {
   repoSetCollapsed: 'repo:setCollapsed', // (repoId, collapsed)
   repoBranches: 'repo:branches', // (repoId) -> RepoBranches
   worktreeCreate: 'worktree:create', // (CreateWorktreeInput) -> CreateWorktreeResult: git worktree add -b, then the first session starts in it
-  worktreeRemove: 'worktree:remove', // (worktreeId) stops and removes its sessions and forgets it; the folder and branch stay on disk
+  worktreeRemove: 'worktree:remove', // (worktreeId, WorktreeRemoveOptions?) -> WorktreeRemoveResult: stops and removes its sessions and forgets it; the folder and branch stay on disk unless deleteFromDisk (D60)
+  worktreeRemovalInfo: 'worktree:removalInfo', // (worktreeId) -> WorktreeRemovalInfo: what deleting it from disk would lose (D60)
+  worktreeBranchStatus: 'worktree:branchStatus', // (worktreeId) -> BranchStatus: remote, upstream, ahead/behind, uncommitted, PR page (D60)
+  worktreeCommit: 'worktree:commit', // (CommitInput) -> CommitResult: commits exactly the given uncommitted files (D60)
+  worktreePush: 'worktree:push', // (worktreeId) -> PushResult: git push -u <remote> <branch>, never forced (D60)
+  worktreeCreatePr: 'worktree:createPr', // (worktreeId, PullRequestInput) -> PullRequestResult: pushes if needed, then gh pr create or opens the host's PR page (D60)
+  worktreeMerge: 'worktree:merge', // (worktreeId) -> MergeResult: merges the branch into its base in the repository folder (D60)
   worktreeSetCollapsed: 'worktree:setCollapsed', // (worktreeId, collapsed)
   worktreeChanges: 'worktree:changes', // (worktreeId) -> WorktreeChanges (recomputed now)
   worktreeFileDiff: 'worktree:fileDiff', // (worktreeId, path) -> FileDiff; path must be one of the current changed files
@@ -215,7 +222,14 @@ export interface Api {
   setRepoCollapsed(repoId: Id, collapsed: boolean): Promise<void>
   getRepoBranches(repoId: Id): Promise<RepoBranches>
   createWorktree(input: CreateWorktreeInput): Promise<CreateWorktreeResult>
-  removeWorktree(worktreeId: Id): Promise<void>
+  /** D60: options.deleteFromDisk also removes the folder and branch (never the repository folder). */
+  removeWorktree(worktreeId: Id, options?: WorktreeRemoveOptions): Promise<WorktreeRemoveResult>
+  getWorktreeRemovalInfo(worktreeId: Id): Promise<WorktreeRemovalInfo>
+  getWorktreeBranchStatus(worktreeId: Id): Promise<BranchStatus>
+  commitWorktree(input: CommitInput): Promise<CommitResult>
+  pushWorktree(worktreeId: Id): Promise<PushResult>
+  createWorktreePr(worktreeId: Id, input: PullRequestInput): Promise<PullRequestResult>
+  mergeWorktree(worktreeId: Id): Promise<MergeResult>
   setWorktreeCollapsed(worktreeId: Id, collapsed: boolean): Promise<void>
   getWorktreeChanges(worktreeId: Id): Promise<WorktreeChanges>
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff>

@@ -2,6 +2,16 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { Api } from '../shared/ipc'
 import { IPC } from '../shared/ipc'
 import type {
+  BranchStatus,
+  CommitInput,
+  CommitResult,
+  PushResult,
+  PullRequestInput,
+  PullRequestResult,
+  MergeResult,
+  WorktreeRemovalInfo,
+  WorktreeRemoveOptions,
+  WorktreeRemoveResult,
   AppSettings,
   ChecklistItem,
   JarvisConfirmRequest,
@@ -405,8 +415,32 @@ const api: Api = {
     return ipcRenderer.invoke(IPC.worktreeCreate, input)
   },
 
-  removeWorktree(worktreeId: Id): Promise<void> {
-    return ipcRenderer.invoke(IPC.worktreeRemove, worktreeId)
+  removeWorktree(worktreeId: Id, options?: WorktreeRemoveOptions): Promise<WorktreeRemoveResult> {
+    return options === undefined ? ipcRenderer.invoke(IPC.worktreeRemove, worktreeId) : ipcRenderer.invoke(IPC.worktreeRemove, worktreeId, options)
+  },
+
+  getWorktreeRemovalInfo(worktreeId: Id): Promise<WorktreeRemovalInfo> {
+    return ipcRenderer.invoke(IPC.worktreeRemovalInfo, worktreeId)
+  },
+
+  getWorktreeBranchStatus(worktreeId: Id): Promise<BranchStatus> {
+    return ipcRenderer.invoke(IPC.worktreeBranchStatus, worktreeId)
+  },
+
+  commitWorktree(input: CommitInput): Promise<CommitResult> {
+    return ipcRenderer.invoke(IPC.worktreeCommit, input)
+  },
+
+  pushWorktree(worktreeId: Id): Promise<PushResult> {
+    return ipcRenderer.invoke(IPC.worktreePush, worktreeId)
+  },
+
+  createWorktreePr(worktreeId: Id, input: PullRequestInput): Promise<PullRequestResult> {
+    return ipcRenderer.invoke(IPC.worktreeCreatePr, worktreeId, input)
+  },
+
+  mergeWorktree(worktreeId: Id): Promise<MergeResult> {
+    return ipcRenderer.invoke(IPC.worktreeMerge, worktreeId)
   },
 
   setWorktreeCollapsed(worktreeId: Id, collapsed: boolean): Promise<void> {

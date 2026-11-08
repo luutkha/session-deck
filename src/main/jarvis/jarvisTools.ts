@@ -38,6 +38,8 @@ import type { ScheduleInput } from './scheduleService'
 import { createAppTools, type JarvisAppDeps } from './appTools'
 import { createUiTools, type JarvisUi } from './uiTools'
 import { createControlTools, type JarvisControlDeps } from './controlTools'
+import { createGitTools } from './gitTools'
+import type { CodeGitOps } from '../app/codeGitOps'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
 export const READY_MIN_RUN_MS = 3000
@@ -120,6 +122,8 @@ export interface JarvisToolDeps {
     branches(repoId: Id): Promise<RepoBranches>
     changes(worktreeId: Id): Promise<WorktreeChanges>
     removeWorktree(worktreeId: Id): void
+    /** D60: commit, push, pull request, merge, removal facts and delete from disk (the Changes panel's paths). */
+    readonly git: CodeGitOps
   }
   /** Shows the session in the window (like a click on its card). */
   readonly openSession: (id: Id) => void
@@ -836,23 +840,46 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         if (result.error !== undefined) throw new Error(`Could not read the changes of "${worktree.name}": ${result.error}`)
         const max = optionalInt(args, 'max_files', CHANGES_LIST_DEFAULT, 500)
         const count = (n: number | null): string => (n === null ? '?' : String(n))
-        const lines = result.files.slice(0, max).map((f) => `- ${f.kind} ${f.oldPath !== undefined ? `${f.oldPath} -> ` : ''}${f.path} (+${count(f.additions)} -${count(f.deletions)})`)
+        const lines = result.files.slice(0, max).map((f) => `- ${f.kind} ${f.oldPath !== undefined ? `${f.oldPath} -> ` : ''}${f.path} (+${count(f.additions)} -${count(f.deletions)})${f.uncommitted === true ? ' uncommitted' : ''}`)
         const more = result.files.length > max || result.truncated ? '\n(more files not shown)' : ''
         return `"${worktree.name}" (branch ${worktree.branch} vs ${worktree.baseBranch}): ${result.files.length}${result.truncated ? '+' : ''} file(s), +${result.additions} -${result.deletions}.\n${lines.join('\n') || '(no changes)'}${more}`
       }
     },
     {
       name: 'remove_worktree',
-      description: 'Code mode: PERMANENTLY removes a worktree from SessionDeck with all its sessions (the folder on disk is kept). The user is asked to confirm.',
-      inputSchema: schema({ worktree: { type: 'string', description: 'Worktree name, branch or id.' } }, ['worktree']),
+      description: 'Code mode: PERMANENTLY removes a worktree from SessionDeck with all its sessions. By default the folder and branch stay on disk; delete_from_disk also deletes the folder (git worktree remove) and its branch (D60; never the repository folder). Uncommitted files block that unless discard_changes; a branch with commits the base lacks is kept unless delete_unmerged_branch. The user is asked to confirm.',
+      inputSchema: schema({
+        worktree: { type: 'string', description: 'Worktree name, branch or id.' },
+        delete_from_disk: { type: 'boolean' },
+        discard_changes: { type: 'boolean' },
+        delete_unmerged_branch: { type: 'boolean' }
+      }, ['worktree']),
       run: async (args) => {
         const worktree = resolveWorktree(deps.getData(), text(args, 'worktree'))
         const count = deps.getData().sessions.filter((s) => s.worktreeId === worktree.id).length
-        const yes = await deps.confirm({ title: 'Jarvis: remove worktree', message: `Jarvis wants to remove worktree “${worktree.name}” and its ${count} session(s) from SessionDeck. The folder on disk is kept.`, confirmLabel: 'Remove' })
+        const fromDisk = optionalBool(args, 'delete_from_disk') === true
+        const options = {
+          deleteFromDisk: fromDisk,
+          discardChanges: optionalBool(args, 'discard_changes') === true,
+          deleteUnmergedBranch: optionalBool(args, 'delete_unmerged_branch') === true
+        }
+        let what = 'The folder on disk is kept.'
+        if (fromDisk) {
+          if (worktree.main === true) throw new Error('This worktree is the repository folder itself; it is never deleted from disk. Remove it without delete_from_disk.')
+          const info = await deps.code.git.removalInfo(worktree.id)
+          if (info.uncommitted > 0 && !options.discardChanges) throw new Error(`"${worktree.name}" has ${info.uncommitted} uncommitted file(s). Commit them, or pass discard_changes after the user agreed to lose them.`)
+          what = `Its folder ${worktree.path} is DELETED${info.uncommitted > 0 ? ` with ${info.uncommitted} uncommitted file(s)` : ''}, and branch ${worktree.branch} ${info.branchMerged || options.deleteUnmergedBranch ? `is deleted${info.branchMerged ? '' : ' although it has commits ' + worktree.baseBranch + ' lacks'}` : 'is kept (it has commits ' + worktree.baseBranch + ' lacks)'}.`
+        }
+        const yes = await deps.confirm({ title: 'Jarvis: remove worktree', message: `Jarvis wants to remove worktree “${worktree.name}” and its ${count} session(s) from SessionDeck. ${what}`, confirmLabel: fromDisk ? 'Delete' : 'Remove' })
         if (!yes) return `The user did not allow removing worktree "${worktree.name}". Nothing was changed.`
-        deps.code.removeWorktree(worktree.id)
-        deps.log('remove_worktree', worktree.name)
-        return `Worktree "${worktree.name}" was removed.`
+        if (!fromDisk) {
+          deps.code.removeWorktree(worktree.id)
+          deps.log('remove_worktree', worktree.name)
+          return `Worktree "${worktree.name}" was removed.`
+        }
+        const result = await deps.code.git.remove(worktree.id, options)
+        deps.log('remove_worktree', `${worktree.name} (from disk: folder ${result.folderDeleted ? 'deleted' : 'kept'}, branch ${result.branchDeleted ? 'deleted' : 'kept'})`)
+        return `Worktree "${worktree.name}" was removed. Folder ${result.folderDeleted ? 'deleted' : 'kept'}, branch ${result.branchDeleted ? 'deleted' : 'kept'}.${result.note !== undefined ? ' ' + result.note : ''}`
       }
     },
     {
@@ -1048,6 +1075,6 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     return found
   }
   const ctx = { pushUndo, sendPrompt, tool }
-  tools.push(...createAppTools(deps, ctx), ...createUiTools(deps), ...createControlTools(deps, ctx))
+  tools.push(...createAppTools(deps, ctx), ...createUiTools(deps), ...createControlTools(deps, ctx), ...createGitTools(deps))
   return Object.assign(tools, { sendPrompt, undoLast })
 }

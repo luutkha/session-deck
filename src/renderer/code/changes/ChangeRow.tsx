@@ -1,5 +1,6 @@
 import type { KeyboardEvent, ReactElement } from 'react'
 import type { ChangedFile } from '../../../shared/types'
+import { Checkbox } from '../../components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip'
 import { cn } from '../../lib/utils'
 import {
@@ -15,12 +16,16 @@ export interface ChangeRowProps {
   readonly file: ChangedFile
   readonly selected: boolean
   readonly onSelect: (path: string) => void
+  /** D60: the commit tick of an uncommitted file; absent = no checkbox (committed already, or no commit box). */
+  readonly ticked?: boolean
+  readonly onToggleTick?: (path: string) => void
 }
 
 const SELECT_KEYS: readonly string[] = ['Enter', ' ']
 
 /** One changed file in the list: kind badge, name (bold), folder (muted), line counts. */
-export function ChangeRow({ file, selected, onSelect }: ChangeRowProps): ReactElement {
+export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick }: ChangeRowProps): ReactElement {
+  const checkable = file.uncommitted === true && onToggleTick !== undefined
   const { dir, name } = splitPath(file.path)
   const onKeyDown = (event: KeyboardEvent<HTMLLIElement>): void => {
     if (!SELECT_KEYS.includes(event.key)) return
@@ -35,10 +40,24 @@ export function ChangeRow({ file, selected, onSelect }: ChangeRowProps): ReactEl
           aria-selected={selected}
           tabIndex={0}
           data-change-path={file.path}
+          data-uncommitted={file.uncommitted === true ? 'true' : undefined}
           onClick={(): void => onSelect(file.path)}
           onKeyDown={onKeyDown}
           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-selected:bg-accent"
         >
+          {checkable ? (
+            <Checkbox
+              aria-label={`Commit ${file.path}`}
+              data-commit-tick={file.path}
+              checked={ticked === true}
+              onClick={(event): void => event.stopPropagation()}
+              onKeyDown={(event): void => event.stopPropagation()}
+              onCheckedChange={(): void => onToggleTick(file.path)}
+              className="size-3.5"
+            />
+          ) : onToggleTick !== undefined ? (
+            <span className="inline-block size-3.5 shrink-0" title="Committed (not in the base branch yet)" aria-hidden="true" />
+          ) : null}
           <span
             title={kindLabel(file.kind)}
             className={cn(

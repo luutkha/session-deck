@@ -39,6 +39,7 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - **The terminal draws with WebGL: `.xterm-rows` has no text.** Read terminal content through `window.api.ptyReplay` (or render the replay with `@xterm/headless`, as Jarvis's `read_screen` does); check the canvas size for "is it drawn".
 - **`os.tmpdir()` can be an 8.3 short path** (`C:\Users\KHALT_~1\...`); the Claude arg allow-list rejects `~`, so resolve with `fs.realpathSync.native` before passing a temp file as an argument. Git reports the long path, so tests comparing a temp repo path with what the app stored must compare real paths too.
 - **Paths with spaces** (a "John Smith" user folder) reach `claude` through `cmd.exe /d /c`; node-pty quotes them correctly. `e2e-spaces.cjs` proves it on the dev build and the packaged exe.
+- **2026-11-08 · `git worktree remove` can half-succeed on Windows.** Right after the sessions are stopped, a shell that is still exiting holds the folder: git deletes the files and unregisters the worktree but cannot remove the folder, and the retry says "is not a working tree". `worktreeDelete.ts` then removes the leftover folder only if it is empty, and prunes. Seen 1 run in 2 in `e2e-code-git`; unit tests with a fake reproduce it.
 - **Windows 11 accepts `C:\dir\con` as a folder, but git cannot make the branch `con`.** Make every branch SEGMENT safe (`branchNameFor`); test with a real `git worktree add`.
 - **The OS clipboard can be dead even though the app runs** (remote/headless sessions), and it comes and goes. Clipboard e2es preflight write+read on every run and report SKIP.
 - **Windows speech recognition is available offline** through PowerShell `System.Speech` (installed recognizers only; en-US and zh-CN on the dev PC). It can read a WAV made by `SpeechSynthesizer`, which makes voice testable without a microphone.
@@ -55,6 +56,7 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - **`onAlert` used to return early for every non-five-hour window**, so a weekly critical never acted. The reset path is the only five-hour-only part; the reset dedup is not per window.
 - **Limit wording is captured chunk-locally** (the TUI splits it); log once per process, after the `limitArmed` check.
 - **Simulating "cut off by the limit" in an e2e:** POST a fake `UserPromptSubmit` hook, then paste the limit phrase; its TUI echo triggers the same screen signal as the real message (`e2e-handsfree`).
+- **2026-11-08 · A background `git status` takes `.git/index.lock`.** It refreshes the index opportunistically, so the Changes panel's poll made a Commit at the same moment fail with "Unable to create index.lock: File exists" (found by `e2e-code-git`, never by unit tests). `gitEnv()` sets `GIT_OPTIONAL_LOCKS=0` for every app git call; commands that must lock (add, commit) also retry for ~2 s, since the user's own git can hold the lock.
 - **Data that changes outside SessionDeck needs a pull.** Worktree change counts refreshed only on a Claude Stop hook; Shell sessions have no hook. Main broadcasts every changed recompute and the sidebar polls slowly.
 
 ## Storage
@@ -63,6 +65,7 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - **A missing provider in a usage update means two things.** A missing Claude row keeps the cached one (main restarts empty); a missing Go row disappears (the toggle is off). No blanket "keep everything" merge.
 
 ## Jarvis and its tools
+- **2026-11-08 · Jarvis's tools are built before Code mode's wiring.** `index.ts` hands `code.git` in as a getter; a tool group that read `deps.code.git` when it was created crashed startup ("Cannot access 'code' before initialization"; the unit fakes were plain objects). Read late-wired deps inside `run`, and launch the built app after wiring changes.
 - **Reusing a helper with a different purpose bites.** The prompt queue's `canTypeInto` excludes Shell sessions on purpose; Jarvis needs its own `isTypeable`.
 - **A woken session is still "sleeping" until its old process exits** (`wakeAfterExit`). After `wakeSession`, wait for a process started after the wake (with a grace period) before typing.
 - **A session created in main and focused right away may not be in the renderer's store yet.** `App.requestFocus` keeps the id pending until the store update arrives.
@@ -85,7 +88,8 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - Plugin events posted with parallel `fetch` arrive out of order; serialize posts.
 
 ## Tooling in this environment
-- **Shell quoting mangles code.** Heredocs, `sed`, `node -e` and `python -c` lose backslashes, `$1`-style text and quotes, and can write real CR/LF bytes into string literals. Write code with the Write/Edit tools, or put the script in a file and run the file.
+- **Shell quoting mangles code.** Heredocs, `sed`, `node -e` and `python -c` lose backslashes, `$1`-style text and quotes, and can write real CR/LF bytes into string literals. Write code with the Write/Edit tools, or put the script in a file and run the file. A JSON or heredoc edit spec turns a `
+` meant for a string literal into a real line break (it broke `index.ts` and a test on 2026-11-08); type escapes with the Edit tool.
 - **An e2e that creates a worktree must set `code.worktreesRoot` to its temp folder.** Without it the worktree lands in the user's real `~/SessionDeck/worktrees` (D58's first run did; removed by hand).
 - **Do not "test" opening a link in an e2e.** A program or script is never run, but it is shown in Explorer: a window pops up on the user's PC. Test the refused cases (missing path) only.
 - **A retry loop that spawns git per attempt is slow on Windows.** The worktree name search tried up to 99 names with one `git show-ref` each (5 s, a test timeout); read all branches once (`for-each-ref`) and check the set.

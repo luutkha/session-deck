@@ -61,7 +61,7 @@ async function main() {
     t.check('initialize answers with the tools capability', init.body?.result?.capabilities?.tools !== undefined, js(init.body))
     const list = await rpc('tools/list', {})
     const names = list.body.result.tools.map((x) => x.name)
-    t.check('every tool is offered (75)', names.length === 75, names.join(','))
+    t.check('every tool is offered (80)', names.length === 80, names.join(','))
 
     // ---- the pinned sidebar entry before Jarvis exists
     t.check('the tab bar has the Jarvis button, the panel is not open yet', (await waitFor(() => ev(`!!document.querySelector('[data-jarvis-toggle]') || null`), 5000, 200)) === true &&

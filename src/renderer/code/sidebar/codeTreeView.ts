@@ -1,5 +1,5 @@
 // Types shared by the Code sidebar components (what a row needs from CodeSidebar). Type-only file.
-import type { Id, Repo, RuntimeState, StoreData, Worktree, WorktreeChanges } from '../../../shared/types'
+import type { Id, Repo, RuntimeState, StoreData, Worktree, WorktreeChanges, WorktreeRemoveOptions } from '../../../shared/types'
 import type { SessionActions } from '../../state/useSessionStore'
 
 /** Sidebar-level callbacks: selection, rename and the remove requests (the confirm dialog lives in CodeSidebar). */
@@ -20,7 +20,8 @@ export interface CodeTreeHandlers {
 export interface CodeCommands {
   readonly addRepository: () => Promise<void>
   readonly removeRepo: (repoId: Id) => Promise<void>
-  readonly removeWorktree: (worktreeId: Id) => Promise<void>
+  /** D60: options.deleteFromDisk also deletes the folder and branch; a note about what stayed goes to the banner. */
+  readonly removeWorktree: (worktreeId: Id, options?: WorktreeRemoveOptions) => Promise<void>
   readonly toggleRepo: (repo: Repo) => Promise<void>
   readonly toggleWorktree: (worktree: Worktree) => Promise<void>
   readonly copyPath: (path: string) => Promise<void>

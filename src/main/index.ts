@@ -2,7 +2,8 @@ import { app, BrowserWindow, clipboard, dialog, nativeImage, Notification, shell
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { appendFile, readFile, writeFile } from 'node:fs/promises'
+import { createGhCheck, runGh } from './git'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { storeFilePath, attentionDir } from './app/paths'
@@ -425,7 +426,9 @@ if (!gotTheLock) {
           createWorktree: (input) => code.createWorktree(input),
           branches: (repoId) => code.branches(repoId),
           changes: (worktreeId) => code.changes(worktreeId),
-          removeWorktree: (worktreeId) => code.removeWorktree(worktreeId)
+          removeWorktree: (worktreeId) => code.removeWorktree(worktreeId),
+          // D60: a getter, because `code` does not exist yet while this object is built.
+          get git() { return code.git }
         },
         // D55: the rest of the app, through the same functions (and validation) as the IPC handlers.
         app: {
@@ -508,7 +511,13 @@ if (!gotTheLock) {
     })
 
     // Code mode (D31): repos, worktrees, changes and diffs.
-    const code = createCodeWiring({ store, controller, broadcast: sendToWindow, homedir: homedir(), now: () => Date.now(), onError })
+    // D60: an e2e run lists the pages it would open instead of opening a browser on the PC (inert when unset).
+    const openedUrlsFile = process.env.SESSIONDECK_E2E_OPENED_URLS_FILE
+    const code = createCodeWiring({
+      store, controller, broadcast: sendToWindow, homedir: homedir(), now: () => Date.now(), onError,
+      openExternal: (url) => openedUrlsFile ? appendFile(openedUrlsFile, `${url}\n`, 'utf-8') : shell.openExternal(url),
+      ghReady: process.env.SESSIONDECK_E2E_NO_GH === '1' ? async () => false : createGhCheck(runGh, () => Date.now(), homedir())
+    })
 
     // Quota thresholds and reset notices (see quota/quotaGuard.ts). Markers survive restarts. Every guard alert goes
     // through the autopilot first (it adds the sleep/wake offer or acts by itself).

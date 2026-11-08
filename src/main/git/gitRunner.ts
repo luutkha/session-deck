@@ -42,9 +42,12 @@ interface ExecFailure {
 /**
  * The environment git runs in: inherits the app's, but never prompts (GIT_TERMINAL_PROMPT) and speaks English
  * (LC_ALL=C) so the failureMessage can parse "fatal:"/"error:" lines on a non-English Windows.
+ * GIT_OPTIONAL_LOCKS=0 (D60): the Changes panel's background `git status` must not take .git/index.lock to refresh
+ * the index, or a Commit (or the user's own git in a terminal) at the same moment fails with "index.lock: File exists".
+ * Commands that need the lock (add, commit, merge) still take it.
  */
 export function gitEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }
+  return { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' }
 }
 
 /** Maps an execFile failure that is not a plain exit code to a short user-facing message. */

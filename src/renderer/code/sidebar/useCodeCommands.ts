@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react'
-import type { Id, Repo, Worktree } from '../../../shared/types'
+import type { Id, Repo, Worktree, WorktreeRemoveOptions } from '../../../shared/types'
 import { cleanErrorMessage } from './errorText'
 import type { CodeCommands } from './codeTreeView'
 
@@ -37,8 +37,12 @@ export function useCodeCommands(onError: (message: string) => void): CodeCommand
         }),
       removeRepo: (repoId: Id): Promise<void> =>
         run('remove repository', (): Promise<void> => window.api.removeRepo(repoId)),
-      removeWorktree: (worktreeId: Id): Promise<void> =>
-        run('remove worktree', (): Promise<void> => window.api.removeWorktree(worktreeId)),
+      removeWorktree: (worktreeId: Id, options?: WorktreeRemoveOptions): Promise<void> =>
+        run('remove worktree', async (): Promise<void> => {
+          const result = await window.api.removeWorktree(worktreeId, options)
+          // D60: something asked for stayed on disk (an unmerged branch, a locked folder): say so.
+          if (result?.note !== undefined) onError(result.note)
+        }),
       sleepSession: (sessionId: Id): Promise<void> =>
         run('sleep session', (): Promise<void> => window.api.sleepSession(sessionId)),
       setKeepAwake: (sessionId: Id, keepAwake: boolean): Promise<void> =>

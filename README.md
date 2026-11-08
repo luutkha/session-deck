@@ -7,7 +7,7 @@ A Windows desktop app for running and managing many [Claude Code](https://claude
 **Sessions**
 - Each session is a real terminal (xterm.js WebGL + node-pty/ConPTY). Create one with Ctrl+Shift+N from anywhere.
 - Every session keeps its own conversation, which comes back after a restart. Sessions that were running when you quit start again on launch.
-- Organize sessions with names, groups, workspaces by folder, and your own statuses (name + colour). Group the list by group or by status.
+- Organize sessions with names, groups, workspaces by folder, and your own statuses (name + colour). Group the list by group or by status, and sort it: manual (drag), needs attention, last active, newest, or name.
 - Close a session (it keeps its conversation and can be reopened), sleep and wake it, keep it awake, or fork a Claude conversation.
 - Presets save a New Session form for one-click starts.
 - The prompt queue sends the next prompt when the current turn finishes. Bulk-select sessions to sleep, wake, set a status, move, or send one prompt to all of them.
@@ -23,6 +23,7 @@ A Windows desktop app for running and managing many [Claude Code](https://claude
 **Code mode**
 - Add git repos and create worktrees, each with its sessions (Claude, OpenCode or a plain shell). Start a worktree from a new branch (a taken name becomes name-2), from a branch you already have, or use the repository folder itself.
 - A Changes panel with diffs per file. Comment on diff lines and send the comments to the agent. Rendered Markdown and image previews.
+- Commit the files you tick, push, open a pull request (GitHub CLI, or the GitHub/GitLab/Bitbucket page in your browser), merge a worktree into its base, and delete a finished worktree's folder and branch.
 - Code mode can pop out into its own window.
 
 **Jarvis** (Ctrl+Shift+J, or the Jarvis button in the tab bar)
@@ -53,6 +54,8 @@ Requires Node 22+, Windows (primary target) and the `claude` CLI on PATH, logged
 | `npx electron-vite build` then `node scripts/e2e-<name>.cjs` | one real-app suite per feature, driven over CDP with a temp profile |
 | `npm run e2e` | smoke: window, create/rename/status, real `claude` in a PTY, hooks → attention, close |
 | `npm run e2e:jarvis` | Jarvis: MCP tool server, tools on real sessions, confirm dialog, panel in Ops and Code, schedules, undo |
+| `npm run e2e:code-git` | Code mode commit, push, PR, merge, delete from disk (D60) |
+| `npm run e2e:sort` | Sort sessions in the sidebar, Code tree and Hub (D61) |
 | `npm run e2e:worktree-sources` | Code mode workspaces (D57): taken name gets -2, existing branch, repo folder |
 | `npm run e2e:termmenu` | The terminal right-click menu (D59): rows, paste once, copy, find, split, close pane, clear, the copy/paste choice |
 | `npm run e2e:jarvis-app` | Jarvis's D58 tools: sounds, sidebar list, tabs, terminal search, files, links, window, Code tree, file on screen |

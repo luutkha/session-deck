@@ -121,13 +121,22 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
       changes: vi.fn(async (worktreeId: string): Promise<WorktreeChanges> => ({
         worktreeId,
         files: [
-          { path: 'src/a.ts', kind: 'modified', additions: 10, deletions: 2 },
+          { path: 'src/a.ts', kind: 'modified', additions: 10, deletions: 2, uncommitted: true },
           { path: 'src/new.ts', oldPath: 'src/old.ts', kind: 'renamed', additions: 0, deletions: 0 },
           { path: 'logo.png', kind: 'added', additions: null, deletions: null }
         ],
         truncated: false, additions: 10, deletions: 2, computedAt: 0
       })),
-      removeWorktree: vi.fn()
+      removeWorktree: vi.fn(),
+      git: {
+        branchStatus: vi.fn(async (worktreeId: string) => ({ worktreeId, branch: 'checkout', baseBranch: 'main', remote: 'origin', upstream: null, ahead: 2, behind: 0, uncommitted: 1, repoFolder: false, compareUrl: 'https://github.com/acme/shop/compare/main...checkout?expand=1', ghReady: false })),
+        commit: vi.fn(async (input: { paths: readonly string[]; message: string }) => ({ sha: 'abcdef1234567890abcdef1234567890abcdef12', subject: input.message.split(/\r?\n/)[0], files: input.paths.length })),
+        push: vi.fn(async () => ({ remote: 'origin', branch: 'checkout' })),
+        createPr: vi.fn(async () => ({ url: 'https://github.com/acme/shop/compare/main...checkout?expand=1', created: false })),
+        merge: vi.fn(async () => ({ merged: true, message: 'Merged checkout into main.' })),
+        removalInfo: vi.fn(async (worktreeId: string) => ({ worktreeId, repoFolder: false, branch: 'checkout', baseBranch: 'main', path: 'C:/wt/checkout', uncommitted: 0, branchMerged: false, folderExists: true })),
+        remove: vi.fn(async () => ({ folderDeleted: true, branchDeleted: false, note: 'The branch checkout has commits main does not have, so it was kept.' }))
+      }
     },
     openSession: vi.fn(),
     confirm: vi.fn(async () => options.confirm ?? false),
@@ -199,7 +208,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     return tool.run(args)
   }
   return {
-    call, controller, store, deps, code: deps.code as unknown as Record<string, ReturnType<typeof vi.fn>>, writes, raw, states, turns, startTimes, answers, data: () => data,
+    call, controller, store, deps, code: deps.code as unknown as Record<string, ReturnType<typeof vi.fn>> & { git: Record<string, ReturnType<typeof vi.fn>> }, writes, raw, states, turns, startTimes, answers, data: () => data,
     setUsage: (u: UsageState) => { usageState = u },
     setAway: (a: AwaySummary | null) => { away = a },
     app: deps.app as unknown as Record<string, ReturnType<typeof vi.fn>> & { autopilot: Record<string, ReturnType<typeof vi.fn>> },
@@ -464,7 +473,7 @@ describe('jarvis tools', () => {
     const { call } = setup([])
     const text = await call('worktree_changes', { worktree: 'checkout' })
     expect(text).toContain('"checkout" (branch checkout vs main): 3 file(s), +10 -2.')
-    expect(text).toContain('- modified src/a.ts (+10 -2)')
+    expect(text).toContain('- modified src/a.ts (+10 -2) uncommitted')
     expect(text).toContain('- renamed src/old.ts -> src/new.ts (+0 -0)')
     expect(text).toContain('- added logo.png (+? -?)')
   })
@@ -473,6 +482,39 @@ describe('jarvis tools', () => {
     const { call, code } = setup([], [], { confirm: true })
     expect(await call('remove_worktree', { worktree: 'checkout' })).toBe('Worktree "checkout" was removed.')
     expect(code.removeWorktree).toHaveBeenCalledWith('w1')
+  })
+
+  it('D60: branch status, commit (all uncommitted by default), push / PR / merge after a Yes', async () => {
+    const { call, code } = setup([], [], { confirm: true })
+    expect(await call('branch_status', { worktree: 'checkout' })).toContain('1 uncommitted file(s); never pushed to origin, 2 commit(s) to push; Create PR opens https://github.com/acme/shop/compare/main...checkout?expand=1')
+    expect(await call('commit_worktree', { worktree: 'checkout', message: 'fix: checkout' })).toBe('Committed 1 file(s) in "checkout" as abcdef1 "fix: checkout". Not pushed yet.')
+    expect(code.git.commit).toHaveBeenCalledWith({ worktreeId: 'w1', message: 'fix: checkout', paths: ['src/a.ts'] })
+    await call('commit_worktree', { worktree: 'checkout', message: 'two', files: ['src/a.ts', 'logo.png'] })
+    expect(code.git.commit).toHaveBeenLastCalledWith({ worktreeId: 'w1', message: 'two', paths: ['src/a.ts', 'logo.png'] })
+    expect(await call('push_worktree', { worktree: 'checkout' })).toBe('Pushed checkout to origin.')
+    expect(await call('create_pr', { worktree: 'checkout', title: 'Fix' })).toContain('Opened the pull request page in the browser')
+    expect(code.git.createPr).toHaveBeenCalledWith('w1', { title: 'Fix' })
+    expect(await call('merge_worktree', { worktree: 'checkout' })).toBe('Merged checkout into main.')
+  })
+
+  it('D60: push, PR and merge do nothing on a No', async () => {
+    const { call, code } = setup([])
+    expect(await call('push_worktree', { worktree: 'checkout' })).toContain('did not allow')
+    expect(await call('create_pr', { worktree: 'checkout' })).toContain('did not allow')
+    expect(await call('merge_worktree', { worktree: 'checkout' })).toContain('did not allow')
+    expect(code.git.push).not.toHaveBeenCalled()
+    expect(code.git.createPr).not.toHaveBeenCalled()
+    expect(code.git.merge).not.toHaveBeenCalled()
+  })
+
+  it('D60: remove_worktree delete_from_disk goes through the git path and reports what stayed', async () => {
+    const { call, code } = setup([], [], { confirm: true })
+    const result = await call('remove_worktree', { worktree: 'checkout', delete_from_disk: true })
+    expect(result).toBe('Worktree "checkout" was removed. Folder deleted, branch kept. The branch checkout has commits main does not have, so it was kept.')
+    expect(code.git.remove).toHaveBeenCalledWith('w1', { deleteFromDisk: true, discardChanges: false, deleteUnmergedBranch: false })
+    expect(code.removeWorktree).not.toHaveBeenCalled()
+    code.git.removalInfo.mockResolvedValueOnce({ worktreeId: 'w1', repoFolder: false, branch: 'checkout', baseBranch: 'main', path: 'C:/wt/checkout', uncommitted: 2, branchMerged: true, folderExists: true })
+    await expect(call('remove_worktree', { worktree: 'checkout', delete_from_disk: true })).rejects.toThrow('2 uncommitted file(s)')
   })
 
   it('adds, lists and removes scheduled instructions', async () => {
