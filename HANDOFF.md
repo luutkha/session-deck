@@ -21,7 +21,7 @@ Where the details live:
 - **D57** (D56: Code mode stays git-only; D57: worktrees like Orca — auto-suffix, existing branch, repo folder; `e2e-worktree-sources` 10/10, 3,343 unit tests).
 - **D55** (exit grid, tab bar for running and awake sessions only, Jarvis controls the whole app: 65 tools). Pushed.
 - **D55 verification (dev build):** 3,329 unit tests (203 files), both typechecks clean, `e2e-jarvis-control` 33/33 (new), `e2e-jarvis` 60/60, `e2e-grid` 15/15, `e2e-foldertabs` 6/6, `e2e-annotate` 13/13, `e2e-codemode` 34/34. The installer was not rebuilt (still `84bf042`).
-- **Installer:** `release/SessionDeck-Setup-0.0.5.exe`, built 2026-11-08 from the D59 code (`c031425` + the 0.0.5 version bump). Unsigned (SmartScreen warns: "More info" → "Run anyway"). Installing over an existing copy replaces it and keeps the user's data. `e2e:packaged` 15/15 (Jarvis lists 75 tools).
+- **Installer:** `release/SessionDeck-Setup-0.0.6.exe`, built 2026-11-08 from the D60 + D61 code (`c166179` + the 0.0.6 version bump). Unsigned (SmartScreen warns: "More info" → "Run anyway"). Installing over an existing copy replaces it and keeps the user's data. `e2e:packaged` 15/15 (Jarvis lists 80 tools).
 - **Verification baseline at the 0.0.3 build (`84bf042`):** 3,299 unit tests (202 files), both typechecks clean, `e2e:packaged` 15/15 (includes Jarvis's tool server and headless screen rendering), `e2e-spaces` 4/4 on the dev build and on the packaged exe, every Jarvis suite green (`e2e-jarvis` 60, `e2e-jarvis-real` 12, `e2e-jarvis-opencode` 5, `e2e-jarvis-voice` 10), and the regression list in the `84bf042` commit message.
 
 ---
@@ -57,7 +57,7 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Area | Gap |
 |---|---|
-| Release | Unsigned installer, version 0.0.5 (bumped by hand on request); no auto-update (D25 deferred). |
+| Release | Unsigned installer, version 0.0.6 (bumped by hand on request); no auto-update (D25 deferred). |
 | Look | Dark theme only. |
 | Human checks | Sound and taskbar flash are verified through code paths and fakes, not by ear/eye; real-mouse drag-and-drop is covered by pure logic, not simulated drag events. |
 | Quota | `USAGE_LIMIT_PATTERNS` may need new wording (the first real match per process is logged). The OpenCode Go usage path is tested with fakes only (no Go connection on the dev machine). |
@@ -88,8 +88,8 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Date | Round | Decisions | Key commits |
 |---|---|---|---|
-| 2026-11-08 | Code mode commit, push, PR (gh or browser), merge into base, delete a worktree from disk; Jarvis git tools | D60 | this commit |
-| 2026-11-08 | Sort sessions: Manual, Needs attention, Last active, Newest, Name A–Z (sidebar, Code tree, Hub) | D61 | this commit |
+| 2026-11-08 | Code mode commit, push, PR (gh or browser), merge into base, delete a worktree from disk; Jarvis git tools | D60 | `c166179` |
+| 2026-11-08 | Sort sessions: Manual, Needs attention, Last active, Newest, Name A–Z (sidebar, Code tree, Hub) | D61 | `aa774be` |
 | 2026-11-04 | Terminal right-click menu like Orca (Copy, Select All, Paste, Find, Fork, Split, Close Pane, Copy Folder Path, Clear Screen); Settings choice for quick copy/paste | D59 | `c031425` |
 | 2026-11-04 | Jarvis controls every part of the app: sounds, sidebar list, Code tree, file on screen, terminal search, tabs, files into a session, links, the window, its own restart | D58 | `13b2dbf` |
 | 2026-11-03 | Code mode worktrees like Orca: auto-suffix, existing branch, repo folder; non-git folders skipped | D56–D57 | `cf4c13c` |
