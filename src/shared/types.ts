@@ -70,6 +70,8 @@ export interface Session {
   readonly worktreeId?: Id
   /** D53: 'jarvis' = the one session that controls the app (pinned in the sidebar, gets SessionDeck's MCP tools). Absent = a normal session. */
   readonly role?: SessionRole
+  /** D61: epoch ms of the last prompt, finished turn or typing in this session (main sets it, throttled). Absent = never seen active; sorts by `createdAt`. */
+  readonly lastActiveAt?: number
 }
 
 /** D53: a special session kind. Only 'jarvis' exists. */
@@ -145,6 +147,8 @@ export interface JarvisSidebarView {
   readonly closedSection?: 'collapsed' | 'expanded'
   /** Status sections and folder buckets (groups are stored, see group_change). */
   readonly sections?: 'collapseAll' | 'expandAll'
+  /** D61: how sessions are ordered inside each section, worktree and Hub column. */
+  readonly sort?: 'manual' | 'attention' | 'recent' | 'newest' | 'name'
 }
 
 /** D55: one window command from Jarvis; `mode` = the mode the targets live in (the window switches to it first). */

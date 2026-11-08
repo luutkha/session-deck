@@ -324,3 +324,11 @@ export function dropEmptySections<T extends { readonly sessions: readonly Sessio
 ): readonly T[] {
   return filterActive ? sections.filter((section) => section.sessions.length > 0) : sections
 }
+
+/** D61: reorders the sessions inside every section with `order` (e.g. a sort); section order and fields stay. */
+export function orderSectionSessions<T extends { readonly sessions: readonly Session[] }>(
+  sections: readonly T[],
+  order: (sessions: readonly Session[]) => readonly Session[]
+): readonly T[] {
+  return sections.map((section): T => ({ ...section, sessions: order(section.sessions) }))
+}

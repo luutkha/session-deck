@@ -49,6 +49,7 @@ import {
   setClaudeSessionId as setClaudeSessionIdReducer,
   setOpencodeSessionId as setOpencodeSessionIdReducer,
   setKeepAwake as setKeepAwakeReducer,
+  setLastActiveAt as setLastActiveAtReducer,
   setGroupCollapsed as setGroupCollapsedReducer,
   setSessionStatus as setSessionStatusReducer,
   upsertStatus as upsertStatusReducer
@@ -207,6 +208,15 @@ export class SessionStore {
   /** Exempts the session from (or returns it to) the idle sleep timer (persisted). */
   setKeepAwake(id: Id, keepAwake: boolean): void {
     const next = setKeepAwakeReducer(this.data, id, keepAwake)
+    if (next === this.data) return
+    this.data = next
+    this.saver.schedule(next)
+    this.emit(next)
+  }
+
+  /** D61: when the session was last active (the "Last active" sort). Unknown id or same value = no-op. */
+  setLastActiveAt(id: Id, at: number): void {
+    const next = setLastActiveAtReducer(this.data, id, at)
     if (next === this.data) return
     this.data = next
     this.saver.schedule(next)

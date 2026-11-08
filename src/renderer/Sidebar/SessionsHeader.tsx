@@ -15,6 +15,8 @@ import {
 } from '../components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import type { GroupBy } from './sidebarPrefs'
+import type { SessionSort } from '../state/sessionSort'
+import { SortMenu } from './SortMenu'
 
 export type { GroupBy }
 
@@ -26,6 +28,9 @@ export interface SessionsHeaderProps {
   readonly selectedStatuses: ReadonlySet<Id | null>
   readonly counts: ReadonlyMap<Id | null, number>
   readonly onGroupByChange: (value: GroupBy) => void
+  /** D61: absent onSortChange = no sort menu. */
+  readonly sort?: SessionSort
+  readonly onSortChange?: (sort: SessionSort) => void
   readonly onToggleStatus: (statusId: Id | null) => void
   readonly onNewGroup: () => void
   readonly onNewSession: () => void
@@ -41,6 +46,9 @@ export function SessionsHeader(props: SessionsHeaderProps): ReactElement {
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {props.onSortChange !== undefined && (
+          <SortMenu sort={props.sort ?? 'manual'} onSortChange={props.onSortChange} />
+        )}
         <DropdownMenu open={open} onOpenChange={setOpen}>
           <Tooltip>
             <TooltipTrigger asChild>

@@ -110,7 +110,9 @@ function parseSession(raw: unknown, index: number): Session {
     // Checked by parseStoreData: a present worktreeId is a non-empty string of a stored worktree.
     ...(raw.worktreeId !== undefined ? { worktreeId: raw.worktreeId as string } : {}),
     // D53: any other value is dropped (the session becomes a normal one).
-    ...(raw.role === 'jarvis' ? { role: 'jarvis' as const } : {})
+    ...(raw.role === 'jarvis' ? { role: 'jarvis' as const } : {}),
+    // D61: an invalid value is dropped (the session then sorts by createdAt).
+    ...(isNonNegativeNumber(raw.lastActiveAt) ? { lastActiveAt: raw.lastActiveAt } : {})
   }
 
   return session

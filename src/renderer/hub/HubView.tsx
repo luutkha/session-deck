@@ -7,6 +7,9 @@ import { Input } from '../components/ui/input'
 import { TooltipProvider } from '../components/ui/tooltip'
 import { useMultiSelect } from '../state/useMultiSelect'
 import { useBulkActions } from '../state/useBulkActions'
+import { orderSectionSessions } from '../state/selectors'
+import { sortSessions, type SessionSort } from '../state/sessionSort'
+import { useSortFreeze } from '../state/useSessionSort'
 import { formatCost } from '../usage/usageLogic'
 import { HubColumn } from './HubColumn'
 import {
@@ -24,6 +27,8 @@ export interface HubViewProps {
   readonly runtime: ReadonlyMap<Id, RuntimeState>
   readonly lastChange: ReadonlyMap<Id, number>
   readonly activeId: Id | null
+  /** D61: the sidebar sort; Manual keeps the Hub's own order (most recent activity first). */
+  readonly sort?: SessionSort
   /** Per-session usage (cost/context/model). When absent, cards show no usage chip. */
   readonly sessionUsage?: ReadonlyMap<Id, SessionUsage>
   readonly onOpenSession: (id: Id) => void
@@ -74,7 +79,8 @@ export function HubView(props: HubViewProps): ReactElement {
     onEditStatuses,
     onReopen,
     scrollToBusiest = false,
-    onShowCosts
+    onShowCosts,
+    sort = 'manual'
   } = props
 
   const [query, setQuery] = useState('')
@@ -87,9 +93,13 @@ export function HubView(props: HubViewProps): ReactElement {
     return (): void => window.clearInterval(handle)
   }, [])
 
+  const sortFreeze = useSortFreeze(data.sessions, sort, runtime)
   const columns = useMemo(
-    (): ReturnType<typeof buildColumns> => buildColumns(data, query, lastChange),
-    [data, query, lastChange]
+    (): ReturnType<typeof buildColumns> => {
+      const built = buildColumns(data, query, lastChange)
+      return sort === 'manual' ? built : orderSectionSessions(built, (sessions) => sortSessions(sessions, sort, runtime, sortFreeze.frozen))
+    },
+    [data, query, lastChange, sort, runtime, sortFreeze.frozen]
   )
   const boardRef = useRef<HTMLDivElement | null>(null)
   // Only when the Hub opens (this view mounts each time), never while the user works in it.
@@ -212,7 +222,13 @@ export function HubView(props: HubViewProps): ReactElement {
           </Button>
         </header>
 
-        <div ref={boardRef} data-hub-board="" className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3">
+        <div
+          ref={boardRef}
+          data-hub-board=""
+          className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3"
+          onPointerEnter={sortFreeze.onPointerEnter}
+          onPointerLeave={sortFreeze.onPointerLeave}
+        >
           {columns.map((column) => {
             const statusId = column.status?.id ?? null
             return (

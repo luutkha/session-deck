@@ -50,6 +50,17 @@ function closedSessions(sessions: readonly Session[]): readonly Session[] {
   return sessions.filter((session): boolean => session.closedAt !== undefined).sort(byCreatedAt)
 }
 
+/** D61: reorders the sessions inside every worktree with `order` (a sort); repos and worktrees keep their order. */
+export function orderCodeTreeSessions(tree: CodeTree, order: (sessions: readonly Session[]) => readonly Session[]): CodeTree {
+  return {
+    repos: tree.repos.map((repoNode): CodeRepoNode => ({
+      repo: repoNode.repo,
+      worktrees: repoNode.worktrees.map((node): CodeWorktreeNode => ({ worktree: node.worktree, sessions: order(node.sessions) }))
+    })),
+    closed: tree.closed
+  }
+}
+
 export function normalizeQuery(query: string): string {
   return query.trim().toLowerCase()
 }

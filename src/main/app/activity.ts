@@ -1,4 +1,7 @@
 ﻿import type { HookEvent, SessionActivity } from '../../shared/types'
+import { isIdleReminder } from '../../shared/idleReminder'
+
+export { isIdleReminder }
 
 /** Activity as the runtime registry stores it (`activity` null = unknown or reset). */
 export interface ActivitySnapshot {
@@ -8,15 +11,6 @@ export interface ActivitySnapshot {
 
 export const NO_ACTIVITY: ActivitySnapshot = { activity: null, message: null }
 
-const IDLE_REMINDER_RE = /waiting for your input/i
-
-/**
- * Claude Code's reminder after about a minute without input ("Claude is waiting for your input") also arrives as a
- * Notification, so the activity says needs-input although nothing is asked. Typing a prompt is safe then (D54).
- */
-export function isIdleReminder(message: string | null | undefined): boolean {
-  return typeof message === 'string' && IDLE_REMINDER_RE.test(message)
-}
 
 /** The session waits for a new prompt: its turn finished, or only the idle reminder came since. */
 export function isReadyForPrompt(activity: SessionActivity | null | undefined, message: string | null | undefined): boolean {

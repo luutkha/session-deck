@@ -31,6 +31,7 @@ import { attentionNotice } from './notify/attentionNotice'
 import { deliverQuotaAlert, startQuotaWiring, type QuotaDeliveryDeps } from './quota/quotaWiring'
 import { CONTINUE_FAILED_TITLE, continueFailedBody } from './quota/continueFailedNotice'
 import { createFeatureWiring } from './app/featureWiring'
+import { createLastActiveTracker } from './app/lastActive'
 import { quotaMarkersFilePath } from './quota/quotaMarkers'
 import { createSleepScheduler } from './sleep/SleepScheduler'
 import { createWorkerHub } from './workers'
@@ -344,6 +345,15 @@ if (!gotTheLock) {
       onError
     })
 
+    // D61: Session.lastActiveAt for the sidebar / Hub sorts (turn start/end + a submitted line), throttled.
+    const lastActive = createLastActiveTracker({
+      now: () => Date.now(),
+      write: (id, at) => store.setLastActiveAt(id, at),
+      setTimeout: (callback, ms) => setTimeout(callback, ms),
+      clearTimeout: (timer) => clearTimeout(timer as NodeJS.Timeout)
+    })
+    runtime.subscribe((state) => lastActive.onRuntime(state))
+
     // Timeline + "While you were away" (D29) and the quota autopilot (D30).
     const features = createFeatureWiring({
       userDataDir: userData,
@@ -585,7 +595,8 @@ if (!gotTheLock) {
       onUserActivity: () => {
         sleepScheduler.noteUserInput()
         features.onUserActivity()
-      }
+      },
+      onUserInput: (id, data) => lastActive.onUserInput(id, data)
     })
     // Start loading first so the quota handlers can wait for it; they are registered before the renderer asks.
     const autopilotLoaded = features.startAutopilot()
@@ -624,6 +635,7 @@ if (!gotTheLock) {
       await runShutdownStep('jarvis', () => jarvis.stop())
       await runShutdownStep('timeline + autopilot', () => features.shutdown())
       await runShutdownStep('code mode', () => code.shutdown())
+      await runShutdownStep('last active', () => lastActive.flush())
       await runShutdownStep('close Code window', () => windows.closeCode())
       await runShutdownStep('flush store', () => saver.flush())
       await runShutdownStep('kill sessions', () => pty.killAll())

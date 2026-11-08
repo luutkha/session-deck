@@ -14,7 +14,12 @@ const SOUND_EVENTS: readonly SoundEvent[] = ['permission', 'done', 'idle', 'bell
 const BUILTIN_SOUNDS = ['chime', 'ping', 'pop', 'bell', 'marimba', 'soft'] as const
 const ATTACH_MAX = 20
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|bmp)$/i
-const MODE_PROP = { type: 'string', enum: ['ops', 'code'], description: 'Which mode (default: the one on screen).' }
+const SIDEBAR_SORTS = ['manual', 'attention', 'recent', 'newest', 'name'] as const
+type SidebarSort = typeof SIDEBAR_SORTS[number]
+function isSidebarSort(value: string): value is SidebarSort {
+  return (SIDEBAR_SORTS as readonly string[]).includes(value)
+}
+const MODE_PROP ={ type: 'string', enum: ['ops', 'code'], description: 'Which mode (default: the one on screen).' }
 /** Bracketed paste markers: an agent then takes the text as one paste (Claude turns image paths into attachments). */
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
@@ -110,7 +115,7 @@ export function createControlTools(deps: JarvisToolDeps, ctx: ToolContext): McpT
     },
     {
       name: 'sidebar_view',
-      description: 'How the sidebar list looks: group_by (groups or status), show_folders (folder buckets inside groups), search (filter by name or folder; "" clears), status_filter (status names to show, "none" = sessions without a status; [] clears), closed_section (collapsed / expanded), sections (collapse_all / expand_all status sections and folder buckets). Group collapse is group_change; repos and worktrees are code_tree. Ops mode has all options; Code mode has search and closed_section. get_screen_state shows the current view.',
+      description: 'How the sidebar list looks: group_by (groups or status), show_folders (folder buckets inside groups), search (filter by name or folder; "" clears), status_filter (status names to show, "none" = sessions without a status; [] clears), closed_section (collapsed / expanded), sections (collapse_all / expand_all status sections and folder buckets), sort (how sessions are ordered inside each section, worktree and Hub column: manual = drag order, attention = needs you first then working, finished, idle, sleeping, exited; recent = last active first; newest = newest created first; name = A-Z; each mode keeps its own). Group collapse is group_change; repos and worktrees are code_tree. Ops mode has all options; Code mode has search, closed_section and sort. get_screen_state shows the current view.',
       inputSchema: schema({
         group_by: { type: 'string', enum: ['groups', 'status'] },
         show_folders: { type: 'boolean' },
@@ -118,6 +123,7 @@ export function createControlTools(deps: JarvisToolDeps, ctx: ToolContext): McpT
         status_filter: { type: 'array', items: { type: 'string' } },
         closed_section: { type: 'string', enum: ['collapsed', 'expanded'] },
         sections: { type: 'string', enum: ['collapse_all', 'expand_all'] },
+        sort: { type: 'string', enum: [...SIDEBAR_SORTS] },
         mode: MODE_PROP
       }),
       run: async (args) => {
@@ -129,6 +135,8 @@ export function createControlTools(deps: JarvisToolDeps, ctx: ToolContext): McpT
         if (sections !== undefined && sections !== 'collapse_all' && sections !== 'expand_all') throw new Error('"sections" must be collapse_all or expand_all.')
         const search = args.search
         if (search !== undefined && typeof search !== 'string') throw new Error('"search" must be text.')
+        const sort = optionalText(args, 'sort')
+        if (sort !== undefined && !isSidebarSort(sort)) throw new Error(`"sort" must be one of ${SIDEBAR_SORTS.join(', ')}.`)
         let statusFilter: (Id | null)[] | undefined
         if (args.status_filter !== undefined) {
           if (!Array.isArray(args.status_filter)) throw new Error('"status_filter" must be a list of status names.')
@@ -145,7 +153,8 @@ export function createControlTools(deps: JarvisToolDeps, ctx: ToolContext): McpT
           ...(typeof search === 'string' ? { search } : {}),
           ...(statusFilter !== undefined ? { statusFilter } : {}),
           ...(closed !== undefined ? { closedSection: closed as 'collapsed' | 'expanded' } : {}),
-          ...(sections !== undefined ? { sections: sections === 'collapse_all' ? 'collapseAll' as const : 'expandAll' as const } : {})
+          ...(sections !== undefined ? { sections: sections === 'collapse_all' ? 'collapseAll' as const : 'expandAll' as const } : {}),
+          ...(sort !== undefined && isSidebarSort(sort) ? { sort } : {})
         }
         if (Object.keys(action).length === 1) throw new Error('Say what to change (see the parameters); get_screen_state shows the current view.')
         const result = await ui(optionalMode(args), action)

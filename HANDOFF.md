@@ -3,7 +3,7 @@
 Current state of the product and the code, in one page. Updated 2026-11-08.
 
 Where the details live:
-- **What the user decided:** `docs/DECISIONS.md` (D01–D58, working rules W01–W13).
+- **What the user decided:** `docs/DECISIONS.md` (D01–D61, working rules W01–W13).
 - **Every feature (rules, code path, tests):** `docs/FEATURES.md`.
 - **How to build a change:** `docs/IMPLEMENTATION.md`.
 - **Which file does what:** `docs/CODEMAP.md`.
@@ -14,6 +14,7 @@ Where the details live:
 
 ## 1. State
 
+- **D61 sort sessions** (Sort button in the sidebar header, Ops and Code: Manual, Needs attention, Last active, Newest, Name A–Z; Hub follows; saved `lastActiveAt`; `e2e-sort` 20/20, `e2e-jarvis-app` 23/23, `e2e-bulk` 18/18, `e2e-workspaces` 9/9, `e2e-codemode` 34/34, `e2e-hub` 12/12, `e2e-hubscroll` 7/7, 3,393 unit tests). Not pushed. **D60** (Code mode commit / push / PR / merge / delete from disk) is next, plan approved.
 - **Shipped through D59** (terminal right-click menu like Orca, with a Settings choice for the old quick copy/paste, `c031425`; `e2e-termmenu` 16/16, `e2e-paste` 4/4, `e2e-imagepaste` 3/3, `e2e-termview` 15/15, `e2e-g1` 14/14, `e2e-grid` 15/15, 3,366 unit tests). Not pushed.
 - **D58** (Jarvis controls every part of the app: 10 more tools, 75 in all; `e2e-jarvis-app` 21/21, `e2e-jarvis-control` 33/33, `e2e-jarvis` 60/60, 3,358 unit tests). Not pushed.
 - **D57** (D56: Code mode stays git-only; D57: worktrees like Orca — auto-suffix, existing branch, repo folder; `e2e-worktree-sources` 10/10, 3,343 unit tests).
@@ -38,7 +39,7 @@ Feature domains (IDs in `FEATURES.md`):
 |---|---|
 | SES sessions | create/rename/status/move, close & reopen, sleep & wake, keep awake, restart, conversation resume, resume on launch (D50), prompt queue (D47), presets (D49), fork (D52), conversation search (D52) |
 | TRM terminal | xterm WebGL + node-pty ConPTY, copy/paste/right-click rules (D21), image paste and file drop, links (D12), split panes, grid with Exit grid (D32/D55), zoom/scrollback, search (D41) |
-| NAV sidebar | groups, workspaces by folder (D20), group-by status, search/filter, keyboard, bulk select + actions incl. broadcast prompt (D42/D48) |
+| NAV sidebar | groups, workspaces by folder (D20), group-by status, search/filter, sort (D61), keyboard, bulk select + actions incl. broadcast prompt (D42/D48) |
 | ATT attention | Stop/Notification hooks only (D11), Orca bell + Needs you (D22), sounds (D05), desktop notices, repeat while unread (D44), on-screen = every window (D40) |
 | HUB / TAB / PAL | Hub board by status (D05/D24), tabs per folder, only running and awake sessions (D18/D55), working spinner, command palette (D28) |
 | NTS / TML | notes + checklist (D06/D17), timeline + "While you were away" (D29/D38), cost over time (D51) |
@@ -86,6 +87,7 @@ Feature domains (IDs in `FEATURES.md`):
 
 | Date | Round | Decisions | Key commits |
 |---|---|---|---|
+| 2026-11-08 | Sort sessions: Manual, Needs attention, Last active, Newest, Name A–Z (sidebar, Code tree, Hub) | D61 | this commit |
 | 2026-11-04 | Terminal right-click menu like Orca (Copy, Select All, Paste, Find, Fork, Split, Close Pane, Copy Folder Path, Clear Screen); Settings choice for quick copy/paste | D59 | `c031425` |
 | 2026-11-04 | Jarvis controls every part of the app: sounds, sidebar list, Code tree, file on screen, terminal search, tabs, files into a session, links, the window, its own restart | D58 | `13b2dbf` |
 | 2026-11-03 | Code mode worktrees like Orca: auto-suffix, existing branch, repo folder; non-git folders skipped | D56–D57 | `cf4c13c` |

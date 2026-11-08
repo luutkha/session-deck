@@ -37,6 +37,7 @@ import type { UseSessionStoreResult } from '../state/useSessionStore'
 import type { UseUsageResult } from '../usage/useUsage'
 import { resolveSettings, type Id, type RuntimeState, type Session, type SessionUsage, type StoreData, type UiMode } from '../../shared/types'
 import { dataForMode, modeStorageKeys } from './modeLogic'
+import { useSessionSort } from '../state/useSessionSort'
 import { ModeTitleBar, type ModeChrome } from './ModeTitleBar'
 import { useWorkspaceCommands } from './useWorkspaceCommands'
 import { useWorkspaceNav, type FocusRequest } from './useWorkspaceNav'
@@ -79,6 +80,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const { runtime, actions } = store
   const data = useMemo((): StoreData | null => (store.data === null ? null : dataForMode(store.data, mode)), [store.data, mode])
   const keys = useMemo(() => modeStorageKeys(mode), [mode])
+  const [sort, setSort] = useSessionSort(mode)
   const sessions = data?.sessions ?? null
   const nav = useWorkspaceNav({ keys, sessions, actions, focusRequest: props.focusRequest, onFocusHandled: props.onFocusHandled })
   const { tabs, split, workers, view } = nav
@@ -272,6 +274,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   actions={actions}
                   onNewWorktree={commands.openNewWorktree}
                   onNewSessionInWorktree={commands.openNewInWorktree}
+                  sort={sort}
+                  onSortChange={setSort}
                   onEditStatuses={editStatuses}
                   onOpenHub={(): void => nav.setView('hub')}
                   hubActive={view === 'hub'}
@@ -289,6 +293,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   onForkSession={commands.forkSession}
                   actions={actions}
                   onNewSession={commands.openNew}
+                  sort={sort}
+                  onSortChange={setSort}
                   onEditStatuses={editStatuses}
                   onOpenHub={(): void => nav.setView('hub')}
                   hubActive={view === 'hub'}
@@ -364,6 +370,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                     runtime={runtime}
                     lastChange={lastChange}
                     activeId={activeId}
+                    sort={sort}
                     onOpenSession={nav.selectSession}
                     onSetStatus={(id, statusId): void => { void actions.setSessionStatus(id, statusId) }}
                     onSleepSession={(id): Promise<void> => window.api.sleepSession(id)}

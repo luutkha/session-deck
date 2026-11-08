@@ -123,6 +123,7 @@ export function SessionCard(props: SessionCardProps): ReactElement {
       {...rest}
       role="treeitem"
       aria-selected={active || selected}
+      data-session-card={session.id}
       data-selected={selected ? 'true' : undefined}
       tabIndex={-1}
       draggable={draggable && !renaming}

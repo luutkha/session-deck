@@ -13,6 +13,7 @@ import {
   groupByStatus,
   groupedSessions,
   isClosed,
+  orderSectionSessions,
   pruneStatusFilter,
   splitClosed,
   workspaceCollapseKey
@@ -21,6 +22,8 @@ import { folderKey } from '../shell/projectTabs'
 import { registerSidebarView, type SidebarViewControl } from '../jarvis/sidebarView'
 import { useMultiSelect } from '../state/useMultiSelect'
 import { useBulkActions } from '../state/useBulkActions'
+import { DEFAULT_SESSION_SORT, sessionSortLabel, sortSessions, type SessionSort } from '../state/sessionSort'
+import { useSortFreeze } from '../state/useSessionSort'
 import { computeDrop, type DragItem, type DropOver } from '../state/dropTarget'
 import { BulkActionBar } from '../components/BulkActionBar'
 import { Button } from '../components/ui/button'
@@ -66,11 +69,22 @@ export interface SidebarProps {
   readonly actions: SessionActions
   readonly onNewSession: (groupId?: Id | null, folder?: string) => void
   readonly onEditStatuses: () => void
+  /** D61: how sessions are ordered inside each section (absent = Manual, no sort menu). */
+  readonly sort?: SessionSort
+  readonly onSortChange?: (sort: SessionSort) => void
   readonly onOpenHub?: () => void
   readonly hubActive?: boolean
   readonly onOpenSettings?: () => void
   readonly lastError: string | null
   readonly clearError: () => void
+}
+
+/** How long the "switch to Manual to reorder" hint stays (D61). */
+const SORT_HINT_MS = 4000
+
+/** A drop that only changes a session's position inside its own group (not its group). */
+function isReorderOnly(action: { readonly sessionId: Id; readonly groupId: Id | null }, data: StoreData): boolean {
+  return data.sessions.find((session): boolean => session.id === action.sessionId)?.groupId === action.groupId
 }
 
 interface PendingRemove {
@@ -103,6 +117,14 @@ export function Sidebar(props: SidebarProps): ReactElement {
   const [showWorkspaces, setShowWorkspaces] = useState<boolean>(readShowWorkspaces)
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState<StatusCollapsedMap>(readWorkspaceCollapsed)
   const [now, setNow] = useState<number>(Date.now)
+  const sort = props.sort ?? DEFAULT_SESSION_SORT
+  const sortFreeze = useSortFreeze(data.sessions, sort, runtime)
+  const [sortHint, setSortHint] = useState<string | null>(null)
+  useEffect((): (() => void) | undefined => {
+    if (sortHint === null) return undefined
+    const timer = window.setTimeout((): void => setSortHint(null), SORT_HINT_MS)
+    return (): void => window.clearTimeout(timer)
+  }, [sortHint])
 
   useEffect((): (() => void) => {
     const interval = window.setInterval((): void => setNow(Date.now()), RELATIVE_TIME_INTERVAL_MS)
@@ -122,24 +144,34 @@ export function Sidebar(props: SidebarProps): ReactElement {
     [selectedStatuses, data.statuses]
   )
   const filterActive = searchValue.trim().length > 0 || effectiveStatuses.size > 0
+  const sortOrder = useCallback(
+    (sessions: readonly Session[]): readonly Session[] => sortSessions(sessions, sort, runtime, sortFreeze.frozen),
+    [sort, runtime, sortFreeze.frozen]
+  )
   const groupSections = useMemo(
     (): ReturnType<typeof groupedSessions> =>
-      dropEmptySections(
-        filterBySearch(filterByStatus(groupedSessions(data), effectiveStatuses), searchValue),
-        filterActive
+      orderSectionSessions(
+        dropEmptySections(
+          filterBySearch(filterByStatus(groupedSessions(data), effectiveStatuses), searchValue),
+          filterActive
+        ),
+        sortOrder
       ),
-    [data, effectiveStatuses, searchValue, filterActive]
+    [data, effectiveStatuses, searchValue, filterActive, sortOrder]
   )
   const statusSections = useMemo(
     (): ReturnType<typeof filterStatusSectionsBySearch> =>
-      dropEmptySections(
-        filterStatusSectionsBySearch(
-          filterStatusSectionsByStatus(groupByStatus(data), effectiveStatuses),
-          searchValue
+      orderSectionSessions(
+        dropEmptySections(
+          filterStatusSectionsBySearch(
+            filterStatusSectionsByStatus(groupByStatus(data), effectiveStatuses),
+            searchValue
+          ),
+          filterActive
         ),
-        filterActive
+        sortOrder
       ),
-    [data, effectiveStatuses, searchValue, filterActive]
+    [data, effectiveStatuses, searchValue, filterActive, sortOrder]
   )
   const counts = useMemo(() => countByStatus(data), [data])
   const { open: openSessions, closed: closedSessions } = useMemo(() => splitClosed(data), [data])
@@ -264,12 +296,17 @@ export function Sidebar(props: SidebarProps): ReactElement {
     if (currentDrag === null || currentOver === null) return
     const action = computeDrop(currentDrag, currentOver, data)
     if (action === null) return
+    if (action.type === 'moveSession' && isReorderOnly(action, data) && sort !== 'manual') {
+      // D61: the position inside a group is the manual order, which a sort hides; only Manual can reorder.
+      setSortHint(`Sorted by ${sessionSortLabel(sort)}. Switch the sort to Manual to reorder.`)
+      return
+    }
     if (action.type === 'moveSession') {
       ignoreRejection(actions.moveSession(action.sessionId, action.groupId, action.index))
     } else {
       ignoreRejection(actions.reorderGroups(action.order))
     }
-  }, [drag, dropOver, data, actions])
+  }, [drag, dropOver, data, actions, sort])
 
   const handleListKeyDown = useSidebarListKeyDown({
     flatIds,
@@ -307,7 +344,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
   // D58: Jarvis changes the list view through the same state as the header buttons.
   const viewControl = useRef<SidebarViewControl | null>(null)
   viewControl.current = {
-    state: () => ({ groupBy, showWorkspaces, search: searchValue, statusFilter: [...effectiveStatuses], closedCollapsed }),
+    state: () => ({ groupBy, showWorkspaces, search: searchValue, statusFilter: [...effectiveStatuses], closedCollapsed, sort: props.onSortChange !== undefined ? sort : null }),
     statusNames: () => new Map(data.statuses.map((status): [Id, string] => [status.id, status.name])),
     setSearch: (value: string): void => {
       setSearchValue(value)
@@ -316,6 +353,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
     setClosedCollapsed,
     setGroupBy,
     setShowWorkspaces,
+    setSort: props.onSortChange,
     setStatusFilter: setSelectedStatuses,
     setSectionsCollapsed: (collapsed: boolean): void => {
       setStatusCollapsed(new Map(groupByStatus(data).map((section): [string, boolean] => [section.key, collapsed])))
@@ -333,6 +371,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
     setClosedCollapsed: (v) => viewControl.current!.setClosedCollapsed(v),
     setGroupBy: (v) => viewControl.current!.setGroupBy?.(v),
     setShowWorkspaces: (v) => viewControl.current!.setShowWorkspaces?.(v),
+    setSort: (v) => viewControl.current!.setSort?.(v),
     setStatusFilter: (v) => viewControl.current!.setStatusFilter?.(v),
     setSectionsCollapsed: (v) => viewControl.current!.setSectionsCollapsed?.(v)
   }), [])
@@ -369,12 +408,25 @@ export function Sidebar(props: SidebarProps): ReactElement {
         selectedStatuses={effectiveStatuses}
         counts={counts}
         onGroupByChange={setGroupBy}
+        sort={sort}
+        onSortChange={props.onSortChange}
         onToggleStatus={toggleStatus}
         onNewGroup={createGroupAndRename}
         onNewSession={(): void => onNewSession()}
       />
       <Separator className="my-1 bg-sidebar-border" />
-      <ScrollArea className="min-h-0 flex-1" viewportClassName="scrollbar-sleek py-1" viewportTabIndex={-1}>
+      {sortHint !== null && (
+        <div role="status" data-sort-hint className="mx-2 mb-1 rounded-md bg-accent/60 px-2 py-1 text-[11px] text-muted-foreground">
+          {sortHint}
+        </div>
+      )}
+      <ScrollArea
+        className="min-h-0 flex-1"
+        viewportClassName="scrollbar-sleek py-1"
+        viewportTabIndex={-1}
+        onPointerEnter={sortFreeze.onPointerEnter}
+        onPointerLeave={sortFreeze.onPointerLeave}
+      >
         <SessionList
           groupBy={groupBy}
           data={data}

@@ -5,6 +5,7 @@ import {
   filterCodeTree,
   isSearching,
   normalizeQuery,
+  orderCodeTreeSessions,
   repoSessionCount,
   visibleSessionIds,
   visibleWorktreeIds,
@@ -243,5 +244,20 @@ describe('session counts for the remove dialogs', () => {
   it('counts the sessions of one worktree', () => {
     expect(worktreeSessionCount(data, 'w2')).toBe(1)
     expect(worktreeSessionCount(data, 'w1')).toBe(1)
+  })
+})
+
+describe('orderCodeTreeSessions (D61)', () => {
+  it('reorders sessions inside each worktree and keeps repos, worktrees and closed as they are', () => {
+    const tree = buildCodeTree({
+      repos: [repo('r1')],
+      worktrees: [worktree('w1', 'r1'), worktree('w2', 'r1')],
+      sessions: [session('a', 'w1', 1), session('b', 'w1', 2), session('c', 'w2', 3), session('z', 'w1', 4, { closedAt: 5 })]
+    })
+    const sorted = orderCodeTreeSessions(tree, (sessions) => [...sessions].reverse())
+    expect(sorted.repos[0].worktrees.map((node) => node.worktree.id)).toEqual(['w1', 'w2'])
+    expect(sorted.repos[0].worktrees[0].sessions.map((s) => s.id)).toEqual(['b', 'a'])
+    expect(sorted.closed).toBe(tree.closed)
+    expect(visibleSessionIds(sorted, false)).toEqual(['b', 'a', 'c'])
   })
 })

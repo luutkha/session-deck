@@ -769,6 +769,13 @@ describe('jarvis tools: the rest of the app (D58)', () => {
     await expect(t.call('sidebar_view', { status_filter: ['nope'] })).rejects.toThrow()
   })
 
+  it('sets the session sort (D61)', async () => {
+    const t = setup([session('a', 'API')])
+    await t.call('sidebar_view', { sort: 'attention', mode: 'code' })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'sidebarView', sort: 'attention' } })
+    await expect(t.call('sidebar_view', { sort: 'size' })).rejects.toThrow('"sort" must be one of manual, attention, recent, newest, name')
+  })
+
   it('collapses one worktree, one repo or the whole Code tree, with undo', async () => {
     const t = setup([session('a', 'API')])
     expect(await t.call('code_tree', { action: 'collapse', worktree: 'checkout' })).toBe('Worktree "checkout" is collapsed.')

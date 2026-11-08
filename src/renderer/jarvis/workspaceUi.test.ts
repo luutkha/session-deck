@@ -145,6 +145,14 @@ describe('runWorkspaceAction, D58', () => {
     expect(setSearch).toHaveBeenCalledWith('api')
     expect(hidden.setSidebarOpen).toHaveBeenCalledWith(true)
   })
+
+  it('sets the sort through the sidebar control, and refuses a sidebar that cannot sort (D61)', () => {
+    const setSort = vi.fn()
+    const base = { state: () => ({ groupBy: null, showWorkspaces: null, search: '', statusFilter: null, closedCollapsed: true, sort: 'manual' as const }), statusNames: () => new Map(), setSearch: vi.fn(), setClosedCollapsed: vi.fn() }
+    runWorkspaceAction({ kind: 'sidebarView', sort: 'name' }, ctx({ sidebarView: () => ({ ...base, setSort }) }))
+    expect(setSort).toHaveBeenCalledWith('name')
+    expect(() => runWorkspaceAction({ kind: 'sidebarView', sort: 'name' }, ctx({ sidebarView: () => base }))).toThrow('cannot sort')
+  })
 })
 
 describe('jarvisUiBridge', () => {

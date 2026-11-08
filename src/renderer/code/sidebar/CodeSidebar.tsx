@@ -16,6 +16,9 @@ import { CodeTreeList } from './CodeTreeList'
 import { useCodeSidebar } from './useCodeSidebar'
 import { useCodeTreeModel } from './useCodeTreeModel'
 import type { CodeTreeView } from './codeTreeView'
+import { SortMenu } from '../../Sidebar/SortMenu'
+import { DEFAULT_SESSION_SORT, type SessionSort } from '../../state/sessionSort'
+import { useSortFreeze } from '../../state/useSessionSort'
 
 export interface CodeSidebarProps {
   /** Store data whose `sessions` are ONLY Code mode sessions (worktreeId present); repos/worktrees/statuses as stored. */
@@ -33,6 +36,9 @@ export interface CodeSidebarProps {
   /** "New session in this worktree" (worktree row button / menu). */
   readonly onNewSessionInWorktree: (worktreeId: Id) => void
   readonly onEditStatuses: () => void
+  /** D61: how sessions are ordered inside each worktree (absent = Manual, no sort menu). */
+  readonly sort?: SessionSort
+  readonly onSortChange?: (sort: SessionSort) => void
   readonly onOpenHub?: () => void
   readonly hubActive?: boolean
   readonly onOpenSettings?: () => void
@@ -45,27 +51,31 @@ export function CodeSidebar(props: CodeSidebarProps): ReactElement | null {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const [closedCollapsed, setClosedCollapsed] = useState(true)
+  const sort = props.sort ?? DEFAULT_SESSION_SORT
+  const sortFreeze = useSortFreeze(data.sessions, sort, runtime)
 
   // D58: Jarvis sets the search and the Closed section like the header buttons (repo/worktree collapse is stored).
   const viewControl = useRef<SidebarViewControl | null>(null)
   viewControl.current = {
-    state: () => ({ groupBy: null, showWorkspaces: null, search: searchValue, statusFilter: null, closedCollapsed }),
+    state: () => ({ groupBy: null, showWorkspaces: null, search: searchValue, statusFilter: null, closedCollapsed, sort: props.onSortChange !== undefined ? sort : null }),
     statusNames: () => new Map(),
     setSearch: (value: string): void => {
       setSearchValue(value)
       if (value.length > 0) setSearchOpen(true)
     },
-    setClosedCollapsed
+    setClosedCollapsed,
+    setSort: props.onSortChange
   }
   useEffect(() => registerSidebarView({
     state: () => viewControl.current!.state(),
     statusNames: () => viewControl.current!.statusNames(),
     setSearch: (v) => viewControl.current!.setSearch(v),
-    setClosedCollapsed: (v) => viewControl.current!.setClosedCollapsed(v)
+    setClosedCollapsed: (v) => viewControl.current!.setClosedCollapsed(v),
+    setSort: (v) => viewControl.current!.setSort?.(v)
   }), [])
 
   const controller = useCodeSidebar({ data, actions, onSelect, onNewWorktree, onNewSessionInWorktree })
-  const model = useCodeTreeModel({ data, searchValue, runtime, runtimeLastChange: props.runtimeLastChange })
+  const model = useCodeTreeModel({ data, searchValue, runtime, runtimeLastChange: props.runtimeLastChange, sort, frozen: sortFreeze.frozen })
   const handleListKeyDown = useSidebarListKeyDown({
     flatIds: model.flatIds,
     activeId,
@@ -114,9 +124,20 @@ export function CodeSidebar(props: CodeSidebarProps): ReactElement | null {
         onOpenHub={props.onOpenHub}
         hubActive={props.hubActive}
       />
-      <AddRepositoryButton onClick={(): void => void controller.commands.addRepository()} />
+      <div className="flex items-start pr-2">
+        <div className="min-w-0 flex-1">
+          <AddRepositoryButton onClick={(): void => void controller.commands.addRepository()} />
+        </div>
+        {props.onSortChange !== undefined && <SortMenu sort={sort} onSortChange={props.onSortChange} />}
+      </div>
       <Separator className="my-1 bg-sidebar-border" />
-      <ScrollArea className="min-h-0 flex-1" viewportClassName="scrollbar-sleek py-1" viewportTabIndex={-1}>
+      <ScrollArea
+        className="min-h-0 flex-1"
+        viewportClassName="scrollbar-sleek py-1"
+        viewportTabIndex={-1}
+        onPointerEnter={sortFreeze.onPointerEnter}
+        onPointerLeave={sortFreeze.onPointerLeave}
+      >
         {hasRepos ? (
           <CodeTreeList tree={model.shown} view={view} onListKeyDown={handleListKeyDown} />
         ) : (

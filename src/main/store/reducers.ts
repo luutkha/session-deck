@@ -312,6 +312,14 @@ export function setKeepAwake(data: StoreData, id: Id, keepAwake: boolean): Store
   return { ...data, sessions }
 }
 
+/** D61: records when a session was last active. Unknown id (removed meanwhile) or the same value = same data back. */
+export function setLastActiveAt(data: StoreData, id: Id, at: number): StoreData {
+  const index = data.sessions.findIndex((s) => s.id === id)
+  if (index < 0 || data.sessions[index].lastActiveAt === at) return data
+  const sessions = data.sessions.map((s, i) => (i === index ? { ...s, lastActiveAt: at } : s))
+  return { ...data, sessions }
+}
+
 export function createGroup(data: StoreData, name: string, id: Id): CreateGroupResult {
   const trimmed = validateName(name)
   const group: Group = { id, name: trimmed, collapsed: false }

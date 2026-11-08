@@ -120,3 +120,18 @@ describe('persistence: prompt queue (D47)', () => {
     expect(parsed.sessions[0]?.name).toBe('Kept')
   })
 })
+
+describe('persistence: lastActiveAt (D61)', () => {
+  it('round trips lastActiveAt', () => {
+    const parsed = parseStoreData(fileWith({ lastActiveAt: 1234 }))
+    expect(parsed.sessions[0].lastActiveAt).toBe(1234)
+  })
+
+  it('drops an invalid lastActiveAt, keeping the session', () => {
+    for (const bad of [-1, 'soon', null, Number.NaN]) {
+      const parsed = parseStoreData(fileWith({ lastActiveAt: bad, name: 'Kept' }))
+      expect(parsed.sessions[0]).not.toHaveProperty('lastActiveAt')
+      expect(parsed.sessions[0].name).toBe('Kept')
+    }
+  })
+})

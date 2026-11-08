@@ -268,6 +268,15 @@ Asked "any features that jarvis can not do now?"; the list: sounds, the sidebar 
 - Settings > Terminal > Right-click: "Show menu" (default) or "Copy / paste" (the old D21 quick copy-or-paste; Ctrl+right-click still shows the menu), as Orca offers.
 - The right button still never reaches the program (D21); Paste goes through the one paste gate, so it pastes once in Claude's fullscreen UI too. Orca rows SessionDeck has no use for (quick commands, pane/terminal ids, native chat, reset terminal) are left out.
 
+**D60 · 2026-11-08 · Code mode: commit, push and PR** · active (plan approved with "go"; being built)
+Offered as option 2 of "what next feature we should build?"; the user: "do for 2". Scope offered: commit with a drafted message, push, open a PR, merge a worktree back, delete a worktree from disk. Answers to the plan questions: commit scope "Checkbox per file" (all checked by default); commit message "No AI" (the user writes it, no Draft button); merge into base "Yes, include". Plan: `plan/code-git-and-sort.md`. Not picked this round: per-session AI summaries (option 1), auto-update (option 3, still D25 deferred), Jarvis fan-out across sessions (option 4).
+
+**D61 · 2026-11-08 · Sort sessions** · active
+"currently i can not sort the session, i need a ways to sort sessions for easier management. show me plan first". Hub columns follow the same sort: "Yes, same sort". Plan approved with "go" (`plan/code-git-and-sort.md`).
+- A Sort button in the sidebar header (Ops and Code): Manual (default, the drag order), Needs attention, Last active, Newest, Name A–Z. Sorting is inside each group / folder bucket / status section / worktree / Hub column; groups, repos and worktrees keep their order. Ops and Code each remember their own sort.
+- Last active comes from a new saved `Session.lastActiveAt` (a turn starts or ends, or a line typed with Enter).
+- Choices made while building (change on request): a live sort (Needs attention, Last active) holds still while the pointer is over the list and re-sorts when it leaves; while sorted, dragging a session to a new position inside its group is refused with "Switch the sort to Manual to reorder" (moving it to another group still works); the Hub on Manual keeps its own most-recent-activity order; folder buckets follow their first session; the idle reminder counts as "finished", not "needs you".
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 

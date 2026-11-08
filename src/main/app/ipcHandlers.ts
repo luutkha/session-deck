@@ -1,7 +1,7 @@
 import { app, ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'electron'
 import { MAX_LINK_TEXTS } from '../links'
 import { createAppLinkService } from '../links/appLinks'
-import type { AppSettings, ConversationSearchResult, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
+import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from './sessionController'
@@ -70,6 +70,8 @@ export interface IpcHandlersDeps {
   readonly loginItem: LoginItem
   /** The user pressed a key / clicked in SessionDeck (resets the app-wide idle sleep timer). */
   readonly onUserActivity: () => void
+  /** D61: the user typed into a session's terminal (validated id + data); absent = ignored. */
+  readonly onUserInput?: (id: Id, data: string) => void
 }
 
 /**
@@ -225,6 +227,7 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     const data = assertPtyWriteData(rawData)
     // Typing into a terminal is user input for the app-wide idle timer.
     onUserActivity()
+    deps.onUserInput?.(id, data)
     controller.writeToPty(id, data)
   })
 

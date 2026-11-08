@@ -2,6 +2,7 @@
 // and collapsing sections. The sidebar keeps this state itself (React state + localStorage); it registers a control
 // here while mounted, and the workspace's Jarvis handler applies changes through it. Pure apart from the registry.
 import type { Id, JarvisSidebarView } from '../../shared/types'
+import { sessionSortLabel, type SessionSort } from '../state/sessionSort'
 
 export interface SidebarViewState {
   /** null: this sidebar has no such option (Code mode). */
@@ -10,6 +11,8 @@ export interface SidebarViewState {
   readonly search: string
   readonly statusFilter: readonly (Id | null)[] | null
   readonly closedCollapsed: boolean
+  /** D61: null = this sidebar cannot sort. */
+  readonly sort?: SessionSort | null
 }
 
 export interface SidebarViewControl {
@@ -19,6 +22,7 @@ export interface SidebarViewControl {
   readonly setClosedCollapsed: (collapsed: boolean) => void
   readonly setGroupBy?: (value: 'groups' | 'status') => void
   readonly setShowWorkspaces?: (show: boolean) => void
+  readonly setSort?: (sort: SessionSort) => void
   readonly setStatusFilter?: (ids: ReadonlySet<Id | null>) => void
   /** Collapses or expands every status section and folder bucket. */
   readonly setSectionsCollapsed?: (collapsed: boolean) => void
@@ -51,7 +55,8 @@ export function describeSidebarView(control: SidebarViewControl): string {
     s.statusFilter !== null
       ? (s.statusFilter.length > 0 ? `status filter ${s.statusFilter.map((id) => statusLabel(control.statusNames(), id)).join(', ')}` : 'no status filter')
       : null,
-    `Closed section ${s.closedCollapsed ? 'collapsed' : 'expanded'}`
+    `Closed section ${s.closedCollapsed ? 'collapsed' : 'expanded'}`,
+    s.sort !== undefined && s.sort !== null ? `sorted by ${sessionSortLabel(s.sort)}` : null
   ].filter((part): part is string => part !== null)
   return `Sidebar list: ${parts.join(', ')}`
 }
@@ -65,6 +70,7 @@ export function applySidebarView(view: JarvisSidebarView, control: SidebarViewCo
   if (view.groupBy !== undefined && control.setGroupBy === undefined) throw unsupported('"group by" option')
   if (view.showWorkspaces !== undefined && control.setShowWorkspaces === undefined) throw unsupported('folder buckets')
   if (view.statusFilter !== undefined && control.setStatusFilter === undefined) throw unsupported('status filter')
+  if (view.sort !== undefined && control.setSort === undefined) throw new Error('This sidebar cannot sort sessions.')
   if (view.sections !== undefined && control.setSectionsCollapsed === undefined) throw unsupported('status sections or folder buckets to collapse')
   if (view.statusFilter !== undefined) {
     const names = control.statusNames()
@@ -77,5 +83,6 @@ export function applySidebarView(view: JarvisSidebarView, control: SidebarViewCo
   if (view.statusFilter !== undefined) control.setStatusFilter?.(new Set(view.statusFilter))
   if (view.closedSection !== undefined) control.setClosedCollapsed(view.closedSection === 'collapsed')
   if (view.sections !== undefined) control.setSectionsCollapsed?.(view.sections === 'collapseAll')
+  if (view.sort !== undefined) control.setSort?.(view.sort)
   return 'Sidebar updated.'
 }

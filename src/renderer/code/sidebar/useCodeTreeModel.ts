@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { sortSessions, type SessionSort } from '../../state/sessionSort'
 import type { Id, RuntimeState, StoreData, WorktreeChanges } from '../../../shared/types'
 import { useWorktreeChangeCounts } from '../changes'
 import { RELATIVE_TIME_INTERVAL_MS } from '../../Sidebar/sidebarPrefs'
@@ -7,6 +8,7 @@ import {
   buildCodeTree,
   filterCodeTree,
   isSearching,
+  orderCodeTreeSessions,
   visibleSessionIds,
   visibleWorktreeIds,
   type CodeTree
@@ -17,6 +19,10 @@ export interface CodeTreeModelInput {
   readonly searchValue: string
   readonly runtime: ReadonlyMap<Id, RuntimeState>
   readonly runtimeLastChange?: ReadonlyMap<Id, number>
+  /** D61: sessions inside each worktree in this order (absent = Manual = creation order). */
+  readonly sort?: SessionSort
+  /** D61: the hover freeze of a live sort (see useSortFreeze). */
+  readonly frozen?: ReadonlyMap<Id, number>
 }
 
 export interface CodeTreeModel {
@@ -44,11 +50,14 @@ function useRelativeNow(): number {
 
 /** Derived sidebar data: the tree, its search result, keyboard order, change counts and time labels. */
 export function useCodeTreeModel(input: CodeTreeModelInput): CodeTreeModel {
-  const { data, searchValue, runtime } = input
+  const { data, searchValue, runtime, sort = 'manual', frozen } = input
   const internalLastChange = useLastRuntimeChange(runtime)
   const lastChange = input.runtimeLastChange ?? internalLastChange
   const now = useRelativeNow()
-  const tree = useMemo((): CodeTree => buildCodeTree(data), [data])
+  const tree = useMemo(
+    (): CodeTree => orderCodeTreeSessions(buildCodeTree(data), (sessions) => sortSessions(sessions, sort, runtime, frozen)),
+    [data, sort, runtime, frozen]
+  )
   const searching = isSearching(searchValue)
   const shown = useMemo((): CodeTree => filterCodeTree(tree, searchValue), [tree, searchValue])
   const shownWorktreeIds = useMemo((): readonly Id[] => visibleWorktreeIds(shown), [shown])

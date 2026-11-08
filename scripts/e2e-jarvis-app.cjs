@@ -76,6 +76,14 @@ async function main() {
     const state = await tool('get_screen_state')
     t.check('get_screen_state describes the sidebar list', /Sidebar list: grouped by status/.test(state.text), state.text)
     await tool('sidebar_view', { group_by: 'groups' })
+    // D61: the sort
+    r = await tool('sidebar_view', { sort: 'name' })
+    const sortedByName = await waitFor(async () => (await ev('document.querySelector("[data-sort-menu]")?.dataset.sort')) === 'name' || null, 5000, 200)
+    const sortState = await tool('get_screen_state')
+    t.check('sidebar_view sorts the sessions by name (D61)', !r.error && !!sortedByName && /sorted by Name A–Z/.test(sortState.text), `${r.text} ${sortState.text.slice(0, 200)}`)
+    r = await tool('sidebar_view', { sort: 'size' })
+    t.check('...and refuses an unknown sort', r.error, r.text)
+    await tool('sidebar_view', { sort: 'manual' })
 
     // ---- tabs
     const activeTab = () => ev('document.querySelector("[data-tab-id][data-active=true]")?.getAttribute("data-tab-id") ?? null')

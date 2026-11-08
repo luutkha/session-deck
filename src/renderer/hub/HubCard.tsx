@@ -153,6 +153,7 @@ export function HubCard(props: HubCardProps): ReactElement {
       role="button"
       tabIndex={0}
       aria-current={active ? 'true' : undefined}
+      data-hub-card={session.id}
       data-selected={selected ? 'true' : undefined}
       aria-label={`Open session ${session.name}`}
       draggable={draggable}

@@ -137,6 +137,7 @@ export function CodeSessionCard(props: CodeSessionCardProps): ReactElement {
       {...rest}
       role="treeitem"
       aria-selected={active}
+      data-session-card={session.id}
       tabIndex={-1}
       onClick={(): void => onSelect(session.id)}
       onDoubleClick={(): void => onStartRename(session.id)}

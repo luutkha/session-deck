@@ -16,6 +16,7 @@ import {
   reorderStatuses,
   setClaudeSessionId,
   setGroupCollapsed,
+  setLastActiveAt,
   setSessionStatus,
   upsertStatus
 } from './reducers'
@@ -619,5 +620,15 @@ describe('reopenSession', () => {
     const base = withSessions(emptyStore(), makeSession({ id: 's1', name: 'A' }))
     const roundTrip = reopenSession(closeSession(base, 's1', 9), 's1')
     expect(roundTrip.sessions).toEqual(base.sessions)
+  })
+})
+
+describe('setLastActiveAt (D61)', () => {
+  it('sets the time, returns the same data for the same value or an unknown id', () => {
+    const { data } = createSession(emptyStore(), { cwd: '/x' }, { id: 's1', now: 1 })
+    const next = setLastActiveAt(data, 's1', 50)
+    expect(next.sessions[0].lastActiveAt).toBe(50)
+    expect(setLastActiveAt(next, 's1', 50)).toBe(next)
+    expect(setLastActiveAt(next, 'gone', 60)).toBe(next)
   })
 })
