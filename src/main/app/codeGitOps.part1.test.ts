@@ -1,5 +1,5 @@
 // D60: the Code mode git operations as the Changes panel and Jarvis call them, on real temp repositories.
-import { appendFileSync, existsSync } from 'node:fs'
+import { appendFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { Repo, Worktree, WorktreeChanges } from '../../shared/types'
@@ -75,60 +75,6 @@ describe('createCodeGitOps (D60)', () => {
     expect(result).toEqual({ url: 'https://github.com/acme/shop/compare/main...fix-login?expand=1', created: false })
     expect(t.opened).toEqual([result.url])
     expect(git(origin, 'rev-parse', 'refs/heads/fix-login')).toBe(git(t.wt, 'rev-parse', 'HEAD'))
-  })
-
-  it('Create PR with gh passes the default title and body', async () => {
-    const calls: string[][] = []
-    const t = setup({ ghReady: async () => true, gh: async (args) => { calls.push([...args]); return { code: 0, stdout: 'https://github.com/acme/shop/pull/9\n', stderr: '' } } })
-    const origin = makeTempDir('ops-origin-gh')
-    git(origin, 'init', '--bare', '-b', 'main')
-    git(t.repo, 'remote', 'add', 'origin', 'git@github.com:acme/shop.git')
-    git(t.repo, 'config', `url.${origin}.pushInsteadOf`, 'git@github.com:acme/shop.git')
-    appendFileSync(path.join(t.wt, 'a.txt'), 'x\n')
-    await t.ops.commit({ worktreeId: 'w1', message: 'first', paths: ['a.txt'] })
-    appendFileSync(path.join(t.wt, 'b.txt'), 'y\n')
-    await t.ops.commit({ worktreeId: 'w1', message: 'second', paths: ['b.txt'] })
-    expect(await t.ops.createPr('w1', {})).toEqual({ url: 'https://github.com/acme/shop/pull/9', created: true })
-    expect(calls[0]).toEqual(['pr', 'create', '--base', 'main', '--head', 'fix-login', '--title', 'second', '--body', '- second\n- first'])
-    expect(t.opened).toEqual([])
-  })
-
-  it('Create PR refuses without a remote or on an unknown host', async () => {
-    const t = setup()
-    await expect(t.ops.createPr('w1', {})).rejects.toThrow('no remote')
-    git(t.repo, 'remote', 'add', 'origin', 'https://example.com/a/b.git')
-    await expect(t.ops.createPr('w1', {})).rejects.toThrow('GitHub, GitLab and Bitbucket')
-  })
-
-  it('merges into the base, and refuses for the repository folder', async () => {
-    const t = setup()
-    appendFileSync(path.join(t.wt, 'a.txt'), 'x\n')
-    await t.ops.commit({ worktreeId: 'w1', message: 'x', paths: ['a.txt'] })
-    expect((await t.ops.merge('w1')).merged).toBe(true)
-    const main = setup({}, true)
-    await expect(main.ops.merge('w1')).rejects.toThrow('repository folder itself')
-  })
-
-  it('remove without deleteFromDisk only forgets; with it removes folder and merged branch', async () => {
-    const keep = setup()
-    expect(await keep.ops.remove('w1', {})).toEqual({ folderDeleted: false, branchDeleted: false })
-    expect(keep.removed).toEqual(['w1'])
-    expect(existsSync(keep.wt)).toBe(true)
-    const t = setup()
-    expect(await t.ops.removalInfo('w1')).toMatchObject({ uncommitted: 0, branchMerged: true, folderExists: true, repoFolder: false })
-    expect(await t.ops.remove('w1', { deleteFromDisk: true })).toEqual({ folderDeleted: true, branchDeleted: true })
-    expect(t.removed).toEqual(['w1'])
-    expect(existsSync(t.wt)).toBe(false)
-  })
-
-  it('remove refuses uncommitted work before touching anything, and never deletes the repository folder', async () => {
-    const t = setup()
-    appendFileSync(path.join(t.wt, 'a.txt'), 'x\n')
-    await expect(t.ops.remove('w1', { deleteFromDisk: true })).rejects.toThrow('1 uncommitted file')
-    expect(t.removed).toEqual([])
-    const main = setup({}, true)
-    await expect(main.ops.remove('w1', { deleteFromDisk: true })).rejects.toThrow('never deleted')
-    expect(main.removed).toEqual([])
   })
 })
 

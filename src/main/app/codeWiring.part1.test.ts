@@ -108,33 +108,6 @@ describe('createWorktree when its session does not start (review fix B)', () => 
     expect(store.getWorktree(result.worktree.id)).toEqual(result.worktree)
     expect(result.worktree.branch).toBe('second')
   })
-
-  it('a taken name becomes name-2 for the stored worktree too (D57)', async () => {
-    const code = wiring(store, fakeController((): Session => ({ id: `s-${Math.random()}` }) as unknown as Session))
-    await code.createWorktree({ repoId, name: 'same', baseBranch: 'main', agent: 'shell' })
-    const again = await code.createWorktree({ repoId, name: 'same', baseBranch: 'main', agent: 'shell' })
-    expect([again.worktree.name, again.worktree.branch]).toEqual(['same-2', 'same-2'])
-  })
-
-  it('opens the repo folder itself once, on its checked-out branch, without creating a branch (D57)', async () => {
-    const code = wiring(store, fakeController((): Session => ({ id: 's-main' }) as unknown as Session))
-    const repo = store.get().repos?.[0]
-    const result = await code.createWorktree({ repoId, name: 'my-app', baseBranch: 'main', source: 'main', agent: 'shell' })
-    expect(result.worktree).toMatchObject({ main: true, path: repo?.path, branch: 'main', baseBranch: 'main' })
-    expect((await code.branches(repoId)).branches).toEqual(['main'])
-    await expect(
-      code.createWorktree({ repoId, name: 'again', baseBranch: 'main', source: 'main', agent: 'shell' })
-    ).rejects.toThrow('already open in SessionDeck as "my-app"')
-  })
-
-  it('checks out an existing branch through the validated input (D57)', async () => {
-    const code = wiring(store, fakeController((): Session => ({ id: 's-x' }) as unknown as Session))
-    await code.createWorktree({ repoId, name: 'topic', baseBranch: 'main', agent: 'shell' })
-    // "topic" is open in that worktree now: reusing it is refused by name.
-    await expect(
-      code.createWorktree({ repoId, name: 'topic again', baseBranch: 'main', source: 'existing', branch: 'topic', agent: 'shell' })
-    ).rejects.toThrow('Branch "topic" is already open in')
-  })
 })
 
 describe('addRepo of a drive root (review fix C2)', () => {

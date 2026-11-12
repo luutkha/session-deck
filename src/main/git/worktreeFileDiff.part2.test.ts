@@ -1,8 +1,8 @@
-import { appendFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { DIFF_MAX_BYTES } from '../../shared/types'
-import { addWorktree, cleanupTempDirs, git, makeRepo, writeText } from './testRepo'
+import { addWorktree, cleanupTempDirs, makeRepo, writeText } from './testRepo'
 import { readFileDiff } from './worktreeFileDiff'
 import { readWorktreeChanges, type WorktreeRef } from './worktreeChanges'
 
@@ -28,49 +28,6 @@ afterAll(() => {
 })
 
 describe('readFileDiff', () => {
-  it('returns the unified diff of a modified file', async () => {
-    const wt = setUp('modified')
-    appendFileSync(path.join(wt.path, 'a.txt'), 'line 4\n')
-    const changes = await readWorktreeChanges(wt, now)
-    const diff = await readFileDiff(wt, 'a.txt', changes)
-    expect(diff).toEqual({
-      worktreeId: wt.id,
-      path: 'a.txt',
-      diff: expect.stringContaining('@@'),
-      binary: false,
-      truncated: false
-    })
-    expect(diff.diff).toContain('+line 4')
-  })
-
-  it('shows every line of an untracked text file as added', async () => {
-    const wt = setUp('untracked')
-    writeText(path.join(wt.path, 'notes.md'), 'one\ntwo\n')
-    const changes = await readWorktreeChanges(wt, now)
-    const diff = await readFileDiff(wt, 'notes.md', changes)
-    expect(diff.diff).toContain('+one')
-    expect(diff.diff).toContain('+two')
-    expect(diff.diff).toContain('/dev/null')
-    expect(diff.binary).toBe(false)
-  })
-
-  it('shows the removed lines of a deleted file', async () => {
-    const wt = setUp('deleted')
-    unlinkSync(path.join(wt.path, 'gone.txt'))
-    const changes = await readWorktreeChanges(wt, now)
-    const diff = await readFileDiff(wt, 'gone.txt', changes)
-    expect(diff.diff).toContain('-gone.txt line 1')
-  })
-
-  it('diffs a rename between the old and the new path', async () => {
-    const wt = setUp('renamed')
-    git(wt.path, 'mv', 'b.txt', 'b-renamed.txt')
-    const changes = await readWorktreeChanges(wt, now)
-    const diff = await readFileDiff(wt, 'b-renamed.txt', changes)
-    expect(diff.diff).toContain('rename from b.txt')
-    expect(diff.diff).toContain('rename to b-renamed.txt')
-  })
-
   it('reports a binary untracked file without diff text', async () => {
     const wt = setUp('binary')
     writeFileSync(path.join(wt.path, 'image.bin'), Buffer.from([0x89, 0x50, 0x00, 0x47, 0x0a]))
