@@ -1,14 +1,20 @@
 // The xterm pane registry for a terminal workspace. Keeps one xterm instance
 // per session mounted for the session's whole lifetime (hidden via CSS, never
 // destroyed) so scrollback and render state survive switching and splitting.
+// Hidden panes give their WebGL context back (see webglPolicy), stop receiving
+// output (it is queued, see hiddenQueue) and everything is disposed when the
+// workspace unmounts (a mode switch remounts it).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Id, RuntimeState, SessionRun } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
+import { HiddenQueue } from './hiddenQueue'
 import { SeqGate } from './seqGate'
 import type { TermView } from './termView'
 import type { ZoomAction } from './paneFactory'
 import {
+  attachWebgl,
   buildTerminalView,
+  detachWebgl,
   disposeTerminalView,
   fitTerminalView,
   observeTerminalResize,
@@ -16,6 +22,7 @@ import {
   scheduleTerminalFit,
   type TerminalView
 } from './paneFactory'
+import { planWebgl, type WebglPaneState } from './webglPolicy'
 
 export interface TerminalPaneHandle {
   readonly id: Id
@@ -27,6 +34,9 @@ export interface TerminalPaneHandle {
   element: HTMLDivElement | null
   cleanupResize: (() => void) | null
   hydration: number
+  /** Not on screen: output goes to `queue` instead of the term (see hiddenQueue). */
+  hidden: boolean
+  readonly queue: HiddenQueue
 }
 
 /**
@@ -68,30 +78,82 @@ function dispatchPtyData(
   }
   let chunks: readonly string[]
   try {
+    // Always keep sequencing: a hidden pane must not see stale or duplicated output on show.
     chunks = pane.gate.push(seq, data)
   } catch (error) {
     console.error(`SessionDeck: dropping a malformed PTY chunk for session ${id}`, error)
     return
   }
   for (const chunk of chunks) {
-    pane.view.term.write(chunk)
+    if (pane.hidden) {
+      pane.queue.push(chunk)
+    } else {
+      pane.view.term.write(chunk)
+    }
   }
 }
 
+/**
+ * The pane just became visible again: apply what was held back while it was hidden.
+ * An overflow means the queued output was dropped, so the pane replays from main
+ * (the replay buffer is the source of truth), exactly like the restart path.
+ */
+function flushDeferredOutput(pane: TerminalPaneHandle): void {
+  const { chunks, overflowed } = pane.queue.take()
+  if (!pane.opened || pane.disposed) {
+    // Never opened: openPane hydrates it from main anyway, nothing to replay.
+    return
+  }
+  if (overflowed) {
+    pane.hydration += 1
+    pane.view.term.reset()
+    pane.gate.reset()
+    void hydratePane(pane)
+  } else {
+    for (const chunk of chunks) {
+      pane.view.term.write(chunk)
+    }
+  }
+  if (pane.element !== null) {
+    // The pane may have been resized while it was hidden. The fit is rAF-debounced per view,
+    // so this coalesces with the ResizeObserver's fit instead of doubling it.
+    scheduleTerminalFit(pane.view, pane.element)
+  }
+}
+
+/** Idempotent: the unmount cleanup, the "session is gone" effect and a StrictMode remount may all reach the same pane. */
 function disposePane(pane: TerminalPaneHandle): void {
+  if (pane.disposed) {
+    return
+  }
   pane.disposed = true
-  if (pane.cleanupResize !== null) {
-    pane.cleanupResize()
-    pane.cleanupResize = null
+  // Held-back output is worthless once the pane is gone (the session replays on reopen).
+  pane.queue.take()
+  const cleanupResize = pane.cleanupResize
+  pane.cleanupResize = null
+  if (cleanupResize !== null) {
+    try {
+      cleanupResize()
+    } catch (error) {
+      console.error(`SessionDeck: stopping the resize observer of session ${pane.id} failed`, error)
+    }
   }
   if (pane.opened) {
-    disposeTerminalView(pane.view)
     pane.opened = false
+    try {
+      disposeTerminalView(pane.view)
+    } catch (error) {
+      console.error(`SessionDeck: disposing the terminal of session ${pane.id} failed`, error)
+    }
   }
+  pane.element = null
 }
 
 /** Restarts a pane's process and returns focus to its terminal. */
 export function restartPane(pane: TerminalPaneHandle): void {
+  if (pane.disposed) {
+    return
+  }
   window.api.ptyRestart(pane.id).catch((error: unknown): void => {
     console.error(`SessionDeck: restarting session ${pane.id} failed`, error)
   })
@@ -129,10 +191,67 @@ export function useTerminalPanes(
   options: TerminalPanesOptions = {}
 ): TerminalPanesApi {
   const panesRef = useRef<Map<Id, TerminalPaneHandle>>(new Map())
+  // The pane container of every id ever seen: after a StrictMode remount the ref callback runs
+  // BEFORE the lazy create effect, so the element must be remembered to open the fresh pane into.
+  const viewportsRef = useRef<Map<Id, HTMLDivElement>>(new Map())
   const [createdIds, setCreatedIds] = useState<readonly Id[]>([])
   // Panes are built with the profile current at CREATION; later zooms are applied live, never rebuilt.
   const optionsRef = useRef<TerminalPanesOptions>(options)
   optionsRef.current = options
+  const visibleIdsRef = useRef<readonly Id[]>(visibleIds)
+  visibleIdsRef.current = visibleIds
+
+  /**
+   * Applies the WebGL plan to every live pane: hidden panes hand their context back, visible
+   * ones get one up to the cap, everything past it stays on xterm's DOM renderer.
+   */
+  const applyWebglPolicy = useCallback((): void => {
+    const visible = new Set(visibleIdsRef.current)
+    const handles = new Map<Id, TerminalPaneHandle>()
+    const states: WebglPaneState[] = []
+    for (const [id, pane] of panesRef.current) {
+      if (!pane.opened || pane.disposed) {
+        continue
+      }
+      handles.set(id, pane)
+      states.push({
+        id,
+        visible: visible.has(id),
+        hasWebgl: pane.view.webgl !== null,
+        failed: pane.view.webglFailed
+      })
+    }
+    const plan = planWebgl(states)
+    // Free contexts first: attaching before detaching would briefly exceed the context cap.
+    for (const id of plan.detach) {
+      const pane = handles.get(id)
+      if (pane !== undefined) {
+        detachWebgl(pane.view)
+      }
+    }
+    for (const id of plan.attach) {
+      const pane = handles.get(id)
+      if (pane !== undefined) {
+        attachWebgl(pane.view)
+      }
+    }
+  }, [])
+
+  /** Opens a pane's xterm into its viewport once, sizes the pty to it and replays the buffer. */
+  const openPane = useCallback((pane: TerminalPaneHandle, element: HTMLDivElement): void => {
+    if (pane.opened || pane.disposed) {
+      return
+    }
+    pane.opened = true
+    pane.element = element
+    openTerminalView(pane.view, element)
+    fitTerminalView(pane.view, element)
+    window.api.ptyResize(pane.id, pane.view.term.cols, pane.view.term.rows)
+    pane.cleanupResize = observeTerminalResize(pane.view, element)
+    void hydratePane(pane)
+    // A pane opened after the last policy run must get WebGL now if it is on screen.
+    applyWebglPolicy()
+  }, [applyWebglPolicy])
 
   // ONE live-data subscription for the whole workspace; panes are dispatched by id.
   useEffect((): (() => void) => {
@@ -145,9 +264,15 @@ export function useTerminalPanes(
   const visibleKey = visibleIds.join('|')
   useEffect((): void => {
     for (const id of visibleIds) {
-      if (!sessionIds.includes(id) || panesRef.current.has(id)) {
+      if (!sessionIds.includes(id)) {
         continue
       }
+      const existing = panesRef.current.get(id)
+      if (existing !== undefined && !existing.disposed) {
+        continue
+      }
+      // A disposed handle (the unmount cleanup of a StrictMode remount) is replaced, not reused.
+      panesRef.current.delete(id)
       const pane: TerminalPaneHandle = {
         id,
         view: buildTerminalView(id, {
@@ -163,12 +288,46 @@ export function useTerminalPanes(
         disposed: false,
         element: null,
         cleanupResize: null,
-        hydration: 0
+        hydration: 0,
+        // Panes are created on first visibility, so a fresh pane is on screen.
+        hidden: false,
+        queue: new HiddenQueue()
       }
       panesRef.current.set(id, pane)
-      setCreatedIds((prev: readonly Id[]): readonly Id[] => [...prev, id])
+      setCreatedIds((prev: readonly Id[]): readonly Id[] =>
+        prev.includes(id) ? prev : [...prev, id]
+      )
     }
-  }, [visibleKey, sessionIds, runtime])
+    // Panes re-created after the whole workspace was torn down still have their DOM viewport:
+    // their ref callback already ran (or never runs again), so open them here.
+    for (const pane of panesRef.current.values()) {
+      const element = viewportsRef.current.get(pane.id)
+      if (element !== undefined && element.isConnected) {
+        openPane(pane, element)
+      }
+    }
+  }, [visibleKey, sessionIds, runtime, openPane])
+
+  // WebGL: re-plan whenever the visible set or the pane set changes.
+  const createdKey = createdIds.join('|')
+  // Deferred output: this MUST run before the WebGL policy effect below, so a pane that becomes
+  // visible is already marked visible (and has its queued output applied) when it gets a context.
+  useEffect((): void => {
+    const visible = new Set(visibleIdsRef.current)
+    for (const pane of panesRef.current.values()) {
+      const nextHidden = !visible.has(pane.id)
+      if (pane.hidden === nextHidden) {
+        continue
+      }
+      pane.hidden = nextHidden
+      if (!nextHidden) {
+        flushDeferredOutput(pane)
+      }
+    }
+  }, [visibleKey, createdKey])
+  useEffect((): void => {
+    applyWebglPolicy()
+  }, [applyWebglPolicy, visibleKey, createdKey])
 
   // Dispose panes whose session is gone.
   useEffect((): void => {
@@ -178,6 +337,7 @@ export function useTerminalPanes(
       if (!alive.has(id)) {
         disposePane(pane)
         panesRef.current.delete(id)
+        viewportsRef.current.delete(id)
         removed.push(id)
       }
     }
@@ -189,12 +349,27 @@ export function useTerminalPanes(
     }
   }, [sessionIds])
 
+  // The workspace unmounts on every mode switch (App.tsx keys it by mode) and its panes would
+  // otherwise leak their xterm, WebGL context and ResizeObserver. StrictMode runs this cleanup
+  // once right after mount in dev; the lazy create effect above builds the panes again (and
+  // re-opens them into the viewports remembered above), so nothing is lost.
+  useEffect((): (() => void) => {
+    return (): void => {
+      for (const pane of panesRef.current.values()) {
+        disposePane(pane)
+      }
+      panesRef.current.clear()
+    }
+  }, [])
+
   // Restart: a session that went exited -> running gets a fresh screen and a
   // fresh replay; the seq gate keeps its last seq (main keeps increasing it).
   useEffect((): void => {
     for (const pane of panesRef.current.values()) {
       const next: SessionRun | null = runtime.get(pane.id)?.run ?? null
       if (pane.lastRun === 'exited' && next === 'running' && pane.opened) {
+        // The old screen and anything held back for a hidden pane are stale now.
+        pane.queue.take()
         pane.hydration += 1
         pane.view.term.reset()
         pane.gate.reset()
@@ -214,18 +389,15 @@ export function useTerminalPanes(
     if (id === undefined) {
       return
     }
+    // Remembered even when the pane does not exist yet: after a StrictMode remount this runs
+    // before the lazy create effect, which then opens the pane into this element.
+    viewportsRef.current.set(id, element)
     const pane = panesRef.current.get(id)
-    if (pane === undefined || pane.opened || pane.disposed) {
+    if (pane === undefined) {
       return
     }
-    pane.opened = true
-    pane.element = element
-    openTerminalView(pane.view, element)
-    fitTerminalView(pane.view, element)
-    window.api.ptyResize(id, pane.view.term.cols, pane.view.term.rows)
-    pane.cleanupResize = observeTerminalResize(pane.view, element)
-    void hydratePane(pane)
-  }, [])
+    openPane(pane, element)
+  }, [openPane])
 
   const fitPanes = useCallback((ids: readonly Id[]): void => {
     for (const id of ids) {

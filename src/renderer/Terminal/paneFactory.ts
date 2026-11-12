@@ -30,6 +30,8 @@ export interface TerminalView {
   /** One search provider per pane (W3): searches this pane's buffer only. */
   readonly searchAddon: SearchAddon
   webgl: WebglAddon | null
+  /** A WebGL attach threw (no GPU / contexts exhausted): the policy stops retrying it. */
+  webglFailed: boolean
   fitFrame: number | null
   /** Set by the workspace that owns the terminal profile; absent = zoom shortcuts do nothing. */
   onZoom: ((action: ZoomAction) => void) | null
@@ -67,6 +69,9 @@ export async function copySelectionToClipboard(term: Terminal): Promise<void> {
 }
 
 const sessionIds = new WeakMap<Terminal, Id>()
+
+/** The DOM listeners openTerminalView added, so a re-open or a dispose removes them from the container. */
+const viewListeners = new WeakMap<TerminalView, AbortController>()
 
 /** Pastes the clipboard once (menu, Ctrl+V, right-click); an image-only clipboard makes the agent attach it. */
 export async function pasteClipboardInto(term: Terminal): Promise<void> {
@@ -178,6 +183,7 @@ export function buildTerminalView(
     fitAddon,
     searchAddon,
     webgl: null,
+    webglFailed: false,
     fitFrame: null,
     onZoom: options.onZoom ?? null,
     onSearch: options.onSearch ?? null,
@@ -189,23 +195,65 @@ export function buildTerminalView(
   return view
 }
 
-function loadWebglRenderer(view: TerminalView): void {
+/**
+ * Loads the WebGL renderer into an OPENED terminal (xterm needs a parent element first).
+ * The pane registry decides when: only visible panes near the context cap get one.
+ * A failure is remembered (webglFailed) so the policy does not retry a pane forever.
+ */
+export function attachWebgl(view: TerminalView): void {
+  if (view.webgl !== null) {
+    return
+  }
   try {
     const addon = new WebglAddon()
     addon.onContextLoss((): void => {
-      // Disposing the addon makes xterm fall back to the DOM renderer.
+      // A newer addon may already be attached when an old one reports a late loss.
+      if (view.webgl !== addon) {
+        return
+      }
+      // Disposing the addon makes xterm fall back to the DOM renderer. The context is gone
+      // for good (usually Chromium's per-renderer limit), so this pane stops asking for one.
       view.webgl = null
+      view.webglFailed = true
       addon.dispose()
     })
     view.term.loadAddon(addon)
     view.webgl = addon
   } catch (error) {
+    view.webglFailed = true
     console.error('SessionDeck: WebGL renderer unavailable, using the DOM renderer', error)
   }
 }
 
-/** Opens the terminal into `element` and attaches mouse behaviour + WebGL. */
+/**
+ * Gives the pane's WebGL context back (hidden pane). xterm falls back to its DOM renderer,
+ * which pauses while the element is hidden and costs nothing there. Attach again on show.
+ */
+export function detachWebgl(view: TerminalView): void {
+  const addon = view.webgl
+  if (addon === null) {
+    return
+  }
+  // Clear first: an onContextLoss fired by dispose() must not touch the next addon.
+  view.webgl = null
+  try {
+    addon.dispose()
+  } catch (error) {
+    console.error('SessionDeck: releasing the WebGL renderer failed', error)
+  }
+}
+
+/**
+ * Opens the terminal into `element` and attaches mouse behaviour. The WebGL renderer is
+ * attached separately (attachWebgl): the pane registry knows then whether the pane shows.
+ */
 export function openTerminalView(view: TerminalView, element: HTMLElement): void {
+  // Re-opening into a fresh element (StrictMode remount) must not stack two sets of listeners.
+  viewListeners.get(view)?.abort()
+  const listeners = new AbortController()
+  viewListeners.set(view, listeners)
+  const { signal } = listeners
+
   view.openedElement = element
   view.term.open(element)
 
@@ -215,7 +263,7 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
     event.stopImmediatePropagation()
     const text = event.clipboardData?.getData('text/plain') ?? ''
     pasteOnce(view.term, text)
-  }, true)
+  }, { capture: true, signal })
 
   // When the app turns on mouse reporting (Claude's fullscreen UI does), xterm would forward the right button to it and
   // Claude pastes on a reported right-click by itself, on top of our paste below. The right button belongs to
@@ -229,8 +277,8 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
       view.term.focus()
     }
   }
-  element.addEventListener('mousedown', swallowRightButton, true)
-  element.addEventListener('mouseup', swallowRightButton, true)
+  element.addEventListener('mousedown', swallowRightButton, { capture: true, signal })
+  element.addEventListener('mouseup', swallowRightButton, { capture: true, signal })
 
   element.addEventListener('contextmenu', (event: MouseEvent): void => {
     event.preventDefault()
@@ -244,7 +292,7 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
     } else {
       void copySelectionToClipboard(view.term)
     }
-  })
+  }, { signal })
 
   attachFileDrop(element, view.term)
 
@@ -259,14 +307,12 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
       event.stopPropagation()
       view.onZoom(event.deltaY < 0 ? 'in' : 'out')
     },
-    { capture: true, passive: false }
+    { capture: true, passive: false, signal }
   )
 
   element.addEventListener('mousedown', (): void => {
     view.term.focus()
-  })
-
-  loadWebglRenderer(view)
+  }, { signal })
 }
 
 /** Fits the terminal to its container; a zero-sized container is never fit. */
@@ -325,11 +371,15 @@ export function observeTerminalResize(view: TerminalView, element: HTMLElement):
   }
 }
 
-/** Disposes the terminal (and with it all loaded addons) and cancels work. */
+/** Disposes the terminal (and with it all loaded addons), removes its listeners and cancels work. */
 export function disposeTerminalView(view: TerminalView): void {
   if (view.fitFrame !== null) {
     cancelAnimationFrame(view.fitFrame)
     view.fitFrame = null
   }
+  viewListeners.get(view)?.abort()
+  viewListeners.delete(view)
+  // term.dispose() disposes the addons too; clearing the field keeps detachWebgl a no-op.
+  view.webgl = null
   view.term.dispose()
 }
