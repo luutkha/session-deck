@@ -1,6 +1,6 @@
 // Test helpers: real git repositories in the OS temp dir. Used only by *.test.ts files.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -36,14 +36,32 @@ export function writeText(filePath: string, content: string): void {
  * Returns the repo path and the commit sha of main.
  */
 export function makeRepo(label: string): { readonly repo: string; readonly mainSha: string } {
+  const template = repoTemplate()
   const repo = makeTempDir(label)
-  git(repo, 'init', '-b', 'main')
+  // Copying a ready repo is one file-system call; git init + add + commit is five process spawns (slow on Windows).
+  cpSync(template.dir, repo, { recursive: true })
+  return { repo, mainSha: template.mainSha }
+}
+
+let cachedTemplate: { readonly dir: string; readonly mainSha: string } | undefined
+
+/** Built once per test worker; the dir is removed with the others by cleanupTempDirs only at process exit. */
+function repoTemplate(): { readonly dir: string; readonly mainSha: string } {
+  if (cachedTemplate) return cachedTemplate
+  const dir = mkdtempSync(path.join(tmpdir(), 'sd-git-template-'))
+  process.once('exit', () => rmSync(dir, { recursive: true, force: true }))
+  const real = realpathSync.native(dir)
+  git(real, 'init', '-b', 'main')
   for (const name of ['README.md', 'a.txt', 'b.txt', 'c.txt', 'gone.txt']) {
-    writeText(path.join(repo, name), `${name} line 1\nline 2\nline 3\n`)
+    writeText(path.join(real, name), `${name} line 1
+line 2
+line 3
+`)
   }
-  git(repo, 'add', '-A')
-  git(repo, 'commit', '-m', 'initial')
-  return { repo, mainSha: git(repo, 'rev-parse', 'HEAD') }
+  git(real, 'add', '-A')
+  git(real, 'commit', '-m', 'initial')
+  cachedTemplate = { dir: real, mainSha: git(real, 'rev-parse', 'HEAD') }
+  return cachedTemplate
 }
 
 /** Adds a linked worktree on a new branch `branch` from `base`. Returns its real path and base commit. */
