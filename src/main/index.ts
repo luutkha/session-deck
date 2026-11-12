@@ -176,7 +176,10 @@ if (!gotTheLock) {
       onError
     })
 
-    const pty = new PtyManager()
+    // Active terminals get a short batch window; hidden ones can wait longer (output still lands in replay).
+    const pty = new PtyManager({
+      flushDelayMs: (id) => (activeSessions.all().includes(id) ? 16 : 100)
+    })
 
     function sendToWindow(channel: string, ...args: unknown[]): void {
       windows.broadcast(channel, ...args)

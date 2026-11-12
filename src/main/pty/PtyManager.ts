@@ -39,12 +39,23 @@ export function sanitizeChildEnv(env: Record<string, string>): Record<string, st
 
 export type SpawnFn = typeof nodePtySpawn
 
+type TimerHandle = ReturnType<typeof setTimeout>
+
+/** One flushed batch is appended/emitted as a whole; bigger batches wait no longer. */
+export const FLUSH_THRESHOLD_CHARS = 65_536
+export const DEFAULT_FLUSH_DELAY_MS = 16
+
 export interface PtyManagerDeps {
   readonly spawn?: SpawnFn
   readonly platform?: NodeJS.Platform
   readonly bufferLimit?: number
   /** How processes are stopped. Defaults to a real process-tree killer, or a no-op when fake PTYs are injected. */
   readonly treeKiller?: TreeKiller
+  /** How long output is batched before one append/emit. Per session: hidden terminals can wait longer. */
+  readonly flushDelayMs?: (id: Id) => number
+  /** Timer seams so tests control time. Defaults to setTimeout/clearTimeout. */
+  readonly setTimer?: (callback: () => void, ms: number) => TimerHandle
+  readonly clearTimer?: (handle: TimerHandle) => void
 }
 
 export interface StartOptions {
@@ -63,6 +74,13 @@ export type DataListener = (id: Id, data: string, seq: number) => void
 export type ExitListener = (id: Id, code: number | null) => void
 export type StartListener = (id: Id) => void
 
+/** Output that has arrived but is not yet appended/emitted (batched per session). */
+interface PendingOutput {
+  readonly chunks: string[]
+  chars: number
+  timer: TimerHandle | null
+}
+
 function realPid(proc: IPty): number | null {
   return typeof proc.pid === 'number' && proc.pid > 0 ? proc.pid : null
 }
@@ -80,8 +98,12 @@ export class PtyManager {
   private readonly platform: NodeJS.Platform
   private readonly bufferLimit: number
   private readonly treeKiller: TreeKiller
+  private readonly flushDelayMs: (id: Id) => number
+  private readonly setTimer: (callback: () => void, ms: number) => TimerHandle
+  private readonly clearTimer: (handle: TimerHandle) => void
   private readonly processes = new Map<Id, IPty>()
   private readonly buffers = new Map<Id, RingBuffer>()
+  private readonly pending = new Map<Id, PendingOutput>()
   private readonly dataListeners = new Set<DataListener>()
   private readonly exitListeners = new Set<ExitListener>()
   private readonly startListeners = new Set<StartListener>()
@@ -91,23 +113,29 @@ export class PtyManager {
     this.platform = deps.platform ?? process.platform
     this.bufferLimit = deps.bufferLimit ?? DEFAULT_LIMIT_CHARS
     this.treeKiller = deps.treeKiller ?? (deps.spawn ? NOOP_TREE_KILLER : createTreeKiller(this.platform))
+    this.flushDelayMs = deps.flushDelayMs ?? (() => DEFAULT_FLUSH_DELAY_MS)
+    this.setTimer = deps.setTimer ?? ((callback, ms) => setTimeout(callback, ms))
+    this.clearTimer = deps.clearTimer ?? ((handle) => clearTimeout(handle))
   }
 
   start(opts: StartOptions): void {
     if (this.processes.has(opts.sessionId)) {
       throw new Error(`Session already running: ${opts.sessionId}`)
     }
-    this.launch(opts, this.getOrCreateBuffer(opts.sessionId))
+    this.getOrCreateBuffer(opts.sessionId)
+    this.launch(opts)
   }
 
   restart(opts: StartOptions): void {
+    // Emit what the old process already printed before the buffer is cleared.
+    this.flush(opts.sessionId)
     const previous = this.processes.get(opts.sessionId)
     if (previous) {
       this.terminateSync([previous])
     }
     const buffer = this.getOrCreateBuffer(opts.sessionId)
     buffer.clear()
-    this.launch(opts, buffer)
+    this.launch(opts)
   }
 
   onData(cb: DataListener): () => void {
@@ -150,6 +178,8 @@ export class PtyManager {
 
   /** Stops the session's process AND everything it started (a running command, a dev server...). */
   kill(id: Id): void {
+    // Never lose output the old process already produced.
+    this.flush(id)
     const proc = this.processes.get(id)
     if (!proc) return
     const pid = realPid(proc)
@@ -162,6 +192,7 @@ export class PtyManager {
   }
 
   killAll(): void {
+    this.flushAll()
     this.terminateSync([...this.processes.values()])
   }
 
@@ -173,11 +204,32 @@ export class PtyManager {
   }
 
   replay(id: Id): PtyReplay {
+    // A hydration must never miss output that is still sitting in the batch.
+    this.flush(id)
     const buffer = this.buffers.get(id)
     if (!buffer) {
       return { data: '', seq: 0 }
     }
     return buffer.snapshot()
+  }
+
+  /** Appends + emits this session's batched output now (one append, one emitData). No-op when nothing is pending. */
+  flush(id: Id): void {
+    const pending = this.pending.get(id)
+    if (!pending) {
+      return
+    }
+    this.pending.delete(id)
+    if (pending.timer !== null) {
+      this.clearTimer(pending.timer)
+      pending.timer = null
+    }
+    if (pending.chars === 0) {
+      return
+    }
+    const data = pending.chunks.join('')
+    const seq = this.getOrCreateBuffer(id).append(data)
+    this.emitData(id, data, seq)
   }
 
   isRunning(id: Id): boolean {
@@ -191,7 +243,9 @@ export class PtyManager {
   }
 
   dispose(): void {
+    // killAll flushes pending output first, so nothing is lost on quit.
     this.killAll()
+    this.pending.clear()
     this.processes.clear()
     this.buffers.clear()
     this.dataListeners.clear()
@@ -209,7 +263,7 @@ export class PtyManager {
     return buffer
   }
 
-  private launch(opts: StartOptions, buffer: RingBuffer): void {
+  private launch(opts: StartOptions): void {
     this.validateCwd(opts.cwd)
     const id = opts.sessionId
     const { file, args } = buildCommandLaunch(this.platform, opts.command ?? 'claude', opts.claudeArgs, opts.internalArgs)
@@ -243,17 +297,47 @@ export class PtyManager {
       if (this.processes.get(id) !== proc) {
         return
       }
-      const seq = buffer.append(data)
-      this.emitData(id, data, seq)
+      this.queueOutput(id, data)
     })
 
     proc.onExit((event) => {
       if (this.processes.get(id) !== proc) {
         return
       }
+      // The last output must reach listeners (and the replay buffer) before the exit event.
+      this.flush(id)
       this.processes.delete(id)
       this.emitExit(id, event.exitCode)
     })
+  }
+
+  private queueOutput(id: Id, data: string): void {
+    let pending = this.pending.get(id)
+    if (!pending) {
+      pending = { chunks: [], chars: 0, timer: null }
+      this.pending.set(id, pending)
+    }
+    pending.chunks.push(data)
+    pending.chars += data.length
+    if (pending.chars >= FLUSH_THRESHOLD_CHARS) {
+      this.flush(id)
+      return
+    }
+    if (pending.timer === null) {
+      pending.timer = this.setTimer(() => {
+        // A manual flush/exit may already have taken this batch.
+        if (this.pending.get(id) === pending) {
+          pending.timer = null
+          this.flush(id)
+        }
+      }, this.flushDelayMs(id))
+    }
+  }
+
+  private flushAll(): void {
+    for (const id of [...this.pending.keys()]) {
+      this.flush(id)
+    }
   }
 
   private validateCwd(cwd: string): void {

@@ -51,4 +51,45 @@ describe('RingBuffer', () => {
     expect(buffer.snapshot()).toEqual({ data: '', seq: 0 })
     expect(buffer.append('c')).toBe(3)
   })
+
+  it('drops whole oldest chunks, keeping the rest in order', () => {
+    const buffer = new RingBuffer(10)
+    buffer.append('aaa')
+    buffer.append('bbb')
+    buffer.append('ccc')
+    buffer.append('ddd')
+    expect(buffer.snapshot()).toEqual({ data: 'bbbcccddd', seq: 4 })
+  })
+
+  it('keeps memory bounded over many appends (no array copy per append)', () => {
+    const buffer = new RingBuffer(100)
+    for (let i = 0; i < 50_000; i += 1) {
+      buffer.append('xxxxxxxxxx')
+    }
+    const snapshot = buffer.snapshot()
+    expect(snapshot.seq).toBe(50_000)
+    // The live tail (newest chunk may exceed the limit alone) plus nothing else.
+    expect(snapshot.data.length).toBeLessThanOrEqual(110)
+    const internals = buffer as unknown as { chunks: unknown[]; head: number }
+    // Dead chunks are compacted away, so the backing array never tracks the append count.
+    expect(internals.chunks.length).toBeLessThanOrEqual(1100)
+    expect(internals.head).toBeLessThanOrEqual(internals.chunks.length)
+  })
+
+  it('caches the snapshot until the next append or clear', () => {
+    const buffer = new RingBuffer()
+    buffer.append('a')
+    const first = buffer.snapshot()
+    expect(buffer.snapshot()).toBe(first)
+
+    buffer.append('b')
+    const second = buffer.snapshot()
+    expect(second).toEqual({ data: 'ab', seq: 2 })
+    expect(second).not.toBe(first)
+
+    buffer.clear()
+    const third = buffer.snapshot()
+    expect(third).toEqual({ data: '', seq: 0 })
+    expect(third).not.toBe(second)
+  })
 })

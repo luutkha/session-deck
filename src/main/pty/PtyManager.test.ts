@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IPty } from 'node-pty'
-import { PtyManager, sanitizeChildEnv } from './PtyManager'
-import type { SpawnFn, StartOptions, DataListener, ExitListener } from './PtyManager'
+import { PtyManager, sanitizeChildEnv, FLUSH_THRESHOLD_CHARS, DEFAULT_FLUSH_DELAY_MS } from './PtyManager'
+import type { SpawnFn, StartOptions, DataListener, ExitListener, PtyManagerDeps } from './PtyManager'
 
 class FakePty {
   readonly dataListeners = new Set<(data: string) => void>()
@@ -135,7 +135,9 @@ describe('PtyManager', () => {
     manager.start(startOpts())
 
     ptys[0].fireData('foo')
+    manager.flush('s1')
     ptys[0].fireData('bar')
+    manager.flush('s1')
 
     expect(events).toEqual([
       { id: 's1', data: 'foo', seq: 1 },
@@ -149,8 +151,11 @@ describe('PtyManager', () => {
     manager.start(startOpts())
 
     ptys[0].fireData('aaa')
+    manager.flush('s1')
     ptys[0].fireData('bbb')
+    manager.flush('s1')
     ptys[0].fireData('c')
+    manager.flush('s1')
 
     expect(manager.replay('s1')).toEqual({ data: 'bbbc', seq: 3 })
   })
@@ -541,5 +546,197 @@ describe('PtyManager stops the whole process tree', () => {
     manager.kill('s1')
     expect(() => pending[0]()).not.toThrow()
     expect(() => manager.killAll()).not.toThrow()
+  })
+})
+
+describe('PtyManager output batching', () => {
+  interface ManualTimers {
+    readonly timers: Map<number, { cb: () => void; ms: number }>
+    readonly setTimer: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>
+    readonly clearTimer: (handle: ReturnType<typeof setTimeout>) => void
+    runAll(): void
+  }
+
+  function manualTimers(): ManualTimers {
+    let nextId = 0
+    const timers = new Map<number, { cb: () => void; ms: number }>()
+    return {
+      timers,
+      setTimer: (cb, ms) => {
+        nextId += 1
+        timers.set(nextId, { cb, ms })
+        return nextId as unknown as ReturnType<typeof setTimeout>
+      },
+      clearTimer: (handle) => {
+        timers.delete(handle as unknown as number)
+      },
+      runAll: () => {
+        for (const [id, timer] of [...timers]) {
+          timers.delete(id)
+          timer.cb()
+        }
+      }
+    }
+  }
+
+  function setup(extra: Omit<PtyManagerDeps, 'spawn' | 'setTimer' | 'clearTimer'> = {}) {
+    const harness = makeSpawnHarness()
+    const timers = manualTimers()
+    const manager = new PtyManager({
+      spawn: harness.spawn,
+      platform: 'linux',
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+      ...extra
+    })
+    const events: Array<{ id: string; data: string; seq: number }> = []
+    manager.onData((id, data, seq) => events.push({ id, data, seq }))
+    return { ...harness, timers, manager, events }
+  }
+
+  it('joins chunks in the window into one emitData with one seq', () => {
+    const { manager, ptys, timers, events } = setup()
+    manager.start(startOpts())
+
+    ptys[0].fireData('foo')
+    ptys[0].fireData('bar')
+    expect(events).toEqual([])
+    expect(timers.timers.size).toBe(1)
+
+    timers.runAll()
+
+    expect(events).toEqual([{ id: 's1', data: 'foobar', seq: 1 }])
+    expect(manager.replay('s1')).toEqual({ data: 'foobar', seq: 1 })
+  })
+
+  it('a chunk after the flush starts a new batch with the next seq', () => {
+    const { manager, ptys, timers, events } = setup()
+    manager.start(startOpts())
+
+    ptys[0].fireData('one')
+    timers.runAll()
+    ptys[0].fireData('two')
+    expect(events).toHaveLength(1)
+    timers.runAll()
+
+    expect(events).toEqual([
+      { id: 's1', data: 'one', seq: 1 },
+      { id: 's1', data: 'two', seq: 2 }
+    ])
+  })
+
+  it('flush(id) emits the pending batch immediately', () => {
+    const { manager, ptys, timers, events } = setup()
+    manager.start(startOpts())
+
+    ptys[0].fireData('now')
+    manager.flush('s1')
+
+    expect(events).toEqual([{ id: 's1', data: 'now', seq: 1 }])
+    expect(timers.timers.size).toBe(0)
+  })
+
+  it('exit flushes pending data before the exit event', () => {
+    const { manager, ptys, timers } = setup()
+    const log: string[] = []
+    manager.onData((_id, data, seq) => log.push(`data:${data}:${seq}`))
+    manager.onExit((_id, code) => log.push(`exit:${code}`))
+    manager.start(startOpts())
+
+    ptys[0].fireData('tail')
+    ptys[0].fireExit(0)
+
+    expect(log).toEqual(['data:tail:1', 'exit:0'])
+    expect(timers.timers.size).toBe(0)
+    expect(manager.replay('s1')).toEqual({ data: 'tail', seq: 1 })
+  })
+
+  it('replay snapshot flushes pending output first', () => {
+    const { manager, ptys, timers, events } = setup()
+    manager.start(startOpts())
+
+    ptys[0].fireData('pending')
+    expect(manager.replay('s1')).toEqual({ data: 'pending', seq: 1 })
+
+    expect(events).toEqual([{ id: 's1', data: 'pending', seq: 1 }])
+    expect(timers.timers.size).toBe(0)
+    timers.runAll()
+    expect(events).toHaveLength(1)
+  })
+
+  it('flushes immediately once the batch reaches the 64KB threshold', () => {
+    const { manager, ptys, timers, events } = setup()
+    manager.start(startOpts())
+    const first = 'a'.repeat(40_000)
+    const second = 'b'.repeat(40_000)
+
+    ptys[0].fireData(first)
+    expect(events).toEqual([])
+    ptys[0].fireData(second)
+
+    expect(events).toEqual([{ id: 's1', data: first + second, seq: 1 }])
+    expect(timers.timers.size).toBe(0)
+    expect(manager.replay('s1').data.length).toBe(FLUSH_THRESHOLD_CHARS + 14_464)
+  })
+
+  it('restart flushes the old batch before clearing the buffer', () => {
+    const { manager, ptys, timers, events } = setup()
+    const opts = startOpts()
+    manager.start(opts)
+
+    ptys[0].fireData('old')
+    manager.restart(opts)
+
+    expect(events).toEqual([{ id: 's1', data: 'old', seq: 1 }])
+    expect(timers.timers.size).toBe(0)
+    expect(manager.replay('s1')).toEqual({ data: '', seq: 0 })
+
+    ptys[1].fireData('new')
+    manager.flush('s1')
+    expect(manager.replay('s1')).toEqual({ data: 'new', seq: 2 })
+  })
+
+  it('kill and dispose flush pending output instead of losing it', () => {
+    const killed = setup()
+    killed.manager.start(startOpts())
+    killed.ptys[0].fireData('before kill')
+    killed.manager.kill('s1')
+    expect(killed.events).toEqual([{ id: 's1', data: 'before kill', seq: 1 }])
+
+    const disposed = setup()
+    disposed.manager.start(startOpts())
+    disposed.ptys[0].fireData('before dispose')
+    disposed.manager.dispose()
+    expect(disposed.events).toEqual([{ id: 's1', data: 'before dispose', seq: 1 }])
+    expect(disposed.timers.timers.size).toBe(0)
+  })
+
+  it('a stale process cannot add output after it was replaced', () => {
+    const { manager, ptys, events } = setup()
+    const opts = startOpts()
+    manager.start(opts)
+    manager.restart(opts)
+
+    ptys[0].fireData('stale')
+
+    expect(events).toEqual([])
+  })
+
+  it('uses the per-session delay and defaults to 16ms', () => {
+    const { manager, ptys, timers } = setup({
+      flushDelayMs: (id) => (id === 'active' ? 16 : 100)
+    })
+    manager.start(startOpts({ sessionId: 'active' }))
+    manager.start(startOpts({ sessionId: 'hidden' }))
+
+    ptys[0].fireData('a')
+    ptys[1].fireData('h')
+
+    expect([...timers.timers.values()].map((timer) => timer.ms)).toEqual([16, 100])
+
+    const defaults = setup()
+    defaults.manager.start(startOpts())
+    defaults.ptys[0].fireData('d')
+    expect([...defaults.timers.timers.values()].map((timer) => timer.ms)).toEqual([DEFAULT_FLUSH_DELAY_MS])
   })
 })
