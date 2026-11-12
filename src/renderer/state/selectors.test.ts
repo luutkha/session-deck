@@ -13,6 +13,7 @@ import {
   filterBySearch,
   filterStatusSectionsBySearch,
   filterStatusSectionsByStatus,
+  orderSectionSessions,
   type StatusSection
 } from './selectors'
 
@@ -517,5 +518,57 @@ describe('dropEmptySections', () => {
 
   it('returns an empty list when nothing matches', () => {
     expect(dropEmptySections([empty], true)).toEqual([])
+  })
+})
+
+describe('orderSectionSessions', () => {
+  const g1 = makeGroup('g1', 'Group 1')
+  const g2 = makeGroup('g2', 'Group 2')
+  const s1 = makeSession('s1', 'Session 1', 'g1', 0)
+  const s2 = makeSession('s2', 'Session 2', 'g1', 1)
+  const s3 = makeSession('s3', 'Session 3', 'g2', 0)
+  const reverse = (sessions: readonly Session[]): readonly Session[] => [...sessions].reverse()
+
+  it('orders the sessions inside every section and keeps section order and fields', () => {
+    const sections = [
+      { group: g1, sessions: [s1, s2] },
+      { group: g2, sessions: [s3] }
+    ]
+    const result = orderSectionSessions(sections, reverse)
+    expect(result.map(section => section.group.id)).toEqual(['g1', 'g2'])
+    expect(result[0].sessions.map(s => s.id)).toEqual(['s2', 's1'])
+    expect(result[1].sessions.map(s => s.id)).toEqual(['s3'])
+  })
+
+  it('gives the order function only the sessions of that section', () => {
+    const seen: string[][] = []
+    const order = (sessions: readonly Session[]): readonly Session[] => {
+      seen.push(sessions.map(s => s.id))
+      return sessions
+    }
+    orderSectionSessions(
+      [
+        { group: g1, sessions: [s1, s2] },
+        { group: g2, sessions: [s3] }
+      ],
+      order
+    )
+    expect(seen).toEqual([['s1', 's2'], ['s3']])
+  })
+
+  it('keeps empty sections and works with sections that are not group sections', () => {
+    const sections = [{ key: 'todo', sessions: [] as readonly Session[], label: 'Todo' }]
+    const result = orderSectionSessions(sections, reverse)
+    expect(result).toEqual([{ key: 'todo', sessions: [], label: 'Todo' }])
+  })
+
+  it('does not mutate the input sections or their session lists', () => {
+    const sessions = [s1, s2]
+    const sections = [{ group: g1, sessions }]
+    const result = orderSectionSessions(sections, reverse)
+    expect(sections[0].sessions).toBe(sessions)
+    expect(sessions.map(s => s.id)).toEqual(['s1', 's2'])
+    expect(result[0]).not.toBe(sections[0])
+    expect(result[0].sessions.map(s => s.id)).toEqual(['s2', 's1'])
   })
 })
