@@ -233,4 +233,10 @@ describe('needsYouCounts', () => {
     const runtime = new Map<string, RuntimeState>([['c1', { ...bell, sessionId: 'c1' }]])
     expect(needsYouCounts(data, runtime)).toEqual({ ops: 0, code: 0 })
   })
+
+  it('never counts Jarvis in either mode (D53)', () => {
+    const data = store([session({ id: 'j', role: 'jarvis' })])
+    const runtime = new Map<string, RuntimeState>([['j', { ...bell, sessionId: 'j' }]])
+    expect(needsYouCounts(data, runtime)).toEqual({ ops: 0, code: 0 })
+  })
 })

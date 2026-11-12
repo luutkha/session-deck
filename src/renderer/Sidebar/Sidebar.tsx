@@ -16,8 +16,11 @@ import {
   orderSectionSessions,
   pruneStatusFilter,
   splitClosed,
-  workspaceCollapseKey
+  workspaceCollapseKey,
+  type Section,
+  type StatusSection as StatusSectionData
 } from '../state/selectors'
+import { useSharedNow } from '../state/useClock'
 import { folderKey } from '../shell/projectTabs'
 import { registerSidebarView, type SidebarViewControl } from '../jarvis/sidebarView'
 import { useMultiSelect } from '../state/useMultiSelect'
@@ -87,6 +90,10 @@ function isReorderOnly(action: { readonly sessionId: Id; readonly groupId: Id | 
   return data.sessions.find((session): boolean => session.id === action.sessionId)?.groupId === action.groupId
 }
 
+/** Stable empties for the grouping that is not on screen, so only the active grouping is ever computed. */
+const NO_GROUP_SECTIONS: readonly Section[] = []
+const NO_STATUS_SECTIONS: readonly StatusSectionData[] = []
+
 interface PendingRemove {
   readonly kind: 'session' | 'group'
   readonly id: Id
@@ -98,7 +105,7 @@ interface PendingRemove {
 export function Sidebar(props: SidebarProps): ReactElement {
   const { data, runtime, activeId, actions, onSelect, onReopen, onNewSession, onEditStatuses } = props
 
-  const internalLastChange = useLastRuntimeChange(runtime)
+  const internalLastChange = useLastRuntimeChange(runtime, props.runtimeLastChange)
   const lastChange: ReadonlyMap<Id, number> = props.runtimeLastChange ?? internalLastChange
 
   const [groupBy, setGroupBy] = useState<GroupBy>(readGroupBy)
@@ -116,7 +123,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
   const [statusCollapsed, setStatusCollapsed] = useState<StatusCollapsedMap>(readStatusCollapsed)
   const [showWorkspaces, setShowWorkspaces] = useState<boolean>(readShowWorkspaces)
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState<StatusCollapsedMap>(readWorkspaceCollapsed)
-  const [now, setNow] = useState<number>(Date.now)
+  const now = useSharedNow(RELATIVE_TIME_INTERVAL_MS)
   const sort = props.sort ?? DEFAULT_SESSION_SORT
   const sortFreeze = useSortFreeze(data.sessions, sort, runtime)
   const [sortHint, setSortHint] = useState<string | null>(null)
@@ -125,11 +132,6 @@ export function Sidebar(props: SidebarProps): ReactElement {
     const timer = window.setTimeout((): void => setSortHint(null), SORT_HINT_MS)
     return (): void => window.clearTimeout(timer)
   }, [sortHint])
-
-  useEffect((): (() => void) => {
-    const interval = window.setInterval((): void => setNow(Date.now()), RELATIVE_TIME_INTERVAL_MS)
-    return (): void => window.clearInterval(interval)
-  }, [])
 
   useEffect((): void => writeGroupBy(groupBy), [groupBy])
   useEffect((): void => writeClosedCollapsed(closedCollapsed), [closedCollapsed])
@@ -149,19 +151,24 @@ export function Sidebar(props: SidebarProps): ReactElement {
     [sort, runtime, sortFreeze.frozen]
   )
   const groupSections = useMemo(
-    (): ReturnType<typeof groupedSessions> =>
-      orderSectionSessions(
+    (): readonly Section[] => {
+      // Only the grouping on screen is computed: the other one would rebuild every section (sort, split,
+      // filter) for nothing on every store/runtime event.
+      if (groupBy !== 'groups') return NO_GROUP_SECTIONS
+      return orderSectionSessions(
         dropEmptySections(
           filterBySearch(filterByStatus(groupedSessions(data), effectiveStatuses), searchValue),
           filterActive
         ),
         sortOrder
-      ),
-    [data, effectiveStatuses, searchValue, filterActive, sortOrder]
+      )
+    },
+    [groupBy, data, effectiveStatuses, searchValue, filterActive, sortOrder]
   )
   const statusSections = useMemo(
-    (): ReturnType<typeof filterStatusSectionsBySearch> =>
-      orderSectionSessions(
+    (): readonly StatusSectionData[] => {
+      if (groupBy !== 'status') return NO_STATUS_SECTIONS
+      return orderSectionSessions(
         dropEmptySections(
           filterStatusSectionsBySearch(
             filterStatusSectionsByStatus(groupByStatus(data), effectiveStatuses),
@@ -170,8 +177,9 @@ export function Sidebar(props: SidebarProps): ReactElement {
           filterActive
         ),
         sortOrder
-      ),
-    [data, effectiveStatuses, searchValue, filterActive, sortOrder]
+      )
+    },
+    [groupBy, data, effectiveStatuses, searchValue, filterActive, sortOrder]
   )
   const counts = useMemo(() => countByStatus(data), [data])
   const { open: openSessions, closed: closedSessions } = useMemo(() => splitClosed(data), [data])

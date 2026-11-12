@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Plus, Search, Tag } from 'lucide-react'
 import type { Id, QueuedPrompt, RuntimeState, SessionUsage, StoreData } from '../../shared/types'
+import { useSharedNow } from '../state/useClock'
 import { BulkActionBar } from '../components/BulkActionBar'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -84,14 +85,9 @@ export function HubView(props: HubViewProps): ReactElement {
   } = props
 
   const [query, setQuery] = useState('')
-  const [now, setNow] = useState<number>((): number => Date.now())
+  const now = useSharedNow(NOW_REFRESH_MS)
   const [draggedSessionId, setDraggedSessionId] = useState<Id | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
-
-  useEffect((): (() => void) => {
-    const handle = window.setInterval((): void => setNow(Date.now()), NOW_REFRESH_MS)
-    return (): void => window.clearInterval(handle)
-  }, [])
 
   const sortFreeze = useSortFreeze(data.sessions, sort, runtime)
   const columns = useMemo(

@@ -1,8 +1,9 @@
 import { Moon, X } from 'lucide-react'
-import { type HTMLAttributes, type ReactElement, type ReactNode, type MouseEvent, type Ref } from 'react'
+import { memo, useMemo, useRef, type HTMLAttributes, type ReactElement, type ReactNode, type MouseEvent, type Ref } from 'react'
 import type { AttentionReason, Id, RuntimeState, Session, SessionActivity, StatusDef } from '../../shared/types'
 import type { SelectClickModifiers } from '../state/multiSelect'
-import { activityDetail, activityLabel, isSleeping, relativeTime } from '../state/formatTime'
+import { activityDetail, activityLabel, isSleeping } from '../state/formatTime'
+import { progress } from '../notes/checklistLogic'
 import { AgentBadge, sessionAgent } from '../components/AgentBadge'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -39,8 +40,8 @@ export interface SessionCardOwnProps {
   readonly status: StatusDef | null
   readonly active: boolean
   readonly runtime: RuntimeState | undefined
-  readonly lastChange: number
-  readonly now: number
+  /** Already-formatted "time since" label (parents own the clock), so a tick only re-renders rows whose label changed. */
+  readonly relative: string
   readonly renaming: boolean
   readonly groupBadge: string | null
   readonly showGroupBadge: boolean
@@ -67,6 +68,45 @@ export interface SessionCardOwnProps {
   readonly contextMenuTrigger?: ReactNode
 }
 
+/** The callbacks a card needs, grouped so a section can pass one stable object to every row. */
+export type SessionCardHandlers = Pick<
+  SessionCardOwnProps,
+  | 'onSelect'
+  | 'onStartRename'
+  | 'onCommitRename'
+  | 'onCancelRename'
+  | 'onClose'
+  | 'onDragStart'
+  | 'onDragOverItem'
+  | 'onDropItem'
+  | 'onDragEnd'
+>
+
+/**
+ * Stable forwarding callbacks for the memoized card. A section re-renders on every store/runtime event and
+ * builds fresh closures (they close over the current data, drag state, flat order); the card compares callback
+ * identity, so it cannot receive those directly. This hook keeps the latest closures in a ref and returns one
+ * object whose identity never changes: the card sees unchanged props yet always calls current code.
+ */
+export function useSessionCardHandlers(handlers: SessionCardHandlers): SessionCardHandlers {
+  const latest = useRef(handlers)
+  latest.current = handlers
+  return useMemo(
+    (): SessionCardHandlers => ({
+      onSelect: (id, modifiers): void => latest.current.onSelect(id, modifiers),
+      onStartRename: (id): void => latest.current.onStartRename(id),
+      onCommitRename: (id, name): void => latest.current.onCommitRename(id, name),
+      onCancelRename: (): void => latest.current.onCancelRename(),
+      onClose: (id): void => latest.current.onClose(id),
+      onDragStart: (id): void => latest.current.onDragStart(id),
+      onDragOverItem: (id, position): void => latest.current.onDragOverItem(id, position),
+      onDropItem: (): void => latest.current.onDropItem(),
+      onDragEnd: (): void => latest.current.onDragEnd()
+    }),
+    []
+  )
+}
+
 /**
  * Own props plus whatever a Radix `asChild` Slot injects (ref, onPointerDown, data-state, ...): the card spreads the
  * rest onto its root element so a ContextMenuTrigger wrapping it receives everything it expects.
@@ -76,9 +116,9 @@ export type SessionCardProps = SessionCardOwnProps &
     readonly ref?: Ref<HTMLDivElement>
   }
 
-export function SessionCard(props: SessionCardProps): ReactElement {
+export function SessionCardView(props: SessionCardProps): ReactElement {
   const {
-    session, status, active, runtime, lastChange, now, renaming,
+    session, status, active, runtime, relative, renaming,
     groupBadge, showGroupBadge, attention,
     showIndicator, indicatorAriaLabel, indicatorClass,
     draggable, dragOver, selected = false,
@@ -116,7 +156,6 @@ export function SessionCard(props: SessionCardProps): ReactElement {
   const showActivity = runtime !== undefined && runtime.run !== 'exited' && activity !== null
   const detail = activityDetail(runtime)
   const fullDetail = runtime?.activityMessage?.trim() ?? ''
-  const changedAt = runtime?.activityAt ?? lastChange
 
   return (
     <div
@@ -275,8 +314,96 @@ export function SessionCard(props: SessionCardProps): ReactElement {
             </Tooltip>
           ) : null}
         </span>
-        <span className="ml-2 shrink-0 tabular-nums">{relativeTime(now, changedAt)}</span>
+        <span className="ml-2 shrink-0 tabular-nums">{relative}</span>
       </div>
     </div>
   )
 }
+
+/** Notes only ever show as a present/absent chip on the card. */
+function hasNotes(session: Session): boolean {
+  return (session.notes ?? '').trim().length > 0
+}
+
+function sameSession(prev: Session, next: Session): boolean {
+  if (prev === next) return true
+  if (prev.id !== next.id || prev.name !== next.name || prev.cwd !== next.cwd) return false
+  if (sessionAgent(prev) !== sessionAgent(next)) return false
+  if ((prev.keepAwake === true) !== (next.keepAwake === true)) return false
+  if (hasNotes(prev) !== hasNotes(next)) return false
+  if ((prev.queue?.length ?? 0) !== (next.queue?.length ?? 0)) return false
+  const before = progress(prev.checklist ?? [])
+  const after = progress(next.checklist ?? [])
+  return before.done === after.done && before.total === after.total
+}
+
+function sameStatus(prev: StatusDef | null, next: StatusDef | null): boolean {
+  if (prev === next) return true
+  if (prev === null || next === null) return false
+  return prev.name === next.name && prev.color === next.color
+}
+
+function sameRuntime(prev: RuntimeState | undefined, next: RuntimeState | undefined): boolean {
+  if (prev === next) return true
+  if (prev === undefined || next === undefined) return false
+  return (
+    prev.run === next.run &&
+    prev.exitCode === next.exitCode &&
+    prev.attention === next.attention &&
+    (prev.activity ?? null) === (next.activity ?? null) &&
+    (prev.activityMessage ?? null) === (next.activityMessage ?? null) &&
+    (prev.activityAt ?? null) === (next.activityAt ?? null) &&
+    (prev.sleeping === true) === (next.sleeping === true) &&
+    (prev.remoteControl === true) === (next.remoteControl === true)
+  )
+}
+
+/**
+ * Memo comparison for one session row. Every field SessionCardView renders is covered:
+ * - session: id, name, cwd (folder segment + title), agent and keepAwake (AgentBadge), notes presence
+ *   (notes chip), queue length (queue chip), checklist done/total (progress chip and its complete colour);
+ * - status: name + colour (the dot uses the colour);
+ * - runtime: run, exitCode, attention, activity, activityMessage, activityAt (activity label, detail, indicator),
+ *   sleeping (moon icon + dimmed row), remoteControl (AgentBadge);
+ * - the pre-formatted `relative` label (a 30 s clock tick only re-renders rows whose label changed), active,
+ *   selected, renaming, groupBadge, showGroupBadge, attention, showIndicator, indicatorAriaLabel,
+ *   indicatorClass, draggable, dragOver, contextMenuTrigger;
+ * - the nine callbacks, kept stable by useSessionCardHandlers.
+ * Deliberately not compared: what a Radix ContextMenuTrigger Slot injects (onContextMenu, pointer handlers,
+ * ref, style). Those get a fresh identity on every parent render and only forward to stable Radix callbacks;
+ * comparing them would defeat the memo. `data-state` is compared because it flips when the menu opens.
+ */
+export function sessionCardPropsEqual(prev: SessionCardProps, next: SessionCardProps): boolean {
+  return (
+    sameSession(prev.session, next.session) &&
+    sameStatus(prev.status, next.status) &&
+    sameRuntime(prev.runtime, next.runtime) &&
+    prev.relative === next.relative &&
+    prev.active === next.active &&
+    (prev.selected ?? false) === (next.selected ?? false) &&
+    prev.renaming === next.renaming &&
+    prev.groupBadge === next.groupBadge &&
+    prev.showGroupBadge === next.showGroupBadge &&
+    prev.attention === next.attention &&
+    prev.showIndicator === next.showIndicator &&
+    prev.indicatorAriaLabel === next.indicatorAriaLabel &&
+    prev.indicatorClass === next.indicatorClass &&
+    prev.draggable === next.draggable &&
+    (prev.dragOver ?? null) === (next.dragOver ?? null) &&
+    prev.contextMenuTrigger === next.contextMenuTrigger &&
+    prev.onSelect === next.onSelect &&
+    prev.onStartRename === next.onStartRename &&
+    prev.onCommitRename === next.onCommitRename &&
+    prev.onCancelRename === next.onCancelRename &&
+    prev.onClose === next.onClose &&
+    prev.onDragStart === next.onDragStart &&
+    prev.onDragOverItem === next.onDragOverItem &&
+    prev.onDropItem === next.onDropItem &&
+    prev.onDragEnd === next.onDragEnd &&
+    (prev as { readonly 'data-state'?: unknown })['data-state'] ===
+      (next as { readonly 'data-state'?: unknown })['data-state']
+  )
+}
+
+/** Memoized row: a store/runtime event now re-renders only the sessions it actually changed. */
+export const SessionCard = memo(SessionCardView, sessionCardPropsEqual)

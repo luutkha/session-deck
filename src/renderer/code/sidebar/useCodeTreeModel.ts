@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { sortSessions, type SessionSort } from '../../state/sessionSort'
 import type { Id, RuntimeState, StoreData, WorktreeChanges } from '../../../shared/types'
 import { useWorktreeChangeCounts } from '../changes'
 import { RELATIVE_TIME_INTERVAL_MS } from '../../Sidebar/sidebarPrefs'
 import { useLastRuntimeChange } from '../../Sidebar/useLastRuntimeChange'
+import { useSharedNow } from '../../state/useClock'
 import {
   buildCodeTree,
   filterCodeTree,
@@ -39,21 +40,11 @@ export interface CodeTreeModel {
   readonly now: number
 }
 
-function useRelativeNow(): number {
-  const [now, setNow] = useState<number>(Date.now)
-  useEffect((): (() => void) => {
-    const interval = window.setInterval((): void => setNow(Date.now()), RELATIVE_TIME_INTERVAL_MS)
-    return (): void => window.clearInterval(interval)
-  }, [])
-  return now
-}
-
 /** Derived sidebar data: the tree, its search result, keyboard order, change counts and time labels. */
 export function useCodeTreeModel(input: CodeTreeModelInput): CodeTreeModel {
   const { data, searchValue, runtime, sort = 'manual', frozen } = input
-  const internalLastChange = useLastRuntimeChange(runtime)
-  const lastChange = input.runtimeLastChange ?? internalLastChange
-  const now = useRelativeNow()
+  const lastChange = useLastRuntimeChange(runtime, input.runtimeLastChange)
+  const now = useSharedNow(RELATIVE_TIME_INTERVAL_MS)
   const tree = useMemo(
     (): CodeTree => orderCodeTreeSessions(buildCodeTree(data), (sessions) => sortSessions(sessions, sort, runtime, frozen)),
     [data, sort, runtime, frozen]

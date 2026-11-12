@@ -1,11 +1,12 @@
 import { type DragEvent as ReactDragEvent, type ReactElement } from 'react'
-import type { Group, Id, RuntimeState, Session, StoreData } from '../../shared/types'
+import type { Group, Id, RuntimeState, Session, StatusDef, StoreData } from '../../shared/types'
 import type { DragItem, DropOver } from '../state/dropTarget'
 import type { SelectClickModifiers } from '../state/multiSelect'
+import { relativeTime } from '../state/formatTime'
 import { attentionClass, resolveDropPosition } from './uiLogic'
 import { DropHereHint, SectionHeader } from './SectionHeader'
 import { GroupContextMenu } from './GroupContextMenu'
-import { SessionCard } from './SessionCard'
+import { SessionCard, useSessionCardHandlers } from './SessionCard'
 import { SessionContextMenu } from './SessionContextMenu'
 import { toggleRead } from '../attention/needsYou'
 import { InlineEdit } from './InlineEdit'
@@ -16,6 +17,8 @@ export interface GroupSectionProps {
   readonly group: Group | null
   readonly sessions: readonly Session[]
   readonly data: StoreData
+  /** Indexed once per store data by SessionList, so a row never scans statuses/groups. */
+  readonly statusById: ReadonlyMap<Id, StatusDef>
   readonly runtime: ReadonlyMap<Id, RuntimeState>
   readonly lastChange: ReadonlyMap<Id, number>
   readonly now: number
@@ -58,7 +61,7 @@ export interface GroupSectionProps {
 
 export function GroupSection(props: GroupSectionProps): ReactElement {
   const {
-    group, sessions, data, runtime, lastChange, now, activeId,
+    group, sessions, data, statusById, runtime, lastChange, now, activeId,
     renamingGroupId, renamingSessionId, drag, dropOver,
     groupBy, draggableSessions, draggableGroupHeader,
     showWorkspaces, workspaceCollapsed, onToggleWorkspace, onNewSessionInFolder,
@@ -70,6 +73,20 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     onDragOverSession, onDragOverUngrouped,
     onDropItem, onDragEnd
   } = props
+
+  // One stable object for every row: the memoized card compares callback identity, and each callback reads the
+  // section's latest closures through a ref (see useSessionCardHandlers).
+  const handlers = useSessionCardHandlers({
+    onSelect,
+    onStartRename: onStartRenameSession,
+    onCommitRename: onRenameSession,
+    onCancelRename,
+    onClose: onCloseSession,
+    onDragStart: onDragStartSession,
+    onDragOverItem: (id, position): void => onDragOverSession({ kind: 'session', id, position }),
+    onDropItem,
+    onDragEnd
+  })
 
   const sectionId = group === null ? 'section-ungrouped' : `section-group-${group.id}`
   const collapsed = group !== null && group.collapsed
@@ -212,11 +229,10 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     const card = (
       <SessionCard
         session={session}
-        status={data.statuses.find((s) => s.id === session.statusId) ?? null}
+        status={session.statusId === null ? null : (statusById.get(session.statusId) ?? null)}
         active={activeId === session.id}
         runtime={state}
-        lastChange={lastChange.get(session.id) ?? session.createdAt}
-        now={now}
+        relative={relativeTime(now, state?.activityAt ?? (lastChange.get(session.id) ?? session.createdAt))}
         renaming={renamingSessionId === session.id}
         groupBadge={groupBadge}
         showGroupBadge={showGroupBadge}
@@ -241,17 +257,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         draggable={draggableSessions}
         dragOver={dropOverForSession}
         selected={selectedIds.has(session.id)}
-        onSelect={onSelect}
-        onStartRename={onStartRenameSession}
-        onCommitRename={onRenameSession}
-        onCancelRename={onCancelRename}
-        onClose={onCloseSession}
-        onDragStart={onDragStartSession}
-        onDragOverItem={(_id, position): void => {
-          onDragOverSession({ kind: 'session', id: session.id, position })
-        }}
-        onDropItem={onDropItem}
-        onDragEnd={onDragEnd}
+        {...handlers}
       />
     )
 

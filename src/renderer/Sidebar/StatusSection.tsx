@@ -1,9 +1,10 @@
 import { type DragEvent as ReactDragEvent, type ReactElement } from 'react'
-import type { Id, RuntimeState, Session, StoreData } from '../../shared/types'
+import type { Group, Id, RuntimeState, Session, StatusDef, StoreData } from '../../shared/types'
 import type { DragItem, DropOver } from '../state/dropTarget'
 import type { SelectClickModifiers } from '../state/multiSelect'
+import { relativeTime } from '../state/formatTime'
 import { DropHereHint, SectionHeader } from './SectionHeader'
-import { SessionCard } from './SessionCard'
+import { SessionCard, useSessionCardHandlers } from './SessionCard'
 import { SessionContextMenu } from './SessionContextMenu'
 import { toggleRead } from '../attention/needsYou'
 import { attentionClass } from './uiLogic'
@@ -15,6 +16,9 @@ export interface StatusSectionProps {
   readonly color: string | null
   readonly sessions: readonly Session[]
   readonly data: StoreData
+  /** Indexed once per store data by SessionList, so a row never scans statuses/groups. */
+  readonly statusById: ReadonlyMap<Id, StatusDef>
+  readonly groupById: ReadonlyMap<Id, Group>
   readonly runtime: ReadonlyMap<Id, RuntimeState>
   readonly lastChange: ReadonlyMap<Id, number>
   readonly now: number
@@ -45,13 +49,27 @@ export interface StatusSectionProps {
 
 export function StatusSection(props: StatusSectionProps): ReactElement {
   const {
-    sectionKey, label, statusId, color, sessions, data, runtime, lastChange, now,
+    sectionKey, label, statusId, color, sessions, data, statusById, groupById, runtime, lastChange, now,
     activeId, renamingSessionId, drag, dropOver, collapsed, draggableSessions,
     selectedIds,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
     onCloseSession, onForkSession, onSetSessionStatus, onMoveSession, onCreateGroupAndMove,
     onRequestRemoveSession, onDragStartSession, onDragOverSession, onDropItem, onDragEnd
   } = props
+
+  // One stable object for every row: the memoized card compares callback identity, and each callback reads the
+  // section's latest closures through a ref (see useSessionCardHandlers).
+  const handlers = useSessionCardHandlers({
+    onSelect,
+    onStartRename: onStartRenameSession,
+    onCommitRename: onRenameSession,
+    onCancelRename,
+    onClose: onCloseSession,
+    onDragStart: onDragStartSession,
+    onDragOverItem: (id, position): void => onDragOverSession({ kind: 'session', id, position }),
+    onDropItem,
+    onDragEnd
+  })
 
   const sectionId = `section-status-${sectionKey}`
 
@@ -91,15 +109,15 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
                 ? dropOver.position
                 : null
 
-            const groupBadge = groupNameFor(session.groupId, data)
+            const groupBadge = groupNameFor(session.groupId, groupById)
+            const changedAt = state?.activityAt ?? (lastChange.get(session.id) ?? session.createdAt)
             const card = (
               <SessionCard
                 session={session}
-                status={data.statuses.find((s) => s.id === session.statusId) ?? null}
+                status={session.statusId === null ? null : (statusById.get(session.statusId) ?? null)}
                 active={activeId === session.id}
                 runtime={state}
-                lastChange={lastChange.get(session.id) ?? session.createdAt}
-                now={now}
+                relative={relativeTime(now, changedAt)}
                 renaming={renamingSessionId === session.id}
                 groupBadge={groupBadge}
                 showGroupBadge={groupBadge !== null}
@@ -124,17 +142,7 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
                 draggable={draggableSessions}
                 dragOver={dropOverForSession}
                 selected={selectedIds.has(session.id)}
-                onSelect={onSelect}
-                onStartRename={onStartRenameSession}
-                onCommitRename={onRenameSession}
-                onCancelRename={onCancelRename}
-                onClose={onCloseSession}
-                onDragStart={onDragStartSession}
-                onDragOverItem={(_id, position): void => {
-                  onDragOverSession({ kind: 'session', id: session.id, position })
-                }}
-                onDropItem={onDropItem}
-                onDragEnd={onDragEnd}
+                {...handlers}
               />
             )
 
@@ -174,8 +182,7 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
   )
 }
 
-function groupNameFor(groupId: Id | null, data: StoreData): string | null {
+function groupNameFor(groupId: Id | null, groupById: ReadonlyMap<Id, Group>): string | null {
   if (groupId === null) return 'Ungrouped'
-  const group = data.groups.find((g) => g.id === groupId)
-  return group?.name ?? null
+  return groupById.get(groupId)?.name ?? null
 }

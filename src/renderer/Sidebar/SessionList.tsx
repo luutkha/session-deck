@@ -1,8 +1,8 @@
-import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react'
-import type { Id, RuntimeState, StoreData } from '../../shared/types'
+import { useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
+import type { Group, Id, RuntimeState, StatusDef, StoreData } from '../../shared/types'
 import type { DropOver, DragItem } from '../state/dropTarget'
 import type { SelectClickModifiers } from '../state/multiSelect'
-import type { Section, StatusSection as StatusSectionData } from '../state/selectors'
+import { indexById, type Section, type StatusSection as StatusSectionData } from '../state/selectors'
 import type { GroupBy, StatusCollapsedMap } from './sidebarPrefs'
 import { GroupSection } from './GroupSection'
 import { StatusSection } from './StatusSection'
@@ -53,6 +53,10 @@ export interface SessionListProps {
 }
 
 export function SessionList(props: SessionListProps): ReactElement {
+  // One lookup table per store data, shared by every row: a row used to scan statuses/groups with `find`.
+  const statusById = useMemo((): ReadonlyMap<Id, StatusDef> => indexById(props.data.statuses), [props.data.statuses])
+  const groupById = useMemo((): ReadonlyMap<Id, Group> => indexById(props.data.groups), [props.data.groups])
+
   return (
     <div
       role="tree"
@@ -69,6 +73,7 @@ export function SessionList(props: SessionListProps): ReactElement {
               group={section.group}
               sessions={section.sessions}
               data={props.data}
+              statusById={statusById}
               runtime={props.runtime}
               lastChange={props.lastChange}
               now={props.now}
@@ -117,6 +122,8 @@ export function SessionList(props: SessionListProps): ReactElement {
               color={section.color}
               sessions={section.sessions}
               data={props.data}
+              statusById={statusById}
+              groupById={groupById}
               runtime={props.runtime}
               lastChange={props.lastChange}
               now={props.now}

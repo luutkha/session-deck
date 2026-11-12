@@ -4,6 +4,7 @@ import {
   dropEmptySections,
   groupedSessions,
   filterByStatus,
+  indexById,
   pruneStatusFilter,
   statusOf,
   flatSessionIds,
@@ -570,5 +571,27 @@ describe('orderSectionSessions', () => {
     expect(sessions.map(s => s.id)).toEqual(['s1', 's2'])
     expect(result[0]).not.toBe(sections[0])
     expect(result[0].sessions.map(s => s.id)).toEqual(['s2', 's1'])
+  })
+})
+
+describe('indexById', () => {
+  it('maps every item by id and keeps the original object identity', () => {
+    const a = makeStatus('todo', 'Todo', '#9e9e9e')
+    const b = makeStatus('doing', 'Doing', '#42a5f5')
+    const map = indexById([a, b])
+    expect(map.get('todo')).toBe(a)
+    expect(map.get('doing')).toBe(b)
+    expect(map.size).toBe(2)
+  })
+
+  it('returns an empty map for an empty list and a missing id reads as undefined', () => {
+    expect(indexById([]).size).toBe(0)
+    expect(indexById([makeStatus('todo', 'Todo', '#9e9e9e')]).get('missing')).toBeUndefined()
+  })
+
+  it('keeps the last item when ids repeat', () => {
+    const first = makeStatus('todo', 'First', '#9e9e9e')
+    const second = makeStatus('todo', 'Second', '#42a5f5')
+    expect(indexById([first, second]).get('todo')).toBe(second)
   })
 })

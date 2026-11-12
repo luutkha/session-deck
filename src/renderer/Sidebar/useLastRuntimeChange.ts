@@ -7,9 +7,14 @@ import type { Id, RuntimeState } from '../../shared/types'
  * session gets a new RuntimeState identity, so comparing entries detects
  * exactly which session changed. Sessions never seen keep no entry; callers
  * fall back to `session.createdAt`.
+ *
+ * `provided` is the map a parent already derived (ModeWorkspace computes it
+ * once and passes it down). When it is given there is nothing to diff, so the
+ * effect does not walk the whole runtime Map again.
  */
 export function useLastRuntimeChange(
-  runtime: ReadonlyMap<Id, RuntimeState>
+  runtime: ReadonlyMap<Id, RuntimeState>,
+  provided?: ReadonlyMap<Id, number>
 ): ReadonlyMap<Id, number> {
   const previousRef = useRef<ReadonlyMap<Id, RuntimeState>>(new Map())
   const [lastChange, setLastChange] = useState<ReadonlyMap<Id, number>>(() => new Map())
@@ -17,6 +22,7 @@ export function useLastRuntimeChange(
   useEffect((): void => {
     const previous = previousRef.current
     previousRef.current = runtime
+    if (provided !== undefined) return
     setLastChange((current) => {
       let next: Map<Id, number> | null = null
       const now = Date.now()
@@ -28,7 +34,7 @@ export function useLastRuntimeChange(
       }
       return next ?? current
     })
-  }, [runtime])
+  }, [runtime, provided])
 
-  return lastChange
+  return provided ?? lastChange
 }

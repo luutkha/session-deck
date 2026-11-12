@@ -95,9 +95,18 @@ export function decideFocus(currentMode: UiMode, target: UiMode, codePoppedOut: 
   return { switchTo: target }
 }
 
-/** Needs-you bells per mode, for the badges on the mode switch. */
+/**
+ * Needs-you bells per mode, for the badges on the mode switch. Sessions are partitioned in one pass:
+ * `dataForMode` used to filter the whole store twice per call, on every runtime event.
+ */
 export function needsYouCounts(data: StoreData | null, runtime: ReadonlyMap<Id, RuntimeState>): NeedsYouCounts {
-  const count = (mode: UiMode): number =>
-    data === null ? 0 : needsYouItems(dataForMode(data, mode).sessions, runtime).length
-  return { ops: count('ops'), code: count('code') }
+  if (data === null) return { ops: 0, code: 0 }
+  const ops: Session[] = []
+  const code: Session[] = []
+  for (const session of data.sessions) {
+    if (session.role === 'jarvis') continue
+    if (sessionMode(session) === 'code') code.push(session)
+    else ops.push(session)
+  }
+  return { ops: needsYouItems(ops, runtime).length, code: needsYouItems(code, runtime).length }
 }

@@ -2,7 +2,7 @@
 // Starts N Shell sessions that each print a line every ~20 ms, opens every one once (so each gets a terminal pane),
 // parks on one session, then measures for DURATION seconds: pty messages per second, renderer busy time (CDP
 // Performance.getMetrics), frames per second, long tasks, JS heap, and CPU seconds of the whole app process tree.
-// Run: npx electron-vite build && node scripts/bench-sessions.cjs [sessions=20] [seconds=15]
+// Run: npx electron-vite build && node scripts/bench-sessions.cjs [sessions=20] [seconds=15] [churn]
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -12,6 +12,8 @@ const { sleep, waitFor, launchApp } = require('./e2e-lib.cjs')
 const PORT = 9495
 const SESSIONS = Number(process.argv[2] ?? 20)
 const SECONDS = Number(process.argv[3] ?? 15)
+// Third arg `churn`: also change a session's notes 10x/s (a store write + broadcast + re-render each), like a busy fleet of agents does.
+const CHURN = process.argv[4] === 'churn'
 const js = (value) => JSON.stringify(value)
 
 /** CPU seconds (user+kernel) of the app's whole process tree, via PowerShell. */
@@ -88,12 +90,19 @@ async function main() {
 
     const metrics = async () => Object.fromEntries((await app.send('Performance.getMetrics')).result.metrics.map((m) => [m.name, m.value]))
     const before = { m: await metrics(), b: await ev('({ ...window.__bench })'), cpu: treeCpuSeconds(app.pid), t: Date.now() }
+    let churnTimer = null
+    if (CHURN) {
+      let n = 0
+      churnTimer = setInterval(() => { n += 1; void ev(`window.api.setSessionNotes(${js(ids[n % ids.length])}, ${js('note ' + n)})`).catch(() => undefined) }, 100)
+    }
     await sleep(SECONDS * 1000)
+    if (churnTimer !== null) clearInterval(churnTimer)
     const after = { m: await metrics(), b: await ev('({ ...window.__bench })'), cpu: treeCpuSeconds(app.pid), t: Date.now() }
     const secs = (after.t - before.t) / 1000
     const d = (key) => after.m[key] - before.m[key]
     const row = {
       sessions: SESSIONS,
+      churn: CHURN,
       seconds: Number(secs.toFixed(1)),
       ptyMsgsPerSec: Math.round((after.b.msgs - before.b.msgs) / secs),
       ptyKBPerSec: Math.round((after.b.bytes - before.b.bytes) / secs / 1024),

@@ -262,6 +262,16 @@ export function countByStatus(data: StoreData): ReadonlyMap<Id | null, number> {
 }
 
 /**
+ * One `id -> item` lookup table. Sidebar rows used to call `statuses.find`/`groups.find` per card; building
+ * the map once per store data keeps a many-session render independent of how many statuses/groups exist.
+ */
+export function indexById<T extends { readonly id: Id }>(items: readonly T[]): ReadonlyMap<Id, T> {
+  const map = new Map<Id, T>()
+  for (const item of items) map.set(item.id, item)
+  return map
+}
+
+/**
  * Case-insensitive search on session name and the final path segment of the
  * working directory. When the query is empty the input sections are returned
  * unchanged (same reference). Sections that become empty after filtering are
