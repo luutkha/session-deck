@@ -6,6 +6,7 @@ import type { TerminalPanesApi } from './useTerminalPanes'
 import { copySelectionToClipboard, pasteClipboardInto } from './paneFactory'
 import type { TerminalContextMenuProps, TerminalMenuTarget } from './TerminalContextMenu'
 import { menuRows } from './terminalMenuLogic'
+import { RESET_TERMINAL_MODES } from './terminalModes'
 
 export interface TerminalMenuDeps {
   readonly panes: TerminalPanesApi
@@ -59,6 +60,7 @@ export function useTerminalMenu(deps: TerminalMenuDeps): TerminalMenuApi {
     onSelectAll: run((): void => term?.selectAll()),
     onFind: run(deps.openSearch, false),
     onClear: run((): void => term?.clear()),
+    onResetModes: run((): void => term?.write(RESET_TERMINAL_MODES)),
     onCopyPath: run((): void => {
       if (session !== undefined) void navigator.clipboard.writeText(session.cwd).catch((): void => undefined)
     }),

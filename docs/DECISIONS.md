@@ -306,6 +306,9 @@ Offered as option 2 of "what next feature we should build?"; the user: "do for 2
 - 3 Live terminal cap: at most `MAX_LIVE_PANES = 12` xterm instances (`renderer/Terminal/paneLru.ts`, effect in `useTerminalPanes.ts`); the least recently shown hidden pane is disposed and rebuilt from main's replay buffer when shown again. 40 sessions: DOM nodes 4,943 -> 2,860, Electron CPU 63-89% -> 50%. `e2e-livepanes` 7/7.
 - Not done: store patches over IPC, per-window pty filtering, 4 instead of 5 git spawns, lower scrollback; the shell/console children (~24-48% at 40 sessions) are outside the app's control.
 
+**D66 · 2026-11-13 · Stuck terminal modes: "Reset Terminal Modes"** · active
+VM report: "can not scroll back to see old message ... old session that still open can scroll, but new or re-open session can not ... i can not select text on it too"; Claude there said fullscreen was turned off after it repeatedly failed to start. Not reproducible with any GPU setting (scrolling works with real GPU, no GPU, SwiftShader, GPU pref Off). Likely cause (not confirmed on the VM): a failed full-screen start leaves the alternate screen / mouse reporting on, so the pane has no scrollback and the mouse goes to the program. Added a right-click row "Reset Terminal Modes" that switches those modes off in the terminal only (`renderer/Terminal/terminalModes.ts`), erasing nothing; `e2e-resetmodes` 6/6. If the VM confirms it, the next step is resetting the modes automatically when a session (re)starts.
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 

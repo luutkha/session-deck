@@ -1,7 +1,7 @@
 // The terminal right-click menu (D59), adapted from stablyai/orca (MIT, (c) 2026 Lovecast Inc.): a Radix dropdown
 // anchored at the click point. The workspace decides which rows apply (split, close pane, fork) and does the work.
 import { useRef, type ReactElement } from 'react'
-import { Clipboard, Copy, Eraser, FolderOpen, GitFork, PanelBottomClose, PanelRightClose, Search, TextSelect, X } from 'lucide-react'
+import { Clipboard, Copy, Eraser, FolderOpen, GitFork, PanelBottomClose, PanelRightClose, RotateCcw, Search, TextSelect, X } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +31,8 @@ export interface TerminalContextMenuProps {
   readonly onSelectAll: () => void
   readonly onFind: () => void
   readonly onClear: () => void
+  /** Switches off a stuck alternate screen / mouse reporting so scrolling and selecting work again. */
+  readonly onResetModes: () => void
   readonly onCopyPath: () => void
   /** Absent = the row is hidden (grid view, fewer than two open sessions, the pane limit). */
   readonly onSplitRight?: () => void
@@ -132,6 +134,10 @@ export function TerminalContextMenu(props: TerminalContextMenuProps): ReactEleme
         <DropdownMenuItem onSelect={props.onClear}>
           <Eraser />
           Clear Screen
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={props.onResetModes}>
+          <RotateCcw />
+          Reset Terminal Modes
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
