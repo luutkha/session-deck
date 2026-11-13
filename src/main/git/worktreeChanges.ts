@@ -4,6 +4,7 @@ import { CHANGES_MAX_FILES, type ChangedFile, type Id, type WorktreeChanges } fr
 import { isDirectory } from './fsCheck'
 import { GIT_FATAL_EXIT_CODE, type GitRun, runGit } from './gitRunner'
 import { countUntrackedAdditions } from './untrackedCount'
+import { mapLimit } from './limiter'
 import { parseStatusZ } from './commit'
 import {
   type LineCounts,
@@ -37,6 +38,9 @@ export async function diffBase(wt: WorktreeRef, run: GitRun = runGit): Promise<s
   return result.code === 0 && SHA_PATTERN.test(sha) ? sha : wt.baseCommit
 }
 
+/** Untracked files read at the same time while counting their lines. */
+const UNTRACKED_READ_CONCURRENCY = 8
+
 function toChangedFile(entry: NameStatusEntry, counts: LineCounts): ChangedFile {
   const file = { path: entry.path, kind: entry.kind, additions: counts.additions, deletions: counts.deletions }
   return entry.oldPath === undefined ? file : { ...file, oldPath: entry.oldPath }
@@ -54,7 +58,8 @@ async function untrackedFile(worktreePath: string, filePath: string): Promise<Ch
 }
 
 async function untrackedFiles(worktreePath: string, lsFilesOutput: string): Promise<ChangedFile[]> {
-  return Promise.all(parseUntrackedZ(lsFilesOutput).map((filePath) => untrackedFile(worktreePath, filePath)))
+  // Bounded: a worktree without a .gitignore can list thousands of untracked files (one lstat + read each).
+  return mapLimit(parseUntrackedZ(lsFilesOutput), UNTRACKED_READ_CONCURRENCY, (filePath) => untrackedFile(worktreePath, filePath))
 }
 
 function compareByPath(a: ChangedFile, b: ChangedFile): number {

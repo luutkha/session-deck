@@ -1,5 +1,6 @@
 // Runs git with execFile (never a shell). Every git call in the Code mode goes through runGit.
 import { execFile } from 'node:child_process'
+import { createLimiter } from './limiter'
 
 export interface GitResult {
   readonly stdout: string
@@ -28,6 +29,12 @@ export const GIT_TIMEOUT_MS = 15000
 export const GIT_MAX_BYTES = 16 * 1024 * 1024
 /** git exits 128 for "fatal" errors (not a repository, unknown revision, bad path...). */
 export const GIT_FATAL_EXIT_CODE = 128
+/**
+ * At most this many git processes run at once, app-wide: a Code mode refresh of many worktrees used to start ~5 per
+ * worktree in one burst (hundreds of child processes). The rest wait in the order they were asked for.
+ */
+export const GIT_MAX_CONCURRENT = 4
+const gitSlots = createLimiter(GIT_MAX_CONCURRENT)
 
 const DEFAULT_OK_CODES: readonly number[] = [0]
 const GIT_CONFIG_ARGS = ['-c', 'core.quotepath=false']
@@ -75,8 +82,10 @@ function failureMessage(stderr: string, subcommand: string): string {
  * Runs `git <args>` in options.cwd. Resolves when the exit code is in okCodes; otherwise rejects with a GitError
  * carrying the first stderr line. Git never prompts (GIT_TERMINAL_PROMPT=0) and its console window stays hidden.
  */
-export const runGit: GitRun = (args, options) =>
-  new Promise<GitResult>((resolve, reject) => {
+export const runGit: GitRun = (args, options) => gitSlots(() => spawnGit(args, options))
+
+function spawnGit(args: readonly string[], options: GitRunOptions): Promise<GitResult> {
+  return new Promise<GitResult>((resolve, reject) => {
     const subcommand = args[0] ?? ''
     const okCodes = options.okCodes ?? DEFAULT_OK_CODES
     execFile(
@@ -110,3 +119,4 @@ export const runGit: GitRun = (args, options) =>
       }
     )
   })
+}

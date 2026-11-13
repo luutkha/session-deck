@@ -73,10 +73,28 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     return repo
   }
 
-  /** One git run per worktree at a time; callers arriving meanwhile share its result. */
-  function computeChanges(worktree: Worktree): Promise<WorktreeChanges> {
+  /** The run that starts after the one in flight, shared by every `fresh` caller that arrived meanwhile. */
+  const trailing = new Map<Id, Promise<WorktreeChanges>>()
+
+  /**
+   * One git run per worktree at a time. A background caller arriving meanwhile shares the running one. A `fresh` caller
+   * (it just changed files, or must see them: Jarvis commit, the refresh after a commit/push, an explicit read) never gets
+   * a result older than its request: it gets the next run, which starts after the running one ends. Git slots are limited
+   * (gitRunner), so a run can stay in flight for a while; without this, such a caller read a snapshot from before its write.
+   */
+  function computeChanges(worktree: Worktree, fresh = false): Promise<WorktreeChanges> {
     const running = inFlight.get(worktree.id)
-    if (running !== undefined) return running
+    if (running !== undefined) {
+      if (!fresh) return running
+      const queued = trailing.get(worktree.id)
+      if (queued !== undefined) return queued
+      const after = running.then(() => undefined, () => undefined).then(() => {
+        trailing.delete(worktree.id)
+        return computeChanges(worktree, true)
+      })
+      trailing.set(worktree.id, after)
+      return after
+    }
     const next = readWorktreeChanges(worktree, deps.now).then((changes) => {
       const previous = latest.get(worktree.id)
       latest.set(worktree.id, changes)
@@ -173,7 +191,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
   }
 
   function changes(worktreeId: Id): Promise<WorktreeChanges> {
-    return computeChanges(worktreeOrThrow(worktreeId))
+    return computeChanges(worktreeOrThrow(worktreeId), true)
   }
 
   function removeWorktree(worktreeId: Id): void {
@@ -191,7 +209,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
   const git = createCodeGitOps({
     store,
     removeFromSessionDeck: removeWorktree,
-    refreshChanges: computeChanges,
+    refreshChanges: (worktree) => computeChanges(worktree, true),
     latestChanges: (id) => latest.get(id),
     openExternal: deps.openExternal,
     ghReady: deps.ghReady
