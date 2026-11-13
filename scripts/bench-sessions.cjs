@@ -27,7 +27,54 @@ const GPU_ARGS = {
   swiftshader: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 }[GPU]
 if (GPU_ARGS === undefined) throw new Error('gpu= must be real, off or swiftshader')
+// `agents=N`: each session also gets N Claude hook events per second (UserPromptSubmit / Stop alternating, POSTed to the
+// app's hook server like Claude Code does), so runtime events, attention and status changes flow like with real agents.
+const AGENTS_PER_SEC = Number((process.argv.find((a) => a.startsWith('agents=')) ?? 'agents=0').slice(7))
+// `profile`: CPU-profile the main process during the measurement (--inspect over CDP) and print its top self-time functions.
+const PROFILE = process.argv.includes('profile')
+// `rprofile`: the same for the renderer (page) process.
+const RPROFILE = process.argv.includes('rprofile')
+// `mut`: count DOM mutations per second by area during the measurement (what does an event repaint?).
+const MUT = process.argv.includes('mut')
 const js = (value) => JSON.stringify(value)
+
+/** Top functions by self time of a V8 CPU profile. */
+function summarizeProfile(profile) {
+  const self = new Map()
+  const byId = new Map(profile.nodes.map((n) => [n.id, n]))
+  const dt = profile.timeDeltas
+  profile.samples.forEach((id, i) => {
+    const n = byId.get(id)
+    const f = n.callFrame
+    const key = `${f.functionName || '(anonymous)'} ${f.url.replace(/^.*[\/](out|node_modules|src)[\/]/, '$1/')}:${f.lineNumber + 1}`
+    self.set(key, (self.get(key) ?? 0) + (dt[i] ?? 0))
+  })
+  const total = [...self.values()].reduce((a, b) => a + b, 0)
+  const idle = [...self.entries()].filter(([k]) => k.startsWith('(idle)') || k.startsWith('(program)')).reduce((a, [, v]) => a + v, 0)
+  const top = [...self.entries()].filter(([k]) => !k.startsWith('(idle)') && !k.startsWith('(program)')).sort((a, b) => b[1] - a[1]).slice(0, 25)
+  return { totalMs: Math.round(total / 1000), idleMs: Math.round(idle / 1000), top: top.map(([k, v]) => `${(v / 1000).toFixed(0).padStart(6)} ms  ${k}`) }
+}
+
+/** Starts/stops the V8 CPU profiler of the Electron main process over its inspector port; returns top functions by self time. */
+async function mainProfiler(port) {
+  const target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json())[0]
+  const ws = new WebSocket(target.webSocketDebuggerUrl)
+  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(new Error('inspector ws error')) })
+  let counter = 0
+  const pending = new Map()
+  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id) } }
+  const send = (method, params = {}) => new Promise((resolve) => { const i = ++counter; pending.set(i, resolve); ws.send(JSON.stringify({ id: i, method, params })) })
+  await send('Profiler.enable')
+  await send('Profiler.setSamplingInterval', { interval: 500 })
+  return {
+    start: () => send('Profiler.start'),
+    stop: async () => {
+      const { result } = await send('Profiler.stop')
+      ws.close()
+      return summarizeProfile(result.profile)
+    }
+  }
+}
 
 /** CPU seconds (user+kernel) of the app's whole process tree, via PowerShell. */
 function treeCpuSeconds(rootPid) {
@@ -79,11 +126,15 @@ async function main() {
   try {
     // A measurement run must not restart itself (the first-run no-GPU restart).
     process.env.SESSIONDECK_GPU_NO_RESTART = '1'
-    app = await launchApp({ port: PORT, userData, extraArgs: GPU_ARGS })
+    const endpointFile = path.join(root, 'endpoint.json')
+    if (AGENTS_PER_SEC > 0) process.env.SESSIONDECK_E2E_ENDPOINT_FILE = endpointFile
+    app = await launchApp({ port: PORT, userData, extraArgs: [...GPU_ARGS, ...(PROFILE ? ['--inspect=9231'] : [])] })
     await sleep(1500)
     const ev = (expr) => app.evaluate(expr)
     await app.send('Performance.enable')
     await ev(`localStorage.setItem('sessiondeck.renderer.v1', ${js(RENDERER)})`)
+    const effectsArg = process.argv.find((a) => a.startsWith('effects='))
+    if (effectsArg) await ev(`localStorage.setItem('sessiondeck.effects.v1', ${js(effectsArg.slice(8))})`)
     await ev('location.reload()').catch(() => undefined)
     await sleep(2500)
     await waitFor(() => ev('typeof window.api.getStore === "function"'), 15000, 300)
@@ -117,12 +168,43 @@ async function main() {
     const metrics = async () => Object.fromEntries((await app.send('Performance.getMetrics')).result.metrics.map((m) => [m.name, m.value]))
     const before = { m: await metrics(), b: await ev('({ ...window.__bench })'), cpu: treeCpuSeconds(app.pid), t: Date.now() }
     let churnTimer = null
+    let agentTimer = null
+    let hookCount = 0
+    if (AGENTS_PER_SEC > 0) {
+      const endpoint = JSON.parse(fs.readFileSync(endpointFile, 'utf8'))
+      const events = ['UserPromptSubmit', 'Stop']
+      let k = 0
+      const perTick = Math.max(1, Math.round((SESSIONS * AGENTS_PER_SEC) / 20)) // 20 ticks per second
+      agentTimer = setInterval(() => {
+        for (let i = 0; i < perTick; i += 1) {
+          const id = ids[k % ids.length]
+          const event = events[Math.floor(k / ids.length) % 2]
+          k += 1
+          hookCount += 1
+          fetch(`http://127.0.0.1:${endpoint.port}/hook/${encodeURIComponent(id)}/${event}`, { method: 'POST', headers: { 'x-token': endpoint.token, 'content-type': 'application/json' }, body: '{}' }).catch(() => undefined)
+        }
+      }, 50)
+    }
+    if (MUT) {
+      await ev(`(() => {
+        window.__mut = {}
+        const area = (n) => { const el = n.nodeType === 1 ? n : n.parentElement; if (!el) return '(none)'; const hit = el.closest('[data-session-card],[data-testid],[role=tablist],[role=tree],aside,header,footer,.xterm,[class*=statusbar]'); if (!hit) return 'other:' + el.tagName; return hit.hasAttribute('data-session-card') ? 'session-card' : hit.getAttribute('data-testid') || hit.getAttribute('role') || hit.tagName + '.' + String(hit.className).split(' ')[0] }
+        new MutationObserver((records) => { for (const r of records) { const k = r.type + ' ' + area(r.target); window.__mut[k] = (window.__mut[k] || 0) + 1 } }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true })
+      })()`)
+    }
+    const profiler = PROFILE ? await mainProfiler(9231) : null
+    if (profiler) await profiler.start()
+    if (RPROFILE) { await app.send('Profiler.enable'); await app.send('Profiler.setSamplingInterval', { interval: 500 }); await app.send('Profiler.start') }
     if (CHURN) {
       let n = 0
       churnTimer = setInterval(() => { n += 1; void ev(`window.api.setSessionNotes(${js(ids[n % ids.length])}, ${js('note ' + n)})`).catch(() => undefined) }, 100)
     }
     await sleep(SECONDS * 1000)
     if (churnTimer !== null) clearInterval(churnTimer)
+    if (agentTimer !== null) clearInterval(agentTimer)
+    const mutResult = MUT ? await ev('window.__mut') : null
+    const profileResult = profiler ? await profiler.stop() : null
+    const rProfileResult = RPROFILE ? summarizeProfile((await app.send('Profiler.stop')).result.profile) : null
     const after = { m: await metrics(), b: await ev('({ ...window.__bench })'), cpu: treeCpuSeconds(app.pid), t: Date.now() }
     const secs = (after.t - before.t) / 1000
     const d = (key) => after.m[key] - before.m[key]
@@ -132,12 +214,15 @@ async function main() {
       gpu: GPU,
       renderer: RENDERER,
       churn: CHURN,
+      agentEventsPerSec: AGENTS_PER_SEC > 0 ? Math.round(hookCount / ((Date.now() - before.t) / 1000)) : 0,
       seconds: Number(secs.toFixed(1)),
       ptyMsgsPerSec: Math.round((after.b.msgs - before.b.msgs) / secs),
       ptyKBPerSec: Math.round((after.b.bytes - before.b.bytes) / secs / 1024),
       framesPerSec: Number(((after.b.frames - before.b.frames) / secs).toFixed(1)),
       longTasksPerSec: Number(((after.b.longTasks - before.b.longTasks) / secs).toFixed(2)),
       rendererBusyPct: Number(((d('TaskDuration') / secs) * 100).toFixed(1)),
+      rendererLayoutPct: Number(((d('LayoutDuration') / secs) * 100).toFixed(1)),
+      rendererStylePct: Number(((d('RecalcStyleDuration') / secs) * 100).toFixed(1)),
       rendererScriptPct: Number(((d('ScriptDuration') / secs) * 100).toFixed(1)),
       jsHeapMB: Number((after.m.JSHeapUsedSize / 1048576).toFixed(0)),
       domNodes: after.m.Nodes,
@@ -149,6 +234,9 @@ async function main() {
       cpuPtyChildrenPct: Number((((after.cpu.pty - before.cpu.pty) / secs) * 100).toFixed(0))
     }
     console.log('BENCH ' + JSON.stringify(row))
+    if (mutResult) console.log('DOM MUTATIONS/s: ' + JSON.stringify(Object.fromEntries(Object.entries(mutResult).map(([k, v]) => [k, Math.round(v / SECONDS)]).sort((a, b) => b[1] - a[1]).slice(0, 15)), null, 1))
+    if (rProfileResult) console.log('RENDERER PROFILE (self time, busy ' + (rProfileResult.totalMs - rProfileResult.idleMs) + ' ms of ' + rProfileResult.totalMs + ' ms)' + String.fromCharCode(10) + rProfileResult.top.join(String.fromCharCode(10)))
+    if (profileResult) console.log('MAIN PROFILE (self time, busy ' + (profileResult.totalMs - profileResult.idleMs) + ' ms of ' + profileResult.totalMs + ' ms)' + String.fromCharCode(10) + profileResult.top.join(String.fromCharCode(10)))
   } finally {
     if (app) app.kill()
     await sleep(500)

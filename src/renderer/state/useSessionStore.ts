@@ -3,6 +3,10 @@ import type { StoreData, RuntimeState, Session, Group, StatusDef, ChecklistItem,
 import type { Api } from '../../shared/ipc'
 import { errorMessage } from '../../shared/guards'
 import { shareStructure } from './shareStructure'
+import { createRuntimeBatch } from './runtimeBatch'
+
+/** Longest delay of a runtime event behind the one before it (the first one of a quiet period is not delayed). */
+const RUNTIME_BATCH_MS = 100
 
 type Listener = () => void
 
@@ -89,12 +93,23 @@ export function useSessionStore(): UseSessionStoreResult {
     notify()
   }, [notify])
 
-  const updateRuntime = useCallback((state: RuntimeState) => {
+  const applyRuntime = useCallback((states: readonly RuntimeState[]) => {
     const newRuntime = new Map(snapshotRef.current.runtime)
-    newRuntime.set(state.sessionId, state)
+    for (const state of states) {
+      newRuntime.set(state.sessionId, state)
+    }
     snapshotRef.current = { ...snapshotRef.current, runtime: newRuntime }
     notify()
   }, [notify])
+
+  // Runtime events arrive per session several times a second with many agents: one render per RUNTIME_BATCH_MS at most.
+  const runtimeBatch = useMemo(() => createRuntimeBatch<ReturnType<typeof setTimeout>>({
+    apply: applyRuntime,
+    intervalMs: RUNTIME_BATCH_MS,
+    setTimer: (callback, milliseconds) => setTimeout(callback, milliseconds),
+    clearTimer: (handle) => { clearTimeout(handle) }
+  }), [applyRuntime])
+  const updateRuntime = useCallback((state: RuntimeState) => { runtimeBatch.push(state) }, [runtimeBatch])
 
   const getSnapshot = useCallback(() => snapshotRef.current, [])
 
@@ -132,10 +147,11 @@ export function useSessionStore(): UseSessionStoreResult {
     return (): void => {
       unsubStoreRef.current?.()
       unsubRuntimeRef.current?.()
+      runtimeBatch.dispose()
       unsubStoreRef.current = null
       unsubRuntimeRef.current = null
     }
-  }, [notify, updateData, updateRuntime, setError])
+  }, [notify, updateData, updateRuntime, runtimeBatch, setError])
 
   // One wrapper for every call into main: a rejection is shown in the store banner and still reaches the caller.
   const actions = useMemo((): SessionActions => {

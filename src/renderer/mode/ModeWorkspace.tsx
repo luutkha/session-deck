@@ -1,6 +1,6 @@
 // One mode's workspace (D31): sidebar, tab bar, terminals, Hub, worker view, side panel, status bar, dialogs and palette.
 // Ops and Code each get their own instance (App mounts one at a time, keyed by mode) with mode-scoped storage keys.
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Sidebar } from '../Sidebar'
 import { useLastRuntimeChange } from '../Sidebar/useLastRuntimeChange'
 import { CodeSidebar } from '../code/sidebar/CodeSidebar'
@@ -109,6 +109,14 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const barIds = useMemo(() => projectTabIds(ids, sessions ?? [], activeId, runtime), [ids, sessions, activeId, runtime])
   const tabModels = useMemo(() => buildTabModels(barIds, sessions ?? [], runtime), [barIds, sessions, runtime])
   const needsYou = useMemo(() => needsYouItems(sessions ?? [], runtime), [sessions, runtime])
+  // Stable tab callbacks (the memoized Tab skips a render when nothing about it changed): they read the latest tab ids from a ref.
+  const barIdsRef = useRef<readonly Id[]>(barIds)
+  barIdsRef.current = barIds
+  const closeTab = tabs.close
+  const closeOtherTabs = useCallback((keepId: Id): void => { barIdsRef.current.filter((id: Id): boolean => id !== keepId).forEach(closeTab) }, [closeTab])
+  const closeAllTabs = useCallback((): void => { barIdsRef.current.forEach(closeTab) }, [closeTab])
+  const openToSide = split.openToSide
+  const openTabToSide = useCallback((id: Id): void => { openToSide(id) }, [openToSide])
   const activeState = activeId === null ? undefined : runtime.get(activeId)
   // Terminal comfort: the app-wide zoom/scrollback profile; zoom changes apply live to every mounted pane.
   const termViewApi = useTermView()
@@ -316,8 +324,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
             onShowSidebar={(): void => setSidebarOpen(true)}
             onActivate={nav.activateTab}
             onClose={tabs.close}
-            onCloseOthers={(keepId: Id): void => { barIds.filter((id: Id): boolean => id !== keepId).forEach(tabs.close) }}
-            onCloseAll={(): void => { barIds.forEach(tabs.close) }}
+            onCloseOthers={closeOtherTabs}
+            onCloseAll={closeAllTabs}
             onNewSession={(): void => commands.openNew()}
             hubActive={view === 'hub'}
             onOpenHub={(): void => nav.setView('hub')}
@@ -341,7 +349,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
               onSplitRight: split.splitRight,
               onSplitDown: split.splitDown,
               onUnsplit: split.unsplit,
-              onOpenToSide: (id: Id): void => { split.openToSide(id) }
+              onOpenToSide: openTabToSide
             }}
           />
           <div className="flex min-h-0 flex-1">
