@@ -1,5 +1,6 @@
-// Jarvis actions that belong to the whole window, not to one mode's workspace (D58): the notification sounds. They
-// live in the window's sound store (localStorage), which is why main cannot change them itself. No React here.
+// Jarvis actions that belong to the whole window, not to one mode's workspace (D58/D71): the notification sounds, the
+// terminal / graphics preferences and the Jarvis panel's own two settings. They live in window stores (localStorage),
+// which is why main cannot change them itself. No React here.
 import type { JarvisSoundChoice, JarvisUiAction, SoundEvent } from '../../shared/types'
 import {
   BUILTIN_SOUND_IDS,
@@ -10,6 +11,14 @@ import {
   type SoundSettings,
   type SoundSettingsPatch
 } from '../sound/soundSettings'
+import { getGraphicsPrefs, setEffectsPref, setRendererPref } from '../Terminal/graphicsPrefs'
+import { normalizeTermView, readTermView, storeTermView } from '../Terminal/termView'
+import { readRightClickMode, storeRightClickMode } from '../Terminal/rightClickPref'
+import { applyTerminalPrefs, type TerminalPrefsDeps } from './terminalPrefsUi'
+import { applyJarvisPrefs, type JarvisPrefsDeps } from './jarvisPrefsUi'
+import { JARVIS_WIDTH_DEFAULT, JARVIS_WIDTH_MIN, jarvisWidthMax } from './jarvisLogic'
+import { readJarvisPanelWidth, setJarvisPanelWidth } from './jarvisPanelStore'
+import { readSpeakSetting, writeSpeakSetting } from './JarvisSpeaker'
 
 export interface WindowUiDeps {
   readonly sound: {
@@ -17,6 +26,41 @@ export interface WindowUiDeps {
     update(patch: SoundSettingsPatch): void
     play(choice: SoundChoice, volume: number): Promise<void>
   }
+  /** D71: terminal preferences. Optional so a caller that only needs sounds (and the tests) stays small. */
+  readonly terminalPrefs?: TerminalPrefsDeps
+  /** D54: the Jarvis panel's own two settings, kept by the window. Optional for the same reason. */
+  readonly jarvisPrefs?: JarvisPrefsDeps
+}
+
+// useTermView keeps this name private; firing it after the store is what makes the mounted panes follow a change at
+// once (a bare storeTermView only reaches the OTHER window, through the 'storage' event).
+const TERM_VIEW_EVENT = 'sessiondeck:termview'
+
+/** The real stores the window uses; a fake set comes in through WindowUiDeps.terminalPrefs in tests. */
+const TERMINAL_PREFS: TerminalPrefsDeps = {
+  getGraphicsPrefs,
+  setRendererPref,
+  setEffectsPref,
+  readTermView,
+  setTermView: (view): void => {
+    storeTermView(normalizeTermView(view))
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(TERM_VIEW_EVENT))
+  },
+  readRightClickMode,
+  storeRightClickMode
+}
+
+/** D54: the panel's own stores; the panel's setters tell the mounted panel, not only localStorage. */
+const JARVIS_PREFS: JarvisPrefsDeps = {
+  getSpeak: readSpeakSetting,
+  setSpeak: writeSpeakSetting,
+  getPanelWidth: readJarvisPanelWidth,
+  setPanelWidth: setJarvisPanelWidth,
+  widthLimits: () => ({
+    min: JARVIS_WIDTH_MIN,
+    max: jarvisWidthMax(window.innerWidth),
+    defaultWidth: JARVIS_WIDTH_DEFAULT
+  })
 }
 
 const EVENT_LABELS: Readonly<Record<SoundEvent, string>> = {
@@ -55,6 +99,8 @@ export function describeSound(settings: SoundSettings): string {
 
 /** Runs a window action and returns what it did; null when the action is a workspace one. */
 export function runWindowAction(action: JarvisUiAction, deps: WindowUiDeps): string | null {
+  if (action.kind === 'terminalPrefs') return applyTerminalPrefs(action, deps.terminalPrefs ?? TERMINAL_PREFS)
+  if (action.kind === 'jarvisPrefs') return applyJarvisPrefs(action, deps.jarvisPrefs ?? JARVIS_PREFS)
   if (action.kind !== 'sound') return null
   const perReason: Partial<Record<SoundEvent, SoundChoice>> = {}
   for (const [event, choice] of Object.entries(action.events ?? {}) as [SoundEvent, JarvisSoundChoice][]) {

@@ -3,6 +3,10 @@
 import { useEffect } from 'react'
 import { JARVIS_SPEAK_KEY, speakableText } from './jarvisLogic'
 
+// Delivered when the setting changes (the header button or Jarvis's own tool), so the mounted panel's button follows
+// at once; a bare localStorage write would only reach another window, through the 'storage' event.
+const SPEAK_EVENT = 'sessiondeck:jarvis-speak'
+
 export function readSpeakSetting(): boolean {
   try {
     return window.localStorage.getItem(JARVIS_SPEAK_KEY) === '1'
@@ -17,7 +21,21 @@ export function writeSpeakSetting(on: boolean): void {
   } catch {
     // a convenience only
   }
+  if (typeof window === 'undefined') return
   if (!on) window.speechSynthesis?.cancel()
+  window.dispatchEvent(new Event(SPEAK_EVENT))
+}
+
+/** Follows the setting wherever it changes; returns the unsubscribe. */
+export function onSpeakSettingChange(listener: (on: boolean) => void): () => void {
+  const handler = (): void => listener(readSpeakSetting())
+  window.addEventListener(SPEAK_EVENT, handler)
+  // The same setting kept by another SessionDeck window.
+  window.addEventListener('storage', handler)
+  return (): void => {
+    window.removeEventListener(SPEAK_EVENT, handler)
+    window.removeEventListener('storage', handler)
+  }
 }
 
 export function JarvisSpeaker(): null {

@@ -12,6 +12,7 @@ import type {
   Session,
   SessionPreset,
   StatusDef,
+  StoreData,
   UsageRefreshResult,
   WindowState,
   WorkerInfo
@@ -117,6 +118,24 @@ export function settingsUndoPatch(before: AppSettings, patch: Readonly<Record<st
   return undo
 }
 
+const AUTO_STATUS_FIELDS = ['working', 'needsInput', 'finished'] as const
+
+/**
+ * `update_settings` changes with the autoStatus mappings resolved from a status name (or id) to its id. A status that does
+ * not exist is an error that lists the real ones (resolveStatus). null (no mapping) and other sections pass through untouched.
+ */
+export function withStatusIds(data: StoreData, changes: Record<string, unknown>): Record<string, unknown> {
+  const auto = changes.autoStatus
+  if (typeof auto !== 'object' || auto === null || Array.isArray(auto)) return changes
+  const next: Record<string, unknown> = { ...(auto as Record<string, unknown>) }
+  for (const field of AUTO_STATUS_FIELDS) {
+    const value = next[field]
+    if (typeof value !== 'string') continue
+    next[field] = data.statuses.some((status) => status.id === value) ? value : resolveStatus(data, value).id
+  }
+  return { ...changes, autoStatus: next }
+}
+
 export function createAppTools(deps: JarvisToolDeps, ctx: ToolContext): McpTool[] {
   const app = deps.app
   const { pushUndo } = ctx
@@ -192,14 +211,16 @@ export function createAppTools(deps: JarvisToolDeps, ctx: ToolContext): McpTool[
         const changes = args.changes
         if (typeof changes !== 'object' || changes === null || Array.isArray(changes)) throw new Error('"changes" must be an object of sections, like {"sleep": {"idleMinutes": 30}}.')
         const before = app.getSettings()
-        const after = app.updateSettings(changes)
-        const undo = settingsUndoPatch(before, changes as Record<string, unknown>)
+        // D71: the auto-status mappings are status ids; Jarvis (and the user) say status NAMES, so resolve them here.
+        const resolved = withStatusIds(deps.getData(), changes as Record<string, unknown>)
+        const after = app.updateSettings(resolved)
+        const undo = settingsUndoPatch(before, resolved)
         pushUndo(`change settings ${Object.keys(undo).join(', ')} (put the old values back)`, () => {
           app.updateSettings(undo)
         })
-        deps.log('update_settings', clip(JSON.stringify(changes), 200))
+        deps.log('update_settings', clip(JSON.stringify(resolved), 200))
         const shown: Record<string, unknown> = {}
-        for (const section of Object.keys(changes)) shown[section] = (after as unknown as Record<string, unknown>)[section]
+        for (const section of Object.keys(resolved)) shown[section] = (after as unknown as Record<string, unknown>)[section]
         return `Settings saved. Now:\n${json(shown)}`
       }
     },

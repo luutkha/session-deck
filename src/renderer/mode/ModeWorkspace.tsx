@@ -209,6 +209,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
     },
     sidebarOpen,
     setSidebarOpen,
+    sidebarWidth: { value: sidebarWidth.width, set: sidebarWidth.commit, reset: sidebarWidth.reset },
     sidePanel: {
       open: nav.notesOpen,
       tab: resolveSidePanelTab(readSidePanelTab(keys.sidePanel), activeSession?.worktreeId !== undefined),

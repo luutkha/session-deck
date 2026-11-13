@@ -146,7 +146,7 @@ async function main() {
     const rpc = async (method, params) => (await fetch(cfg.url, { method: 'POST', headers: { ...cfg.headers, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }) })).json()
     const tool = async (name, args) => { const body = await rpc('tools/call', { name, arguments: args }); return { text: body.result.content[0].text, error: body.result.isError === true } }
     const names = (await rpc('tools/list', {})).result.tools.map((x) => x.name)
-    t.check('tools/list offers the D60 git tools (80 in all)', names.length === 80 && ['branch_status', 'commit_worktree', 'push_worktree', 'create_pr', 'merge_worktree'].every((n) => names.includes(n)), String(names.length))
+    t.check('tools/list offers the D60 git tools (85 in all)', names.length === 85 && ['branch_status', 'commit_worktree', 'push_worktree', 'create_pr', 'merge_worktree'].every((n) => names.includes(n)), String(names.length))
     fs.writeFileSync(path.join(wt.path, 'jarvis.txt'), 'from jarvis\n')
     let r = await tool('commit_worktree', { worktree: 'fix login', message: 'chore: jarvis file' })
     t.check('Jarvis commit_worktree commits every uncommitted file', !r.error && git(wt.path, 'log', '-1', '--format=%s') === 'chore: jarvis file' && git(wt.path, 'status', '--porcelain') === '', r.text)

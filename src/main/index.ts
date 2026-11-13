@@ -1,6 +1,6 @@
-import { app, BrowserWindow, clipboard, dialog, nativeImage, Notification, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, nativeImage, Notification, screen, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
-import { tmpdir, homedir } from 'node:os'
+import { tmpdir, homedir, cpus, totalmem, freemem, platform as osPlatform, release as osRelease, arch as osArch } from 'node:os'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { appendFile, readFile, writeFile } from 'node:fs/promises'
 import { createGhCheck, runGh } from './git'
@@ -86,6 +86,18 @@ let gpuDetection: Promise<GpuInfo> | null = null
 /** gpu-mode.json: the preference and whether the last run rendered in software. Null when its file is unusable. */
 let gpuModeStore: GpuModeStore | null = null
 const GPU_DETECTION_WAIT_MS = 3000
+
+/** The GPU classification plus the stored preference: what Settings > Terminal shows, and what Jarvis reads (D71). */
+async function readGpuWithPref(): Promise<GpuInfo & { readonly pref: GpuPref }> {
+  if (gpuDetection !== null) gpuInfo = await withTimeout(gpuDetection, gpuInfo, GPU_DETECTION_WAIT_MS)
+  // The stored preference (not the env override): it is what the user's control shows and what the next start uses.
+  return { ...gpuInfo, pref: gpuModeStore?.load().pref ?? 'auto' }
+}
+
+function saveGpuPref(pref: GpuPref): void {
+  if (gpuModeStore === null) throw new Error('GPU preference storage is unavailable')
+  gpuModeStore.save({ pref })
+}
 /** Cap for waiting on Chromium's first GPU report; detection must not delay the renderer's startup for long. */
 const GPU_INFO_UPDATE_WAIT_MS = 1200
 
@@ -566,6 +578,24 @@ if (!gotTheLock) {
             app.quit()
           }
         },
+        // D71: Jarvis reads the PC (specs, screens, GPU) and sets the GPU preference, to tune the settings for it.
+        system: {
+          systemInfo: () => {
+            const cores = cpus()
+            return {
+              platform: osPlatform(),
+              osRelease: osRelease(),
+              arch: osArch(),
+              cpuModel: cores[0]?.model ?? '',
+              cpuCores: cores.length,
+              totalMemoryMB: Math.round(totalmem() / (1024 * 1024)),
+              freeMemoryMB: Math.round(freemem() / (1024 * 1024)),
+              displays: screen.getAllDisplays().map((d) => ({ widthPx: d.size.width, heightPx: d.size.height, scaleFactor: d.scaleFactor }))
+            }
+          },
+          getGpu: readGpuWithPref,
+          setGpuPref: saveGpuPref
+        },
         openSession: (id) => focusSession(id),
         startedAt: (id) => ptyStartedAt.get(id),
         lastOutputAt: (id) => ptyLastOutputAt.get(id)
@@ -731,11 +761,7 @@ if (!gotTheLock) {
       dockCode: () => windows.dockCode(),
       userDataDir: userData,
       loginItem: createLoginItem(app),
-      getGpuInfo: async (): Promise<GpuInfo & { readonly pref: GpuPref }> => {
-        if (gpuDetection !== null) gpuInfo = await withTimeout(gpuDetection, gpuInfo, GPU_DETECTION_WAIT_MS)
-        // The stored preference (not the env override): it is what the user's control shows and what the next start uses.
-        return { ...gpuInfo, pref: gpuModeStore?.load().pref ?? 'auto' }
-      },
+      getGpuInfo: readGpuWithPref,
       reportGpuProbe: (softwareSeen: boolean): void => {
         // Only software evidence is stored from the window: 'hardware' from main already covers the other case, and a
         // window that merely failed to probe must not undo a good detection. recordDetection ignores runs where we turned the GPU off.
@@ -744,10 +770,7 @@ if (!gotTheLock) {
         gpuModeStore?.recordDetection('software', accelerationDisabled)
         restartWithoutGpuOnFirstRun(before)
       },
-      setGpuPref: (pref: GpuPref): void => {
-        if (gpuModeStore === null) throw new Error('GPU preference storage is unavailable')
-        gpuModeStore.save({ pref })
-      },
+      setGpuPref: saveGpuPref,
       onUserActivity: () => {
         sleepScheduler.noteUserInput()
         features.onUserActivity()

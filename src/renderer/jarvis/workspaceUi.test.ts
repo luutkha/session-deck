@@ -18,6 +18,7 @@ function ctx(over: Partial<WorkspaceUiContext> = {}): WorkspaceUiContext {
     split: { paneIds: ['a'], canSplit: true, splitRight: vi.fn(), splitDown: vi.fn(), unsplit: vi.fn(), openToSide: vi.fn() },
     sidebarOpen: true,
     setSidebarOpen: vi.fn(),
+    sidebarWidth: { value: 300, set: vi.fn(), reset: vi.fn() },
     sidePanel: { open: false, tab: 'notes', hasChanges: false, setOpen: vi.fn(), setTab: vi.fn() },
     dialogs: {
       settings: null, costs: false, search: false, palette: false,
@@ -152,6 +153,32 @@ describe('runWorkspaceAction, D58', () => {
     runWorkspaceAction({ kind: 'sidebarView', sort: 'name' }, ctx({ sidebarView: () => ({ ...base, setSort }) }))
     expect(setSort).toHaveBeenCalledWith('name')
     expect(() => runWorkspaceAction({ kind: 'sidebarView', sort: 'name' }, ctx({ sidebarView: () => base }))).toThrow('cannot sort')
+  })
+})
+
+describe('runWorkspaceAction: the sidebar width (D70)', () => {
+  it('commits the width, says when the limit clamped it, and reports without changing', () => {
+    const c = ctx()
+    expect(runWorkspaceAction({ kind: 'sidebarWidth', width: 420 }, c)).toBe('The sidebar is now 420px wide.')
+    expect(c.sidebarWidth.set).toHaveBeenCalledWith(420)
+    const big = ctx()
+    expect(runWorkspaceAction({ kind: 'sidebarWidth', width: 900 }, big)).toBe('Asked for 900px; the limit is 640px, so the sidebar is now 640px wide.')
+    expect(big.sidebarWidth.set).toHaveBeenCalledWith(640)
+    const small = ctx()
+    expect(runWorkspaceAction({ kind: 'sidebarWidth', width: 100 }, small)).toBe('Asked for 100px; the limit is 220px, so the sidebar is now 220px wide.')
+    expect(small.sidebarWidth.set).toHaveBeenCalledWith(220)
+    const report = ctx({ sidebarWidth: { value: 380, set: vi.fn(), reset: vi.fn() } })
+    expect(runWorkspaceAction({ kind: 'sidebarWidth', width: null }, report)).toBe('The sidebar is 380px wide (220-640px).')
+    expect(report.sidebarWidth.set).not.toHaveBeenCalled()
+    expect(() => runWorkspaceAction({ kind: 'sidebarWidth', width: Number.NaN }, ctx())).toThrow('number of pixels')
+  })
+
+  it('resets to the usual width, and the state text shows the width next to shown/hidden', () => {
+    const c = ctx({ sidebarWidth: { value: 500, set: vi.fn(), reset: vi.fn() } })
+    expect(runWorkspaceAction({ kind: 'sidebarWidth', width: 'reset' }, c)).toBe('The sidebar is back to its usual 300px width.')
+    expect(c.sidebarWidth.reset).toHaveBeenCalled()
+    expect(describeWorkspace(c)).toContain('Sidebar: shown, 500px wide (220-640px)')
+    expect(describeWorkspace(ctx({ sidebarOpen: false }))).toContain('Sidebar: hidden, 300px wide (220-640px)')
   })
 })
 

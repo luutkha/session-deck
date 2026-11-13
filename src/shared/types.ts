@@ -129,6 +129,10 @@ export type JarvisUiAction =
   | { readonly kind: 'search'; readonly op: 'find' | 'next' | 'previous' | 'close'; readonly query?: string }
   | { readonly kind: 'tabs'; readonly op: 'next' | 'previous' | 'closeOthers' | 'closeAll' }
   | { readonly kind: 'changesFile'; readonly worktreeId: Id; readonly path: string | null; readonly view: 'diff' | 'preview' }
+  // D71: the terminal / graphics preferences kept by the window (localStorage), and the sidebar width.
+  | { readonly kind: 'terminalPrefs'; readonly renderer?: 'auto' | 'webgl' | 'canvas' | 'dom'; readonly effects?: 'auto' | 'full' | 'reduced'; readonly scrollbackLines?: number; readonly zoomPercent?: number; readonly rightClick?: 'menu' | 'copy-paste' }
+  | { readonly kind: 'sidebarWidth'; readonly width: number | 'reset' | null }
+  | { readonly kind: 'jarvisPrefs'; readonly speak?: boolean; readonly panelWidth?: number | 'reset' | null }
 
 /** D58: a notification sound as Jarvis sets it (same shape as the Settings > Sound choice). */
 export type JarvisSoundChoice =

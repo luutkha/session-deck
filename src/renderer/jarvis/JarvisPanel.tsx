@@ -10,30 +10,20 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 import { cn } from '../lib/utils'
 import { useTerminalPanes } from '../Terminal/useTerminalPanes'
 import '../Terminal/Terminal.css'
-import { clampJarvisWidth, findJarvis, JARVIS_WIDTH_DEFAULT, jarvisRowState, parseJarvisWidth } from './jarvisLogic'
-import { closeJarvisPanel, useJarvisPanelOpen } from './jarvisPanelStore'
+import { clampJarvisWidth, findJarvis, jarvisRowState } from './jarvisLogic'
+import {
+  closeJarvisPanel,
+  readJarvisPanelWidth,
+  setJarvisPanelWidth,
+  setJarvisPanelWidthLive,
+  useJarvisPanelOpen,
+  useJarvisPanelWidth
+} from './jarvisPanelStore'
 import { JarvisSchedules } from './JarvisSchedules'
-import { readSpeakSetting, writeSpeakSetting } from './JarvisSpeaker'
+import { onSpeakSettingChange, readSpeakSetting, writeSpeakSetting } from './JarvisSpeaker'
 
-const WIDTH_KEY = 'sessiondeck.jarvis.width.v1'
 const NO_IDS: readonly Id[] = []
 const NOTICE_MS = 5000
-
-function readWidth(): number {
-  try {
-    return parseJarvisWidth(window.localStorage.getItem(WIDTH_KEY))
-  } catch {
-    return JARVIS_WIDTH_DEFAULT
-  }
-}
-
-function writeWidth(width: number): void {
-  try {
-    window.localStorage.setItem(WIDTH_KEY, String(width))
-  } catch {
-    // a remembered width is a convenience only
-  }
-}
 
 export interface JarvisPanelProps {
   readonly data: StoreData | null
@@ -44,7 +34,7 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
   const open = useJarvisPanelOpen()
   const [mounted, setMounted] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [width, setWidth] = useState<number>(readWidth)
+  const width = useJarvisPanelWidth()
   // D54: the last Undo result, shown under the header for a few seconds.
   const [notice, setNotice] = useState<string | null>(null)
   // D54: voice input (listening now) and reading replies aloud.
@@ -79,7 +69,7 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
   }, [open])
 
   useEffect((): (() => void) => {
-    const onResize = (): void => setWidth((current) => clampJarvisWidth(current, window.innerWidth))
+    const onResize = (): void => setJarvisPanelWidthLive(clampJarvisWidth(readJarvisPanelWidth(), window.innerWidth))
     window.addEventListener('resize', onResize)
     return (): void => window.removeEventListener('resize', onResize)
   }, [])
@@ -88,15 +78,12 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
     event.preventDefault()
     const handle = event.currentTarget
     handle.setPointerCapture(event.pointerId)
-    const onMove = (move: PointerEvent): void => setWidth(clampJarvisWidth(window.innerWidth - move.clientX, window.innerWidth))
+    const onMove = (move: PointerEvent): void => setJarvisPanelWidthLive(clampJarvisWidth(window.innerWidth - move.clientX, window.innerWidth))
     const onUp = (up: PointerEvent): void => {
       handle.releasePointerCapture(up.pointerId)
       handle.removeEventListener('pointermove', onMove)
       handle.removeEventListener('pointerup', onUp)
-      setWidth((current) => {
-        writeWidth(current)
-        return current
-      })
+      setJarvisPanelWidth(clampJarvisWidth(readJarvisPanelWidth(), window.innerWidth))
     }
     handle.addEventListener('pointermove', onMove)
     handle.addEventListener('pointerup', onUp)
@@ -127,11 +114,13 @@ export function JarvisPanel({ data, runtime }: JarvisPanelProps): ReactElement |
   }, [listening])
 
   const toggleSpeak = useCallback((): void => {
-    setSpeak((current) => {
-      writeSpeakSetting(!current)
-      return !current
-    })
+    const next = !readSpeakSetting()
+    writeSpeakSetting(next)
+    setSpeak(next)
   }, [])
+
+  // A change made elsewhere (Jarvis's own panel tool) reaches this mounted panel.
+  useEffect((): (() => void) => onSpeakSettingChange(setSpeak), [])
 
   const undo = useCallback((): void => {
     window.api.undoJarvis().then(setNotice, (err: unknown): void => setNotice(err instanceof Error ? err.message : String(err)))

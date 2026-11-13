@@ -327,6 +327,9 @@ Update: on the VM (adapters: Microsoft Hyper-V Video, Microsoft Remote Display A
 **D70 · 2026-11-13 · Adjustable sessions sidebar** · active
 "next feature i want is the right panel (which contain the sessions) can not adjust width, so i want able to adjust it". The panel that holds the sessions is the sidebar (it is on the left in this app); that is the one made draggable. Edge drag 220-640px (default 300), saved per user in localStorage, one width for Ops and Code, keyboard + double-click reset. The panels on the right (notes, changes, Jarvis) were not changed.
 
+**D71 · 2026-11-13 · Jarvis can tune every setting for the PC** · active
+"make sure jarvis can controll all settings of the apps, usually i will ask jarvis to tunning the setting base on the spec of PC run this apps". An OpenCode audit (flash fallback) listed every setting against the tools; the gaps were closed with five tools: `get_system_info` (PC specs, GPU, load, tuning hints), `terminal_settings`, `gpu_setting`, `sidebar_width`, `jarvis_panel_settings`, and `update_settings` now takes status names for the auto-status mapping. Four OpenCode sessions ran in parallel (system tools, terminal prefs, sidebar width, audit) and a fifth for the Jarvis panel; shared files (types, registration, wiring, prompt) were done here. Jarvis's prompt: read the PC first, change only what the hints or the user's words call for, report old -> new with the reason, say what needs a restart. Not done: collapsing one status section / folder bucket, split pane sizes (renderer-local, low value).
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 

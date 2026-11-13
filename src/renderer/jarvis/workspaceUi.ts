@@ -9,6 +9,12 @@ import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SidePanelTab } from '../timeline/sidePanelTab'
 import { applySidebarView, describeSidebarView, type SidebarViewControl } from './sidebarView'
 import type { ChangesFileRequest } from '../code/changes/changesRequest'
+import {
+  clampSidebarWidth,
+  SIDEBAR_WIDTH_DEFAULT,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN
+} from '../shell/sidebarWidth'
 
 export interface WorkspaceUiContext {
   readonly mode: UiMode
@@ -37,6 +43,13 @@ export interface WorkspaceUiContext {
   }
   readonly sidebarOpen: boolean
   readonly setSidebarOpen: (open: boolean) => void
+  /** D70: the sessions sidebar's width, changed through the drag handle's own commit path. */
+  readonly sidebarWidth: {
+    readonly value: number
+    /** The drag handle's "let go" path: the screen and the saved value. */
+    readonly set: (px: number) => void
+    readonly reset: () => void
+  }
   readonly sidePanel: {
     readonly open: boolean
     readonly tab: SidePanelTab
@@ -110,7 +123,7 @@ export function describeWorkspace(ctx: WorkspaceUiContext): string {
   }
   lines.push(`On screen: ${ctx.activeId === null ? 'no session' : nameOf(ctx, ctx.activeId)}`)
   lines.push(`Tab bar: ${ctx.barIds.map((id) => nameOf(ctx, id)).join(', ') || '(no tabs)'}`)
-  lines.push(`Sidebar: ${ctx.sidebarOpen ? 'shown' : 'hidden'}`)
+  lines.push(`Sidebar: ${ctx.sidebarOpen ? 'shown' : 'hidden'}, ${ctx.sidebarWidth.value}px wide (${SIDEBAR_WIDTH_MIN}-${SIDEBAR_WIDTH_MAX}px)`)
   lines.push(`Side panel: ${ctx.sidePanel.open && ctx.view === 'terminal' && ctx.activeId !== null ? `open on ${ctx.sidePanel.tab}` : 'closed'}`)
   lines.push(`Terminal zoom: ${ctx.zoom.percent}%`)
   if (ctx.search.active) lines.push(`Terminal search: "${ctx.search.query}"${ctx.search.label.length > 0 ? ` (${ctx.search.label})` : ''}`)
@@ -177,6 +190,19 @@ export function runWorkspaceAction(action: JarvisUiAction, ctx: WorkspaceUiConte
     case 'sidebar':
       ctx.setSidebarOpen(action.open)
       return `The sidebar is ${action.open ? 'shown' : 'hidden'}.`
+    case 'sidebarWidth': {
+      if (action.width === null) return `The sidebar is ${ctx.sidebarWidth.value}px wide (${SIDEBAR_WIDTH_MIN}-${SIDEBAR_WIDTH_MAX}px).`
+      if (action.width === 'reset') {
+        ctx.sidebarWidth.reset()
+        return `The sidebar is back to its usual ${SIDEBAR_WIDTH_DEFAULT}px width.`
+      }
+      if (!Number.isFinite(action.width)) throw new Error('The sidebar width must be a number of pixels.')
+      const width = clampSidebarWidth(action.width)
+      ctx.sidebarWidth.set(width)
+      if (action.width < SIDEBAR_WIDTH_MIN) return `Asked for ${Math.round(action.width)}px; the limit is ${SIDEBAR_WIDTH_MIN}px, so the sidebar is now ${width}px wide.`
+      if (action.width > SIDEBAR_WIDTH_MAX) return `Asked for ${Math.round(action.width)}px; the limit is ${SIDEBAR_WIDTH_MAX}px, so the sidebar is now ${width}px wide.`
+      return `The sidebar is now ${width}px wide.`
+    }
     case 'sidePanel': {
       if (!action.open) {
         ctx.sidePanel.setOpen(false)

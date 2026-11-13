@@ -196,6 +196,11 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
       hideWindow: vi.fn(),
       quit: vi.fn()
     },
+    system: {
+      systemInfo: vi.fn(() => ({ platform: 'win32', osRelease: '10.0', arch: 'x64', cpuModel: 'Test CPU', cpuCores: 8, totalMemoryMB: 16384, freeMemoryMB: 8192, displays: [{ widthPx: 1920, heightPx: 1080, scaleFactor: 1 }] })),
+      getGpu: vi.fn(async () => ({ mode: 'hardware' as const, renderer: 'Test GPU', accelerationDisabled: false, webgl: 'enabled', pref: 'auto' as const })),
+      setGpuPref: vi.fn()
+    },
     ui: vi.fn(async (mode: UiMode | undefined, action: JarvisUiAction) => {
       uiCalls.push({ mode, action })
       return `ui ${action.kind}`

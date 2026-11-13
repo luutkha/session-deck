@@ -17,8 +17,13 @@ export const JARVIS_WIDTH_DEFAULT = 520
 export const JARVIS_WIDTH_MIN = 340
 const JARVIS_WIDTH_MAX_SHARE = 0.75
 
+/** The widest the panel may be in a window of this width: never more than 75% of it, never below the minimum. */
+export function jarvisWidthMax(windowWidth: number): number {
+  return Math.max(JARVIS_WIDTH_MIN, Math.floor(windowWidth * JARVIS_WIDTH_MAX_SHARE))
+}
+
 export function clampJarvisWidth(width: number, windowWidth: number): number {
-  const max = Math.max(JARVIS_WIDTH_MIN, Math.floor(windowWidth * JARVIS_WIDTH_MAX_SHARE))
+  const max = jarvisWidthMax(windowWidth)
   if (!Number.isFinite(width)) return Math.min(JARVIS_WIDTH_DEFAULT, max)
   return Math.round(Math.min(max, Math.max(JARVIS_WIDTH_MIN, width)))
 }

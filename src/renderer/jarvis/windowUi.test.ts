@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SOUND_SETTINGS, withSettingsPatch, type SoundSettings, type SoundSettingsPatch } from '../sound/soundSettings'
+import type { EffectsPref, RendererPref } from '../Terminal/terminalRenderer'
+import type { RightClickMode } from '../Terminal/keymap'
+import type { TermView } from '../Terminal/termView'
 import { describeSound, runWindowAction, type WindowUiDeps } from './windowUi'
 import { applySidebarView, describeSidebarView, type SidebarViewControl } from './sidebarView'
 
@@ -40,6 +43,57 @@ describe('runWindowAction (D58 sounds)', () => {
     expect(() => runWindowAction({ kind: 'sound', events: { nope: { kind: 'none' } } as never }, d)).toThrow('Unknown sound event')
     expect(() => runWindowAction({ kind: 'sound', volume: 2 }, d)).toThrow('0 to 100')
     expect(describeSound(d.current())).toContain('Sounds: on')
+  })
+})
+
+describe('runWindowAction (D71 terminal preferences)', () => {
+  it('runs the terminal preferences of the window and still leaves workspace actions alone', () => {
+    let renderer: RendererPref = 'auto'
+    let effects: EffectsPref = 'auto'
+    let view: TermView = { zoomPercent: 100, scrollbackLines: 10_000 }
+    let rightClick: RightClickMode = 'menu'
+    const deps: WindowUiDeps = {
+      ...soundDeps(),
+      terminalPrefs: {
+        getGraphicsPrefs: () => ({ renderer, effects }),
+        setRendererPref: (pref) => { renderer = pref },
+        setEffectsPref: (pref) => { effects = pref },
+        readTermView: () => view,
+        setTermView: (next) => { view = next },
+        readRightClickMode: () => rightClick,
+        storeRightClickMode: (mode) => { rightClick = mode }
+      }
+    }
+    const text = runWindowAction({ kind: 'terminalPrefs', renderer: 'dom', zoomPercent: 120, rightClick: 'copy-paste' }, deps)
+    expect(text).toContain('Terminal renderer: dom (auto = WebGL with a GPU, DOM without).')
+    expect(text).toContain('Zoom: 120%.')
+    expect(renderer).toBe('dom')
+    expect(view).toEqual({ zoomPercent: 120, scrollbackLines: 10_000 })
+    expect(rightClick).toBe('paste')
+    expect(runWindowAction({ kind: 'zoom', action: 'in' }, deps)).toBeNull()
+  })
+})
+
+describe('runWindowAction (Jarvis panel preferences)', () => {
+  it('changes the read-aloud toggle and the panel width through the window stores', () => {
+    let speak = false
+    let width = 520
+    const deps: WindowUiDeps = {
+      ...soundDeps(),
+      jarvisPrefs: {
+        getSpeak: () => speak,
+        setSpeak: (on) => { speak = on },
+        getPanelWidth: () => width,
+        setPanelWidth: (px) => { width = px },
+        widthLimits: () => ({ min: 340, max: 1_200, defaultWidth: 520 })
+      }
+    }
+    const text = runWindowAction({ kind: 'jarvisPrefs', speak: true, panelWidth: 400 }, deps)
+    expect(text).toContain('Jarvis reads its replies aloud: on.')
+    expect(text).toContain('Jarvis panel width: 400px (limits 340-1200px).')
+    expect(speak).toBe(true)
+    expect(width).toBe(400)
+    expect(runWindowAction({ kind: 'jarvisPrefs' }, deps)).toContain('Jarvis panel width: 400px')
   })
 })
 

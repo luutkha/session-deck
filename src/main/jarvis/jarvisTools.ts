@@ -39,6 +39,10 @@ import { createAppTools, type JarvisAppDeps } from './appTools'
 import { createUiTools, type JarvisUi } from './uiTools'
 import { createControlTools, type JarvisControlDeps } from './controlTools'
 import { createGitTools } from './gitTools'
+import { createSystemTools, type JarvisSystemDeps } from './systemTools'
+import { createPrefsTools } from './prefsTools'
+import { createLayoutTools } from './layoutTools'
+import { createPanelTools } from './panelTools'
 import type { CodeGitOps } from '../app/codeGitOps'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
@@ -143,6 +147,8 @@ export interface JarvisToolDeps {
   readonly ui: JarvisUi
   /** D58: the last parts of the app (Code tree, links, files, the app window). */
   readonly control: JarvisControlDeps
+  /** D71: the PC (specs, screens, GPU) and the GPU preference; the app load is counted here from the store. */
+  readonly system: Omit<JarvisSystemDeps, 'appLoad'>
 }
 
 // ---------- describing state
@@ -1076,5 +1082,16 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
   }
   const ctx = { pushUndo, sendPrompt, tool }
   tools.push(...createAppTools(deps, ctx), ...createUiTools(deps), ...createControlTools(deps, ctx), ...createGitTools(deps))
+  // D71: tuning the app for the PC it runs on: read the PC, then change the settings that matter (GPU, terminal, sidebar).
+  const appLoad = (): ReturnType<JarvisSystemDeps['appLoad']> => {
+    const open = deps.getData().sessions.filter((s) => s.closedAt === undefined && s.role !== 'jarvis')
+    const states = open.map((s) => deps.getRuntime(s.id))
+    return {
+      sessionsOpen: open.length,
+      sessionsRunning: states.filter((state) => state?.run === 'running').length,
+      sessionsWorking: states.filter((state) => state?.run === 'running' && state.activity === 'working').length
+    }
+  }
+  tools.push(...createSystemTools({ ...deps.system, appLoad }, deps.log), ...createPrefsTools(deps, ctx), ...createLayoutTools(deps, ctx), ...createPanelTools(deps, ctx))
   return Object.assign(tools, { sendPrompt, undoLast })
 }
