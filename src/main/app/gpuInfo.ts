@@ -36,7 +36,7 @@ const VENDOR_MICROSOFT = 0x1414
 const DEVICE_MICROSOFT_BASIC_RENDER = 0x8c
 
 /** Device strings that name a software renderer even when the vendor id is not one of the known ones. */
-const SOFTWARE_DEVICE_RE = /swiftshader|basic render|llvmpipe|software/i
+const SOFTWARE_DEVICE_RE = /swiftshader|basic render|basic display|llvmpipe|software|hyper-v video|remote display|qxl/i
 
 /** Vendor names for the renderer text when Chromium gives no deviceString. */
 const VENDOR_NAMES: Readonly<Record<number, string>> = {

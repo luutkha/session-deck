@@ -113,6 +113,21 @@ describe('classifyGpu: VMs and virtual adapters', () => {
   })
 })
 
+describe('classifyGpu: Hyper-V / RDP guest (only display-only adapters)', () => {
+  const hyperV: GpuDevice = { deviceString: 'Microsoft Hyper-V Video', vendorId: 0x1414, deviceId: 0x5353 }
+  const remote: GpuDevice = { deviceString: 'Microsoft Remote Display Adapter', vendorId: 0x1414, deviceId: 0x8d }
+
+  it('is software when only Hyper-V Video, the Remote Display Adapter and the basic driver are listed', () => {
+    const devices: GpuDevice[] = [hyperV, remote, basicRender]
+    expect(classifyGpu({ featureStatus: null, devices, accelerationDisabled: false }).mode).toBe('software')
+  })
+
+  it('stays hardware when a real GPU is listed next to them and Chromium reports WebGL enabled', () => {
+    const devices: GpuDevice[] = [hyperV, remote, nvidia]
+    expect(classifyGpu({ featureStatus: enabledStatus(), devices, accelerationDisabled: false }).mode).toBe('hardware')
+  })
+})
+
 describe('classifyGpu: unknown and conflicting input', () => {
   it('is unknown for null input', () => {
     const info = classifyGpu({ featureStatus: null, devices: [], accelerationDisabled: false })
@@ -150,6 +165,14 @@ describe('isSoftwareDevice', () => {
     expect(isSoftwareDevice({ vendorId: 0x1414, deviceId: 0x5353 })).toBe(false)
     expect(isSoftwareDevice(nvidia)).toBe(false)
     expect(isSoftwareDevice({})).toBe(false)
+  })
+
+  it('recognises the display-only adapters of a Hyper-V VM and an RDP session by name', () => {
+    expect(isSoftwareDevice({ deviceString: 'Microsoft Hyper-V Video' })).toBe(true)
+    expect(isSoftwareDevice({ deviceString: 'Microsoft Remote Display Adapter' })).toBe(true)
+    expect(isSoftwareDevice({ deviceString: 'Microsoft Basic Display Adapter' })).toBe(true)
+    expect(isSoftwareDevice({ deviceString: 'Red Hat QXL controller' })).toBe(true)
+    expect(isSoftwareDevice({ deviceString: 'VMware SVGA 3D' })).toBe(false)
   })
 })
 

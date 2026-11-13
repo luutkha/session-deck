@@ -61,7 +61,8 @@ export interface WebglProbe {
   readonly renderer: string
 }
 
-const SOFTWARE_WEBGL_RE = /swiftshader|llvmpipe|softpipe|software|basic render/i
+/** Also the display-only adapters of a VM / remote session (Hyper-V Video, RDP's Remote Display Adapter, QXL): no 3D, so WebGL there is software. */
+const SOFTWARE_WEBGL_RE = /swiftshader|llvmpipe|softpipe|software|basic render|basic display|hyper-v video|remote display|qxl/i
 
 /**
  * Combines main's classification with a probe of the window's own WebGL. Chromium can report WebGL as "enabled"

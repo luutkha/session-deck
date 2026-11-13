@@ -81,6 +81,8 @@ describe('mergeGpuMode', () => {
     expect(mergeGpuMode('hardware', { available: true, renderer: 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)' })).toBe('software')
     expect(mergeGpuMode('unknown', { available: true, renderer: 'llvmpipe (LLVM 15.0.7, 256 bits)' })).toBe('software')
     expect(mergeGpuMode('hardware', { available: true, renderer: 'Microsoft Basic Render Driver' })).toBe('software')
+    expect(mergeGpuMode('hardware', { available: true, renderer: 'ANGLE (Microsoft, Microsoft Hyper-V Video Direct3D11 vs_5_0 ps_5_0)' })).toBe('software')
+    expect(mergeGpuMode('hardware', { available: true, renderer: 'Microsoft Remote Display Adapter' })).toBe('software')
   })
 
   it('stays software when main already said software', () => {
