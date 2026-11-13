@@ -72,6 +72,8 @@ async function main() {
   fs.mkdirSync(work)
   let app
   try {
+    // A measurement run must not restart itself (the first-run no-GPU restart).
+    process.env.SESSIONDECK_GPU_NO_RESTART = '1'
     app = await launchApp({ port: PORT, userData, extraArgs: GPU_ARGS })
     await sleep(1500)
     const ev = (expr) => app.evaluate(expr)

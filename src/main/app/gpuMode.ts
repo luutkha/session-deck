@@ -17,6 +17,8 @@ export interface GpuModeFile {
   readonly lastSoftware: boolean
   /** Launches recorded so far, this one included. Drives the probe. */
   readonly launches: number
+  /** The app already restarted itself once to turn the GPU off after its first software detection (never twice). Omitted when false. */
+  readonly autoRestarted?: boolean
 }
 
 export const DEFAULT_GPU_MODE: GpuModeFile = { version: 1, pref: 'auto', lastSoftware: false, launches: 0 }
@@ -46,12 +48,46 @@ export function parseGpuModeFile(text: string): GpuModeFile {
     version: 1,
     pref: isGpuPref(raw.pref) ? raw.pref : 'auto',
     lastSoftware: typeof raw.lastSoftware === 'boolean' ? raw.lastSoftware : false,
-    launches: isLaunchCount(raw.launches) ? raw.launches : 0
+    launches: isLaunchCount(raw.launches) ? raw.launches : 0,
+    ...(raw.autoRestarted === true ? { autoRestarted: true } : {})
   }
 }
 
 export function serializeGpuModeFile(file: GpuModeFile): string {
-  return JSON.stringify({ version: 1, pref: file.pref, lastSoftware: file.lastSoftware, launches: file.launches })
+  return JSON.stringify({
+    version: 1,
+    pref: file.pref,
+    lastSoftware: file.lastSoftware,
+    launches: file.launches,
+    ...(file.autoRestarted === true ? { autoRestarted: true } : {})
+  })
+}
+
+export interface FirstRunRestartInput {
+  /** The file as it was BEFORE this detection was recorded. */
+  readonly file: GpuModeFile
+  /** Value of SESSIONDECK_GPU. */
+  readonly env: string | undefined
+  /** This run already had the GPU process turned off by us. */
+  readonly accelerationDisabled: boolean
+  /** Software rendering was seen (main's classification or the window's WebGL probe). */
+  readonly softwareSeen: boolean
+  /** Start-up switches that already decide the GPU mode (--disable-gpu), or the test switch that forbids the restart. */
+  readonly gpuDecidedByLaunch: boolean
+}
+
+/**
+ * First run on a PC without a GPU: the GPU process was started before anything could tell, so one restart with it off is
+ * worth it. Only when nothing decided the mode already (a saved preference, SESSIONDECK_GPU, a launch switch), when this
+ * is the first time software was seen (a remembered software state means this run was a probe: stay up), and never twice.
+ */
+export function shouldRestartForSoftware(input: FirstRunRestartInput): boolean {
+  if (!input.softwareSeen || input.accelerationDisabled || input.gpuDecidedByLaunch) return false
+  const envMode = typeof input.env === 'string' ? input.env.trim().toLowerCase() : ''
+  if (envMode === 'on' || envMode === 'off') return false
+  if (input.file.pref !== 'auto') return false
+  if (input.file.lastSoftware || input.file.autoRestarted === true) return false
+  return true
 }
 
 export interface AccelerationDecision {
@@ -121,7 +157,8 @@ export function createGpuModeStore(deps: GpuModeStoreDeps): GpuModeStore {
       version: 1,
       pref: isGpuPref(partial.pref) ? partial.pref : current.pref,
       lastSoftware: typeof partial.lastSoftware === 'boolean' ? partial.lastSoftware : current.lastSoftware,
-      launches: isLaunchCount(partial.launches) ? partial.launches : current.launches
+      launches: isLaunchCount(partial.launches) ? partial.launches : current.launches,
+      ...((partial.autoRestarted ?? current.autoRestarted) === true ? { autoRestarted: true } : {})
     }
     cached = next
     try {

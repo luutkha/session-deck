@@ -294,7 +294,10 @@ Offered as option 2 of "what next feature we should build?"; the user: "do for 2
 - B renderer: Auto = WebGL on a GPU, DOM renderer without one (measured: DOM 28-82% CPU, Canvas 59-166%, WebGL 1,263%); explicit choices WebGL / Canvas / DOM in Settings (`@xterm/addon-canvas` added).
 - C reduced effects: Auto on software = no animations, transitions, shadows, blur, cursor blink (`data-reduce-effects` on `<html>`); Settings: Auto / Full / Reduced.
 - Result (20 sessions, emulated no-GPU): CPU 1,263% -> 65%, 28 -> 146 fps. Not verified on a real GPU-less VM from here.
-- Not done: lower default scrollback in reduced mode; a first launch on a new GPU-less PC still starts with the GPU on once.
+- Not done: lower default scrollback in reduced mode.
+
+**D64 · 2026-11-13 · First run on a GPU-less PC restarts once** · active
+"why can not detect at first run?" -> "what u recommend?" -> "so do otion 1". The GPU process must be chosen before `ready`, but detection needs it running, so a brand-new GPU-less PC started with the GPU on. Now: the first time software rendering is seen (main's classification or the window probe) in auto mode, the app saves `autoRestarted: true` + `lastSoftware: true` in `gpu-mode.json`, then `app.relaunch()` + `app.quit()` (normal shutdown); the restart comes up with the GPU off. Never twice; skipped for a saved preference, `SESSIONDECK_GPU`, `--disable-gpu`, `SESSIONDECK_GPU_NO_RESTART=1` (tests/bench), and a probe run of a PC already known to be software. Code: `shouldRestartForSoftware` in `main/app/gpuMode.ts`, wiring in `main/index.ts`. Test: `e2e-gpumode` (18/18). The window is visible for about a second before the restart.
 
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).

@@ -48,7 +48,7 @@ import { errorMessage } from '../shared/guards'
 import { asChecklist, asPreset, assertNonEmptyString, assertStatusDef } from './app/ipcValidation'
 import { asSettingsPatch } from './app/settingsValidation'
 import { classifyGpu, parseGpuDevices, type GpuDevice, type GpuInfo } from './app/gpuInfo'
-import { createGpuModeStore, decideAcceleration, gpuModeFilePath, type GpuModeStore } from './app/gpuMode'
+import { createGpuModeStore, decideAcceleration, gpuModeFilePath, shouldRestartForSoftware, type GpuModeFile, type GpuModeStore } from './app/gpuMode'
 import type { GpuPref } from '../shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -679,11 +679,29 @@ if (!gotTheLock) {
       const info = classifyGpu({ featureStatus, devices, accelerationDisabled })
       gpuInfo = info
       try {
+        const before = gpuModeStore?.load()
         gpuModeStore?.recordDetection(info.mode, accelerationDisabled)
+        if (info.mode === 'software') restartWithoutGpuOnFirstRun(before)
       } catch (error) {
         onError('gpu mode detection', error)
       }
       return info
+    }
+
+    /**
+     * First run on a PC without a GPU: this run started with the GPU process on (nothing was known yet), so restart once
+     * with it off. `before` is the stored state before the detection was recorded. See shouldRestartForSoftware.
+     */
+    let restartingForGpu = false
+    function restartWithoutGpuOnFirstRun(before: GpuModeFile | undefined): void {
+      if (restartingForGpu || before === undefined || gpuModeStore === null) return
+      const decided = process.argv.some((arg) => arg.startsWith('--disable-gpu')) || process.env.SESSIONDECK_GPU_NO_RESTART === '1'
+      if (!shouldRestartForSoftware({ file: before, env: process.env.SESSIONDECK_GPU, accelerationDisabled, softwareSeen: true, gpuDecidedByLaunch: decided })) return
+      restartingForGpu = true
+      // Saved first: even if the relaunch is cut short, no second restart can follow.
+      gpuModeStore.save({ autoRestarted: true, lastSoftware: true })
+      app.relaunch()
+      app.quit()
     }
     gpuDetection = detectGpu().catch((error: unknown) => {
       onError('gpu detection', error)
@@ -721,7 +739,10 @@ if (!gotTheLock) {
       reportGpuProbe: (softwareSeen: boolean): void => {
         // Only software evidence is stored from the window: 'hardware' from main already covers the other case, and a
         // window that merely failed to probe must not undo a good detection. recordDetection ignores runs where we turned the GPU off.
-        if (softwareSeen) gpuModeStore?.recordDetection('software', accelerationDisabled)
+        if (!softwareSeen) return
+        const before = gpuModeStore?.load()
+        gpuModeStore?.recordDetection('software', accelerationDisabled)
+        restartWithoutGpuOnFirstRun(before)
       },
       setGpuPref: (pref: GpuPref): void => {
         if (gpuModeStore === null) throw new Error('GPU preference storage is unavailable')

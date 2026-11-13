@@ -14,6 +14,8 @@ const ROOT_SHOTS = require('node:os').tmpdir()
 
 async function main() {
   const t = makeChecker()
+  // Every case below but the last must not restart itself (the first-run restart is checked at the end).
+  process.env.SESSIONDECK_GPU_NO_RESTART = '1'
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-e2e-gpumode-'))
   const dirs = []
   const freshDir = () => {
@@ -101,6 +103,37 @@ async function main() {
     })
     t.check('Settings > Terminal shows the detected graphics as software', typeof ui.info === 'string' && /software/i.test(ui.info), String(ui.info))
     t.check('Settings > Terminal has the renderer, effects and GPU controls (all Auto)', ui.renderer === 'Auto' && ui.effects === 'Auto' && ui.gpu === 'Auto', JSON.stringify(ui))
+
+    // ---- first run on a PC without a GPU: the app restarts itself once with the GPU off, and never again
+    delete process.env.SESSIONDECK_GPU_NO_RESTART
+    const dirG = freshDir()
+    const first2 = await launchApp({ port: PORT, userData: dirG, extraArgs: SWIFTSHADER })
+    const gone = await waitFor(async () => {
+      try { process.kill(first2.pid, 0); return null } catch { return true }
+    }, 20000, 300)
+    t.check('the first run restarts itself (the first process exits)', gone === true)
+    const saved = modeFile(dirG)
+    t.check('the restart is recorded so it can never repeat', saved?.autoRestarted === true && saved?.lastSoftware === true, JSON.stringify(saved))
+    const relaunched = await waitFor(async () => (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find((x) => x.type === 'page' && !x.url.startsWith('devtools')) ?? null, 30000, 500)
+    t.check('the app comes back by itself after the restart', Boolean(relaunched))
+    let afterInfo = null
+    if (relaunched) {
+      const ws = new WebSocket(relaunched.webSocketDebuggerUrl)
+      await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(new Error('ws error')) })
+      const call = (expression) => new Promise((resolve) => {
+        ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id === 1) resolve(d.result?.result?.value) }
+        ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+      })
+      afterInfo = await waitFor(() => call('window.api.getGpuInfo()'), 15000, 500)
+      ws.close()
+    }
+    t.check('the restarted app runs with the GPU process off', afterInfo?.accelerationDisabled === true && afterInfo?.mode === 'software', JSON.stringify(afterInfo))
+    // Stop whatever is still running on this data dir.
+    try {
+      require('node:child_process').execSync(`powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${path.basename(root)}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`, { stdio: 'ignore' })
+    } catch { /* already gone */ }
+    await sleep(1500)
+    process.env.SESSIONDECK_GPU_NO_RESTART = '1'
 
     // ---- this PC's real GPU (skipped on a PC without one)
     if (process.env.SESSIONDECK_E2E_NO_REAL_GPU === '1') {

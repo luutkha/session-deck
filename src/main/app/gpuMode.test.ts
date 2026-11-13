@@ -9,6 +9,7 @@ import {
   isGpuPref,
   parseGpuModeFile,
   serializeGpuModeFile,
+  shouldRestartForSoftware,
   type GpuModeFile,
   type GpuModeStore
 } from './gpuMode'
@@ -100,6 +101,67 @@ describe('decideAcceleration', () => {
       disable: true,
       probe: false
     })
+  })
+})
+
+describe('shouldRestartForSoftware (first run without a GPU)', () => {
+  const base = {
+    file: { ...DEFAULT_GPU_MODE, launches: 1 } as GpuModeFile,
+    env: undefined as string | undefined,
+    accelerationDisabled: false,
+    softwareSeen: true,
+    gpuDecidedByLaunch: false
+  }
+
+  it('restarts the first time software rendering is seen in auto mode', () => {
+    expect(shouldRestartForSoftware(base)).toBe(true)
+  })
+
+  it('does not restart when no software rendering was seen', () => {
+    expect(shouldRestartForSoftware({ ...base, softwareSeen: false })).toBe(false)
+  })
+
+  it('does not restart when the GPU process is already off for this run', () => {
+    expect(shouldRestartForSoftware({ ...base, accelerationDisabled: true })).toBe(false)
+  })
+
+  it('does not restart when a launch switch already decided (--disable-gpu, test switch)', () => {
+    expect(shouldRestartForSoftware({ ...base, gpuDecidedByLaunch: true })).toBe(false)
+  })
+
+  it('does not restart when SESSIONDECK_GPU decides, in either direction', () => {
+    expect(shouldRestartForSoftware({ ...base, env: 'on' })).toBe(false)
+    expect(shouldRestartForSoftware({ ...base, env: ' OFF ' })).toBe(false)
+    expect(shouldRestartForSoftware({ ...base, env: 'whatever' })).toBe(true)
+  })
+
+  it('does not restart when the user saved a preference', () => {
+    expect(shouldRestartForSoftware({ ...base, file: { ...base.file, pref: 'on' } })).toBe(false)
+    expect(shouldRestartForSoftware({ ...base, file: { ...base.file, pref: 'off' } })).toBe(false)
+  })
+
+  it('does not restart on a probe run of a PC already known to be software (stays up)', () => {
+    expect(shouldRestartForSoftware({ ...base, file: { ...base.file, lastSoftware: true, launches: 10 } })).toBe(false)
+  })
+
+  it('never restarts twice', () => {
+    expect(shouldRestartForSoftware({ ...base, file: { ...base.file, autoRestarted: true } })).toBe(false)
+  })
+})
+
+describe('autoRestarted flag in the file', () => {
+  it('is kept through parse, serialize and save, and omitted when false', () => {
+    const file: GpuModeFile = { version: 1, pref: 'auto', lastSoftware: true, launches: 2, autoRestarted: true }
+    expect(parseGpuModeFile(serializeGpuModeFile(file))).toEqual(file)
+    expect(JSON.parse(serializeGpuModeFile({ ...file, autoRestarted: false })).autoRestarted).toBeUndefined()
+    expect(parseGpuModeFile('{"version":1,"autoRestarted":"yes"}').autoRestarted).toBeUndefined()
+    const store = createGpuModeStore({
+      filePath: FILE,
+      readFileSync: () => serializeGpuModeFile(file),
+      writeFileSync: () => undefined,
+      mkdirSync: () => undefined
+    })
+    expect(store.save({ launches: 3 }).autoRestarted).toBe(true)
   })
 })
 
