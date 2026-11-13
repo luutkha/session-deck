@@ -534,6 +534,20 @@ describe('saving', () => {
     expect(existsSync(h.filePath)).toBe(true)
   })
 
+  it('a cost refresh that changes nothing schedules no save and reports no change', async () => {
+    const h = harness(2)
+    await h.service.load()
+    prompt(h.service, 's1', 'x')
+    await h.service.flush()
+    expect(h.timers.size).toBe(0)
+    h.onChange.mockClear()
+
+    h.service.onCostChanged('s1')
+
+    expect(h.timers.size).toBe(0)
+    expect(h.onChange).not.toHaveBeenCalled()
+  })
+
   it('a save failure is reported through onError and does not throw', async () => {
     const h = harness()
     await h.service.load()

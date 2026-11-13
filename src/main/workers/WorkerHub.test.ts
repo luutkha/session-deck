@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { WorkerInfo } from '../../shared/types'
 import { createWorkerHub, LOST_AFTER_MS, MAX_WORKER_LINES, MAX_WORKERS_PER_SESSION, type WorkerHub } from './WorkerHub'
 
@@ -20,6 +20,10 @@ beforeEach(() => {
     isKnownSession: (id) => known.has(id),
     isOpencodeSession: (id) => opencodeOwners.has(id)
   })
+})
+
+afterEach(() => {
+  hub.dispose()
 })
 
 const ev = (kind: string, extra: Record<string, unknown> = {}, oc = OC, proc = 'p1'): Record<string, unknown> => ({ v: 1, proc, oc, kind, ...extra })
@@ -194,5 +198,83 @@ describe('WorkerHub.forgetSession', () => {
     hub.forgetSession('claude-1')
     expect(hub.getWorkers()).toHaveLength(0)
     expect(seen.length).toBe(count + 1)
+  })
+})
+
+describe('WorkerHub emit coalescing', () => {
+  function scheduledHub(): {
+    hub: WorkerHub
+    seen: (readonly WorkerInfo[])[]
+    timers: Map<number, () => void>
+    fire: () => void
+  } {
+    const changes: (readonly WorkerInfo[])[] = []
+    const timers = new Map<number, () => void>()
+    let handle = 0
+    const made = createWorkerHub({
+      now: () => clock,
+      onChange: (w) => changes.push(w),
+      isKnownSession: () => true,
+      isOpencodeSession: () => false,
+      emitDelayMs: 250,
+      setTimeout: (callback) => {
+        handle += 1
+        timers.set(handle, callback)
+        return handle
+      },
+      clearTimeout: (id) => {
+        timers.delete(id as number)
+      }
+    })
+    const fire = (): void => {
+      for (const [id, callback] of [...timers]) {
+        timers.delete(id)
+        callback()
+      }
+    }
+    return { hub: made, seen: changes, timers, fire }
+  }
+
+  it('sends the first change at once and coalesces the rest into one snapshot', () => {
+    const h = scheduledHub()
+    h.hub.ingest('claude-1', ev('start'))
+    expect(h.seen).toHaveLength(1)
+
+    for (let i = 0; i < 10; i += 1) h.hub.ingest('claude-1', ev('text', { partId: `t${i}`, text: `line ${i}` }))
+    expect(h.seen).toHaveLength(1)
+    expect(h.timers.size).toBe(1)
+
+    h.fire()
+    expect(h.seen).toHaveLength(2)
+    expect(h.seen[1][0].lines).toHaveLength(10)
+    h.hub.dispose()
+  })
+
+  it('stops the timer after a quiet window, then sends the next change immediately', () => {
+    const h = scheduledHub()
+    h.hub.ingest('claude-1', ev('busy'))
+    h.hub.ingest('claude-1', ev('text', { partId: 't1', text: 'x' }))
+    h.fire() // trailing snapshot, schedules one more window
+    expect(h.timers.size).toBe(1)
+    h.fire() // quiet: nothing to send, no new timer
+    expect(h.seen).toHaveLength(2)
+    expect(h.timers.size).toBe(0)
+
+    h.hub.ingest('claude-1', ev('text', { partId: 't2', text: 'y' }))
+    expect(h.seen).toHaveLength(3)
+    h.hub.dispose()
+  })
+
+  it('dispose cancels a pending snapshot and stops further notifications', () => {
+    const h = scheduledHub()
+    h.hub.ingest('claude-1', ev('busy'))
+    h.hub.ingest('claude-1', ev('text', { partId: 't1', text: 'x' }))
+    expect(h.timers.size).toBe(1)
+    h.hub.dispose()
+    expect(h.timers.size).toBe(0)
+
+    h.hub.ingest('claude-1', ev('text', { partId: 't2', text: 'y' }))
+    h.fire()
+    expect(h.seen).toHaveLength(1)
   })
 })

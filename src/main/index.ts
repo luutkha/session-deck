@@ -643,6 +643,7 @@ if (!gotTheLock) {
       await runShutdownStep('save running sessions', () => launchResume.stop())
       sleepScheduler.stop()
       clearInterval(workerSweep)
+      workers.dispose()
       promptQueue.stop()
       await runShutdownStep('jarvis', () => jarvis.stop())
       await runShutdownStep('timeline + autopilot', () => features.shutdown())

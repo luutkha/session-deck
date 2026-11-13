@@ -392,6 +392,131 @@ describe('createDebouncedSaver', () => {
     const saver = createDebouncedSaver('/x', 100, { save: vi.fn() })
     await expect(saver.flush()).resolves.toBeUndefined()
   })
+
+  describe('max wait', () => {
+    /** A deterministic timer queue: `advance` runs every timer that falls due, in order. */
+    function fakeClock() {
+      let at = 0
+      let nextId = 0
+      const timers = new Map<number, { readonly due: number; readonly callback: () => void }>()
+      const setTimer = (callback: () => void, ms: number): ReturnType<typeof setTimeout> => {
+        const id = ++nextId
+        timers.set(id, { due: at + ms, callback })
+        return id as unknown as ReturnType<typeof setTimeout>
+      }
+      const clearTimer = (handle: ReturnType<typeof setTimeout>): void => {
+        timers.delete(handle as unknown as number)
+      }
+      const advance = (ms: number): void => {
+        const target = at + ms
+        for (;;) {
+          const due = [...timers.entries()]
+            .filter(([, timer]) => timer.due <= target)
+            .sort((a, b) => a[1].due - b[1].due)[0]
+          if (due === undefined) break
+          at = due[1].due
+          timers.delete(due[0])
+          due[1].callback()
+        }
+        at = target
+      }
+      return { setTimer, clearTimer, advance, pending: (): number => timers.size }
+    }
+
+    const flushMicrotasks = async (): Promise<void> => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    it('writes a burst of changes without a quiet period at the max wait, not later', async () => {
+      const clock = fakeClock()
+      const saves: StoreData[] = []
+      const save = async (_path: string, data: StoreData): Promise<void> => {
+        saves.push(data)
+      }
+      const saver = createDebouncedSaver('/x', 400, {
+        save,
+        maxWaitMs: 5000,
+        setTimeout: clock.setTimer,
+        clearTimeout: clock.clearTimer
+      })
+
+      const first = emptyStore()
+      const second: StoreData = { ...first, groupOrder: ['g1'] }
+      // A store change every 300 ms: the 400 ms debounce is never allowed to fire.
+      saver.schedule(first)
+      for (let elapsed = 0; elapsed < 4800; elapsed += 300) {
+        clock.advance(300)
+        saver.schedule(second)
+      }
+      await flushMicrotasks()
+      expect(saves).toHaveLength(0)
+
+      clock.advance(200) // 5000 ms after the first unsaved change
+      await flushMicrotasks()
+      expect(saves).toEqual([second])
+      expect(clock.pending()).toBe(0)
+    })
+
+    it('still saves after the normal delay once changes stop', async () => {
+      const clock = fakeClock()
+      const saves: StoreData[] = []
+      const saver = createDebouncedSaver('/x', 400, {
+        save: async (_path, data) => {
+          saves.push(data)
+        },
+        maxWaitMs: 5000,
+        setTimeout: clock.setTimer,
+        clearTimeout: clock.clearTimer
+      })
+      saver.schedule(emptyStore())
+      clock.advance(399)
+      await flushMicrotasks()
+      expect(saves).toHaveLength(0)
+      clock.advance(1)
+      await flushMicrotasks()
+      expect(saves).toHaveLength(1)
+      expect(clock.pending()).toBe(0)
+    })
+
+    it('flush writes at once and cancels both timers', async () => {
+      const clock = fakeClock()
+      const saves: StoreData[] = []
+      const saver = createDebouncedSaver('/x', 400, {
+        save: async (_path, data) => {
+          saves.push(data)
+        },
+        maxWaitMs: 5000,
+        setTimeout: clock.setTimer,
+        clearTimeout: clock.clearTimer
+      })
+      saver.schedule(emptyStore())
+      expect(clock.pending()).toBe(2)
+      await saver.flush()
+      expect(saves).toHaveLength(1)
+      expect(clock.pending()).toBe(0)
+    })
+
+    it('starts a new max wait after a completed write', async () => {
+      const clock = fakeClock()
+      const saves: StoreData[] = []
+      const saver = createDebouncedSaver('/x', 5000, {
+        save: async (_path, data) => {
+          saves.push(data)
+        },
+        maxWaitMs: 1000,
+        setTimeout: clock.setTimer,
+        clearTimeout: clock.clearTimer
+      })
+      saver.schedule(emptyStore())
+      clock.advance(1000)
+      await flushMicrotasks()
+      expect(saves).toHaveLength(1)
+      saver.schedule(emptyStore())
+      clock.advance(1000)
+      await flushMicrotasks()
+      expect(saves).toHaveLength(2)
+    })
+  })
 })
 
 describe('parseStoreData closedAt', () => {

@@ -42,6 +42,10 @@ export interface WorkerHubDeps {
   readonly isKnownSession: (id: Id) => boolean
   /** True when the owner is an OpenCode session: its own process reports first and must never become a worker. */
   readonly isOpencodeSession: (id: Id) => boolean
+  /** Burst window for snapshots after the first change. Defaults to WORKER_EMIT_DELAY_MS. */
+  readonly emitDelayMs?: number
+  readonly setTimeout?: (callback: () => void, ms: number) => unknown
+  readonly clearTimeout?: (handle: unknown) => void
 }
 
 export interface WorkerHub {
@@ -53,7 +57,12 @@ export interface WorkerHub {
   getWorkers(): readonly WorkerInfo[]
   /** True when proc is a worker child of an OpenCode owner session (its session-plugin events are ignored). */
   isWorkerProc(owner: Id, proc: string): boolean
+  /** Cancels a pending coalesced snapshot (shutdown). */
+  dispose(): void
 }
+
+/** A burst of plugin events produces at most one extra snapshot per window (the first one is immediate). */
+export const WORKER_EMIT_DELAY_MS = 250
 
 const DEFAULT_TITLE_RE = /^(new session|child session)\b/i
 
@@ -145,9 +154,49 @@ export function createWorkerHub(deps: WorkerHubDeps): WorkerHub {
   const lastBeat = new Map<string, number>()
   /** The owning process per OpenCode session (the first proc that reported a hello/beat/start event). */
   const ownerProcs = new Map<Id, string>()
+  const emitDelayMs = deps.emitDelayMs ?? WORKER_EMIT_DELAY_MS
+  const setTimer = deps.setTimeout ?? ((callback: () => void, ms: number): unknown => globalThis.setTimeout(callback, ms))
+  const clearTimer = deps.clearTimeout ?? ((handle: unknown): void => globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>))
 
-  function emit(): void {
+  let emitTimer: unknown = null
+  let dirty = false
+  let disposed = false
+
+  function sendSnapshot(): void {
     deps.onChange(snapshot())
+  }
+
+  /** Sends a structural change (a forgotten session) at once, dropping any coalesced snapshot. */
+  function flushEmit(): void {
+    if (disposed) return
+    if (emitTimer !== null) {
+      clearTimer(emitTimer)
+      emitTimer = null
+    }
+    dirty = false
+    sendSnapshot()
+  }
+
+  /** Coalesces a burst: the first change is sent at once, later ones at most once per emitDelayMs. */
+  function emit(): void {
+    if (disposed) return
+    dirty = true
+    if (emitTimer !== null) return
+    // Start the window before sending: a listener that feeds the hub again must see it and coalesce.
+    scheduleTrailing()
+    dirty = false
+    sendSnapshot()
+  }
+
+  function scheduleTrailing(): void {
+    emitTimer = setTimer(() => {
+      emitTimer = null
+      if (disposed || !dirty) return
+      dirty = false
+      sendSnapshot()
+      // Keep one throttle window while events keep arriving; a quiet window stops the timer.
+      if (emitTimer === null) scheduleTrailing()
+    }, emitDelayMs)
   }
 
   /** 1-based position of each worker among its owner's workers, in insertion order (the "Worker N" fallback name). */
@@ -257,9 +306,18 @@ export function createWorkerHub(deps: WorkerHubDeps): WorkerHub {
       }
       // The owner proc belongs to the same pty lifetime: a restart (sleep/wake, close/reopen) re-registers it.
       ownerProcs.delete(owner)
-      if (changed) emit()
+      if (changed) flushEmit()
     },
 
-    getWorkers: snapshot
+    getWorkers: snapshot,
+
+    dispose(): void {
+      disposed = true
+      dirty = false
+      if (emitTimer !== null) {
+        clearTimer(emitTimer)
+        emitTimer = null
+      }
+    }
   }
 }

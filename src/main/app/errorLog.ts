@@ -1,8 +1,11 @@
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, closeSync, mkdirSync, openSync, readSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const MAIN_ERROR_LOG_FILE = 'main-errors.log'
 export const MAX_MESSAGE_CHARS = 2000
+/** Above this size the log is rewritten with roughly its last half (errors are rare; the file must not grow forever). */
+export const MAX_LOG_BYTES = 1_000_000
+const KEEP_BYTES = MAX_LOG_BYTES / 2
 const MAX_STACK_LINES = 5
 const MAX_STACK_LINE_CHARS = 200
 const TRUNCATED_SUFFIX = ' ...[truncated]'
@@ -34,6 +37,41 @@ export function formatMainError(context: string, error: unknown, now: Date): str
   return [header, ...stackLines].join('\n') + '\n'
 }
 
+/** Reads the last `length` bytes of the file. */
+function readTail(path: string, size: number, length: number): string {
+  const fd = openSync(path, 'r')
+  try {
+    const buffer = Buffer.alloc(length)
+    let read = 0
+    while (read < length) {
+      const count = readSync(fd, buffer, read, length - read, size - length + read)
+      if (count === 0) break
+      read += count
+    }
+    return buffer.subarray(0, read).toString('utf8')
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/** Bounds the log: when it exceeds MAX_LOG_BYTES, only the last half is kept. Never throws. */
+function rotateIfNeeded(path: string): void {
+  let size: number
+  try {
+    size = statSync(path).size
+  } catch {
+    return
+  }
+  if (size <= MAX_LOG_BYTES) return
+  try {
+    const text = readTail(path, size, Math.min(size, KEEP_BYTES))
+    const firstBreak = text.indexOf('\n')
+    writeFileSync(path, firstBreak >= 0 ? text.slice(firstBreak + 1) : text, 'utf-8')
+  } catch {
+    // Keeping the old, larger file beats losing the next entry: the caller appends anyway.
+  }
+}
+
 /**
  * Appends an error to `<userDataDir>/main-errors.log`. This function must never throw: it is the one place
  * where an error may be dropped. If the file cannot be written, the entry is echoed to stderr instead.
@@ -48,7 +86,9 @@ export function logMainError(userDataDir: string, context: string, error: unknow
 
   try {
     mkdirSync(userDataDir, { recursive: true })
-    appendFileSync(join(userDataDir, MAIN_ERROR_LOG_FILE), entry, 'utf-8')
+    const file = join(userDataDir, MAIN_ERROR_LOG_FILE)
+    rotateIfNeeded(file)
+    appendFileSync(file, entry, 'utf-8')
   } catch {
     try {
       process.stderr.write(entry)

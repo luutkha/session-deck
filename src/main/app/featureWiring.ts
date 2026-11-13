@@ -140,9 +140,10 @@ export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
       onError('usage provider setting', error)
     }
   })
-  // Turn costs settle from statusLine updates; a newer 5-hour reset time can arrive the same way.
-  usage.onChange((state) => {
-    for (const entry of state.sessions) timeline.onCostChanged(entry.sessionId)
+  // Turn costs settle from statusLine updates; a newer 5-hour reset time can arrive the same way. Only the session
+  // whose entry changed can have a new cost, so the timeline is touched for that one (not for all sessions).
+  usage.onChange((_state, sessionId) => {
+    if (sessionId !== undefined) timeline.onCostChanged(sessionId)
     autopilot.onUsageChanged()
   })
 

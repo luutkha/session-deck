@@ -21,8 +21,12 @@ export interface UsageService {
   /** Drops a session's entry (e.g. when the session is removed). */
   forget(sessionId: string): void
   getState(): UsageState
-  /** Calls back only when the state actually changed. Returns the unsubscribe function. */
-  onChange(callback: (state: UsageState) => void): () => void
+  /**
+   * Calls back only when the state actually changed. The second argument is the session whose entry changed;
+   * it is omitted when only account-wide usage changed (so listeners can avoid touching every session).
+   * Returns the unsubscribe function.
+   */
+  onChange(callback: (state: UsageState, sessionId?: string) => void): () => void
 }
 
 const EMPTY_STATE: UsageState = { account: null, sessions: [] }
@@ -86,7 +90,7 @@ export function createUsageService(deps: UsageServiceDeps = {}): UsageService {
   let claude: AccountUsage | null = null
   let opencodeGo: AccountUsage | null = null
   let goEnabled = true
-  const subscribers = new Set<(state: UsageState) => void>()
+  const subscribers = new Set<(state: UsageState, sessionId?: string) => void>()
 
   /** Claude first, then Go; undefined when neither has data (keeps the legacy state shape). */
   function displayAccounts(): readonly AccountUsage[] | undefined {
@@ -103,13 +107,15 @@ export function createUsageService(deps: UsageServiceDeps = {}): UsageService {
     return a.every((entry, index) => entry === b[index])
   }
 
-  function commit(sessions: readonly SessionUsage[]): void {
+  function commit(sessions: readonly SessionUsage[], changedSessionId?: string): void {
     const candidate = displayAccounts()
     const accounts = sameAccounts(candidate, state.accounts) ? state.accounts : candidate
     if (claude === state.account && accounts === state.accounts && sessions === state.sessions) return
+    // Only a new session list means a session entry changed; account-only updates name no session.
+    const changed = sessions !== state.sessions ? changedSessionId : undefined
     state = accounts === undefined ? { account: claude, sessions } : { account: claude, accounts, sessions }
     for (const callback of subscribers) {
-      callback(state)
+      callback(state, changed)
     }
   }
 
@@ -135,7 +141,7 @@ export function createUsageService(deps: UsageServiceDeps = {}): UsageService {
         ? upsertSession(state.sessions, { sessionId, ...parsed.session })
         : state.sessions
 
-      commit(sessions)
+      commit(sessions, sessionId)
     },
 
     ingestAccount(account: ParsedAccountWindows): void {
@@ -155,7 +161,7 @@ export function createUsageService(deps: UsageServiceDeps = {}): UsageService {
 
     forget(sessionId: string): void {
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return
-      commit(state.sessions.filter((s) => s.sessionId !== sessionId))
+      commit(state.sessions.filter((s) => s.sessionId !== sessionId), sessionId)
     },
 
     getState(): UsageState {

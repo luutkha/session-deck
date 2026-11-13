@@ -380,12 +380,17 @@ export async function saveStoreFile(path: string, data: StoreData): Promise<void
   return next
 }
 
+/** A pending save is written this long after the first unsaved change, even while changes keep arriving. */
+export const DEFAULT_MAX_WAIT_MS = 5000
+
 export interface DebouncedSaverDeps {
   readonly setTimeout?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>
   readonly clearTimeout?: (id: ReturnType<typeof setTimeout>) => void
   readonly save?: (path: string, data: StoreData) => Promise<void>
   /** Called when a timer-triggered write fails. Flushes reject to their caller instead. */
   readonly onError?: (error: unknown) => void
+  /** Upper bound between the first unsaved change and its write. Defaults to DEFAULT_MAX_WAIT_MS. */
+  readonly maxWaitMs?: number
 }
 
 export interface DebouncedSaver {
@@ -401,20 +406,34 @@ export function createDebouncedSaver(
   const setTimer = deps.setTimeout ?? setTimeout
   const clearTimer = deps.clearTimeout ?? clearTimeout
   const save = deps.save ?? saveStoreFile
+  const maxWaitMs = deps.maxWaitMs ?? DEFAULT_MAX_WAIT_MS
   const onError = deps.onError ?? ((error: unknown): void => {
     console.error('SessionDeck: saving the store failed', error)
   })
 
   let timer: ReturnType<typeof setTimeout> | null = null
+  /** Bounds a burst: started by the first unsaved change and NOT restarted by later ones. */
+  let maxWaitTimer: ReturnType<typeof setTimeout> | null = null
   let pending: StoreData | null = null
   // Every save waits for the previous one: the temp file and the final rename are never concurrent.
   let chain: Promise<void> = Promise.resolve()
+
+  function clearTimers(): void {
+    if (timer !== null) {
+      clearTimer(timer)
+      timer = null
+    }
+    if (maxWaitTimer !== null) {
+      clearTimer(maxWaitTimer)
+      maxWaitTimer = null
+    }
+  }
 
   /** Writes the newest pending state after any in-flight save. Resolves when that write has finished. */
   const writePending = (): Promise<void> => {
     const data = pending
     pending = null
-    timer = null
+    clearTimers()
     if (data === null) return chain
 
     const write = chain.then(() => save(path, data))
@@ -426,18 +445,22 @@ export function createDebouncedSaver(
   return {
     schedule(data) {
       pending = data
-      if (timer) {
+      if (timer !== null) {
         clearTimer(timer)
       }
       timer = setTimer(() => {
         void writePending().catch(onError)
       }, delayMs)
+      // A store write about once a second would keep restarting the debounce timer forever: the max wait
+      // guarantees the first unsaved change reaches disk even during a busy period.
+      if (maxWaitTimer === null) {
+        maxWaitTimer = setTimer(() => {
+          void writePending().catch(onError)
+        }, maxWaitMs)
+      }
     },
     async flush() {
-      if (timer) {
-        clearTimer(timer)
-        timer = null
-      }
+      clearTimers()
       await writePending()
     }
   }

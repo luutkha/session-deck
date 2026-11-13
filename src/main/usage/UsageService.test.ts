@@ -146,6 +146,40 @@ describe('UsageService', () => {
     expect(service.getState().sessions[0].costUsd).toBe(5)
   })
 
+  describe('changed session in onChange', () => {
+    it('names the session whose entry changed', () => {
+      const changes: (string | undefined)[] = []
+      service.onChange((_state, sessionId) => changes.push(sessionId))
+      service.ingest('s1', { cost: { total_cost_usd: 1 } })
+      service.ingest('s2', { model: { display_name: 'Opus' } })
+      expect(changes).toEqual(['s1', 's2'])
+    })
+
+    it('names the removed session on forget', () => {
+      const changes: (string | undefined)[] = []
+      service.onChange((_state, sessionId) => changes.push(sessionId))
+      service.ingest('s1', { cost: { total_cost_usd: 1 } })
+      service.forget('s1')
+      expect(changes).toEqual(['s1', 's1'])
+    })
+
+    it('omits the session when only the account changed', () => {
+      const changes: (string | undefined)[] = []
+      service.onChange((_state, sessionId) => changes.push(sessionId))
+      service.ingestAccount({ fiveHour: { usedPercentage: 40, resetsAt: 1000 }, sevenDay: null })
+      service.ingest('s1', { ...rateLimits(1, 2), cost: { total_cost_usd: 3 } })
+      expect(changes).toEqual([undefined, 's1'])
+    })
+
+    it('does not report a session for a payload that changed nothing', () => {
+      const changes: (string | undefined)[] = []
+      service.ingest('s1', { cost: { total_cost_usd: 1 } })
+      service.onChange((_state, sessionId) => changes.push(sessionId))
+      service.ingest('s1', { cost: { total_cost_usd: 1 } })
+      expect(changes).toEqual([])
+    })
+  })
+
   describe('ingestAccount', () => {
     const windows = {
       fiveHour: { usedPercentage: 40, resetsAt: 1000 },

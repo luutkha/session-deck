@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { logMainError, MAIN_ERROR_LOG_FILE, MAX_MESSAGE_CHARS } from './errorLog'
+import { logMainError, MAIN_ERROR_LOG_FILE, MAX_LOG_BYTES, MAX_MESSAGE_CHARS } from './errorLog'
 
 const createdDirs: string[] = []
 
@@ -54,6 +54,22 @@ describe('logMainError', () => {
     const text = readFileSync(join(dir, MAIN_ERROR_LOG_FILE), 'utf-8')
     expect(text.length).toBeLessThan(MAX_MESSAGE_CHARS + 1000)
     expect(text).toContain('[truncated]')
+  })
+
+  it('caps an oversized log and keeps the newest entries', () => {
+    const dir = tempDir()
+    const path = join(dir, MAIN_ERROR_LOG_FILE)
+    const old = Array.from({ length: 20_000 }, (_, i) => `[2020-01-01T00:00:00.000Z] old ${i} ${'x'.repeat(50)}`).join('\n') + '\n'
+    writeFileSync(path, old)
+
+    logMainError(dir, 'ctx', new Error('fresh failure'))
+
+    const text = readFileSync(path, 'utf-8')
+    expect(text.length).toBeLessThan(MAX_LOG_BYTES)
+    expect(text).toContain('fresh failure')
+    expect(text).not.toContain('] old 0 ')
+    // The trimmed file starts on a whole entry.
+    expect(text.startsWith('[')).toBe(true)
   })
 
   it('survives an unwritable directory without throwing', () => {

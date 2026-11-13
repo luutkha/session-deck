@@ -37,6 +37,36 @@ describe('transcriptExists', () => {
   it('is false when Claude has no projects folder yet', () => {
     expect(transcriptExists('abc', configDir())).toBe(false)
   })
+
+  it('finds a conversation in a file larger than the read window', () => {
+    const dir = configDir()
+    const project = join(dir, 'projects', 'C--work-app')
+    mkdirSync(project, { recursive: true })
+    const filler = Array.from({ length: 1200 }, (_, i) => JSON.stringify({ type: 'ai-title', n: i, pad: 'x'.repeat(60) }))
+    filler.push('{"type":"assistant","message":"done"}')
+    writeFileSync(join(project, 'big.jsonl'), filler.join('\n'))
+    expect(transcriptExists('big', dir)).toBe(true)
+  })
+
+  it('a large metadata-only file is still not a conversation', () => {
+    const dir = configDir()
+    const project = join(dir, 'projects', 'C--work-app')
+    mkdirSync(project, { recursive: true })
+    const filler = Array.from({ length: 1200 }, (_, i) => JSON.stringify({ type: 'ai-title', n: i, pad: 'x'.repeat(60) }))
+    writeFileSync(join(project, 'meta-big.jsonl'), filler.join('\n'))
+    expect(transcriptExists('meta-big', dir)).toBe(false)
+  })
+
+  it('finds a transcript in a project folder created right after an earlier lookup', () => {
+    const dir = configDir()
+    mkdirSync(join(dir, 'projects', 'C--first'), { recursive: true })
+    expect(transcriptExists('missing', dir)).toBe(false)
+
+    const later = join(dir, 'projects', 'C--second')
+    mkdirSync(later, { recursive: true })
+    writeFileSync(join(later, 'new.jsonl'), '{"type":"user","message":"hi"}\n')
+    expect(transcriptExists('new', dir)).toBe(true)
+  })
 })
 
 describe('shouldRotateSessionId', () => {
