@@ -65,6 +65,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 - `reference/orca/`: Orca's source (MIT). Copy its components and look from here; keep the attribution header.
 
 - Performance round (D62): `renderer/terminal/webglPolicy.ts` (which panes hold a WebGL context), `hiddenQueue.ts` (output queued while a pane is hidden), `renderer/state/useClock.ts` (one shared interval for the 30 s ticks), `scripts/bench-sessions.cjs` (benchmark: `node scripts/bench-sessions.cjs 20 15 [churn]`), `scripts/e2e-hiddenpane.cjs`.
+- Sidebar width (D70): `renderer/shell/sidebarWidth.ts`, `useSidebarWidth.ts`, `SidebarResizeHandle.tsx`, wired in `mode/ModeWorkspace.tsx`, `scripts/e2e-sidebarwidth.cjs`.
 - Keyboard triage (D69): `renderer/attention/attentionNav.ts`, `useAttentionShortcuts.ts`, `stepAttention` in `mode/useWorkspaceCommands.ts`, palette `step-attention`, `scripts/e2e-attentionnav.cjs`.
 - Auto effects vs busy fleet (D68): `renderer/Terminal/effectsLoad.ts`, `resolveReducedEffects(..., fleetBusy)`, `GraphicsEffects` in `App.tsx`.
 - Runtime events + git load (D67): `renderer/state/runtimeBatch.ts`, `renderer/shell/Tab.tsx` (memo), `main/git/limiter.ts` + `gitRunner.ts` (4 at once), `codeWiring.ts` (`fresh` reads), `scripts/bench-sessions.cjs` (agents=/profile/rprofile/mut).

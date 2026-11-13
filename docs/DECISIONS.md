@@ -324,6 +324,9 @@ Update: on the VM (adapters: Microsoft Hyper-V Video, Microsoft Remote Display A
 **D69 · 2026-11-13 · Keyboard triage** · active
 "what is next feature we should build?" (OpenCode read-only analysis, 5 candidates, `-flash` fallback) -> "do for 5." Ctrl+Shift+Down / Up show the next / previous session that needs you (also from the terminal), plus two palette items while a bell exists. Order = the needs-you list (newest bell first). Not done: Ctrl+Shift+A to open the needs-you list. Other candidates not chosen (offer again only if relevant): fleet search across live output, stalled-agent detection ("Silent 18m"), copy last answer / export session as Markdown, crash recovery report.
 
+**D70 · 2026-11-13 · Adjustable sessions sidebar** · active
+"next feature i want is the right panel (which contain the sessions) can not adjust width, so i want able to adjust it". The panel that holds the sessions is the sidebar (it is on the left in this app); that is the one made draggable. Edge drag 220-640px (default 300), saved per user in localStorage, one width for Ops and Code, keyboard + double-click reset. The panels on the right (notes, changes, Jarvis) were not changed.
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 

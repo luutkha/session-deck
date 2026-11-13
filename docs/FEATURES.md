@@ -89,7 +89,8 @@ SessionDeck
 │   ├── NAV-9  Keyboard navigation
 │   ├── NAV-10 Status view
 │   ├── NAV-11 Bulk selection and actions (sidebar + Hub)
-│   └── NAV-12 Sort sessions (D61)
+│   ├── NAV-12 Sort sessions (D61)
+│   └── NAV-13 Adjustable sidebar width (D70)
 ├── ATT  Attention & alerts
 │   ├── ATT-1  Claude hook pipeline
 │   ├── ATT-2  Attention reasons and priority
@@ -303,6 +304,7 @@ SessionDeck
 | NAV-10 | Status view | Shipped | Group-by = Status | Read-only grouping by status; no workspace buckets; drag between sections changes status (same as Hub). | `renderer/state/selectors.ts`; `Sidebar/Sidebar.tsx` | `selectors.test.ts` |
 | NAV-11 | Bulk selection and actions | Shipped | Sidebar / Hub with Ctrl / Shift / Esc | Plain click opens and clears (sets the range anchor); Ctrl/Cmd+click toggles without opening; Shift+click replaces with the visible range; Esc clears unless a dialog/menu/input/xterm has focus. Ids are pruned to the visible order; actions apply in view order, sequentially, one try/catch each (store banner reports failures) and the selection survives. Actions: Sleep, Wake (opens), **Prompt** (D48: one prompt into every selected Claude/OpenCode session's queue — idle ones get it at once, busy ones when their turn finishes, not-running ones later; Shell sessions and full queues are skipped; the dialog shows that split), Set status, Move to group, Clear. The bar's buttons wrap to a second line in the 300 px sidebar. Closed sessions never select; sidebar and Hub selections are independent. | `renderer/state/multiSelect.ts`, `useMultiSelect.ts`, `useBulkActions.ts` (the shared action loops); `components/BulkActionBar.tsx`; `queue/BroadcastDialog.tsx`, `queueLogic.ts` → `broadcastPlan`; `Sidebar/Sidebar.tsx`, `SessionCard.tsx`; `hub/HubView.tsx`, `HubCard.tsx` | `multiSelect.test.ts`, `useBulkActions.test.ts`, `queueLogic.test.ts`; e2e `e2e:bulk`, `e2e-broadcast.cjs` |
 | NAV-12 | Sort sessions (D61) | Shipped | Sidebar header ↕ button (Ops and Code), Jarvis `sidebar_view sort` | Manual (default: drag order in Ops, creation order in Code), Needs attention (rank: needs you = a bell or a non-reminder `needs-input` → working → finished / idle reminder → running, nothing known → sleeping → not running; ties by last active), Last active (`Session.lastActiveAt` desc, else `createdAt`), Newest (`createdAt` desc), Name A–Z (natural, case-insensitive). Sorts inside each group, folder bucket, status section, worktree and Hub column; groups, repos and worktrees keep their order (folder buckets follow their first session). Hub on Manual keeps its own most-recent-activity order. Saved per mode (`sessiondeck.sort.v1` / `.code`). Live sorts (attention, recent) are pinned while the pointer is over the list or board and re-sort when it leaves. While sorted, a drop that only reorders inside a group is refused with a 4 s hint "Switch the sort to Manual to reorder"; a drop into another group still moves. Keyboard ↑/↓ and Shift+click ranges follow the sorted order. `lastActiveAt` is set in main by `lastActive.ts`: a new `working`/`finished` activity or a typed line with Enter (focus reports do not count), first touch written at once, then at most one trailing write per session per 30 s, flushed at quit. | `renderer/state/sessionSort.ts` (pure rules), `useSessionSort.ts` (per-mode pref + hover freeze), `selectors.ts` → `orderSectionSessions`; `Sidebar/SortMenu.tsx`, `SessionsHeader.tsx`, `Sidebar.tsx`; `code/sidebar/codeTree.ts` → `orderCodeTreeSessions`, `useCodeTreeModel.ts`, `CodeSidebar.tsx`; `hub/HubView.tsx`; `mode/ModeWorkspace.tsx`; `main/app/lastActive.ts`, `store/reducers.ts` → `setLastActiveAt`; `shared/idleReminder.ts` | `sessionSort.test.ts`, `lastActive.test.ts`, `codeTree.test.ts`, `reducers.test.ts`, `persistence.notes.test.ts`, `workspaceUi.test.ts`, `jarvisTools.test.ts`; e2e `e2e:sort`, `e2e-jarvis-app.cjs` |
+| NAV-13 | Adjustable sidebar width (D70) | Shipped | Drag the sidebar's right edge; focus it and use arrows | The sessions sidebar (Ops and Code, both windows) is 300px by default and can be dragged between 220px and 640px; the terminal area always keeps 420px (CSS `max-width`, so a small window is safe). Live while dragging (no width transition then), saved when the pointer is released (`sessiondeck.sidebarWidth.v1`, shared by both modes). The edge is a focusable separator: Left/Right = 16px, Shift = 64px, Home/End = the limits; double-click resets to 300px. Hiding the sidebar keeps the width. | `renderer/shell/sidebarWidth.ts` (limits, parse, key and drag rules), `useSidebarWidth.ts`, `SidebarResizeHandle.tsx`; `mode/ModeWorkspace.tsx` | `sidebarWidth.test.ts`; e2e `e2e:sidebarwidth` |
 
 ### 2.4 ATT — Attention & alerts
 
@@ -582,6 +584,7 @@ SessionDeck
 | `sessiondeck-sidebar-show-workspaces` | NAV-4 | Workspace buckets on/off |
 | `sessiondeck-sidebar-workspace-collapsed` | NAV-4 | Collapsed workspaces per group+folder |
 | `sessiondeck.sort.v1` (+`.code`) | NAV-12 | Session sort: `manual` \| `attention` \| `recent` \| `newest` \| `name` (D61) |
+| `sessiondeck.sidebarWidth.v1` | NAV-13 | Sessions sidebar width in px (220-640), both modes |
 
 > `.code` suffix is added by `storageKeyFor(base, 'code')`; Ops keeps the historical key. Do not invent new suffixes.
 
@@ -680,6 +683,7 @@ SessionDeck
 | `e2e-queue-real.cjs` | SES-15 | A real Claude turn finishes and the queued prompt is submitted and answered |
 | `e2e-bell.cjs` | ATT-2/3/4, SES-13 | Bell on card/tab/Hub, mark read/unread, real background turn |
 | `e2e-attentionnav.cjs` | ATT-13 | Ctrl+Shift+Down / Up walk the sessions with a bell (terminal focused, none reaches the terminal), viewed ones lose the bell, nothing waiting / a dialog open does nothing |
+| `e2e-sidebarwidth.cjs` | NAV-13 | Drag the edge (live, limits, terminal follows), arrows / Home / End, double-click reset, survives a quit and restart, hide / show keeps the width |
 | `e2e-reminder.cjs` | ATT-12, ATT-5, ATT-7 | Settings > Sound, a real 1-minute repeat, read stops it, on-screen silent, off stops it |
 | `e2e-hub.cjs` | HUB-1/2/3, ATT-5, SET-1 | Hub columns, drag status, settings, sound pipeline |
 | `e2e-hubscroll.cjs` | HUB-6 | Busiest-column scroll |

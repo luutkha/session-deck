@@ -23,6 +23,9 @@ import type { TerminalGridMode } from '../grid/GridCells'
 import { WorkerView } from '../workers/WorkerView'
 import { needsYouItems } from '../attention/needsYou'
 import { useAttentionShortcuts } from '../attention/useAttentionShortcuts'
+import { SidebarResizeHandle } from '../shell/SidebarResizeHandle'
+import { SIDEBAR_KEEP_FOR_MAIN } from '../shell/sidebarWidth'
+import { useSidebarWidth } from '../shell/useSidebarWidth'
 import { EmptyState } from '../shell/EmptyState'
 import { StatusBar } from '../shell/StatusBar'
 import { TabBar } from '../shell/TabBar'
@@ -49,7 +52,6 @@ import { sidebarViewControl } from '../jarvis/sidebarView'
 import { requestChangesFile } from '../code/changes/changesRequest'
 import { readSidePanelTab, resolveSidePanelTab, storeSidePanelTab, type SidePanelTab } from '../timeline/sidePanelTab'
 
-const SIDEBAR_WIDTH_CLASS = 'w-[300px]'
 const EMPTY_STORE: StoreData = { version: 1, sessions: [], groups: [], statuses: [], groupOrder: [] }
 const CODE_EMPTY = {
   title: 'No open sessions',
@@ -93,6 +95,9 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
     onShowAwaySummary: props.onShowAwaySummary
   })
   const [sidebarOpen, setSidebarOpen] = usePersistedBoolean(SIDEBAR_STORAGE_KEY, true)
+  // D70: the sidebar's edge is draggable; no width transition while the pointer is moving it.
+  const sidebarWidth = useSidebarWidth()
+  const [sidebarResizing, setSidebarResizing] = useState(false)
   const [soundEnabled, setSoundEnabled] = useSoundEnabled()
   const lastChange = useLastRuntimeChange(runtime)
   useTabShortcuts({ closeActive: tabs.closeActive, cycle: tabs.cycle })
@@ -265,11 +270,14 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
       <div className="app-shell flex h-full min-h-0 w-full overflow-hidden bg-background font-sans text-foreground" data-ui-mode={mode}>
         <aside
           className={cn(
-            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-worktree-sidebar transition-[width] duration-200',
-            sidebarOpen ? `${SIDEBAR_WIDTH_CLASS} border-r border-sidebar-border` : 'w-0'
+            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-worktree-sidebar',
+            !sidebarResizing && 'transition-[width] duration-200',
+            sidebarOpen ? 'border-r border-sidebar-border' : 'w-0'
           )}
+          // The terminal area always keeps SIDEBAR_KEEP_FOR_MAIN px, so a small window never loses it to a wide sidebar.
+          style={sidebarOpen ? { width: sidebarWidth.width, maxWidth: `calc(100vw - ${String(SIDEBAR_KEEP_FOR_MAIN)}px)` } : undefined}
         >
-          <div className={cn('flex h-full min-h-0 flex-col', SIDEBAR_WIDTH_CLASS)}>
+          <div className="flex h-full min-h-0 flex-col" style={{ width: sidebarWidth.width }}>
             <ModeTitleBar chrome={chrome} mode={mode} needsYou={needsYou} onOpenSession={nav.selectSession} onHideSidebar={(): void => setSidebarOpen(false)} />
             <div className="flex min-h-0 flex-1 flex-col">
               {mode === 'code' ? (
@@ -317,6 +325,17 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
             </div>
           </div>
         </aside>
+        {sidebarOpen ? (
+          <div className="relative z-30 w-0 shrink-0">
+            <SidebarResizeHandle
+              width={sidebarWidth.width}
+              onDrag={sidebarWidth.setLive}
+              onCommit={sidebarWidth.commit}
+              onReset={sidebarWidth.reset}
+              onDraggingChange={setSidebarResizing}
+            />
+          </div>
+        ) : null}
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TabBar
