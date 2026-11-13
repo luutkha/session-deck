@@ -2,6 +2,7 @@ import { useSyncExternalStore, useCallback, useRef, useEffect, useMemo } from 'r
 import type { StoreData, RuntimeState, Session, Group, StatusDef, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, Id, AppSettings, SettingsPatch } from '../../shared/types'
 import type { Api } from '../../shared/ipc'
 import { errorMessage } from '../../shared/guards'
+import { shareStructure } from './shareStructure'
 
 type Listener = () => void
 
@@ -80,7 +81,11 @@ export function useSessionStore(): UseSessionStoreResult {
         nextRuntime.set(session.id, state)
       }
     }
-    snapshotRef.current = { ...snapshotRef.current, data, runtime: nextRuntime }
+    // A broadcast replaces the whole store with new objects; share the unchanged subtrees so memo'd
+    // components (sessions, settings) keep their identity.
+    const previousData = snapshotRef.current.data
+    const dataToKeep = previousData === null ? data : shareStructure(previousData, data)
+    snapshotRef.current = { ...snapshotRef.current, data: dataToKeep, runtime: nextRuntime }
     notify()
   }, [notify])
 

@@ -33,7 +33,7 @@ const js = (value) => JSON.stringify(value)
 function treeCpuSeconds(rootPid) {
   const out = execFileSync(
     'powershell',
-    ['-NoProfile', '-Command', '$p = Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,UserModeTime,KernelModeTime; $p | ConvertTo-Json -Compress'],
+    ['-NoProfile', '-Command', '$p = Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,UserModeTime,KernelModeTime,CommandLine; $p | ConvertTo-Json -Compress'],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
   const all = JSON.parse(out)
@@ -46,7 +46,7 @@ function treeCpuSeconds(rootPid) {
   const byPid = new Map(all.map((proc) => [proc.ProcessId, proc]))
   const stack = [rootPid]
   const seen = new Set()
-  const groups = { electron: 0, pty: 0, other: 0 }
+  const groups = { electron: 0, main: 0, gpu: 0, renderer: 0, utility: 0, pty: 0, other: 0 }
   while (stack.length > 0) {
     const pid = stack.pop()
     if (seen.has(pid)) continue
@@ -55,7 +55,12 @@ function treeCpuSeconds(rootPid) {
     if (proc) {
       const seconds = (Number(proc.UserModeTime) + Number(proc.KernelModeTime)) / 1e7
       const name = String(proc.Name).toLowerCase()
-      if (name === 'electron.exe') groups.electron += seconds
+      if (name === 'electron.exe') {
+        groups.electron += seconds
+        const type = /--type=([a-z-]+)/.exec(String(proc.CommandLine ?? ''))?.[1] ?? 'main'
+        const key = type === 'gpu-process' ? 'gpu' : type === 'renderer' ? 'renderer' : type === 'main' ? 'main' : 'utility'
+        groups[key] += seconds
+      }
       else if (name.includes('conhost') || name.includes('openconsole') || name === 'cmd.exe' || name.includes('powershell') || name === 'node.exe') groups.pty += seconds
       else groups.other += seconds
     }
@@ -136,6 +141,10 @@ async function main() {
       rendererScriptPct: Number(((d('ScriptDuration') / secs) * 100).toFixed(1)),
       jsHeapMB: Number((after.m.JSHeapUsedSize / 1048576).toFixed(0)),
       domNodes: after.m.Nodes,
+      cpuMainPct: Number((((after.cpu.main - before.cpu.main) / secs) * 100).toFixed(0)),
+      cpuGpuPct: Number((((after.cpu.gpu - before.cpu.gpu) / secs) * 100).toFixed(0)),
+      cpuRendererPct: Number((((after.cpu.renderer - before.cpu.renderer) / secs) * 100).toFixed(0)),
+      cpuUtilityPct: Number((((after.cpu.utility - before.cpu.utility) / secs) * 100).toFixed(0)),
       cpuElectronPct: Number((((after.cpu.electron - before.cpu.electron) / secs) * 100).toFixed(0)),
       cpuPtyChildrenPct: Number((((after.cpu.pty - before.cpu.pty) / secs) * 100).toFixed(0))
     }

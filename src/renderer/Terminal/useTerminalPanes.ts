@@ -1,10 +1,12 @@
-// The xterm pane registry for a terminal workspace. Keeps one xterm instance
-// per session mounted for the session's whole lifetime (hidden via CSS, never
-// destroyed) so scrollback and render state survive switching and splitting.
-// Hidden panes give their GPU renderer back (see webglPolicy), stop receiving
-// output (it is queued, see hiddenQueue) and everything is disposed when the
-// workspace unmounts (a mode switch remounts it). The renderer kind follows the
-// measured GPU and the user's graphics preferences (no-GPU support, D62).
+// The xterm pane registry for a terminal workspace. Keeps an xterm instance per
+// shown session (hidden via CSS) so scrollback and render state survive switching
+// and splitting, up to MAX_LIVE_PANES live panes: past that the least recently
+// shown hidden pane is disposed (paneLru) and rebuilt from main's replay buffer
+// the next time its session is shown. Hidden panes give their GPU renderer back
+// (see webglPolicy), stop receiving output (it is queued, see hiddenQueue) and
+// everything is disposed when the workspace unmounts (a mode switch remounts it).
+// The renderer kind follows the measured GPU and the user's graphics preferences
+// (no-GPU support, D62).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Id, RuntimeState, SessionRun } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
@@ -24,6 +26,7 @@ import {
   scheduleTerminalFit,
   type TerminalView
 } from './paneFactory'
+import { MAX_LIVE_PANES, pickEvictions } from './paneLru'
 import { planRenderers, type RendererPaneState } from './webglPolicy'
 import { resolveReducedEffects, resolveRenderer, type RendererKind } from './terminalRenderer'
 import { useGraphicsPrefs } from './graphicsPrefs'
@@ -187,7 +190,8 @@ export interface TerminalPanesOptions {
 /**
  * Owns every pane's xterm lifecycle. Panes are created lazily the first time
  * their session becomes VISIBLE and disposed when the session leaves
- * `sessionIds`. `visibleIds` only drives creation; hidden panes stay mounted.
+ * `sessionIds` or when they are evicted by the live-pane cap (see paneLru).
+ * `visibleIds` only drives creation; hidden panes stay mounted up to the cap.
  */
 export function useTerminalPanes(
   visibleIds: readonly Id[],
@@ -200,6 +204,10 @@ export function useTerminalPanes(
   // BEFORE the lazy create effect, so the element must be remembered to open the fresh pane into.
   const viewportsRef = useRef<Map<Id, HTMLDivElement>>(new Map())
   const [createdIds, setCreatedIds] = useState<readonly Id[]>([])
+  // When each id was last on screen, from a counter that only increases: a clock change must never
+  // reorder the evictions (paneLru). Written by the visibility effect, read by the cap effect.
+  const lastShownAtRef = useRef<Map<Id, number>>(new Map())
+  const showCounterRef = useRef(0)
   // Panes are built with the profile current at CREATION; later zooms are applied live, never rebuilt.
   const optionsRef = useRef<TerminalPanesOptions>(options)
   optionsRef.current = options
@@ -328,6 +336,17 @@ export function useTerminalPanes(
     }
   }, [visibleKey, sessionIds, runtime, openPane])
 
+  // When each id was last on screen, for the live-pane cap below. Bumped on every visibility change: an id
+  // that was on screen during this change is newer than anything hidden before it, so the eviction order
+  // follows the user's tabs.
+  useEffect((): void => {
+    for (const id of visibleIds) {
+      const next = showCounterRef.current + 1
+      showCounterRef.current = next
+      lastShownAtRef.current.set(id, next)
+    }
+  }, [visibleKey])
+
   // Renderer: re-plan whenever the visible set, the pane set, the wanted kind or the GPU info changes
   // (a settings change and the arrival of the GPU info switch live panes without recreating them).
   const createdKey = createdIds.join('|')
@@ -366,6 +385,7 @@ export function useTerminalPanes(
         disposePane(pane)
         panesRef.current.delete(id)
         viewportsRef.current.delete(id)
+        lastShownAtRef.current.delete(id)
         removed.push(id)
       }
     }
@@ -376,6 +396,35 @@ export function useTerminalPanes(
       )
     }
   }, [sessionIds])
+
+  // Live-pane cap (performance step 5): a user running 40 sessions used to keep 40 live xterms (each with its
+  // scrollback and DOM). Evicting the least recently shown HIDDEN pane frees those; a visible pane is never
+  // evicted and an evicted session is rebuilt + hydrated from main's replay buffer the next time it is shown.
+  useEffect((): void => {
+    const evicted = pickEvictions({
+      createdIds,
+      visibleIds,
+      lastShownAt: lastShownAtRef.current,
+      max: MAX_LIVE_PANES
+    })
+    if (evicted.length === 0) {
+      return
+    }
+    for (const id of evicted) {
+      const pane = panesRef.current.get(id)
+      if (pane === undefined) {
+        continue
+      }
+      disposePane(pane)
+      panesRef.current.delete(id)
+    }
+    // viewportsRef keeps its entry: a still-connected element is reused by the lazy create effect, and a
+    // fresh TerminalPane replaces it (its ref callback runs) when the session is shown again.
+    const gone = new Set(evicted)
+    setCreatedIds((prev: readonly Id[]): readonly Id[] =>
+      prev.filter((id: Id): boolean => !gone.has(id))
+    )
+  }, [createdKey, visibleKey])
 
   // The workspace unmounts on every mode switch (App.tsx keys it by mode) and its panes would
   // otherwise leak their xterm, WebGL context and ResizeObserver. StrictMode runs this cleanup

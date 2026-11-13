@@ -29,6 +29,7 @@ import { PtyManager } from '../pty/PtyManager'
 import type { AttentionService } from '../attention'
 import type { RuntimeRegistry } from './runtimeRegistry'
 import { retryWhileStopping } from './retryWhileStopping'
+import { createCoalescedBroadcast } from './storeBroadcast'
 import { logMainError } from './errorLog'
 import type { UsageRefresher, UsageService } from '../usage'
 import type { LoginItem } from './loginItem'
@@ -37,6 +38,9 @@ import type { PromptQueue } from '../queue/promptQueue'
 import type { ConversationSearch } from '../transcripts/conversationSearch'
 import { markQuitting } from './quitState'
 import { asSettingsPatch } from './settingsValidation'
+
+/** Coalescing window for `evStoreChanged`: several changes in one window cost one full-store send. */
+const STORE_BROADCAST_INTERVAL_MS = 40
 
 export interface IpcHandlersDeps {
   readonly store: SessionStore
@@ -103,15 +107,21 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
   const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, conversationSearch, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
 
-  const sendStoreChanged = (data: StoreData): void => {
-    broadcast(IPC.evStoreChanged, data)
-  }
+  // A burst of store changes (notes, status, rename...) must not send the whole store per change:
+  // the first change goes out at once, the rest at most once per interval with the latest state.
+  const storeChanged = createCoalescedBroadcast<StoreData, ReturnType<typeof setTimeout>>({
+    send: (data) => broadcast(IPC.evStoreChanged, data),
+    getLatest: () => store.get(),
+    intervalMs: STORE_BROADCAST_INTERVAL_MS,
+    setTimer: (callback, milliseconds) => setTimeout(callback, milliseconds),
+    clearTimer: (handle) => clearTimeout(handle)
+  })
 
   const sendRuntime = (state: RuntimeState): void => {
     broadcast(IPC.evRuntime, state)
   }
 
-  store.subscribe(sendStoreChanged)
+  store.subscribe(() => storeChanged.notify())
   runtime.subscribe(sendRuntime)
 
   ipcMain.handle(IPC.storeGet, async (): Promise<{ data: StoreData; runtime: readonly RuntimeState[] }> => {
