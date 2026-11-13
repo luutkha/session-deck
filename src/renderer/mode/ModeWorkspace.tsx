@@ -22,6 +22,7 @@ import { TerminalWorkspace } from '../Terminal/TerminalWorkspace'
 import type { TerminalGridMode } from '../grid/GridCells'
 import { WorkerView } from '../workers/WorkerView'
 import { needsYouItems } from '../attention/needsYou'
+import { useAttentionShortcuts } from '../attention/useAttentionShortcuts'
 import { EmptyState } from '../shell/EmptyState'
 import { StatusBar } from '../shell/StatusBar'
 import { TabBar } from '../shell/TabBar'
@@ -95,6 +96,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const [soundEnabled, setSoundEnabled] = useSoundEnabled()
   const lastChange = useLastRuntimeChange(runtime)
   useTabShortcuts({ closeActive: tabs.closeActive, cycle: tabs.cycle })
+  useAttentionShortcuts(commands.stepAttention)
 
   const settings = useMemo(() => resolveSettings(data?.settings), [data?.settings])
   const sessionUsage = useMemo(

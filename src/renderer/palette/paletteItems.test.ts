@@ -335,6 +335,17 @@ describe('buildPaletteItems: this session group', () => {
   })
 })
 
+describe('buildPaletteItems: keyboard triage (D69)', () => {
+  it('offers next / previous session that needs you only while a session has a bell', () => {
+    const quiet = buildPaletteItems(input({ sessions: [session({ id: 'a' })], runtime: new Map([['a', runtimeOf({ sessionId: 'a' })]]) }))
+    expect(quiet.some((item) => item.id === 'action:next-attention')).toBe(false)
+    expect(quiet.some((item) => item.id === 'action:previous-attention')).toBe(false)
+    const waiting = buildPaletteItems(input({ sessions: [session({ id: 'a' })], runtime: new Map([['a', runtimeOf({ sessionId: 'a', attention: 'done' })]]) }))
+    expect(byId(waiting, 'action:next-attention').run).toEqual({ kind: 'step-attention', delta: 1 })
+    expect(byId(waiting, 'action:previous-attention').run).toEqual({ kind: 'step-attention', delta: -1 })
+  })
+})
+
 describe('buildPaletteItems: presets (D49)', () => {
   const preset = { id: 'p1', name: 'Backend', cwd: 'C:/work/api', agent: 'claude' as const, claudeArgs: [], groupId: null, statusId: null }
 

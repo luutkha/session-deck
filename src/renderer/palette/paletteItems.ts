@@ -2,6 +2,7 @@
 // No React, no DOM, no IPC. Commands are data only; App maps them to real calls (runCommand.ts).
 import type { Id, RuntimeState, Session, SessionPreset, StatusDef, UiMode, WindowRole } from '../../shared/types'
 import { presetDetail } from '../presets/presetLogic'
+import { needsYouItems } from '../attention/needsYou'
 
 export type PaletteGroup = 'Sessions' | 'Actions' | 'This session'
 export type PaletteView = 'terminal' | 'grid' | 'hub'
@@ -31,6 +32,8 @@ export type PaletteCommand =
   | { readonly kind: 'pop-out-code' }
   | { readonly kind: 'dock-code' }
   | { readonly kind: 'new-worktree' }
+  /** D69: show the next / previous session that needs you. */
+  | { readonly kind: 'step-attention'; readonly delta: 1 | -1 }
 
 export interface PaletteItem {
   /** Unique within one palette build. */
@@ -311,7 +314,7 @@ function modeItems(input: PaletteInput): readonly PaletteItem[] {
 }
 
 function actionItems(input: PaletteInput): readonly PaletteItem[] {
-  const { view, windowRole } = input
+  const { view, windowRole, sessions, runtime } = input
   const items: PaletteItem[] = [
     {
       id: 'action:new-session',
@@ -334,6 +337,25 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
         run: { kind: 'new-from-preset', presetId: preset.id }
       })
     }
+  }
+  // D69: only offered while something needs you (the bell list is empty otherwise).
+  if (needsYouItems(sessions, runtime).length > 0) {
+    items.push({
+      id: 'action:next-attention',
+      group: 'Actions',
+      label: 'Next session that needs you',
+      detail: 'Jump to the next bell (Ctrl+Shift+Down)',
+      keywords: 'attention bell waiting needs you next triage',
+      run: { kind: 'step-attention', delta: 1 }
+    })
+    items.push({
+      id: 'action:previous-attention',
+      group: 'Actions',
+      label: 'Previous session that needs you',
+      detail: 'Jump to the previous bell (Ctrl+Shift+Up)',
+      keywords: 'attention bell waiting needs you previous triage',
+      run: { kind: 'step-attention', delta: -1 }
+    })
   }
   if (view !== 'hub') {
     items.push({

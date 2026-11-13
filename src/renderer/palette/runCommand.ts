@@ -33,6 +33,8 @@ export interface PaletteHandlers {
   /** Closes the Code window (Code returns to the main window). */
   readonly dockCode: () => void
   readonly newWorktree: () => void
+  /** D69: shows the next (1) / previous (-1) session that needs the user. */
+  readonly stepAttention: (delta: 1 | -1) => void
 }
 
 export type PaletteApi = Pick<Api, 'sleepSession' | 'setKeepAwake' | 'clearAttention' | 'markUnread'>
@@ -99,6 +101,8 @@ function runSessionCommand(
       return attempt(command, () => handlers.dockCode())
     case 'new-worktree':
       return attempt(command, () => handlers.newWorktree())
+    case 'step-attention':
+      return attempt(command, () => handlers.stepAttention(command.delta))
     case 'sleep':
       return attempt(command, () => api.sleepSession(command.id))
     case 'set-keep-awake':

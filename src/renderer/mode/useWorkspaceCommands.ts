@@ -1,9 +1,11 @@
 // New-session dialogs, Settings, the command palette and the Ctrl+Shift+N shortcut for one mode's workspace.
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { Id, RuntimeState, Session, StoreData, UiMode, WindowRole } from '../../shared/types'
 import { buildPaletteItems, type PaletteCommand, type PaletteItem } from '../palette/paletteItems'
 import { runPaletteCommand } from '../palette/runCommand'
 import { openJarvisPanel } from '../jarvis/jarvisPanelStore'
+import { needsYouItems } from '../attention/needsYou'
+import { pickAttentionTarget } from '../attention/attentionNav'
 import { usePaletteShortcut } from '../palette/usePaletteShortcut'
 import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SessionActions } from '../state/useSessionStore'
@@ -48,6 +50,8 @@ export interface WorkspaceCommands {
   readonly setSearchOpen: (open: boolean) => void
   readonly paletteItems: readonly PaletteItem[]
   readonly runPalette: (command: PaletteCommand) => void
+  /** D69: shows the next (1) / previous (-1) session that needs the user (Ctrl+Shift+Down / Up, palette). */
+  readonly stepAttention: (delta: 1 | -1) => void
 }
 
 export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCommands {
@@ -96,6 +100,16 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
     presets: data?.presets
   }), [data?.sessions, data?.statuses, data?.presets, input.runtime, activeId, nav.view, mode, input.role, input.codePoppedOut])
 
+  // D69: keyboard triage. Reads the latest sessions / runtime / active tab at call time, so the callback never changes.
+  const triageRef = useRef({ sessions: data?.sessions ?? [], runtime: input.runtime, activeId })
+  triageRef.current = { sessions: data?.sessions ?? [], runtime: input.runtime, activeId }
+  const selectSession = nav.selectSession
+  const stepAttention = useCallback((delta: 1 | -1): void => {
+    const { sessions, runtime, activeId: current } = triageRef.current
+    const target = pickAttentionTarget(needsYouItems(sessions, runtime), current, delta)
+    if (target !== null) selectSession(target)
+  }, [selectSession])
+
   // D52: fork and open the fork in a tab (a just-created session has no tab yet, so openCreated, not selectSession).
   // A refusal (no conversation yet, not Claude) is shown in the store banner by the action wrapper.
   const forkSession = useCallback((id: Id): void => {
@@ -132,12 +146,13 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       switchMode: input.onSwitchMode,
       popOutCode: input.onPopOutCode,
       dockCode: input.onDockCode,
-      newWorktree: () => openNewWorktree()
+      newWorktree: () => openNewWorktree(),
+      stepAttention
     })
-  }, [data, forkSession, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions])
+  }, [data, forkSession, stepAttention, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions])
 
   return {
     newDialog, closeNew, openNew, openNewInStatus, openNewWorktree, openNewInWorktree, handleCreated,
-    settingsSection, setSettingsSection, paletteOpen, setPaletteOpen, paletteItems, runPalette, costsOpen, setCostsOpen, searchOpen, setSearchOpen, forkSession
+    settingsSection, setSettingsSection, paletteOpen, setPaletteOpen, paletteItems, runPalette, costsOpen, setCostsOpen, searchOpen, setSearchOpen, forkSession, stepAttention
   }
 }

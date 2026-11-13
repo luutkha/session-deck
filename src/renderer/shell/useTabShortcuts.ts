@@ -21,7 +21,8 @@ function isTextEntry(element: Element | null): boolean {
   return TEXT_ENTRY_TAGS.has(element.tagName)
 }
 
-function readContext(): ShortcutContext {
+/** Where the focus is, for every window-level shortcut hook. */
+export function readShortcutContext(): ShortcutContext {
   return {
     dialogOpen: document.querySelector(DIALOG_SELECTOR) !== null,
     inputFocused: isTextEntry(document.activeElement),
@@ -29,7 +30,7 @@ function readContext(): ShortcutContext {
   }
 }
 
-function toKeyEvent(event: KeyboardEvent): ShortcutKeyEvent {
+export function toShortcutKeyEvent(event: KeyboardEvent): ShortcutKeyEvent {
   return {
     key: event.key,
     ctrlKey: event.ctrlKey,
@@ -49,7 +50,7 @@ export function useTabShortcuts(handlers: TabShortcutHandlers): void {
 
   useEffect((): (() => void) => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      const action = decideTabShortcut(toKeyEvent(event), readContext())
+      const action = decideTabShortcut(toShortcutKeyEvent(event), readShortcutContext())
       if (action === null) {
         return
       }

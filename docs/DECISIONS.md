@@ -321,6 +321,9 @@ Update: on the VM (adapters: Microsoft Hyper-V Video, Microsoft Remote Display A
 **D68 · 2026-11-13 · Auto effects back off when many agents are busy** · active
 "do it" (to: make Auto effects turn Reduced when many sessions are working, at the cost of static dots then). `renderer/Terminal/effectsLoad.ts`: Auto = Reduced on a software GPU OR while 10 or more sessions pulse (running and working, or needing the user), back to Full at 6 or fewer (hysteresis). An explicit Full / Reduced choice ignores it. Measured, 40 sessions: 15 events/s 57% -> 39% renderer busy, 62 events/s 62% -> 46%. Settings > Terminal hint updated.
 
+**D69 · 2026-11-13 · Keyboard triage** · active
+"what is next feature we should build?" (OpenCode read-only analysis, 5 candidates, `-flash` fallback) -> "do for 5." Ctrl+Shift+Down / Up show the next / previous session that needs you (also from the terminal), plus two palette items while a bell exists. Order = the needs-you list (newest bell first). Not done: Ctrl+Shift+A to open the needs-you list. Other candidates not chosen (offer again only if relevant): fleet search across live output, stalled-agent detection ("Silent 18m"), copy last answer / export session as Markdown, crash recovery report.
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 

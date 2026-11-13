@@ -96,6 +96,7 @@ SessionDeck
 │   ├── ATT-3  Bell UI (card / tab / Hub / header)
 │   ├── ATT-4  Needs-you list
 │   ├── ATT-5  Notification sounds
+│   ├── ATT-13 Keyboard triage (next / previous session that needs you)
 │   ├── ATT-6  Taskbar flash
 │   ├── ATT-7  Desktop notifications
 │   ├── ATT-8  Tray menu
@@ -319,6 +320,7 @@ SessionDeck
 | ATT-10 | Idle-output detector | Shipped (intentional no-op) | — | Only `Stop` and `Notification` hooks ping; the idle-output detector does not raise attention by itself (D11-era decision). Do not "fix" it into pinging. | `main/attention/IdleDetector.ts`; `AttentionService.ts` | `IdleDetector.test.ts`, `AttentionService.test.ts` |
 | ATT-11 | Sound relay | Shipped | Any attention / quota | Main emits `ev:sound` with `(sessionId, event)`; `sessionId` is `''` for `quota`; the main window plays (the popped-out Code window does not). | `main/app/soundRelay.ts`; `renderer/sound/useAttentionSound.ts` | `soundRelay.test.ts` |
 | ATT-12 | Reminder escalation | Shipped | Settings > Sound "Repeat the alert…" | While a session stays needs-you and unread, repeat the same sound + taskbar flash + desktop notice every `reminder.afterMinutes` (1–120, default 10). Disabled = never. `unread` (the user's own flag) never schedules; the session on screen never pings (it still counts as snoozed for one interval). Reading/clearing/closing/forgetting disarms; a priority upgrade re-arms the more urgent reason. The settings are read on every 30 s tick (no restart). | `main/attention/reminder.ts` (pure), `main/attention/AttentionService.ts`; `main/index.ts` → `onReminder`; `renderer/settings/ReminderBlock.tsx` | `reminder.test.ts`, `AttentionService.test.ts` (reminders), `reminderValidation.test.ts`, `settings.test.ts`; e2e `e2e:reminder` |
+| ATT-13 | Keyboard triage (D69) | Shipped | `Ctrl+Shift+Down` / `Ctrl+Shift+Up`, palette "Next / Previous session that needs you" | Shows the next / previous session that has a bell, in the needs-you list's order (newest bell first), per mode. From a session without a bell: Down = the newest bell, Up = the oldest; from one in the list: the one after / before it, wrapping; the only waiting session being the one on screen, or nobody waiting, does nothing. A viewed session loses its bell, so repeated presses walk the waiting sessions. Works with the terminal focused (window capture phase + stopPropagation: neither xterm nor the sidebar's Shift+arrow select sees it); ignored while a dialog is open or a text field has the focus. The two palette items exist only while a session has a bell. | `renderer/attention/attentionNav.ts` (`decideAttentionShortcut`, `pickAttentionTarget`), `useAttentionShortcuts.ts`; `mode/useWorkspaceCommands.ts` (`stepAttention`); `palette/paletteItems.ts`, `runCommand.ts` (`step-attention`) | `attentionNav.test.ts`, `paletteItems.test.ts`, `runCommand.test.ts`; e2e `e2e:attentionnav` |
 
 ### 2.5 HUB — Hub board
 
@@ -677,6 +679,7 @@ SessionDeck
 | `e2e-fork-search-real.cjs` | SES-18 / SES-19 | REAL Claude: codeword turn, palette search + highlight + open, right-click fork remembers it, parent untouched, no-conversation fork refused |
 | `e2e-queue-real.cjs` | SES-15 | A real Claude turn finishes and the queued prompt is submitted and answered |
 | `e2e-bell.cjs` | ATT-2/3/4, SES-13 | Bell on card/tab/Hub, mark read/unread, real background turn |
+| `e2e-attentionnav.cjs` | ATT-13 | Ctrl+Shift+Down / Up walk the sessions with a bell (terminal focused, none reaches the terminal), viewed ones lose the bell, nothing waiting / a dialog open does nothing |
 | `e2e-reminder.cjs` | ATT-12, ATT-5, ATT-7 | Settings > Sound, a real 1-minute repeat, read stops it, on-screen silent, off stops it |
 | `e2e-hub.cjs` | HUB-1/2/3, ATT-5, SET-1 | Hub columns, drag status, settings, sound pipeline |
 | `e2e-hubscroll.cjs` | HUB-6 | Busiest-column scroll |

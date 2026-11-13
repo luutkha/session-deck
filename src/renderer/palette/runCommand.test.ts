@@ -23,6 +23,7 @@ function fakeHandlers(): PaletteHandlers {
     showCosts: vi.fn(),
     forkSession: vi.fn(),
     searchConversations: vi.fn(),
+    stepAttention: vi.fn(),
     openJarvis: vi.fn(),
     resetJarvis: vi.fn(),
     setStatus: vi.fn(),
@@ -262,6 +263,13 @@ describe('runPaletteCommand: mode and window commands', () => {
     runPaletteCommand({ kind: 'new-worktree' }, handlers, fakeApi())
     expect(handlers.newWorktree).toHaveBeenCalledTimes(1)
     expect(handlers.newSession).not.toHaveBeenCalled()
+  })
+
+  it('steps to the next / previous session that needs the user for step-attention (D69)', () => {
+    runPaletteCommand({ kind: 'step-attention', delta: 1 }, handlers, fakeApi())
+    runPaletteCommand({ kind: 'step-attention', delta: -1 }, handlers, fakeApi())
+    expect(handlers.stepAttention).toHaveBeenNthCalledWith(1, 1)
+    expect(handlers.stepAttention).toHaveBeenNthCalledWith(2, -1)
   })
 
   it('logs and swallows a failing mode handler', () => {
