@@ -1,7 +1,7 @@
 import { app, ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'electron'
 import { MAX_LINK_TEXTS } from '../links'
 import { createAppLinkService } from '../links/appLinks'
-import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState } from '../../shared/types'
+import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from './sessionController'
@@ -21,7 +21,8 @@ import {
   asNotes,
   asChecklist,
   asPreset,
-  asQueue
+  asQueue,
+  asGpuPref
 } from './ipcValidation'
 import { SessionStore } from '../store'
 import { PtyManager } from '../pty/PtyManager'
@@ -68,6 +69,10 @@ export interface IpcHandlersDeps {
   readonly userDataDir: string
   /** Start-on-login state and toggle (packaged app only). */
   readonly loginItem: LoginItem
+  /** No-GPU support: this run's GPU classification plus the saved acceleration preference (waits for detection, capped). */
+  readonly getGpuInfo: () => Promise<GpuInfo & { readonly pref: GpuPref }>
+  /** No-GPU support: saves the acceleration preference; it takes effect at the next start. */
+  readonly setGpuPref: (pref: GpuPref) => void
   /** The user pressed a key / clicked in SessionDeck (resets the app-wide idle sleep timer). */
   readonly onUserActivity: () => void
   /** D61: the user typed into a session's terminal (validated id + data); absent = ignored. */
@@ -302,6 +307,15 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
 
   ipcMain.handle(IPC.loginItemSet, async (_event, raw: unknown): Promise<LoginItemState> => {
     return loginItem.set(assertBoolean(raw, 'openAtLogin'))
+  })
+
+  // No-GPU support: the renderer picks its terminal renderer from this. Never hangs: the wait for the first detection is capped.
+  ipcMain.handle(IPC.gpuInfo, async (): Promise<GpuInfo & { readonly pref: GpuPref }> => {
+    return deps.getGpuInfo()
+  })
+
+  ipcMain.handle(IPC.gpuSetPref, async (_event, raw: unknown): Promise<void> => {
+    deps.setGpuPref(asGpuPref(raw))
   })
 
   // Takes no arguments: any payload from the renderer is ignored. The quit flag is set first so the window close

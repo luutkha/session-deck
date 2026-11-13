@@ -1,8 +1,9 @@
 import { WORKTREE_NAME_MAX } from '../../shared/types'
-import type { AgentKind, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, CreateWorktreeInput, Group, Id, StatusDef } from '../../shared/types'
+import type { AgentKind, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, CreateWorktreeInput, Group, Id, StatusDef, GpuPref } from '../../shared/types'
 import { buildLaunch } from '../pty/launch'
 import { MAX_NOTES_LENGTH, validateChecklist, validatePreset, validateQueue } from '../store'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
+import { isGpuPref } from './gpuMode'
 import { errorMessage } from '../../shared/guards'
 
 const MAX_STRING_LENGTH = 256
@@ -321,4 +322,12 @@ export function asPreset(raw: unknown): SessionPreset {
   assertSafeClaudeArgs(preset.claudeArgs)
   if (preset.model !== undefined) assertOpencodeModel(preset.model, 'preset')
   return preset
+}
+
+/** GPU preference payload (no-GPU support): exactly one of 'auto' | 'on' | 'off'. */
+export function asGpuPref(raw: unknown): GpuPref {
+  if (!isGpuPref(raw)) {
+    throw new Error('Invalid GPU preference: must be "auto", "on" or "off"')
+  }
+  return raw
 }

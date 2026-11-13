@@ -841,6 +841,25 @@ export interface LoginItemState {
   readonly openAtLogin: boolean
 }
 
+// ---- GPU / terminal renderer (no-GPU support) ----
+
+/** How Chromium renders here: a real GPU, software (SwiftShader / Basic Render Driver), or not detected yet. */
+export type GpuMode = 'hardware' | 'software' | 'unknown'
+
+/** What main measured about this run's GPU; the renderer picks xterm's renderer and a reduced-effects mode from it. */
+export interface GpuInfo {
+  readonly mode: GpuMode
+  /** Human text: the adapter's deviceString (e.g. "NVIDIA ..."), or "SwiftShader (software)". */
+  readonly renderer: string
+  /** Hardware acceleration is off for this run (we or the user disabled it). */
+  readonly accelerationDisabled: boolean
+  /** Raw `webgl` entry of app.getGPUFeatureStatus(); '' when unknown. */
+  readonly webgl: string
+}
+
+/** GPU acceleration preference, applied at the next start. Env SESSIONDECK_GPU=on|off overrides it for one run. */
+export type GpuPref = 'auto' | 'on' | 'off'
+
 /** What a piece of terminal text points at. 'file' and 'folder' are absolute paths that existed when resolved. */
 export type LinkKind = 'url' | 'file' | 'folder'
 

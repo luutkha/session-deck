@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, nativeImage, Notification, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { appendFile, readFile, writeFile } from 'node:fs/promises'
 import { createGhCheck, runGh } from './git'
 import path from 'node:path'
@@ -47,6 +47,9 @@ import { renderScreenText } from './jarvis/screenText'
 import { errorMessage } from '../shared/guards'
 import { asChecklist, asPreset, assertNonEmptyString, assertStatusDef } from './app/ipcValidation'
 import { asSettingsPatch } from './app/settingsValidation'
+import { classifyGpu, parseGpuDevices, type GpuDevice, type GpuInfo } from './app/gpuInfo'
+import { createGpuModeStore, decideAcceleration, gpuModeFilePath, type GpuModeStore } from './app/gpuMode'
+import type { GpuPref } from '../shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -74,6 +77,54 @@ process.on('unhandledRejection', (reason: unknown) => {
 let mainWindow: BrowserWindow | null = null
 let codeWindowFocused: () => boolean = () => false
 
+/** No-GPU support: the GPU process is off for this run (we called app.disableHardwareAcceleration()). */
+let accelerationDisabled = false
+/** The last classification; 'unknown' until detection finished. */
+let gpuInfo: GpuInfo = { mode: 'unknown', renderer: '', accelerationDisabled: false, webgl: '' }
+/** The first detection, so IPC.gpuInfo can wait for it instead of answering 'unknown' too early. */
+let gpuDetection: Promise<GpuInfo> | null = null
+/** gpu-mode.json: the preference and whether the last run rendered in software. Null when its file is unusable. */
+let gpuModeStore: GpuModeStore | null = null
+const GPU_DETECTION_WAIT_MS = 3000
+/** Cap for waiting on Chromium's first GPU report; detection must not delay the renderer's startup for long. */
+const GPU_INFO_UPDATE_WAIT_MS = 1200
+
+/** Resolves with `promise`, or with `fallback` when it takes longer than `ms`: a renderer call must never hang. */
+function withTimeout<T>(promise: Promise<T>, fallback: T, ms: number): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      () => {
+        clearTimeout(timer)
+        resolve(fallback)
+      }
+    )
+  })
+}
+
+/**
+ * Chromium reports its GPU asynchronously: Electron's own docs say app.getGPUFeatureStatus() is only usable after
+ * 'gpu-info-update'. Waiting (bounded) avoids classifying a still-initialising GPU process as software.
+ */
+function waitForGpuInfoUpdate(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false
+    const finish = (): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      app.off('gpu-info-update', finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, ms)
+    app.on('gpu-info-update', finish)
+  })
+}
+
 /** True while ANY SessionDeck window (main or the popped-out Code window) has focus. */
 function isMainWindowFocused(): boolean {
   return (mainWindow !== null && !mainWindow.isDestroyed() && mainWindow.isFocused()) || codeWindowFocused()
@@ -87,6 +138,32 @@ if (!gotTheLock) {
   app.on('second-instance', () => {
     showMainWindow(mainWindow)
   })
+
+  // No-GPU support: hardware acceleration must be decided BEFORE ready. A PC whose last run rendered in software
+  // starts with acceleration off (no more WebGL-on-SwiftShader burning the CPU); every 10th launch keeps it on to
+  // re-check. SESSIONDECK_GPU=on|off overrides the file. Never fatal: a broken file only means the default.
+  try {
+    const userDataForGpu = userDataDir()
+    const store = createGpuModeStore({
+      filePath: gpuModeFilePath(userDataForGpu),
+      readFileSync: (filePath) => readFileSync(filePath, 'utf-8'),
+      writeFileSync: (filePath, text) => writeFileSync(filePath, text, 'utf-8'),
+      mkdirSync: (dirPath) => {
+        mkdirSync(dirPath, { recursive: true })
+      },
+      onError: (where, error) => logMainError(userDataForGpu, where, error)
+    })
+    gpuModeStore = store
+    store.recordLaunch()
+    if (decideAcceleration(store.load(), process.env.SESSIONDECK_GPU).disable) {
+      app.disableHardwareAcceleration()
+      accelerationDisabled = true
+      // Sane answer for an IPC call that arrives before detection ran.
+      gpuInfo = classifyGpu({ featureStatus: null, devices: [], accelerationDisabled: true })
+    }
+  } catch (error) {
+    logMainError(userDataDir(), 'gpu mode', error)
+  }
 
   app.whenReady().then(async () => {
     const userData = userDataDir()
@@ -581,6 +658,38 @@ if (!gotTheLock) {
     mainWindow = win
     windows.setMain(win)
 
+    // No-GPU support: classify once the first window exists (Chromium has reported its GPU by then) and remember the
+    // result, so the next launch can turn acceleration off on a machine that only renders in software. Every step is
+    // guarded: a failure leaves 'unknown' and the renderer keeps its default renderer.
+    async function detectGpu(): Promise<GpuInfo> {
+      let featureStatus: Record<string, string> | null = null
+      let devices: readonly GpuDevice[] = []
+      await waitForGpuInfoUpdate(GPU_INFO_UPDATE_WAIT_MS)
+      try {
+        // app.getGPUFeatureStatus() is typed as an interface; the classifier takes the plain status map.
+        featureStatus = { ...app.getGPUFeatureStatus() }
+      } catch (error) {
+        onError('gpu feature status', error)
+      }
+      try {
+        devices = parseGpuDevices(await app.getGPUInfo('basic'))
+      } catch (error) {
+        onError('gpu info', error)
+      }
+      const info = classifyGpu({ featureStatus, devices, accelerationDisabled })
+      gpuInfo = info
+      try {
+        gpuModeStore?.recordDetection(info.mode, accelerationDisabled)
+      } catch (error) {
+        onError('gpu mode detection', error)
+      }
+      return info
+    }
+    gpuDetection = detectGpu().catch((error: unknown) => {
+      onError('gpu detection', error)
+      return gpuInfo
+    })
+
     registerIpcHandlers({
       store,
       controller,
@@ -604,6 +713,15 @@ if (!gotTheLock) {
       dockCode: () => windows.dockCode(),
       userDataDir: userData,
       loginItem: createLoginItem(app),
+      getGpuInfo: async (): Promise<GpuInfo & { readonly pref: GpuPref }> => {
+        if (gpuDetection !== null) gpuInfo = await withTimeout(gpuDetection, gpuInfo, GPU_DETECTION_WAIT_MS)
+        // The stored preference (not the env override): it is what the user's control shows and what the next start uses.
+        return { ...gpuInfo, pref: gpuModeStore?.load().pref ?? 'auto' }
+      },
+      setGpuPref: (pref: GpuPref): void => {
+        if (gpuModeStore === null) throw new Error('GPU preference storage is unavailable')
+        gpuModeStore.save({ pref })
+      },
       onUserActivity: () => {
         sleepScheduler.noteUserInput()
         features.onUserActivity()

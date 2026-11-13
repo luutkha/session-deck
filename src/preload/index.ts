@@ -48,7 +48,9 @@ import type {
   FileDiff,
   FilePreview,
   WindowState,
-  WindowRole
+  WindowRole,
+  GpuInfo,
+  GpuPref
 } from '../shared/types'
 import type { PtyReplay } from '../shared/ipc'
 import { CODE_WINDOW_ARG } from '../shared/ipc'
@@ -263,6 +265,14 @@ const api: Api = {
 
   setLoginItem(openAtLogin: boolean): Promise<LoginItemState> {
     return ipcRenderer.invoke(IPC.loginItemSet, openAtLogin)
+  },
+
+  getGpuInfo(): Promise<GpuInfo & { readonly pref: GpuPref }> {
+    return ipcRenderer.invoke(IPC.gpuInfo)
+  },
+
+  setGpuPref(pref: GpuPref): Promise<void> {
+    return ipcRenderer.invoke(IPC.gpuSetPref, pref)
   },
 
   resolveLinks(sessionId: Id, candidates: readonly string[]): Promise<readonly (ResolvedLink | null)[]> {

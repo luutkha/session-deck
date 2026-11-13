@@ -2,7 +2,8 @@
 import type {
   AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisUiCommand, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
   Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole,
-  BranchStatus, CommitInput, CommitResult, PushResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult
+  BranchStatus, CommitInput, CommitResult, PushResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult,
+  GpuInfo, GpuPref
 } from './types'
 
 export const IPC = {
@@ -58,6 +59,8 @@ export const IPC = {
   settingsUpdate: 'settings:update', // SettingsPatch -> the full resolved AppSettings (also persisted in StoreData.settings)
   loginItemGet: 'app:loginItemGet',
   loginItemSet: 'app:loginItemSet', // start SessionDeck when the user signs in to Windows (packaged app only)
+  gpuInfo: 'gpu:info', // () -> GpuInfo & { pref }: how this run renders + the saved acceleration preference (no-GPU support)
+  gpuSetPref: 'gpu:setPref', // (pref 'auto'|'on'|'off') -> void: saved now, applied at the next start
   linkResolve: 'link:resolve', // (sessionId, candidates[]) -> (ResolvedLink | null)[]; main checks the file system
   linkOpen: 'link:open', // (sessionId, text, reveal) -> OpenLinkResult; main re-resolves, never trusts the renderer
   sessionSleep: 'session:sleep', // stop the Claude process of a session (card and conversation stay); activating it later resumes it
@@ -183,6 +186,10 @@ export interface Api {
   updateSettings(patch: SettingsPatch): Promise<AppSettings>
   getLoginItem(): Promise<LoginItemState>
   setLoginItem(openAtLogin: boolean): Promise<LoginItemState>
+  /** No-GPU support: how this PC renders (hardware/software) plus the saved acceleration preference. */
+  getGpuInfo(): Promise<GpuInfo & { readonly pref: GpuPref }>
+  /** No-GPU support: 'auto' | 'on' | 'off', saved now and applied at the next start (SESSIONDECK_GPU still wins). */
+  setGpuPref(pref: GpuPref): Promise<void>
   /** Classifies terminal text (URL / existing file / existing folder, relative paths resolved against the session cwd). null = not a link. */
   resolveLinks(sessionId: Id, candidates: readonly string[]): Promise<readonly (ResolvedLink | null)[]>
   /** URL -> default browser; file -> default app (reveal=true: show in Explorer); folder -> Explorer. */
