@@ -1,13 +1,13 @@
 // Window shell (D31): one per window. Holds what is shared by both modes (store, usage, mode switch, focus requests,
 // quota toasts) and mounts the workspace of the mode on screen. The main window also plays sounds and shows the
 // "While you were away" summary; the popped-out Code window only shows Code mode.
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useAttentionSound } from './sound'
 import { useUsage } from './usage/useUsage'
 import { QuotaToast } from './usage/QuotaToast'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useSessionStore } from './state/useSessionStore'
-import type { Id, Session } from '../shared/types'
+import type { Id, RuntimeState, Session } from '../shared/types'
 import { useUserActivityReporter } from './shell/useUserActivityReporter'
 import { AwayDialog } from './timeline/AwayDialog'
 import { useAwaySummary } from './timeline/useAwaySummary'
@@ -25,6 +25,7 @@ import { useJarvisUi } from './jarvis/useJarvisUi'
 import { useGraphicsPrefs } from './Terminal/graphicsPrefs'
 import { useGpuInfo } from './Terminal/useGpuInfo'
 import { resolveReducedEffects } from './Terminal/terminalRenderer'
+import { animatedSessionCount, nextFleetBusy } from './Terminal/effectsLoad'
 import './styles.css'
 
 /** Plays the user's notification sounds. Mounted in the main window only, so a sound is never played twice. */
@@ -38,10 +39,14 @@ function AttentionSoundPlayer(): null {
  * The flag lives on <html> so one attribute turns off every CSS animation, transition, shadow and blur
  * (styles.css); the terminals turn their cursor blink off through their own hook.
  */
-function GraphicsEffects(): null {
+function GraphicsEffects({ runtime }: { readonly runtime: ReadonlyMap<Id, RuntimeState> }): null {
   const prefs = useGraphicsPrefs()
   const { info } = useGpuInfo()
-  const reduced = resolveReducedEffects(prefs.effects, info?.mode ?? null)
+  // Many busy agents pulse many status dots: Auto backs off (D68), with hysteresis so the count hovering near the limit does not flip it.
+  const animated = animatedSessionCount(runtime)
+  const fleetBusyRef = useRef(false)
+  fleetBusyRef.current = nextFleetBusy(fleetBusyRef.current, animated)
+  const reduced = resolveReducedEffects(prefs.effects, info?.mode ?? null, fleetBusyRef.current)
   useEffect((): void => {
     document.documentElement.dataset['reduceEffects'] = reduced ? 'true' : 'false'
   }, [reduced])
@@ -99,7 +104,7 @@ export function App(): ReactElement {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <GraphicsEffects />
+      <GraphicsEffects runtime={store.runtime} />
       <ModeWorkspace
         key={ui.mode}
         mode={ui.mode}

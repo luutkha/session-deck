@@ -65,6 +65,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 - `reference/orca/`: Orca's source (MIT). Copy its components and look from here; keep the attribution header.
 
 - Performance round (D62): `renderer/terminal/webglPolicy.ts` (which panes hold a WebGL context), `hiddenQueue.ts` (output queued while a pane is hidden), `renderer/state/useClock.ts` (one shared interval for the 30 s ticks), `scripts/bench-sessions.cjs` (benchmark: `node scripts/bench-sessions.cjs 20 15 [churn]`), `scripts/e2e-hiddenpane.cjs`.
+- Auto effects vs busy fleet (D68): `renderer/Terminal/effectsLoad.ts`, `resolveReducedEffects(..., fleetBusy)`, `GraphicsEffects` in `App.tsx`.
 - Runtime events + git load (D67): `renderer/state/runtimeBatch.ts`, `renderer/shell/Tab.tsx` (memo), `main/git/limiter.ts` + `gitRunner.ts` (4 at once), `codeWiring.ts` (`fresh` reads), `scripts/bench-sessions.cjs` (agents=/profile/rprofile/mut).
 - Stuck terminal modes (D66): `renderer/Terminal/terminalModes.ts` (reset sequences), menu row in `TerminalContextMenu.tsx` + `useTerminalMenu.ts`, `scripts/e2e-resetmodes.cjs`.
 - Many-session speed (D65): `main/app/storeBroadcast.ts` (coalesced store broadcast), `renderer/state/shareStructure.ts` (keeps unchanged references), `renderer/Terminal/paneLru.ts` (live terminal cap), `scripts/e2e-livepanes.cjs`.

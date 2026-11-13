@@ -89,3 +89,16 @@ describe('mergeGpuMode', () => {
     expect(mergeGpuMode('software', { available: true, renderer: 'NVIDIA GeForce' })).toBe('software')
   })
 })
+
+describe('resolveReducedEffects with a busy fleet (D68)', () => {
+  it('auto reduces on a busy fleet, also with a real GPU', () => {
+    expect(resolveReducedEffects('auto', 'hardware', true)).toBe(true)
+    expect(resolveReducedEffects('auto', 'hardware', false)).toBe(false)
+    expect(resolveReducedEffects('auto', null, true)).toBe(true)
+  })
+
+  it('an explicit Full or Reduced choice ignores the fleet', () => {
+    expect(resolveReducedEffects('full', 'software', true)).toBe(false)
+    expect(resolveReducedEffects('reduced', 'hardware', false)).toBe(true)
+  })
+})

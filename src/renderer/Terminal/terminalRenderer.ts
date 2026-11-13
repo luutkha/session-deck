@@ -33,15 +33,18 @@ export function resolveRenderer(pref: RendererPref, gpuMode: GpuMode | null): Re
   return gpuMode === 'software' ? 'dom' : 'webgl'
 }
 
-/** Effects are reduced when asked, or by 'auto' on a software renderer (animations/shadows cost CPU there). */
-export function resolveReducedEffects(pref: EffectsPref, gpuMode: GpuMode | null): boolean {
+/**
+ * Effects are reduced when asked, or by 'auto' on a software renderer (animations/shadows cost CPU there) or while many
+ * agents are busy (`fleetBusy`, see effectsLoad.ts).
+ */
+export function resolveReducedEffects(pref: EffectsPref, gpuMode: GpuMode | null, fleetBusy = false): boolean {
   if (pref === 'reduced') {
     return true
   }
   if (pref === 'full') {
     return false
   }
-  return gpuMode === 'software'
+  return gpuMode === 'software' || fleetBusy
 }
 
 /** Invalid or missing stored values fall back to 'auto' (an old or hand-edited key never breaks a pane). */

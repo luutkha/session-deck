@@ -177,7 +177,7 @@ export function TerminalSection(): ReactElement {
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">Auto reduces animations and shadows when there is no GPU</p>
+        <p className="text-xs text-muted-foreground">Auto reduces animations and shadows when there is no GPU, or while 10 or more agents are busy</p>
       </div>
 
       <div className="flex flex-col gap-1.5">
