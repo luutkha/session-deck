@@ -2,7 +2,7 @@
 // Starts N Shell sessions that each print a line every ~20 ms, opens every one once (so each gets a terminal pane),
 // parks on one session, then measures for DURATION seconds: pty messages per second, renderer busy time (CDP
 // Performance.getMetrics), frames per second, long tasks, JS heap, and CPU seconds of the whole app process tree.
-// Run: npx electron-vite build && node scripts/bench-sessions.cjs [sessions=20] [seconds=15] [churn] [gpu=real|off|swiftshader]
+// Run: npx electron-vite build && node scripts/bench-sessions.cjs [sessions=20] [seconds=15] [churn] [gpu=real|off|swiftshader] [renderer=auto|webgl|canvas|dom] [flood]
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -17,6 +17,10 @@ const CHURN = process.argv.includes('churn')
 // GPU modes, to imitate a VM without a GPU: `gpu=off` (--disable-gpu: no WebGL, software compositing),
 // `gpu=swiftshader` (WebGL on the CPU). Default: the real GPU of this PC.
 const GPU = (process.argv.find((a) => a.startsWith('gpu=')) ?? 'gpu=real').slice(4)
+// `renderer=auto|webgl|canvas|dom` sets the terminal renderer preference (localStorage) before the run.
+const RENDERER = (process.argv.find((a) => a.startsWith('renderer=')) ?? 'renderer=auto').slice(9)
+// `flood`: each session prints ~4,000 long lines per second (a build log / `cat bigfile`) instead of one line per 20 ms.
+const FLOOD = process.argv.includes('flood')
 const GPU_ARGS = {
   real: [],
   off: ['--disable-gpu'],
@@ -72,6 +76,10 @@ async function main() {
     await sleep(1500)
     const ev = (expr) => app.evaluate(expr)
     await app.send('Performance.enable')
+    await ev(`localStorage.setItem('sessiondeck.renderer.v1', ${js(RENDERER)})`)
+    await ev('location.reload()').catch(() => undefined)
+    await sleep(2500)
+    await waitFor(() => ev('typeof window.api.getStore === "function"'), 15000, 300)
     await ev(`(() => {
       window.__bench = { msgs: 0, bytes: 0, frames: 0, longTasks: 0, longMs: 0 }
       window.api.onPtyData((id, data) => { window.__bench.msgs += 1; window.__bench.bytes += data.length })
@@ -88,10 +96,12 @@ async function main() {
     await waitFor(() => ev(`document.querySelectorAll('[data-session-card]').length >= ${SESSIONS} || null`), 15000, 200)
     // Open each session once (creates its pane), start the chatty loop, then move on.
     const chatty = `node -e "setInterval(()=>process.stdout.write('bench line '+Date.now()+' xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\r\\n'),20)"`
+    const flood = `node -e "setInterval(()=>{let s='';for(let i=0;i<200;i++)s+='flood '+i+' '+'z'.repeat(100)+String.fromCharCode(13,10);process.stdout.write(s)},50)"`
+    const loadCommand = FLOOD ? flood : chatty
     for (const id of ids) {
       await ev(`(() => { const n = document.querySelector('[data-session-card="${id}"]'); if (n) n.click(); })()`)
       await sleep(250)
-      await ev(`window.api.ptyWrite(${js(id)}, ${js(chatty + '\r')})`)
+      await ev(`window.api.ptyWrite(${js(id)}, ${js(loadCommand + '\r')})`)
       await sleep(150)
     }
     await ev(`(() => { const n = document.querySelector('[data-session-card="${ids[0]}"]'); if (n) n.click(); })()`)
@@ -111,7 +121,9 @@ async function main() {
     const d = (key) => after.m[key] - before.m[key]
     const row = {
       sessions: SESSIONS,
+      load: FLOOD ? 'flood' : 'chatty',
       gpu: GPU,
+      renderer: RENDERER,
       churn: CHURN,
       seconds: Number(secs.toFixed(1)),
       ptyMsgsPerSec: Math.round((after.b.msgs - before.b.msgs) / secs),

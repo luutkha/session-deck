@@ -61,6 +61,7 @@ export const IPC = {
   loginItemSet: 'app:loginItemSet', // start SessionDeck when the user signs in to Windows (packaged app only)
   gpuInfo: 'gpu:info', // () -> GpuInfo & { pref }: how this run renders + the saved acceleration preference (no-GPU support)
   gpuSetPref: 'gpu:setPref', // (pref 'auto'|'on'|'off') -> void: saved now, applied at the next start
+  gpuReportProbe: 'gpu:reportProbe', // (softwareSeen: boolean) -> void: the window's own WebGL probe found a software renderer (or not)
   linkResolve: 'link:resolve', // (sessionId, candidates[]) -> (ResolvedLink | null)[]; main checks the file system
   linkOpen: 'link:open', // (sessionId, text, reveal) -> OpenLinkResult; main re-resolves, never trusts the renderer
   sessionSleep: 'session:sleep', // stop the Claude process of a session (card and conversation stay); activating it later resumes it
@@ -190,6 +191,8 @@ export interface Api {
   getGpuInfo(): Promise<GpuInfo & { readonly pref: GpuPref }>
   /** No-GPU support: 'auto' | 'on' | 'off', saved now and applied at the next start (SESSIONDECK_GPU still wins). */
   setGpuPref(pref: GpuPref): Promise<void>
+  /** The window probed its WebGL: true = it runs on the CPU (SwiftShader, llvmpipe...). Remembered so the next start can turn the GPU process off. */
+  reportGpuProbe(softwareSeen: boolean): Promise<void>
   /** Classifies terminal text (URL / existing file / existing folder, relative paths resolved against the session cwd). null = not a link. */
   resolveLinks(sessionId: Id, candidates: readonly string[]): Promise<readonly (ResolvedLink | null)[]>
   /** URL -> default browser; file -> default app (reveal=true: show in Explorer); folder -> Explorer. */

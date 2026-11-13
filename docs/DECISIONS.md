@@ -287,6 +287,15 @@ Offered as option 2 of "what next feature we should build?"; the user: "do for 2
 - Step 4 main: the store save has a 5 s max wait, usage changes touch only the changed session's timeline, worker snapshots are throttled to 250 ms, the error log is capped at 1 MB, the transcript check reads a tail window.
 - Not done (offer again only if relevant): sending store changes as patches instead of the whole store, 4 instead of 5 git spawns per worktree refresh, a cap on live terminals (LRU), per-window pty filtering.
 
+**D63 · 2026-11-13 · Run well on a VM without a GPU** · active
+"i analyzed, i see the apps not run well on VM that not have gpu" -> "go ahead with steps A to E". Measured first (`scripts/bench-sessions.cjs ... gpu=off|swiftshader`, 20 sessions): without a GPU xterm's WebGL runs on the CPU and burns ~1,250% CPU at ~25 fps (real GPU: 43% CPU, 85 fps). Code by OpenCode (free first, `-flash` fallback), reviewed and measured here.
+- A detection: `main/app/gpuInfo.ts` classifies hardware / software / unknown from Chromium's feature status (authoritative) and the adapter list (only a tiebreaker: Windows always lists "Microsoft Basic Render Driver"); the window also probes its own WebGL (`mergeGpuMode`, catches a software WebGL that Chromium calls "enabled") and reports software to main (`gpu:reportProbe`).
+- D GPU process: `<userData>/gpu-mode.json` {pref auto|on|off, lastSoftware, launches}; auto turns the GPU process off (`app.disableHardwareAcceleration()` before ready) when the last run was software; every 10th launch re-probes with the GPU on; `SESSIONDECK_GPU=on|off` overrides. Settings > Terminal > Graphics shows the result and has the three controls.
+- B renderer: Auto = WebGL on a GPU, DOM renderer without one (measured: DOM 28-82% CPU, Canvas 59-166%, WebGL 1,263%); explicit choices WebGL / Canvas / DOM in Settings (`@xterm/addon-canvas` added).
+- C reduced effects: Auto on software = no animations, transitions, shadows, blur, cursor blink (`data-reduce-effects` on `<html>`); Settings: Auto / Full / Reduced.
+- Result (20 sessions, emulated no-GPU): CPU 1,263% -> 65%, 28 -> 146 fps. Not verified on a real GPU-less VM from here.
+- Not done: lower default scrollback in reduced mode; a first launch on a new GPU-less PC still starts with the GPU on once.
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 

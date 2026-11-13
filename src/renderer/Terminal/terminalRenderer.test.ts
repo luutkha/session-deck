@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_EFFECTS_PREF,
   DEFAULT_RENDERER_PREF,
+  mergeGpuMode,
   parseEffectsPref,
   parseRendererPref,
   resolveReducedEffects,
@@ -15,9 +16,9 @@ describe('resolveRenderer (no-GPU support)', () => {
     expect(resolveRenderer('dom', 'hardware')).toBe('dom')
   })
 
-  it('auto: a real GPU keeps WebGL, a software renderer gets Canvas', () => {
+  it('auto: a real GPU keeps WebGL, a software renderer gets the DOM renderer', () => {
     expect(resolveRenderer('auto', 'hardware')).toBe('webgl')
-    expect(resolveRenderer('auto', 'software')).toBe('canvas')
+    expect(resolveRenderer('auto', 'software')).toBe('dom')
   })
 
   it('auto: an undetected GPU keeps WebGL (today\'s behaviour)', () => {
@@ -65,5 +66,24 @@ describe('stored preference parsers', () => {
     for (const raw of [null, '', 'off', 'Reduced', 'true']) {
       expect(parseEffectsPref(raw)).toBe(DEFAULT_EFFECTS_PREF)
     }
+  })
+})
+
+describe('mergeGpuMode', () => {
+  it('keeps the main-process answer when the probe is missing or looks like a real GPU', () => {
+    expect(mergeGpuMode('hardware', null)).toBe('hardware')
+    expect(mergeGpuMode('unknown', { available: true, renderer: 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11)' })).toBe('unknown')
+    expect(mergeGpuMode('hardware', { available: true, renderer: '' })).toBe('hardware')
+  })
+
+  it('software evidence from the window wins, whatever main said', () => {
+    expect(mergeGpuMode('hardware', { available: false, renderer: '' })).toBe('software')
+    expect(mergeGpuMode('hardware', { available: true, renderer: 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)' })).toBe('software')
+    expect(mergeGpuMode('unknown', { available: true, renderer: 'llvmpipe (LLVM 15.0.7, 256 bits)' })).toBe('software')
+    expect(mergeGpuMode('hardware', { available: true, renderer: 'Microsoft Basic Render Driver' })).toBe('software')
+  })
+
+  it('stays software when main already said software', () => {
+    expect(mergeGpuMode('software', { available: true, renderer: 'NVIDIA GeForce' })).toBe('software')
   })
 })

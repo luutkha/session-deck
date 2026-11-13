@@ -73,6 +73,8 @@ export interface IpcHandlersDeps {
   readonly getGpuInfo: () => Promise<GpuInfo & { readonly pref: GpuPref }>
   /** No-GPU support: saves the acceleration preference; it takes effect at the next start. */
   readonly setGpuPref: (pref: GpuPref) => void
+  /** No-GPU support: the window's own WebGL probe result (true = software); remembered for the next start. */
+  readonly reportGpuProbe: (softwareSeen: boolean) => void
   /** The user pressed a key / clicked in SessionDeck (resets the app-wide idle sleep timer). */
   readonly onUserActivity: () => void
   /** D61: the user typed into a session's terminal (validated id + data); absent = ignored. */
@@ -316,6 +318,10 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
 
   ipcMain.handle(IPC.gpuSetPref, async (_event, raw: unknown): Promise<void> => {
     deps.setGpuPref(asGpuPref(raw))
+  })
+
+  ipcMain.handle(IPC.gpuReportProbe, async (_event, raw: unknown): Promise<void> => {
+    deps.reportGpuProbe(assertBoolean(raw, 'softwareSeen'))
   })
 
   // Takes no arguments: any payload from the renderer is ignored. The quit flag is set first so the window close

@@ -274,6 +274,9 @@ const api: Api = {
   setGpuPref(pref: GpuPref): Promise<void> {
     return ipcRenderer.invoke(IPC.gpuSetPref, pref)
   },
+  reportGpuProbe(softwareSeen: boolean): Promise<void> {
+    return ipcRenderer.invoke(IPC.gpuReportProbe, softwareSeen)
+  },
 
   resolveLinks(sessionId: Id, candidates: readonly string[]): Promise<readonly (ResolvedLink | null)[]> {
     return ipcRenderer.invoke(IPC.linkResolve, sessionId, candidates)

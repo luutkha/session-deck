@@ -15,8 +15,11 @@ export const DEFAULT_RENDERER_PREF: RendererPref = 'auto'
 export const DEFAULT_EFFECTS_PREF: EffectsPref = 'auto'
 
 /**
- * The renderer for a pane. An explicit preference always wins. 'auto' uses WebGL on a real GPU and Canvas when
- * Chromium only renders in software (SwiftShader: WebGL then burns CPU per pane and runs at ~25 fps). Before
+ * The renderer for a pane. An explicit preference always wins. 'auto' uses WebGL on a real GPU and the DOM renderer
+ * when Chromium only renders in software (SwiftShader: WebGL then burns CPU per pane and runs at ~25 fps; measured
+ * with --disable-gpu and 20 sessions: DOM 82% CPU / 147 fps, Canvas 166% CPU / 87 fps, WebGL 1,263% CPU / 28 fps,
+ * and with 4,000 flooded lines per second DOM 28% CPU vs Canvas 59%, because the DOM only touches changed rows and
+ * hidden panes do no work, see hiddenQueue). Before
  * main has answered (`gpuMode` null) the pane stays on the DOM renderer: no GPU addon is loaded until we know,
  * and the panes switch as soon as the info arrives (the policy re-runs).
  */
@@ -27,7 +30,7 @@ export function resolveRenderer(pref: RendererPref, gpuMode: GpuMode | null): Re
   if (gpuMode === null) {
     return 'dom'
   }
-  return gpuMode === 'software' ? 'canvas' : 'webgl'
+  return gpuMode === 'software' ? 'dom' : 'webgl'
 }
 
 /** Effects are reduced when asked, or by 'auto' on a software renderer (animations/shadows cost CPU there). */
@@ -48,4 +51,29 @@ export function parseRendererPref(raw: string | null): RendererPref {
 
 export function parseEffectsPref(raw: string | null): EffectsPref {
   return raw === 'full' || raw === 'reduced' || raw === 'auto' ? raw : DEFAULT_EFFECTS_PREF
+}
+
+/** What the window itself sees when it asks for a WebGL context. */
+export interface WebglProbe {
+  /** False when no WebGL context could be created at all. */
+  readonly available: boolean
+  /** UNMASKED_RENDERER_WEBGL, '' when the driver hides it. */
+  readonly renderer: string
+}
+
+const SOFTWARE_WEBGL_RE = /swiftshader|llvmpipe|softpipe|software|basic render/i
+
+/**
+ * Combines main's classification with a probe of the window's own WebGL. Chromium can report WebGL as "enabled"
+ * while it runs on the CPU (SwiftShader on a VM, or a forced software ANGLE), and only the window can read the
+ * renderer string. Software evidence from either side wins; otherwise main's answer stands.
+ */
+export function mergeGpuMode(mainMode: GpuMode, probe: WebglProbe | null): GpuMode {
+  if (probe === null) {
+    return mainMode
+  }
+  if (!probe.available || SOFTWARE_WEBGL_RE.test(probe.renderer)) {
+    return 'software'
+  }
+  return mainMode
 }

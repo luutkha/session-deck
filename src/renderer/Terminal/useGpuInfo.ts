@@ -3,6 +3,7 @@
 // renderer rules read as "not known yet" (DOM renderer until it arrives).
 import { useEffect, useSyncExternalStore } from 'react'
 import type { GpuInfo, GpuPref } from '../../shared/types'
+import { mergeGpuMode, type WebglProbe } from './terminalRenderer'
 
 export type GpuInfoWithPref = GpuInfo & { readonly pref: GpuPref }
 
@@ -20,6 +21,23 @@ function notify(): void {
   }
 }
 
+/** Asks the window for a WebGL context and reads the driver's renderer string; null when probing itself fails. */
+function probeWebgl(): WebglProbe | null {
+  try {
+    const canvas = document.createElement('canvas')
+    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null
+    if (gl === null) {
+      return { available: false, renderer: '' }
+    }
+    const debug = gl.getExtension('WEBGL_debug_renderer_info')
+    const renderer = debug === null ? '' : String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL))
+    gl.getExtension('WEBGL_lose_context')?.loseContext()
+    return { available: true, renderer }
+  } catch {
+    return null
+  }
+}
+
 function load(): Promise<GpuInfoWithPref | null> {
   if (pending !== null) {
     return pending
@@ -27,9 +45,15 @@ function load(): Promise<GpuInfoWithPref | null> {
   const request = window.api
     .getGpuInfo()
     .then((value: GpuInfoWithPref): GpuInfoWithPref => {
-      info = value
+      // Main's classification plus what this window's own WebGL says (a software WebGL can be reported as enabled).
+      const merged = mergeGpuMode(value.mode, probeWebgl())
+      info = { ...value, mode: merged }
+      // Main said hardware but the window's WebGL runs on the CPU: tell main, so the next start can turn the GPU process off.
+      if (merged === 'software' && value.mode !== 'software') {
+        void window.api.reportGpuProbe(true).catch((): void => undefined)
+      }
       notify()
-      return value
+      return info
     })
     .catch((error: unknown): null => {
       console.error('SessionDeck: reading the GPU info failed; using the default renderer', error)

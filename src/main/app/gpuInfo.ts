@@ -85,11 +85,13 @@ function deviceLabel(device: GpuDevice | null | undefined): string {
 /**
  * Classifies this run. Order matters:
  * 1. accelerator off for this run => software (the GPU process never ran, so its status proves nothing);
- * 2. a known software adapter => software (SwANGLE reports SwiftShader as an ordinary device and may still say
- *    webgl is enabled on a VM without a GPU);
- * 3. otherwise the feature status decides; enabled + disabled together is a conflict, so 'unknown' (part 2 then keeps
- *    its default renderer instead of trusting half a signal);
- * 4. no usable signal at all => 'unknown'.
+ * 2. Chromium's feature status is authoritative (webgl / gpu_compositing: enabled = the GPU works, unavailable or
+ *    disabled = the CPU does it); enabled + disabled together is a conflict => 'unknown';
+ * 3. the device list is only a tiebreaker (a software adapter that is marked active, or the only kind listed, means
+ *    software). A Windows PC ALWAYS lists "Microsoft Basic Render Driver" next to its real
+ *    adapters (none marked active), so a software adapter counts only when it is the ONLY kind of adapter listed
+ *    (SwANGLE on a VM without a GPU reports just SwiftShader, even when webgl says enabled);
+ * 4. no usable signal at all => 'unknown' (the renderer then keeps its default).
  */
 export function classifyGpu(input: GpuClassificationInput): GpuInfo {
   const featureStatus = input.featureStatus ?? null
@@ -101,21 +103,15 @@ export function classifyGpu(input: GpuClassificationInput): GpuInfo {
   }
 
   const devices = input.devices ?? []
-  // Chromium lists every adapter it found; `active` says which one renders. Older builds omit it: then all count.
-  const active = devices.find((device) => device.active === true)
-  const candidates = active !== undefined ? [active] : devices
-  const softwareDevice = candidates.find(isSoftwareDevice) ?? null
-  if (softwareDevice !== null) {
-    return {
-      mode: 'software',
-      renderer: `${deviceLabel(softwareDevice) || 'SwiftShader'} (software)`,
-      accelerationDisabled,
-      webgl
-    }
-  }
+  const hardwareDevices = devices.filter((device) => !isSoftwareDevice(device))
+  // Chromium marks the adapter that renders `active`: when that is a software one, software renders even if a real GPU is listed.
+  const activeDevice = devices.find((device) => device.active === true)
+  const onlySoftwareDevices =
+    (devices.length > 0 && hardwareDevices.length === 0) || (activeDevice !== undefined && isSoftwareDevice(activeDevice))
+  // The adapter to name: the one Chromium marks active, else the first real one.
+  const named = hardwareDevices.find((device) => device.active === true) ?? hardwareDevices[0] ?? null
+  const softwareDevice = devices.find(isSoftwareDevice) ?? null
 
-  // A real adapter only counts when WebGL is actually enabled on it: a blocklisted GPU falls back to CPU rendering too.
-  const hardwareDevice = candidates.find((device) => !isSoftwareDevice(device)) ?? null
   const webglEvidence = statusEvidence(featureStatus?.webgl)
   const compositingEvidence = statusEvidence(featureStatus?.gpu_compositing)
   const hasHardware = webglEvidence === 'hardware' || compositingEvidence === 'hardware'
@@ -125,12 +121,24 @@ export function classifyGpu(input: GpuClassificationInput): GpuInfo {
     return { mode: 'unknown', renderer: 'Conflicting GPU status', accelerationDisabled, webgl }
   }
   if (hasSoftware) {
-    return { mode: 'software', renderer: SWIFTSHADER_RENDERER_TEXT, accelerationDisabled, webgl }
+    return { mode: 'software', renderer: deviceLabelOr(softwareDevice, SWIFTSHADER_RENDERER_TEXT), accelerationDisabled, webgl }
   }
   if (hasHardware) {
-    return { mode: 'hardware', renderer: deviceLabel(hardwareDevice) || HARDWARE_RENDERER_TEXT, accelerationDisabled, webgl }
+    if (onlySoftwareDevices) {
+      return { mode: 'software', renderer: deviceLabelOr(softwareDevice, SWIFTSHADER_RENDERER_TEXT), accelerationDisabled, webgl }
+    }
+    return { mode: 'hardware', renderer: deviceLabel(named) || HARDWARE_RENDERER_TEXT, accelerationDisabled, webgl }
+  }
+  if (onlySoftwareDevices) {
+    return { mode: 'software', renderer: deviceLabelOr(softwareDevice, SWIFTSHADER_RENDERER_TEXT), accelerationDisabled, webgl }
   }
   return { mode: 'unknown', renderer: '', accelerationDisabled, webgl }
+}
+
+/** "<label> (software)", or the fallback text when the device has no usable label. */
+function deviceLabelOr(device: GpuDevice | null, fallback: string): string {
+  const label = deviceLabel(device)
+  return label.length > 0 ? `${label} (software)` : fallback
 }
 
 function numberField(value: unknown): number | undefined {

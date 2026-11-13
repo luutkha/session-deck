@@ -193,3 +193,47 @@ describe('parseGpuDevices', () => {
     ])
   })
 })
+
+describe('classifyGpu: the report of a real Windows PC (measured, Intel + NVIDIA + Microsoft Basic Render Driver, none active)', () => {
+  const realDevices = [
+    { vendorId: 32902, deviceId: 42920, active: false },
+    { vendorId: 4318, deviceId: 9634, active: false },
+    { vendorId: 5140, deviceId: 140, active: false }
+  ]
+  it('is hardware when WebGL and compositing are enabled, whatever Microsoft Basic Render Driver is listed', () => {
+    const info = classifyGpu({
+      featureStatus: { webgl: 'enabled', gpu_compositing: 'enabled' },
+      devices: realDevices,
+      accelerationDisabled: false
+    })
+    expect(info.mode).toBe('hardware')
+    expect(info.renderer).toBe('Intel GPU')
+  })
+
+  it('is software when WebGL and compositing are unavailable, even with the same adapters listed (--disable-gpu)', () => {
+    const info = classifyGpu({
+      featureStatus: { webgl: 'unavailable_software', gpu_compositing: 'disabled_software' },
+      devices: realDevices,
+      accelerationDisabled: false
+    })
+    expect(info.mode).toBe('software')
+  })
+
+  it('is software on a VM that lists only SwiftShader, even when WebGL says enabled', () => {
+    const info = classifyGpu({
+      featureStatus: { webgl: 'enabled', gpu_compositing: 'enabled' },
+      devices: [{ vendorId: 0x1ae0, deviceId: 0xc0de }],
+      accelerationDisabled: false
+    })
+    expect(info.mode).toBe('software')
+  })
+
+  it('is software on a VM that lists only the Microsoft Basic Render Driver', () => {
+    const info = classifyGpu({
+      featureStatus: { webgl: 'enabled', gpu_compositing: 'enabled' },
+      devices: [{ vendorId: 5140, deviceId: 140 }],
+      accelerationDisabled: false
+    })
+    expect(info.mode).toBe('software')
+  })
+})

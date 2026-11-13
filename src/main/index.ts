@@ -718,6 +718,11 @@ if (!gotTheLock) {
         // The stored preference (not the env override): it is what the user's control shows and what the next start uses.
         return { ...gpuInfo, pref: gpuModeStore?.load().pref ?? 'auto' }
       },
+      reportGpuProbe: (softwareSeen: boolean): void => {
+        // Only software evidence is stored from the window: 'hardware' from main already covers the other case, and a
+        // window that merely failed to probe must not undo a good detection. recordDetection ignores runs where we turned the GPU off.
+        if (softwareSeen) gpuModeStore?.recordDetection('software', accelerationDisabled)
+      },
       setGpuPref: (pref: GpuPref): void => {
         if (gpuModeStore === null) throw new Error('GPU preference storage is unavailable')
         gpuModeStore.save({ pref })

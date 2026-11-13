@@ -146,7 +146,7 @@ export function TerminalSection(): ReactElement {
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">Auto uses Canvas when there is no GPU</p>
+        <p className="text-xs text-muted-foreground">Auto uses the DOM renderer when there is no GPU (fastest there); WebGL otherwise</p>
       </div>
 
       <div className="flex flex-col gap-1.5">

@@ -65,3 +65,4 @@ Where things live. One line per folder, plus the files you usually need. Feature
 - `reference/orca/`: Orca's source (MIT). Copy its components and look from here; keep the attribution header.
 
 - Performance round (D62): `renderer/terminal/webglPolicy.ts` (which panes hold a WebGL context), `hiddenQueue.ts` (output queued while a pane is hidden), `renderer/state/useClock.ts` (one shared interval for the 30 s ticks), `scripts/bench-sessions.cjs` (benchmark: `node scripts/bench-sessions.cjs 20 15 [churn]`), `scripts/e2e-hiddenpane.cjs`.
+- No-GPU support (D63): `main/app/gpuInfo.ts` (classify hardware/software), `main/app/gpuMode.ts` (gpu-mode.json, decideAcceleration), `renderer/Terminal/terminalRenderer.ts` (renderer + effects rules, mergeGpuMode), `graphicsPrefs.ts`, `useGpuInfo.ts`, `settings/TerminalSection.tsx` (Graphics group), `scripts/e2e-gpumode.cjs`.
