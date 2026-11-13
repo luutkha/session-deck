@@ -28,9 +28,10 @@ function makeChecker() {
 /**
  * Launch the built app with an isolated user-data dir. By default it runs the dev build from out/ through the
  * local Electron binary; pass `exePath` to launch a packaged executable instead (e.g. release/win-unpacked/SessionDeck.exe).
+ * `extraArgs` are extra Chromium/Electron switches (e.g. to imitate a PC without a GPU).
  * Returns { evaluate, send, kill, userData, pid }.
  */
-async function launchApp({ port, userData, exePath } = {}) {
+async function launchApp({ port, userData, exePath, extraArgs = [] } = {}) {
   const debugPort = port ?? 9340
   const dataDir = userData ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sessiondeck-e2e-'))
   const electron = path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
@@ -43,8 +44,8 @@ async function launchApp({ port, userData, exePath } = {}) {
   }
   const log = fs.openSync(path.join(dataDir, `app-${Date.now()}.log`), 'w')
   const args = exePath
-    ? [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${dataDir}`]
-    : [ROOT, `--remote-debugging-port=${debugPort}`, `--user-data-dir=${dataDir}`]
+    ? [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${dataDir}`, ...extraArgs]
+    : [ROOT, `--remote-debugging-port=${debugPort}`, `--user-data-dir=${dataDir}`, ...extraArgs]
   const app = spawn(exePath ?? electron, args, { stdio: ['ignore', log, log], cwd: exePath ? path.dirname(exePath) : ROOT })
   const target = await waitFor(async () => (await (await fetch(`http://127.0.0.1:${debugPort}/json`)).json()).find((t) => t.type === 'page' && !t.url.startsWith('devtools')) ?? null, 30000)
   if (!target) throw new Error('no CDP page target')

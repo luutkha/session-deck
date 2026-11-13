@@ -83,6 +83,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-serialize": "^0.13.0",

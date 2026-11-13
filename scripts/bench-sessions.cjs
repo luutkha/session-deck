@@ -2,7 +2,7 @@
 // Starts N Shell sessions that each print a line every ~20 ms, opens every one once (so each gets a terminal pane),
 // parks on one session, then measures for DURATION seconds: pty messages per second, renderer busy time (CDP
 // Performance.getMetrics), frames per second, long tasks, JS heap, and CPU seconds of the whole app process tree.
-// Run: npx electron-vite build && node scripts/bench-sessions.cjs [sessions=20] [seconds=15] [churn]
+// Run: npx electron-vite build && node scripts/bench-sessions.cjs [sessions=20] [seconds=15] [churn] [gpu=real|off|swiftshader]
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -13,7 +13,16 @@ const PORT = 9495
 const SESSIONS = Number(process.argv[2] ?? 20)
 const SECONDS = Number(process.argv[3] ?? 15)
 // Third arg `churn`: also change a session's notes 10x/s (a store write + broadcast + re-render each), like a busy fleet of agents does.
-const CHURN = process.argv[4] === 'churn'
+const CHURN = process.argv.includes('churn')
+// GPU modes, to imitate a VM without a GPU: `gpu=off` (--disable-gpu: no WebGL, software compositing),
+// `gpu=swiftshader` (WebGL on the CPU). Default: the real GPU of this PC.
+const GPU = (process.argv.find((a) => a.startsWith('gpu=')) ?? 'gpu=real').slice(4)
+const GPU_ARGS = {
+  real: [],
+  off: ['--disable-gpu'],
+  swiftshader: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
+}[GPU]
+if (GPU_ARGS === undefined) throw new Error('gpu= must be real, off or swiftshader')
 const js = (value) => JSON.stringify(value)
 
 /** CPU seconds (user+kernel) of the app's whole process tree, via PowerShell. */
@@ -59,7 +68,7 @@ async function main() {
   fs.mkdirSync(work)
   let app
   try {
-    app = await launchApp({ port: PORT, userData })
+    app = await launchApp({ port: PORT, userData, extraArgs: GPU_ARGS })
     await sleep(1500)
     const ev = (expr) => app.evaluate(expr)
     await app.send('Performance.enable')
@@ -102,6 +111,7 @@ async function main() {
     const d = (key) => after.m[key] - before.m[key]
     const row = {
       sessions: SESSIONS,
+      gpu: GPU,
       churn: CHURN,
       seconds: Number(secs.toFixed(1)),
       ptyMsgsPerSec: Math.round((after.b.msgs - before.b.msgs) / secs),
