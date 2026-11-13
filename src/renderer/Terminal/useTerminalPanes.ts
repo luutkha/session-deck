@@ -1,9 +1,10 @@
 // The xterm pane registry for a terminal workspace. Keeps one xterm instance
 // per session mounted for the session's whole lifetime (hidden via CSS, never
 // destroyed) so scrollback and render state survive switching and splitting.
-// Hidden panes give their WebGL context back (see webglPolicy), stop receiving
+// Hidden panes give their GPU renderer back (see webglPolicy), stop receiving
 // output (it is queued, see hiddenQueue) and everything is disposed when the
-// workspace unmounts (a mode switch remounts it).
+// workspace unmounts (a mode switch remounts it). The renderer kind follows the
+// measured GPU and the user's graphics preferences (no-GPU support, D62).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Id, RuntimeState, SessionRun } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
@@ -12,9 +13,10 @@ import { SeqGate } from './seqGate'
 import type { TermView } from './termView'
 import type { ZoomAction } from './paneFactory'
 import {
-  attachWebgl,
+  applyReducedEffects,
+  attachRenderer,
   buildTerminalView,
-  detachWebgl,
+  detachRenderer,
   disposeTerminalView,
   fitTerminalView,
   observeTerminalResize,
@@ -22,7 +24,10 @@ import {
   scheduleTerminalFit,
   type TerminalView
 } from './paneFactory'
-import { planWebgl, type WebglPaneState } from './webglPolicy'
+import { planRenderers, type RendererPaneState } from './webglPolicy'
+import { resolveReducedEffects, resolveRenderer, type RendererKind } from './terminalRenderer'
+import { useGraphicsPrefs } from './graphicsPrefs'
+import { useGpuInfo } from './useGpuInfo'
 
 export interface TerminalPaneHandle {
   readonly id: Id
@@ -200,15 +205,27 @@ export function useTerminalPanes(
   optionsRef.current = options
   const visibleIdsRef = useRef<readonly Id[]>(visibleIds)
   visibleIdsRef.current = visibleIds
+  // Graphics preferences + the measured GPU decide the renderer (D62). Both are app-wide hooks, so every
+  // workspace and the settings dialog see the same values live.
+  const prefs = useGraphicsPrefs()
+  const gpu = useGpuInfo()
+  const wanted: RendererKind = resolveRenderer(prefs.renderer, gpu.info?.mode ?? null)
+  const reducedEffects = resolveReducedEffects(prefs.effects, gpu.info?.mode ?? null)
+  // Read at pane construction and by the policy callback (both outlive the render that saw the value).
+  const wantedRef = useRef<RendererKind>(wanted)
+  wantedRef.current = wanted
+  const reducedRef = useRef<boolean>(reducedEffects)
+  reducedRef.current = reducedEffects
 
   /**
-   * Applies the WebGL plan to every live pane: hidden panes hand their context back, visible
-   * ones get one up to the cap, everything past it stays on xterm's DOM renderer.
+   * Applies the renderer plan to every live pane: hidden panes hand their addon back, visible
+   * ones get the wanted kind (all of them for Canvas, up to the WebGL cap), and 'dom' detaches.
    */
-  const applyWebglPolicy = useCallback((): void => {
+  const applyRendererPolicy = useCallback((): void => {
+    const kind = wantedRef.current
     const visible = new Set(visibleIdsRef.current)
     const handles = new Map<Id, TerminalPaneHandle>()
-    const states: WebglPaneState[] = []
+    const states: RendererPaneState[] = []
     for (const [id, pane] of panesRef.current) {
       if (!pane.opened || pane.disposed) {
         continue
@@ -217,22 +234,22 @@ export function useTerminalPanes(
       states.push({
         id,
         visible: visible.has(id),
-        hasWebgl: pane.view.webgl !== null,
-        failed: pane.view.webglFailed
+        kind: pane.view.gpuKind,
+        failed: pane.view.failedKinds.has(kind)
       })
     }
-    const plan = planWebgl(states)
-    // Free contexts first: attaching before detaching would briefly exceed the context cap.
+    const plan = planRenderers(states, kind)
+    // Free addons first: attaching before detaching would briefly exceed the WebGL context cap.
     for (const id of plan.detach) {
       const pane = handles.get(id)
       if (pane !== undefined) {
-        detachWebgl(pane.view)
+        detachRenderer(pane.view)
       }
     }
-    for (const id of plan.attach) {
-      const pane = handles.get(id)
+    for (const item of plan.attach) {
+      const pane = handles.get(item.id)
       if (pane !== undefined) {
-        attachWebgl(pane.view)
+        attachRenderer(pane.view, item.kind)
       }
     }
   }, [])
@@ -249,9 +266,9 @@ export function useTerminalPanes(
     window.api.ptyResize(pane.id, pane.view.term.cols, pane.view.term.rows)
     pane.cleanupResize = observeTerminalResize(pane.view, element)
     void hydratePane(pane)
-    // A pane opened after the last policy run must get WebGL now if it is on screen.
-    applyWebglPolicy()
-  }, [applyWebglPolicy])
+    // A pane opened after the last policy run must get its renderer now if it is on screen.
+    applyRendererPolicy()
+  }, [applyRendererPolicy])
 
   // ONE live-data subscription for the whole workspace; panes are dispatched by id.
   useEffect((): (() => void) => {
@@ -273,15 +290,18 @@ export function useTerminalPanes(
       }
       // A disposed handle (the unmount cleanup of a StrictMode remount) is replaced, not reused.
       panesRef.current.delete(id)
+      const view = buildTerminalView(id, {
+        termView: optionsRef.current.termView,
+        onZoom: optionsRef.current.onZoom,
+        onSearch: optionsRef.current.onSearch,
+        // Read at click time: the owner's callback may change after the pane is built.
+        onContextMenu: (point): void => { optionsRef.current.onContextMenu?.(id, point) }
+      })
+      // Reduced effects are a construction value too: a pane built in that mode starts without a blinking cursor.
+      applyReducedEffects(view, reducedRef.current)
       const pane: TerminalPaneHandle = {
         id,
-        view: buildTerminalView(id, {
-          termView: optionsRef.current.termView,
-          onZoom: optionsRef.current.onZoom,
-          onSearch: optionsRef.current.onSearch,
-          // Read at click time: the owner's callback may change after the pane is built.
-          onContextMenu: (point): void => { optionsRef.current.onContextMenu?.(id, point) }
-        }),
+        view,
         gate: new SeqGate(),
         lastRun: runtime.get(id)?.run ?? null,
         opened: false,
@@ -308,9 +328,10 @@ export function useTerminalPanes(
     }
   }, [visibleKey, sessionIds, runtime, openPane])
 
-  // WebGL: re-plan whenever the visible set or the pane set changes.
+  // Renderer: re-plan whenever the visible set, the pane set, the wanted kind or the GPU info changes
+  // (a settings change and the arrival of the GPU info switch live panes without recreating them).
   const createdKey = createdIds.join('|')
-  // Deferred output: this MUST run before the WebGL policy effect below, so a pane that becomes
+  // Deferred output: this MUST run before the renderer policy effect below, so a pane that becomes
   // visible is already marked visible (and has its queued output applied) when it gets a context.
   useEffect((): void => {
     const visible = new Set(visibleIdsRef.current)
@@ -326,8 +347,15 @@ export function useTerminalPanes(
     }
   }, [visibleKey, createdKey])
   useEffect((): void => {
-    applyWebglPolicy()
-  }, [applyWebglPolicy, visibleKey, createdKey])
+    applyRendererPolicy()
+  }, [applyRendererPolicy, visibleKey, createdKey, wanted])
+
+  // Reduced effects: live on every mounted pane (cursor blink is the one per-pane effect xterm has).
+  useEffect((): void => {
+    for (const pane of panesRef.current.values()) {
+      applyReducedEffects(pane.view, reducedEffects)
+    }
+  }, [reducedEffects, createdKey])
 
   // Dispose panes whose session is gone.
   useEffect((): void => {

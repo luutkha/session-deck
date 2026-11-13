@@ -1,11 +1,13 @@
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { CanvasAddon } from '@xterm/addon-canvas'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { SearchAddon } from '@xterm/addon-search'
 import type { Id } from '../../shared/types'
 import { terminalOptionsFor } from './terminalOptions'
 import { DEFAULT_TERM_VIEW, fontSizeFor, type TermView } from './termView'
+import type { RendererKind } from './terminalRenderer'
 import { registerLinkProvider } from './links/linkProvider'
 import { attachFileDrop, clipboardHasImageOnly, pasteImageKeysFor } from './inputExtras'
 import { readRightClickMode } from './rightClickPref'
@@ -20,8 +22,8 @@ import {
 export type ZoomAction = 'in' | 'out' | 'reset'
 
 /**
- * One terminal pane's xterm view: the Terminal itself, its fit addon and the
- * WebGL renderer addon when available. Mutable fields track renderer and
+ * One terminal pane's xterm view: the Terminal itself, its fit addon and the GPU
+ * renderer addon when one is attached. Mutable fields track renderer and
  * pending-fit state; the object itself is never replaced.
  */
 export interface TerminalView {
@@ -29,9 +31,14 @@ export interface TerminalView {
   readonly fitAddon: FitAddon
   /** One search provider per pane (W3): searches this pane's buffer only. */
   readonly searchAddon: SearchAddon
-  webgl: WebglAddon | null
-  /** A WebGL attach threw (no GPU / contexts exhausted): the policy stops retrying it. */
-  webglFailed: boolean
+  /** The attached WebGL/Canvas addon; null on xterm's DOM renderer (kind 'dom' never loads one). */
+  gpuAddon: { dispose(): void } | null
+  /** Which renderer is attached now (null = DOM, the same as 'dom' but also "nothing chosen yet"). */
+  gpuKind: RendererKind | null
+  /** A GPU addon attach threw or lost its context (diagnostics; the policy reads failedKinds). */
+  rendererFailed: boolean
+  /** Kinds whose attach already failed for this pane: never retried (no GPU / contexts exhausted). */
+  readonly failedKinds: Set<RendererKind>
   fitFrame: number | null
   /** Set by the workspace that owns the terminal profile; absent = zoom shortcuts do nothing. */
   onZoom: ((action: ZoomAction) => void) | null
@@ -182,8 +189,10 @@ export function buildTerminalView(
     term,
     fitAddon,
     searchAddon,
-    webgl: null,
-    webglFailed: false,
+    gpuAddon: null,
+    gpuKind: null,
+    rendererFailed: false,
+    failedKinds: new Set<RendererKind>(),
     fitFrame: null,
     onZoom: options.onZoom ?? null,
     onSearch: options.onSearch ?? null,
@@ -196,56 +205,78 @@ export function buildTerminalView(
 }
 
 /**
- * Loads the WebGL renderer into an OPENED terminal (xterm needs a parent element first).
- * The pane registry decides when: only visible panes near the context cap get one.
- * A failure is remembered (webglFailed) so the policy does not retry a pane forever.
+ * Loads a GPU renderer (WebGL or Canvas) into an OPENED terminal (xterm needs a parent element first).
+ * The pane registry decides when and which kind: visible panes only, and WebGL only near the context cap.
+ * A failure is remembered per kind (failedKinds) so the policy does not retry that pane forever.
  */
-export function attachWebgl(view: TerminalView): void {
-  if (view.webgl !== null) {
+export function attachRenderer(view: TerminalView, kind: 'webgl' | 'canvas'): void {
+  if (view.gpuKind === kind) {
+    return
+  }
+  if (view.gpuKind !== null) {
+    detachRenderer(view)
+  }
+  if (view.failedKinds.has(kind)) {
     return
   }
   try {
-    const addon = new WebglAddon()
-    addon.onContextLoss((): void => {
-      // A newer addon may already be attached when an old one reports a late loss.
-      if (view.webgl !== addon) {
-        return
-      }
-      // Disposing the addon makes xterm fall back to the DOM renderer. The context is gone
-      // for good (usually Chromium's per-renderer limit), so this pane stops asking for one.
-      view.webgl = null
-      view.webglFailed = true
-      addon.dispose()
-    })
+    const addon: WebglAddon | CanvasAddon = kind === 'webgl' ? new WebglAddon() : new CanvasAddon()
+    if (addon instanceof WebglAddon) {
+      addon.onContextLoss((): void => {
+        // A newer addon may already be attached when an old one reports a late loss.
+        if (view.gpuAddon !== addon) {
+          return
+        }
+        // Disposing the addon makes xterm fall back to the DOM renderer. The context is gone for good
+        // (usually Chromium's per-renderer limit), so this pane stops asking for WebGL.
+        view.gpuAddon = null
+        view.gpuKind = null
+        view.failedKinds.add('webgl')
+        view.rendererFailed = true
+        addon.dispose()
+      })
+    }
     view.term.loadAddon(addon)
-    view.webgl = addon
+    view.gpuAddon = addon
+    view.gpuKind = kind
   } catch (error) {
-    view.webglFailed = true
-    console.error('SessionDeck: WebGL renderer unavailable, using the DOM renderer', error)
+    view.failedKinds.add(kind)
+    view.rendererFailed = true
+    console.error(`SessionDeck: the ${kind} terminal renderer is unavailable, using the DOM renderer`, error)
   }
 }
 
 /**
- * Gives the pane's WebGL context back (hidden pane). xterm falls back to its DOM renderer,
- * which pauses while the element is hidden and costs nothing there. Attach again on show.
+ * Gives the pane's GPU renderer back (hidden pane / renderer switch). xterm falls back to its DOM renderer,
+ * which pauses while the element is hidden and costs nothing there. Attach again when needed.
  */
-export function detachWebgl(view: TerminalView): void {
-  const addon = view.webgl
+export function detachRenderer(view: TerminalView): void {
+  const addon = view.gpuAddon
   if (addon === null) {
+    view.gpuKind = null
     return
   }
   // Clear first: an onContextLoss fired by dispose() must not touch the next addon.
-  view.webgl = null
+  view.gpuAddon = null
+  view.gpuKind = null
   try {
     addon.dispose()
   } catch (error) {
-    console.error('SessionDeck: releasing the WebGL renderer failed', error)
+    console.error('SessionDeck: releasing the terminal renderer failed', error)
   }
 }
 
+/** Reduced effects (no GPU): a blinking cursor repaints the pane forever, so it is turned off (live option). */
+export function applyReducedEffects(view: TerminalView, reduced: boolean): void {
+  if (view.term.options.cursorBlink === !reduced) {
+    return
+  }
+  view.term.options.cursorBlink = !reduced
+}
+
 /**
- * Opens the terminal into `element` and attaches mouse behaviour. The WebGL renderer is
- * attached separately (attachWebgl): the pane registry knows then whether the pane shows.
+ * Opens the terminal into `element` and attaches mouse behaviour. The GPU renderer is
+ * attached separately (attachRenderer): the pane registry knows then whether the pane shows.
  */
 export function openTerminalView(view: TerminalView, element: HTMLElement): void {
   // Re-opening into a fresh element (StrictMode remount) must not stack two sets of listeners.
@@ -379,7 +410,8 @@ export function disposeTerminalView(view: TerminalView): void {
   }
   viewListeners.get(view)?.abort()
   viewListeners.delete(view)
-  // term.dispose() disposes the addons too; clearing the field keeps detachWebgl a no-op.
-  view.webgl = null
+  // term.dispose() disposes the addons too; clearing the fields keeps detachRenderer a no-op.
+  view.gpuAddon = null
+  view.gpuKind = null
   view.term.dispose()
 }

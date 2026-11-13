@@ -22,11 +22,29 @@ import { JarvisPanel } from './jarvis/JarvisPanel'
 import { openJarvisPanel } from './jarvis/jarvisPanelStore'
 import { JarvisSpeaker } from './jarvis/JarvisSpeaker'
 import { useJarvisUi } from './jarvis/useJarvisUi'
+import { useGraphicsPrefs } from './Terminal/graphicsPrefs'
+import { useGpuInfo } from './Terminal/useGpuInfo'
+import { resolveReducedEffects } from './Terminal/terminalRenderer'
 import './styles.css'
 
 /** Plays the user's notification sounds. Mounted in the main window only, so a sound is never played twice. */
 function AttentionSoundPlayer(): null {
   useAttentionSound()
+  return null
+}
+
+/**
+ * No-GPU support (D62): reduced effects when the user asked for them or Chromium only renders in software.
+ * The flag lives on <html> so one attribute turns off every CSS animation, transition, shadow and blur
+ * (styles.css); the terminals turn their cursor blink off through their own hook.
+ */
+function GraphicsEffects(): null {
+  const prefs = useGraphicsPrefs()
+  const { info } = useGpuInfo()
+  const reduced = resolveReducedEffects(prefs.effects, info?.mode ?? null)
+  useEffect((): void => {
+    document.documentElement.dataset['reduceEffects'] = reduced ? 'true' : 'false'
+  }, [reduced])
   return null
 }
 
@@ -81,6 +99,7 @@ export function App(): ReactElement {
 
   return (
     <TooltipProvider delayDuration={300}>
+      <GraphicsEffects />
       <ModeWorkspace
         key={ui.mode}
         mode={ui.mode}

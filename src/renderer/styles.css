@@ -37,3 +37,22 @@ body,
 *:hover {
   scrollbar-color: color-mix(in srgb, var(--muted-foreground, #737373) 48%, transparent) transparent;
 }
+
+/*
+ * No-GPU support (D62): reduced visual effects on a software renderer (SwiftShader) or when the user picks
+ * "Reduced". One attribute on <html> (App.tsx) turns off the animations, transitions, shadows and blurs that
+ * repaint the whole window on the CPU. !important so it wins over Tailwind utilities and component recipes.
+ */
+[data-reduce-effects='true'] *,
+[data-reduce-effects='true'] *::before,
+[data-reduce-effects='true'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0s !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  text-shadow: none !important;
+  scroll-behavior: auto !important;
+}
