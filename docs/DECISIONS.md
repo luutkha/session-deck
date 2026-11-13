@@ -279,6 +279,14 @@ Offered as option 2 of "what next feature we should build?"; the user: "do for 2
 - Last active comes from a new saved `Session.lastActiveAt` (a turn starts or ends, or a line typed with Enter).
 - Choices made while building (change on request): a live sort (Needs attention, Last active) holds still while the pointer is over the list and re-sorts when it leaves; while sorted, dragging a session to a new position inside its group is refused with "Switch the sort to Manual to reorder" (moving it to another group still works); the Hub on Manual keeps its own most-recent-activity order; folder buckets follow their first session; the idle reminder counts as "finished", not "needs you".
 
+**D62 · 2026-11-13 · App slow with many sessions: performance round** · active
+"when i use the apps, there are many session so the apps kind of slow, how we can improve it" -> "deep analyze, and propose me the best solutions (dont forget to use open code ...)" -> "do for all step". The analysis and the code were done with OpenCode (free model first, `opencode-go/deepseek-v4.1-flash` when the free one hung); every step was measured with `scripts/bench-sessions.cjs` (20 chatty Shell sessions) and checked in the real app.
+- Step 1 output path: PtyManager batches output per session (16 ms for sessions on screen, 100 ms for hidden ones, 64 KB flushes at once; flushed before exit / restart / kill / replay), RingBuffer is O(1) per append. Messages 680/s -> 183/s.
+- Step 2 terminals: only panes on screen keep a WebGL context (max 8, `webglPolicy.ts`); a hidden pane queues its output (`hiddenQueue.ts`, 1M chars, over that it re-hydrates from main's replay) instead of rendering it; panes are disposed when the workspace unmounts. Renderer busy 35% -> 13%, DOM nodes 130k -> 2.5k.
+- Step 3 renderer: only the shown grouping is computed, `SessionCard` is memoized, one shared 30 s clock (`state/useClock.ts`), one runtime-change diff. Small gain (about 1.5 points with 10 store events/s).
+- Step 4 main: the store save has a 5 s max wait, usage changes touch only the changed session's timeline, worker snapshots are throttled to 250 ms, the error log is capped at 1 MB, the transcript check reads a tail window.
+- Not done (offer again only if relevant): sending store changes as patches instead of the whole store, 4 instead of 5 git spawns per worktree refresh, a cap on live terminals (LRU), per-window pty filtering.
+
 ### Suggested but not chosen (offer again only if relevant)
 A changes/diff panel for Ops sessions (Code mode has one per worktree; offered 2026-10-22, not picked), copy the Remote Control link, light theme, code signing, auto-update (D25 deferred). Everything else offered earlier has since been built (D47–D54).
 
