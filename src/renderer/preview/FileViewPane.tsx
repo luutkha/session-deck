@@ -1,6 +1,6 @@
 // Side-panel file viewer (D73): renders one FileView. It does no IPC and reads no disk: main read the
 // file and this shows it. Markdown/CSV/sheet/image/docx each get their own body; the footer is fixed.
-import { useEffect, useMemo, useState, type MouseEvent, type ReactElement } from 'react'
+import { useMemo, useState, type MouseEvent, type ReactElement } from 'react'
 import type { FileView, Id } from '../../shared/types'
 import { FILE_VIEW_MAX_COLS, FILE_VIEW_MAX_ROWS } from '../../shared/types'
 import { Button } from '../components/ui/button'
@@ -209,17 +209,18 @@ function TextBody({ view }: { readonly view: FileView }): ReactElement {
   )
 }
 
-export function FileViewPane({ view, sessionId, className }: FileViewPaneProps): ReactElement {
+/**
+ * A new file starts over (first sheet, fit to the pane, no stale natural size), so the state lives in a component keyed by
+ * the path: an effect that reset it would run AFTER paint and could wipe a size an image's onLoad had just reported.
+ */
+export function FileViewPane(props: FileViewPaneProps): ReactElement {
+  return <FileViewPaneBody key={props.view.path} {...props} />
+}
+
+function FileViewPaneBody({ view, sessionId, className }: FileViewPaneProps): ReactElement {
   const [activeSheet, setActiveSheet] = useState(0)
   const [fit, setFit] = useState(true)
   const [natural, setNatural] = useState<{ readonly width: number; readonly height: number } | null>(null)
-
-  // A new file starts over: first sheet, fit to the pane, no stale natural size from the last image.
-  useEffect((): void => {
-    setActiveSheet(0)
-    setFit(true)
-    setNatural(null)
-  }, [view.path])
 
   function body(): ReactElement {
     switch (view.kind) {

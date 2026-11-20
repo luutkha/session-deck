@@ -114,7 +114,18 @@ async function main() {
         await app.send('Input.dispatchMouseEvent', { type: kind, x, y, button: 'left', buttons, clickCount: 1 })
       }
       const got = await waitFor(async () => { const r = await app.evaluate(reader); return r && r.name === names[i] ? r : null }, 6000, 250)
-      if (got) seen[got.name] = got
+      if (got && got.name === 'photo.png') {
+        // The size label starts as "Loading image..." and must become the natural size once the image has loaded.
+        const label = await waitFor(async () => { const l = await app.evaluate(`document.querySelector('[data-image-size]')?.textContent ?? ''`); return l && !/loading/i.test(l) ? l : null }, 5000, 250)
+        t.check('the image size label settles to the natural size', !!label, String(label))
+      }
+      if (got) {
+        seen[got.name] = got
+        // A screenshot per file type, to look at (scripts/visual is where the other e2e suites keep theirs).
+        const shot = await app.send('Page.captureScreenshot', { format: 'png' })
+        fs.mkdirSync(path.join(__dirname, 'visual'), { recursive: true })
+        fs.writeFileSync(path.join(__dirname, 'visual', `fileview-${got.name.replace(/[^a-z0-9]+/gi, '-')}.png`), Buffer.from(shot.result.data, 'base64'))
+      }
     }
     t.check('a plain click on a path opens the Preview tab', await app.evaluate(`document.querySelector('[data-side-tab="preview"]')?.getAttribute('aria-selected') === 'true'`))
     t.check('every viewable path was reachable by clicking', Object.keys(seen).length === names.length, Object.keys(seen).join(', '))
