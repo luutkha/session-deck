@@ -47,18 +47,36 @@ import type {
   WorktreeChanges,
   FileDiff,
   FilePreview,
+  FileViewResult,
   WindowState,
   WindowRole,
   GpuInfo,
   GpuPref
 } from '../shared/types'
 import type { PtyReplay } from '../shared/ipc'
-import { CODE_WINDOW_ARG } from '../shared/ipc'
+import { CODE_WINDOW_ARG, VIEWER_WINDOW_ARG_PREFIX } from '../shared/ipc'
 
 const windowRole: WindowRole = process.argv.includes(CODE_WINDOW_ARG) ? 'code' : 'main'
 
+/** D73: a detached file-viewer window carries its file in a launch argument; anything malformed means "not a viewer". */
+function readViewerRequest(): { readonly sessionId: string; readonly text: string } | null {
+  const raw = process.argv.find((arg) => arg.startsWith(VIEWER_WINDOW_ARG_PREFIX))
+  if (raw === undefined) return null
+  try {
+    const parsed: unknown = JSON.parse(decodeURIComponent(raw.slice(VIEWER_WINDOW_ARG_PREFIX.length)))
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const { sessionId, text } = parsed as { sessionId?: unknown; text?: unknown }
+    if (typeof sessionId !== 'string' || typeof text !== 'string' || sessionId.length === 0 || text.length === 0) return null
+    return { sessionId, text }
+  } catch {
+    return null
+  }
+}
+
+
 const api: Api = {
   windowRole,
+  viewerRequest: readViewerRequest(),
 
   getStore(): Promise<{ data: StoreData; runtime: readonly RuntimeState[] }> {
     return ipcRenderer.invoke(IPC.storeGet)
@@ -466,6 +484,14 @@ const api: Api = {
 
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff> {
     return ipcRenderer.invoke(IPC.worktreeFileDiff, worktreeId, path)
+  },
+
+  readFileView(sessionId: Id, text: string): Promise<FileViewResult> {
+    return ipcRenderer.invoke(IPC.fileViewRead, sessionId, text)
+  },
+
+  detachFileView(sessionId: Id, text: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.fileViewDetach, sessionId, text)
   },
 
   getWorktreeFilePreview(worktreeId: Id, path: string): Promise<FilePreview> {

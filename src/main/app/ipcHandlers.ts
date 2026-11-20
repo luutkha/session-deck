@@ -1,7 +1,8 @@
 import { app, ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'electron'
 import { MAX_LINK_TEXTS } from '../links'
 import { createAppLinkService } from '../links/appLinks'
-import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref } from '../../shared/types'
+import { readFileView } from '../preview'
+import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref, FileViewResult } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from './sessionController'
@@ -69,6 +70,8 @@ export interface IpcHandlersDeps {
   readonly windowState: () => WindowState
   readonly popOutCode: () => void
   readonly dockCode: () => void
+  /** D73: opens a detached file-viewer window for a file (the side-panel viewer's Detach). */
+  readonly openFileViewer: (request: { readonly sessionId: Id; readonly text: string }) => void
   /** Directory of main-errors.log. */
   readonly userDataDir: string
   /** Start-on-login state and toggle (packaged app only). */
@@ -105,7 +108,7 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 }
 
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, conversationSearch, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, userDataDir, loginItem, onUserActivity } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, conversationSearch, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, openFileViewer, userDataDir, loginItem, onUserActivity } = deps
 
   // A burst of store changes (notes, status, rename...) must not send the whole store per change:
   // the first change goes out at once, the rest at most once per interval with the latest state.
@@ -307,6 +310,17 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
       throw new Error('link candidates must be a list of at most ' + MAX_LINK_TEXTS + ' strings')
     }
     return links.resolveMany(id, rawTexts as string[])
+  })
+
+  // D73: the side-panel viewer. The renderer sends the link TEXT; main resolves it (cwd, home, UNC refused) and reads it, never a raw path.
+  ipcMain.handle(IPC.fileViewRead, async (_event, rawId: unknown, rawText: unknown): Promise<FileViewResult> => {
+    const resolved = await links.resolve(assertId(rawId, 'session id'), assertNonEmptyString(rawText, 'link text'))
+    if (resolved === null || resolved.kind !== 'file') return { ok: false, error: 'Not a file that exists' }
+    return readFileView(resolved.target)
+  })
+
+  ipcMain.handle(IPC.fileViewDetach, async (_event, rawId: unknown, rawText: unknown): Promise<void> => {
+    openFileViewer({ sessionId: assertId(rawId, 'session id'), text: assertNonEmptyString(rawText, 'link text') })
   })
 
   ipcMain.handle(IPC.linkOpen, async (_event, rawId: unknown, rawText: unknown, rawReveal: unknown) => {

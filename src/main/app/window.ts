@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { attachWindowDiagnostics } from './windowDiagnostics'
 import { isSameDocumentNavigation } from './navigation'
-import { IPC, CODE_WINDOW_ARG } from '../../shared/ipc'
+import { IPC, CODE_WINDOW_ARG, VIEWER_WINDOW_ARG_PREFIX } from '../../shared/ipc'
 import type { WindowRole } from '../../shared/types'
 
 import type { WindowLike } from './windowRegistry'
@@ -19,6 +19,10 @@ const DEFAULT_WIDTH = 1280
 const DEFAULT_HEIGHT = 800
 /** A popped-out Code window opens this far right and down from the main window. */
 const CODE_WINDOW_OFFSET = 32
+const VIEWER_WIDTH = 860
+const VIEWER_HEIGHT = 720
+const VIEWER_MIN_WIDTH = 420
+const VIEWER_MIN_HEIGHT = 300
 const MAIN_WINDOW_TITLE = 'SessionDeck'
 const CODE_WINDOW_TITLE = 'SessionDeck · Code'
 
@@ -43,6 +47,8 @@ export interface MainWindowDeps {
   readonly role?: WindowRole
   /** The main window; a 'code' window opens offset from it. Not a modal parent: it is an independent window. */
   readonly parent?: BrowserWindow
+  /** D73: opens a small file-viewer window for this file instead of the app (role stays 'main', it is not registered). */
+  readonly viewer?: { readonly sessionId: string; readonly text: string }
 }
 
 export interface MainWindow {
@@ -96,18 +102,24 @@ function roleOptions(role: WindowRole, parent: BrowserWindow | undefined): Pick<
   return { title: MAIN_WINDOW_TITLE, additionalArguments: [] }
 }
 
+/** The title and launch argument of a detached viewer window: the file's base name, the request in the argument. */
+function viewerOptions(viewer: { readonly sessionId: string; readonly text: string }): { readonly title: string; readonly additionalArguments: readonly string[] } {
+  const base = viewer.text.replace(/[:]\d+(:\d+)?$/, '').split(/[\\/]/).pop() ?? ''
+  return { title: base.length > 0 ? `${base} · SessionDeck` : MAIN_WINDOW_TITLE, additionalArguments: [VIEWER_WINDOW_ARG_PREFIX + encodeURIComponent(JSON.stringify(viewer))] }
+}
+
 export function createMainWindow(deps: MainWindowDeps): MainWindow {
-  const { preloadPath, iconPath, parent } = deps
+  const { preloadPath, iconPath, parent, viewer } = deps
   const role: WindowRole = deps.role ?? 'main'
-  const { additionalArguments, ...placement } = roleOptions(role, parent)
+  const { additionalArguments, ...placement } = viewer === undefined ? roleOptions(role, parent) : viewerOptions(viewer)
 
   let isWindowFocused = false
 
   const mainWindow = new BrowserWindow({
-    width: DEFAULT_WIDTH,
-    height: DEFAULT_HEIGHT,
-    minWidth: WINDOW_MIN_WIDTH,
-    minHeight: WINDOW_MIN_HEIGHT,
+    width: viewer === undefined ? DEFAULT_WIDTH : VIEWER_WIDTH,
+    height: viewer === undefined ? DEFAULT_HEIGHT : VIEWER_HEIGHT,
+    minWidth: viewer === undefined ? WINDOW_MIN_WIDTH : VIEWER_MIN_WIDTH,
+    minHeight: viewer === undefined ? WINDOW_MIN_HEIGHT : VIEWER_MIN_HEIGHT,
     backgroundColor: WINDOW_BACKGROUND,
     icon: loadIcon(iconPath),
     ...titleBarOptions(),
@@ -122,7 +134,7 @@ export function createMainWindow(deps: MainWindowDeps): MainWindow {
     }
   })
 
-  if (role === 'code') lockTitle(mainWindow)
+  if (role === 'code' || viewer !== undefined) lockTitle(mainWindow)
 
   attachWindowDiagnostics(mainWindow, app.getPath('userData'))
 

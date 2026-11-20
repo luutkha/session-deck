@@ -759,6 +759,9 @@ if (!gotTheLock) {
       windowState: () => windows.state(),
       popOutCode: () => { windows.popOutCode() },
       dockCode: () => windows.dockCode(),
+      openFileViewer: (request) => {
+        createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, viewer: request })
+      },
       userDataDir: userData,
       loginItem: createLoginItem(app),
       getGpuInfo: readGpuWithPref,

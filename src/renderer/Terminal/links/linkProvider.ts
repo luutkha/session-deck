@@ -1,7 +1,9 @@
 import type { IDisposable, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm'
 import type { Id } from '../../../shared/types'
+import { requestFileView } from '../../viewer/previewBus'
 import { detectLinkCandidates, type LinkCandidate } from './detectLinks'
 import { createLinkCache, type LinkCache } from './linkCache'
+import { decideLinkClick } from './linkClick'
 
 interface Segment {
   /** 1-based buffer row this physical line maps to. */
@@ -74,8 +76,8 @@ function buildLinks(
 ): ILink[] {
   const links: ILink[] = []
   for (const candidate of candidates) {
-    const resolved = cache.get(candidate.text)
-    if (resolved === undefined || resolved === null) continue
+    const link = cache.get(candidate.text)
+    if (link === undefined || link === null) continue
     const range = toRange(candidate, lines)
     if (range === null) continue
     links.push({
@@ -83,8 +85,12 @@ function buildLinks(
       text: candidate.text,
       decorations: { underline: true, pointerCursor: true },
       activate: (event: MouseEvent, text: string): void => {
+        const action = decideLinkClick(link, event)
+        // D73: the viewer lives in the side panel of this window; with no listener (no workspace) keep
+        // the old behaviour instead of swallowing the click.
+        if (action === 'view' && requestFileView({ sessionId, text })) return
         void window.api
-          .openLink(sessionId, text, event.shiftKey)
+          .openLink(sessionId, text, action === 'reveal')
           .then((result) => {
             if (!result.ok) {
               console.error('SessionDeck: opening the link failed', result.error)
@@ -101,8 +107,11 @@ function buildLinks(
 
 /**
  * Registers a link provider on `term` that detects URLs, files and folders in
- * the visible line, confirms them with the main process (batched, cached), and
- * opens them on plain click (Shift+click reveals a file in Explorer).
+ * the visible line and confirms them with the main process (batched, cached).
+ * A click then follows `decideLinkClick` (D73): Shift+click reveals a file in
+ * Explorer, Ctrl/Meta+click opens it with the default app, a plain click on a
+ * viewable file goes to the side-panel Preview tab, and everything else opens
+ * as before.
  */
 export function registerLinkProvider(term: Terminal, sessionId: Id): IDisposable {
   const cache = createLinkCache()

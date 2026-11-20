@@ -16,6 +16,7 @@ A Windows desktop app for running and managing many [Claude Code](https://claude
 - An Orca-style attention bell and a "Needs you" list, with sounds you choose and desktop notices. The alert repeats while a session stays unread.
 - A Hub board by status, a grid of live terminals, split panes, tabs per folder, a command palette (Ctrl+K / Ctrl+Shift+K) and terminal search (Ctrl+Shift+F).
 - Right-click in a terminal for Orca's menu: Copy, Select All, Paste, Find, Fork, Split, Close Pane, Copy Folder Path, Clear Screen. Prefer instant copy/paste? Settings > Terminal > Right-click.
+- Click a file path in a terminal to preview it in the right side panel: Markdown, text, images, CSV, Excel (.xlsx) and Word (.docx). The panel is resizable, and Detach opens the file in its own window (Ctrl+click opens it in its default app).
 - The status bar shows plan usage for Claude and OpenCode Go, plus the active session's model, context fill and cost.
 - A per-session timeline, "While you were away", a cost report, and search across past conversations.
 - A quota autopilot sleeps idle sessions at the limit, wakes them at the reset, and types "continue" for you.

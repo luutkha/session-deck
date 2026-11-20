@@ -1,0 +1,1 @@
+export { readFileView } from './readFileView'

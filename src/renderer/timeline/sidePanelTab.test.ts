@@ -30,6 +30,10 @@ describe('parseSidePanelTab', () => {
     expect(parseSidePanelTab('changes')).toBe('changes')
   })
 
+  it('reads preview as the Preview tab (D73)', () => {
+    expect(parseSidePanelTab('preview')).toBe('preview')
+  })
+
   it('falls back to Notes for a missing value', () => {
     expect(parseSidePanelTab(null)).toBe('notes')
   })
@@ -47,6 +51,11 @@ describe('sidePanelTabsFor', () => {
   it('offers Notes, Activity and Queue for an Ops session', () => {
     expect(sidePanelTabsFor(false)).toEqual(['notes', 'activity', 'queue'])
   })
+
+  it('adds Preview last only while a file request is open (D73)', () => {
+    expect(sidePanelTabsFor(false, true)).toEqual(['notes', 'activity', 'queue', 'preview'])
+    expect(sidePanelTabsFor(true, true)).toEqual(['notes', 'activity', 'queue', 'changes', 'preview'])
+  })
 })
 
 describe('resolveSidePanelTab', () => {
@@ -56,6 +65,13 @@ describe('resolveSidePanelTab', () => {
 
   it('shows Notes when a stored Changes tab meets a session without a worktree', () => {
     expect(resolveSidePanelTab('changes', false)).toBe('notes')
+  })
+
+  it('keeps Preview while a request is open and shows Notes once it is gone', () => {
+    expect(resolveSidePanelTab('preview', false, true)).toBe('preview')
+    expect(resolveSidePanelTab('preview', true, true)).toBe('preview')
+    expect(resolveSidePanelTab('preview', false)).toBe('notes')
+    expect(resolveSidePanelTab('preview', true, false)).toBe('notes')
   })
 
   it('keeps Notes and Activity unchanged for any session', () => {

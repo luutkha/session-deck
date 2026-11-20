@@ -1,7 +1,7 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
   AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisUiCommand, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
-  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, WindowState, WindowRole,
+  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, FileViewResult, WindowState, WindowRole,
   BranchStatus, CommitInput, CommitResult, PushResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult,
   GpuInfo, GpuPref
 } from './types'
@@ -63,6 +63,8 @@ export const IPC = {
   gpuSetPref: 'gpu:setPref', // (pref 'auto'|'on'|'off') -> void: saved now, applied at the next start
   gpuReportProbe: 'gpu:reportProbe', // (softwareSeen: boolean) -> void: the window's own WebGL probe found a software renderer (or not)
   linkResolve: 'link:resolve', // (sessionId, candidates[]) -> (ResolvedLink | null)[]; main checks the file system
+  fileViewDetach: 'file:viewDetach', // (sessionId, text) -> void; opens the file viewer in its own small window (D73)
+  fileViewRead: 'file:viewRead', // (sessionId, text) -> FileViewResult; main re-resolves the link text, reads capped, converts docx/xlsx/csv (D73)
   linkOpen: 'link:open', // (sessionId, text, reveal) -> OpenLinkResult; main re-resolves, never trusts the renderer
   sessionSleep: 'session:sleep', // stop the Claude process of a session (card and conversation stay); activating it later resumes it
   appQuit: 'app:quit', // really quit (the window close button may only hide to the tray)
@@ -125,6 +127,8 @@ export interface PtyReplay {
 export interface Api {
   /** Which window this renderer runs in (fixed for its lifetime). */
   readonly windowRole: WindowRole
+  /** D73: set only in a detached file-viewer window: the file it shows (link text + the session it belongs to). */
+  readonly viewerRequest: { readonly sessionId: Id; readonly text: string } | null
   getStore(): Promise<{ data: StoreData; runtime: readonly RuntimeState[] }>
   createSession(input: CreateSessionInput): Promise<Session>
   renameSession(id: Id, name: string): Promise<void>
@@ -245,6 +249,10 @@ export interface Api {
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff>
   /** Rendered preview of one worktree file (rich previews, Code mode): image base64 or markdown/text. */
   getWorktreeFilePreview(worktreeId: Id, path: string): Promise<FilePreview>
+  /** D73: reads the file a terminal link points at for the side-panel viewer (md, image, csv, xlsx, docx, text). */
+  readFileView(sessionId: Id, text: string): Promise<FileViewResult>
+  /** D73: shows the same file in its own small window (the side-panel viewer's Detach button). */
+  detachFileView(sessionId: Id, text: string): Promise<void>
   getWindowState(): Promise<WindowState>
   popOutCode(): Promise<void>
   dockCode(): Promise<void>
@@ -254,6 +262,8 @@ export interface Api {
 
 /** Command-line flag main passes to the Code window (webPreferences.additionalArguments); preload reads it. */
 export const CODE_WINDOW_ARG = '--sessiondeck-window=code'
+/** Launch argument of a detached file-viewer window: this prefix + encodeURIComponent(JSON {sessionId, text}) (D73). */
+export const VIEWER_WINDOW_ARG_PREFIX = '--sessiondeck-viewer='
 
 declare global {
   interface Window { api: Api }

@@ -26,6 +26,8 @@ import { useAttentionShortcuts } from '../attention/useAttentionShortcuts'
 import { SidebarResizeHandle } from '../shell/SidebarResizeHandle'
 import { SIDEBAR_KEEP_FOR_MAIN } from '../shell/sidebarWidth'
 import { useSidebarWidth } from '../shell/useSidebarWidth'
+import { SIDE_PANEL_WIDTH_DEFAULT, SIDE_PANEL_WIDTH_PREVIEW } from '../shell/sidePanelWidth'
+import { useSidePanelWidth } from '../shell/useSidePanelWidth'
 import { EmptyState } from '../shell/EmptyState'
 import { StatusBar } from '../shell/StatusBar'
 import { TabBar } from '../shell/TabBar'
@@ -51,6 +53,8 @@ import { runWorkspaceAction, type WorkspaceUiContext } from '../jarvis/workspace
 import { sidebarViewControl } from '../jarvis/sidebarView'
 import { requestChangesFile } from '../code/changes/changesRequest'
 import { readSidePanelTab, resolveSidePanelTab, storeSidePanelTab, type SidePanelTab } from '../timeline/sidePanelTab'
+import { onFileViewRequest } from '../viewer/previewBus'
+import type { PreviewRequest } from '../viewer/fileViewState'
 
 const EMPTY_STORE: StoreData = { version: 1, sessions: [], groups: [], statuses: [], groupOrder: [] }
 const CODE_EMPTY = {
@@ -188,6 +192,31 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   }, [termViewApi.termView.zoomPercent, panes.panesRef])
   // D55: Jarvis changes the screen through the same hooks as the buttons. A new side-panel tab remounts the panel.
   const [sidePanelEpoch, setSidePanelEpoch] = useState(0)
+  // D73: a terminal file link asks this workspace to show its file in the side panel's Preview tab. The request stays
+  // (also while the terminal view is away); a nonce makes the same link read again.
+  const sidePanelWidth = useSidePanelWidth()
+  const [sidePanelResizing, setSidePanelResizing] = useState(false)
+  const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null)
+  const previewNonce = useRef(0)
+  const previewWidened = useRef(false)
+  useEffect((): (() => void) => onFileViewRequest((request): void => {
+    previewNonce.current += 1
+    setPreviewRequest({ sessionId: request.sessionId, text: request.text, nonce: previewNonce.current })
+    // Opens the panel when it is closed; an open panel is left as it is (it would toggle shut).
+    if (!nav.notesOpen) nav.toggleNotes()
+    storeSidePanelTab('preview', keys.sidePanel)
+    setSidePanelEpoch((n: number): number => n + 1)
+    // A table is unreadable at the default width: widen once, and only when the user never chose a width.
+    if (!previewWidened.current) {
+      previewWidened.current = true
+      if (sidePanelWidth.width === SIDE_PANEL_WIDTH_DEFAULT) sidePanelWidth.commit(SIDE_PANEL_WIDTH_PREVIEW)
+    }
+  }), [keys.sidePanel, nav.notesOpen, nav.toggleNotes, sidePanelWidth.width, sidePanelWidth.commit])
+  const closePreview = useCallback((): void => {
+    setPreviewRequest(null)
+    storeSidePanelTab('notes', keys.sidePanel)
+    setSidePanelEpoch((n: number): number => n + 1)
+  }, [keys.sidePanel])
   const jarvisUi = useRef<WorkspaceUiContext | null>(null)
   jarvisUi.current = {
     mode,
@@ -212,7 +241,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
     sidebarWidth: { value: sidebarWidth.width, set: sidebarWidth.commit, reset: sidebarWidth.reset },
     sidePanel: {
       open: nav.notesOpen,
-      tab: resolveSidePanelTab(readSidePanelTab(keys.sidePanel), activeSession?.worktreeId !== undefined),
+      tab: resolveSidePanelTab(readSidePanelTab(keys.sidePanel), activeSession?.worktreeId !== undefined, previewRequest !== null),
       hasChanges: activeSession?.worktreeId !== undefined,
       setOpen: (open: boolean): void => {
         if (!open) nav.closeNotes()
@@ -448,6 +477,14 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                 storageKey={keys.sidePanel}
                 changesTarget={changesTarget(activeSession, activeState)}
                 runtimeState={activeState}
+                previewRequest={previewRequest}
+                onClosePreview={closePreview}
+                width={sidePanelWidth.width}
+                resizing={sidePanelResizing}
+                onResizeDrag={sidePanelWidth.setLive}
+                onResizeCommit={sidePanelWidth.commit}
+                onResizeReset={sidePanelWidth.reset}
+                onResizingChange={setSidePanelResizing}
               />
             ) : null}
           </div>

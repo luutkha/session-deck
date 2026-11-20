@@ -918,3 +918,44 @@ export interface WorkerInfo {
   /** Newest lines of the worker's output (capped). */
   readonly lines: readonly WorkerLine[]
 }
+
+/** D73: what the side-panel file viewer can show for a path a terminal link points at. */
+export type FileViewKind = 'markdown' | 'text' | 'image' | 'csv' | 'sheet' | 'docx'
+
+/** One table of a csv (a single sheet) or an Excel workbook (one per sheet). Cells are display strings. */
+export interface FileViewSheet {
+  readonly name: string
+  readonly rows: readonly (readonly string[])[]
+  /** True when rows or columns were cut at FILE_VIEW_MAX_ROWS / FILE_VIEW_MAX_COLS. */
+  readonly truncated: boolean
+}
+
+/** A file read by main for the viewer. The renderer never touches the disk (same rule as FilePreview). */
+export interface FileView {
+  /** Absolute path main resolved. */
+  readonly path: string
+  readonly name: string
+  readonly kind: FileViewKind
+  readonly size: number
+  /** markdown/text: decoded text (capped). docx: HTML from mammoth, UNSANITIZED, the renderer must sanitize it. */
+  readonly content: string
+  /** image: bytes as base64 (mime tells the type). Empty for other kinds. */
+  readonly base64: string
+  readonly mime: string
+  /** csv: one sheet; sheet (xlsx): every sheet up to FILE_VIEW_MAX_SHEETS. Empty for other kinds. */
+  readonly sheets: readonly FileViewSheet[]
+  /** True when the file or its text was cut at a size cap. */
+  readonly truncated: boolean
+}
+
+export type FileViewResult =
+  | { readonly ok: true; readonly view: FileView }
+  | { readonly ok: false; readonly error: string }
+
+/** Caps of the file viewer (main enforces them; main never reads past them). */
+export const FILE_VIEW_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+export const FILE_VIEW_TEXT_MAX_BYTES = 1024 * 1024
+export const FILE_VIEW_DOC_MAX_BYTES = 20 * 1024 * 1024
+export const FILE_VIEW_MAX_ROWS = 2000
+export const FILE_VIEW_MAX_COLS = 50
+export const FILE_VIEW_MAX_SHEETS = 20
