@@ -70,7 +70,7 @@ async function main() {
     t.check('same OpenCode conversation id after wake (-s)', after.opencodeSessionId === ocId, `${ocId} vs ${after.opencodeSessionId}`)
     t.check('the earlier turn is visible again after resume', /pong/i.test(await replay(app, s.id)))
 
-    // ---- clipboard image paste (right-click) attaches an image in OpenCode (Ctrl+V under the hood)
+    // ---- clipboard image paste (right-click, then Paste in the menu) attaches an image in OpenCode (Ctrl+V under the hood)
     // Needs a working OS clipboard. In some remote/headless Windows sessions write+read stays empty (see
     // docs/LESSONS.md), so report a real SKIP for this probe instead of a red run; the rest of the suite still counts.
     const clipboardWorks = await app.evaluate(`navigator.clipboard.writeText('sessiondeck-clipboard-probe').then(() => navigator.clipboard.readText()).then((text) => text === 'sessiondeck-clipboard-probe', () => false)`)
@@ -83,6 +83,15 @@ async function main() {
       await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y, button: 'none' })
       await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: rect.x, y: rect.y, button: 'right', buttons: 2, clickCount: 1 })
       await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rect.x, y: rect.y, button: 'right', buttons: 0, clickCount: 1 })
+      // Right-click opens the terminal menu (D59); Paste in it makes OpenCode read the clipboard image (Ctrl+V).
+      await sleep(600)
+      const item = await app.evaluate(`(() => { const n = [...document.querySelectorAll('[data-testid=terminal-context-menu] [role=menuitem]')].find((m) => m.innerText.startsWith('Paste')); if (!n) return null; const b = n.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } })()`)
+      t.check('right-click shows the terminal menu with Paste', item !== null)
+      if (item !== null) {
+        for (const [type, buttons] of [['mouseMoved', 0], ['mousePressed', 1], ['mouseReleased', 0]]) {
+          await app.send('Input.dispatchMouseEvent', { type, x: item.x, y: item.y, button: type === 'mouseMoved' ? 'none' : 'left', buttons, clickCount: 1 })
+        }
+      }
       const attached = await waitFor(async () => /\[Image ?1\]/.test(await replay(app, s.id)), 10000, 500)
       t.check('right-click image paste attaches [Image 1] in OpenCode', !!attached)
     }
