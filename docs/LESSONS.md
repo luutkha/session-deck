@@ -16,6 +16,7 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - **`--mcp-config <file>` with `type: "http"` needs no approval and no `~/.claude` change.** The server must answer `initialize` with plain JSON (no event stream needed), notifications with 202 and GET with 405.
 
 ## OpenCode
+- **`--standalone` exists only on OpenCode v2.x.** v1.x dies/prints help on it. Detect the flag from `opencode --help` (`src/main/opencode/capabilities.ts`), never from the version number; `-s <id>` works on all versions.
 - **The TUI CLI has no `--model` flag.** `opencode --standalone --model x/y` prints help and exits ("ShowHelp: Help requested"; a "TUI started" check can pass vacuously on the help text). The model goes into `OPENCODE_CONFIG_CONTENT` as the top-level `model` key; `-s`/`--session` IS valid.
 - **A TUI attached to the shared background service never sees per-process env.** Only `--standalone` honors the injected `OPENCODE_CONFIG_CONTENT`. `opencode mcp list` and similar commands also ask the background service, so they report "no servers" for per-process config; test with `opencode run --standalone` instead. `opencode service stop` is best effort (other clients respawn it).
 - **Remote MCP servers work through the injected config** (2.1.4): `mcp: { name: { type: 'remote', url, headers, enabled: true } }` plus `instructions: [file]`; `debug config` shows it normalized to `mcp.servers`. The model calls MCP tools through code execution (`tools.sessiondeck.create_group(...)`).

@@ -8,6 +8,7 @@ import type { PtyManager, StartOptions } from '../pty/PtyManager'
 import type { AttentionService } from '../attention/AttentionService'
 import { createRuntimeRegistry } from './runtimeRegistry'
 import { createSessionController } from './sessionController'
+import { setOpencodeSupportsStandaloneForTests } from '../opencode/capabilities'
 
 const dirs: string[] = []
 
@@ -171,6 +172,8 @@ function createFakeAttention(): AttentionService {
 }
 
 function setup(sessions: Session[] = []) {
+  // v2.x is the normal case here (--standalone present); the probe itself would spawn the real opencode CLI.
+  setOpencodeSupportsStandaloneForTests(true)
   const saver = vi.fn()
   const store = new SessionStore(makeStoreData(sessions), { schedule: saver }, { newId: () => 'new-id', now: () => 10 })
   const pty = createMockPty()

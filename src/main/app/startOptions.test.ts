@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Session } from '../../shared/types'
 import type { AttentionService } from '../attention'
+import { resetOpencodeCapabilitiesForTests, setOpencodeSupportsStandaloneForTests } from '../opencode/capabilities'
 import { buildOpencodeStartOptions, buildStartOptions, YOLO_FLAG } from './startOptions'
+
+// The capability probe spawns the real `opencode --help`: tests force its result instead (v2.x supports --standalone).
+beforeEach(() => setOpencodeSupportsStandaloneForTests(true))
+afterEach(() => resetOpencodeCapabilitiesForTests())
 
 const attention = {
   claudeArgs: (): string[] => ['--settings', 'x.json'],
@@ -59,6 +64,14 @@ describe('buildStartOptions opencode branch', () => {
   it('an unknown conversation id starts a fresh opencode (--continue would pick a random conversation)', () => {
     const opts = buildOpencodeStartOptions(ocSession({ agent: 'opencode', opencodeSessionId: undefined }), attention)
     expect(opts.internalArgs).toEqual(['--standalone'])
+  })
+
+  it('older OpenCode without --standalone (v1.x) launches without it, and -s <id> stays', () => {
+    setOpencodeSupportsStandaloneForTests(false)
+    const fresh = buildOpencodeStartOptions(ocSession({ agent: 'opencode' }), attention)
+    expect(fresh.internalArgs).toEqual([])
+    const resumed = buildOpencodeStartOptions(ocSession({ agent: 'opencode', opencodeSessionId: 'ses_abcdef12345678' }), attention)
+    expect(resumed.internalArgs).toEqual(['-s', 'ses_abcdef12345678'])
   })
 
   it('the session model travels in the config content (the TUI CLI has no --model flag)', () => {

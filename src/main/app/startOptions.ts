@@ -3,7 +3,7 @@ import type { Session, ShellKind } from '../../shared/types'
 import type { StartOptions } from '../pty/PtyManager'
 import type { AttentionService } from '../attention'
 import { chooseClaudeLaunch } from './claudeLaunch'
-import { OPENCODE_PLUGIN_ENV_VAR, applyConfigPatch } from '../opencode'
+import { OPENCODE_PLUGIN_ENV_VAR, applyConfigPatch, opencodeSupportsStandalone } from '../opencode'
 
 export const YOLO_FLAG = '--dangerously-skip-permissions'
 
@@ -99,13 +99,14 @@ export function buildShellStartOptions(
 
 /**
  * Builds the pty launch options for `opencode`. OpenCode sessions never prompt (the injected plugin config sets
- * permission "*": "allow"), so no Claude flags are used. `--standalone` gives the session a PRIVATE OpenCode server
- * that honors this process' injected plugin environment: by default the TUI would attach to a shared background
- * service, which reads its own (user-global) config and never sees the per-session plugins (OpenCode v2.1.4).
- * A new session starts `opencode --standalone`; resume starts `opencode --standalone -s <opencodeSessionId>` when
- * the conversation id is known. The session's model travels in the OPENCODE_CONFIG_CONTENT value (`model` key):
- * the TUI CLI has no --model flag — with one the process prints help and exits immediately ("ShowHelp: Help
- * requested" on v2.1.4). The env carries BOTH plugins (report + worker), so child opencode processes of this
+ * permission "*": "allow"), so no Claude flags are used. On OpenCode v2.x `--standalone` gives the session a PRIVATE
+ * OpenCode server that honors this process' injected plugin environment: by default the TUI would attach to a shared
+ * background service, which reads its own (user-global) config and never sees the per-session plugins (v2.1.4).
+ * The flag is feature-detected (`opencodeSupportsStandalone`, from `opencode --help`): older OpenCode (1.x) has no
+ * `--standalone`, so it is launched without it instead of dying on an unknown flag. A new session starts
+ * `opencode [--standalone]`; resume adds `-s <opencodeSessionId>` (valid on every version) when the conversation id
+ * is known. The session's model travels in the OPENCODE_CONFIG_CONTENT value (`model` key), because the TUI CLI has
+ * no --model flag — with one the process prints help and exits immediately ("ShowHelp: Help requested" on v2.1.4). The env carries BOTH plugins (report + worker), so child opencode processes of this
  * session show as worker tabs while the parent reports itself as the owner (see WorkerHub ownerProcs).
  */
 export function buildOpencodeStartOptions(
@@ -114,7 +115,9 @@ export function buildOpencodeStartOptions(
   /** D54: extra top-level config keys (Jarvis on OpenCode: its MCP server and instructions). */
   configPatch?: Readonly<Record<string, unknown>>
 ): StartOptions {
-  const internalArgs: string[] = ['--standalone']
+  const internalArgs: string[] = []
+  // Older OpenCode (v1.x) has no --standalone: it must be launched without it (feature-detected, not version-based).
+  if (opencodeSupportsStandalone()) internalArgs.push('--standalone')
   if (session.opencodeSessionId !== undefined && session.opencodeSessionId.length > 0) {
     internalArgs.push('-s', session.opencodeSessionId)
   }
