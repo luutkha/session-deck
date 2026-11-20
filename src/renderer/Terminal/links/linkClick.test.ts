@@ -53,11 +53,12 @@ describe('decideLinkClick', () => {
     expect(decideLinkClick(file('C:\\work\\NOTES.MD'), NO_MODIFIERS)).toBe('view')
     expect(decideLinkClick(file('C:\\work\\SHOT.PNG'), NO_MODIFIERS)).toBe('view')
     expect(decideLinkClick(file('C:\\work\\TABLE.CSV'), NO_MODIFIERS)).toBe('view')
+    expect(decideLinkClick(file('C:\\work\\Manual.PDF'), NO_MODIFIERS)).toBe('view')
   })
 
   it('keeps opening files the viewer cannot show', () => {
-    expect(decideLinkClick(file('C:\\work\\icon.svg'), NO_MODIFIERS)).toBe('open')
-    expect(decideLinkClick(file('C:\\work\\manual.pdf'), NO_MODIFIERS)).toBe('open')
+    expect(decideLinkClick(file('C:\\work\\old.xls'), NO_MODIFIERS)).toBe('open')
+    expect(decideLinkClick(file('C:\\work\\letter.doc'), NO_MODIFIERS)).toBe('open')
     expect(decideLinkClick(file('C:\\work\\app.exe'), NO_MODIFIERS)).toBe('open')
     expect(decideLinkClick(file('C:\\work\\Makefile'), NO_MODIFIERS)).toBe('open')
   })

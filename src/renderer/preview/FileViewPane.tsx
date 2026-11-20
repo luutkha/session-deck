@@ -40,7 +40,7 @@ function FileViewPaneBody({ view, sessionId, className }: FileViewPaneProps): Re
   const [active, setActive] = useState(0)
   const [total, setTotal] = useState(0)
   const [textZoom, zoomBy] = useTextZoom()
-  const canFind = view.kind !== 'image'
+  const canFind = view.kind !== 'image' && view.kind !== 'pdf'
   const activeIndex = total <= 0 ? 0 : Math.min(active, total - 1)
   const findQuery = findOpen ? query : ''
 
@@ -94,7 +94,7 @@ function FileViewPaneBody({ view, sessionId, className }: FileViewPaneProps): Re
       event.preventDefault()
       const direction: 1 | -1 = event.deltaY < 0 ? 1 : -1
       if (view.kind === 'image') changeImageZoom(direction)
-      else zoomBy(direction)
+      else if (view.kind !== 'pdf') zoomBy(direction)
     }
     node.addEventListener('wheel', onWheel, { passive: false })
     return (): void => node.removeEventListener('wheel', onWheel)
@@ -124,7 +124,7 @@ function FileViewPaneBody({ view, sessionId, className }: FileViewPaneProps): Re
           onClose={closeFind}
         />
       ) : null}
-      {view.kind === 'image' ? null : <TextZoomToolbar zoomPercent={textZoom} onZoom={zoomBy} />}
+      {view.kind === 'image' || view.kind === 'pdf' ? null : <TextZoomToolbar zoomPercent={textZoom} onZoom={zoomBy} />}
       <div className="flex min-h-0 flex-1 flex-col">
         <FileViewBody
           view={view}

@@ -332,7 +332,7 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     return showOpenDialog(event.sender.id, {
       properties: ['openFile'],
       filters: [
-        { name: 'Viewable files', extensions: ['md', 'markdown', 'txt', 'log', 'json', 'yaml', 'yml', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'csv', 'tsv', 'xlsx', 'docx'] },
+        { name: 'Viewable files', extensions: ['md', 'markdown', 'txt', 'log', 'json', 'yaml', 'yml', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif', 'csv', 'tsv', 'xlsx', 'xlsm', 'docx', 'docm', 'dotx', 'pdf'] },
         { name: 'All files', extensions: ['*'] }
       ]
     })

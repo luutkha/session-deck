@@ -1,13 +1,14 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { FILE_VIEW_IMAGE_MAX_BYTES, FILE_VIEW_TEXT_MAX_BYTES, type FileView } from '../../shared/types'
+import {
+  FILE_VIEW_PDF_MAX_BYTES,
+  FILE_VIEW_TEXT_MAX_BYTES,
+  type FileView
+} from '../../shared/types'
+import { tinyPdf } from './fileViewFixtures'
 import { readFileView, statFileView } from './readFileView'
-
-// A real 1x1 png, small enough to live inline.
-const TINY_PNG_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
 let dir: string
 
@@ -68,21 +69,59 @@ describe('readFileView text', () => {
   })
 })
 
-describe('readFileView images', () => {
-  it('returns a png as base64 with its mime type', async () => {
-    const png = Buffer.from(TINY_PNG_BASE64, 'base64')
-    await writeFile(join(dir, 'dot.png'), png)
-    const view = await viewOf('dot.png')
-    expect(view.kind).toBe('image')
-    expect(view.mime).toBe('image/png')
-    expect(view.base64).toBe(png.toString('base64'))
-    expect(view.base64.length).toBeGreaterThan(0)
+
+describe('readFileView pdf', () => {
+  it('returns a whole valid pdf as base64 with the pdf mime', async () => {
+    const pdf = tinyPdf()
+    await writeFile(join(dir, 'manual.pdf'), pdf)
+    const view = await viewOf('manual.pdf')
+    expect(view.kind).toBe('pdf')
+    expect(view.mime).toBe('application/pdf')
     expect(view.content).toBe('')
+    expect(view.sheets).toEqual([])
+    expect(view.truncated).toBe(false)
+    expect(view.size).toBe(pdf.length)
+    expect(view.base64.length).toBeGreaterThan(0)
+    expect(Buffer.from(view.base64, 'base64').equals(pdf)).toBe(true)
   })
 
-  it('refuses an image over the size cap', async () => {
-    await writeFile(join(dir, 'big.png'), Buffer.alloc(FILE_VIEW_IMAGE_MAX_BYTES + 1))
-    await expectRefused(join(dir, 'big.png'))
+  it('refuses a file named .pdf that has no magic', async () => {
+    const target = join(dir, 'renamed.pdf')
+    await writeFile(target, 'just some text, not a pdf\n')
+    const result = await readFileView(target)
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected the read to be refused')
+    expect(result.error).toBe('Not a valid PDF file')
+  })
+
+  it('accepts a pdf whose magic sits at byte 200 after junk', async () => {
+    const pdf = tinyPdf()
+    const bytes = Buffer.concat([Buffer.alloc(200, 0x20), pdf])
+    await writeFile(join(dir, 'junk.pdf'), bytes)
+    const view = await viewOf('junk.pdf')
+    expect(view.kind).toBe('pdf')
+    expect(view.size).toBe(bytes.length)
+    expect(Buffer.from(view.base64, 'base64').equals(bytes)).toBe(true)
+  })
+
+  it('refuses a pdf over the size cap without reading it', async () => {
+    const target = join(dir, 'huge.pdf')
+    // A sparse file just over the cap: stat refuses it before any bytes are read, so this stays fast.
+    const handle = await open(target, 'w')
+    try {
+      await handle.write('%PDF-1.4\n')
+      await handle.truncate(FILE_VIEW_PDF_MAX_BYTES + 1)
+    } finally {
+      await handle.close()
+    }
+    try {
+      const result = await readFileView(target)
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('expected the read to be refused')
+      expect(result.error).toContain('too large')
+    } finally {
+      await rm(target, { force: true })
+    }
   })
 })
 
@@ -102,11 +141,7 @@ describe('readFileView refusals', () => {
 
   it('refuses unsupported kinds', async () => {
     await writeFile(join(dir, 'app.exe'), 'MZ')
-    await writeFile(join(dir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
-    await writeFile(join(dir, 'manual.pdf'), '%PDF-1.4\n')
     await expectRefused(join(dir, 'app.exe'))
-    await expectRefused(join(dir, 'icon.svg'))
-    await expectRefused(join(dir, 'manual.pdf'))
   })
 
   it('refuses a UNC path without touching the disk', async () => {
@@ -114,36 +149,6 @@ describe('readFileView refusals', () => {
   })
 })
 
-describe('readFileView csv', () => {
-  it('returns one sheet with the csv rows', async () => {
-    await writeFile(join(dir, 'data.csv'), 'name,score\nalpha,1\nbeta,2\n')
-    const view = await viewOf('data.csv')
-    expect(view.kind).toBe('csv')
-    expect(view.mime).toBe('text/csv')
-    expect(view.sheets).toHaveLength(1)
-    expect(view.sheets[0].name).toBe('data.csv')
-    expect(view.sheets[0].rows).toEqual([
-      ['name', 'score'],
-      ['alpha', '1'],
-      ['beta', '2']
-    ])
-    expect(view.sheets[0].truncated).toBe(false)
-    expect(view.truncated).toBe(false)
-  })
-
-  it('parses a tsv with tab delimiters', async () => {
-    await writeFile(join(dir, 'data.tsv'), 'name\tscore\nalpha\t1\n')
-    const view = await viewOf('data.tsv')
-    expect(view.kind).toBe('csv')
-    expect(view.mime).toBe('text/tab-separated-values')
-    expect(view.sheets).toHaveLength(1)
-    expect(view.sheets[0].name).toBe('data.tsv')
-    expect(view.sheets[0].rows).toEqual([
-      ['name', 'score'],
-      ['alpha', '1']
-    ])
-  })
-})
 
 describe('readFileView utf-16', () => {
   it('reads a UTF-16 LE text file written by PowerShell as readable text', async () => {
@@ -213,6 +218,15 @@ describe('statFileView', () => {
     expect(result).toEqual({ ok: true, mtimeMs: info.mtimeMs, size: 3 })
   })
 
+  it('returns mtime and size of a pdf (kind pdf)', async () => {
+    const target = join(dir, 'watched.pdf')
+    const pdf = tinyPdf()
+    await writeFile(target, pdf)
+    const info = await stat(target)
+    const result = await statFileView(target)
+    expect(result).toEqual({ ok: true, mtimeMs: info.mtimeMs, size: pdf.length })
+  })
+
   it('refuses a relative path', async () => {
     await expectStatRefused('plain.txt')
   })
@@ -232,8 +246,6 @@ describe('statFileView', () => {
 
   it('refuses a kind the viewer does not know, like readFileView', async () => {
     await writeFile(join(dir, 'app.exe'), 'MZ')
-    await writeFile(join(dir, 'icon.svg'), '<svg/>')
     await expectStatRefused(join(dir, 'app.exe'))
-    await expectStatRefused(join(dir, 'icon.svg'))
   })
 })

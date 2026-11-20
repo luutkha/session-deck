@@ -1,8 +1,9 @@
-// Body switch of the preview pane (D73): one of the five renderers, each owning its own find and
+// Body switch of the preview pane (D73): one renderer per file kind, each owning its own find and
 // zoom details. FileViewPane keeps the shared state.
 import type { ReactElement } from 'react'
 import type { FileView, Id } from '../../shared/types'
 import { ImageBody } from './ImageBody'
+import { PdfBody } from './PdfBody'
 import { RenderedBody } from './RenderedBody'
 import { TableBody } from './TableBody'
 import { TextBody } from './TextBody'
@@ -54,6 +55,8 @@ export function FileViewBody(props: FileViewBodyProps): ReactElement {
           onLoaded={props.onLoaded}
         />
       )
+    case 'pdf':
+      return <PdfBody view={view} />
     case 'csv':
     case 'sheet':
       return (

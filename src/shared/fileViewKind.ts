@@ -14,13 +14,21 @@ const KIND_BY_EXTENSION: Readonly<Record<string, FileViewKind>> = {
   gif: 'image',
   webp: 'image',
   bmp: 'image',
+  // D75: svg is safe as an <img> (scripts never run in an image context); the renderer never inlines it.
+  svg: 'image',
+  ico: 'image',
+  avif: 'image',
   csv: 'csv',
   tsv: 'csv',
   xlsx: 'sheet',
-  docx: 'docx'
+  xlsm: 'sheet',
+  docx: 'docx',
+  docm: 'docx',
+  dotx: 'docx',
+  pdf: 'pdf'
 }
 
-/** The viewer kind for a path (by extension, case-insensitive), or null when the viewer cannot show it. svg is never one (scriptable). */
+/** The viewer kind for a path (by extension, case-insensitive), or null when the viewer cannot show it (legacy .doc/.xls, .exe, archives...). */
 export function fileViewKindFor(path: string): FileViewKind | null {
   const base = path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
   const dot = base.lastIndexOf('.')

@@ -13,7 +13,7 @@ const GRID_CELLS: Readonly<Record<string, number>> = { '1x1': 1, '2x1': 2, '1x2'
 const SETTINGS_PAGES = ['general', 'agents', 'code', 'terminal', 'sound', 'automation', 'quota', 'statuses'] as const
 const MODE_PROP = { type: 'string', enum: ['ops', 'code'], description: 'Which mode (default: the one on screen).' }
 /** What the file viewer can show (shared/fileViewKind); used in errors so the model can pick another file. */
-const VIEWER_KINDS = 'Supported: Markdown (.md, .markdown), text (.txt, .log, .json, .yaml, .yml), images (.png, .jpg, .jpeg, .gif, .webp, .bmp), tables (.csv, .tsv, .xlsx) and Word documents (.docx).'
+const VIEWER_KINDS = 'Supported: Markdown (.md, .markdown), text (.txt, .log, .json, .yaml, .yml), images (.png, .jpg, .jpeg, .gif, .webp, .bmp, .svg, .ico, .avif), tables (.csv, .tsv, .xlsx, .xlsm), Word documents (.docx, .docm, .dotx) and PDF files (.pdf).'
 const ON_SCREEN_LINE = /^On screen: "(.*)"$/
 
 /** The window side of a UI tool: the window runs the action and answers with text. */

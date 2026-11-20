@@ -82,6 +82,7 @@ describe('kindLabel', () => {
     expect(kindLabel('csv')).toBe('CSV')
     expect(kindLabel('sheet')).toBe('Spreadsheet')
     expect(kindLabel('docx')).toBe('Word document')
+    expect(kindLabel('pdf')).toBe('PDF document')
   })
 })
 

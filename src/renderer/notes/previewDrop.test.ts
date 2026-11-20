@@ -13,7 +13,8 @@ describe('previewDropFor', () => {
 
   it('refuses a type the viewer cannot show', () => {
     expect(previewDropFor('C:\\p\\app.exe')).toEqual({ kind: 'unsupported' })
-    expect(previewDropFor('C:\\p\\drawing.svg')).toEqual({ kind: 'unsupported' })
+    expect(previewDropFor('C:\\p\\old.xls')).toEqual({ kind: 'unsupported' })
+    expect(previewDropFor('C:\\p\\letter.doc')).toEqual({ kind: 'unsupported' })
     expect(previewDropFor('C:\\p\\folder')).toEqual({ kind: 'unsupported' })
   })
 

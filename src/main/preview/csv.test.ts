@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCsv } from './csv'
+import { detectDelimiter, parseCsv } from './csv'
 
 describe('parseCsv', () => {
   it('splits comma rows and drops the trailing empty row of a final line break', () => {
@@ -54,5 +54,60 @@ describe('parseCsv', () => {
 
   it('keeps a quote inside an unquoted field as a literal character', () => {
     expect(parseCsv('say "hi",x', ',').rows).toEqual([['say "hi"', 'x']])
+  })
+})
+
+describe('detectDelimiter', () => {
+  it('keeps a comma file on commas', () => {
+    expect(detectDelimiter('name,score\nalpha,1\nbeta,2\n')).toBe(',')
+  })
+
+  it('picks the semicolon of a European export and does not split decimal commas', () => {
+    const text = 'name;price;note\nalpha;1,5;ok\nbeta;2,5;ok\n'
+    expect(detectDelimiter(text)).toBe(';')
+    expect(parseCsv(text, ';').rows[1]).toEqual(['alpha', '1,5', 'ok'])
+  })
+
+  it('picks a pipe', () => {
+    expect(detectDelimiter('name|score\nalpha|1\nbeta|2\n')).toBe('|')
+  })
+
+  it('picks a tab', () => {
+    expect(detectDelimiter('name\tscore\nalpha\t1\nbeta\t2\n')).toBe('\t')
+  })
+
+  it('ignores delimiters inside quoted cells', () => {
+    // A comma inside a quoted cell of a semicolon file must not become a separator...
+    expect(detectDelimiter('"a,b";c\n"d,e";f\n')).toBe(';')
+    // ...and a semicolon inside a quoted cell of a comma file must not either.
+    expect(detectDelimiter('"a;b",c\n"d;e",f\n')).toBe(',')
+  })
+
+  it('ignores a comma inside a quoted field of a single-column file', () => {
+    expect(detectDelimiter('"a,b"\n"c,d"\n')).toBe(',')
+  })
+
+  it('falls back to a comma for a single-column file', () => {
+    expect(detectDelimiter('alpha\nbeta\ngamma\n')).toBe(',')
+  })
+
+  it('falls back to a comma for empty text', () => {
+    expect(detectDelimiter('')).toBe(',')
+  })
+
+  it('looks past a title row that has fewer fields', () => {
+    // The title row alone would look single-column for the semicolon; the rows below decide.
+    const text = 'Quarterly report\nname;price\nA;1\nB;2\n'
+    expect(detectDelimiter(text)).toBe(';')
+  })
+
+  it('skips blank lines and stops after 20 non-empty ones', () => {
+    const rows = Array.from({ length: 30 }, (_, index) => `a${index};b${index}`).join('\r\n')
+    expect(detectDelimiter(`\r\n\r\n${rows}\r\n\r\n`)).toBe(';')
+  })
+
+  it('prefers a comma over a semicolon when both fit the same number of lines', () => {
+    // Ambiguous by design: 'a,b;c' gives 2 fields on one line for either delimiter.
+    expect(detectDelimiter('a,b;c\nd,e;f\n')).toBe(',')
   })
 })

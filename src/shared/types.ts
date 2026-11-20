@@ -922,7 +922,7 @@ export interface WorkerInfo {
 }
 
 /** D73: what the side-panel file viewer can show for a path a terminal link points at. */
-export type FileViewKind = 'markdown' | 'text' | 'image' | 'csv' | 'sheet' | 'docx'
+export type FileViewKind = 'markdown' | 'text' | 'image' | 'csv' | 'sheet' | 'docx' | 'pdf'
 
 /** One table of a csv (a single sheet) or an Excel workbook (one per sheet). Cells are display strings. */
 export interface FileViewSheet {
@@ -960,6 +960,8 @@ export type FileViewResult =
 export const FILE_VIEW_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 export const FILE_VIEW_TEXT_MAX_BYTES = 1024 * 1024
 export const FILE_VIEW_DOC_MAX_BYTES = 20 * 1024 * 1024
+/** D75: a PDF is sent whole (base64) to the renderer, which draws it with pdf.js; bigger files are refused. */
+export const FILE_VIEW_PDF_MAX_BYTES = 30 * 1024 * 1024
 export const FILE_VIEW_MAX_ROWS = 2000
 export const FILE_VIEW_MAX_COLS = 50
 export const FILE_VIEW_MAX_SHEETS = 20

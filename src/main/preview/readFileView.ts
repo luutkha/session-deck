@@ -10,6 +10,7 @@ import { errorMessage } from '../../shared/guards'
 import {
   FILE_VIEW_DOC_MAX_BYTES,
   FILE_VIEW_IMAGE_MAX_BYTES,
+  FILE_VIEW_PDF_MAX_BYTES,
   FILE_VIEW_TEXT_MAX_BYTES,
   type FileView,
   type FileViewKind,
@@ -17,7 +18,7 @@ import {
   type FileViewSheet,
   type FileViewStat
 } from '../../shared/types'
-import { parseCsv } from './csv'
+import { detectDelimiter, parseCsv } from './csv'
 import { readDocxHtml } from './docx'
 import { decodeTextBytes } from './encoding'
 import { readSheets } from './sheets'
@@ -28,11 +29,23 @@ const IMAGE_MIME: Readonly<Record<string, string>> = {
   jpeg: 'image/jpeg',
   gif: 'image/gif',
   webp: 'image/webp',
-  bmp: 'image/bmp'
+  bmp: 'image/bmp',
+  // D75: the renderer shows every image as <img src="data:<mime>;base64,...">, so an SVG stays inert.
+  svg: 'image/svg+xml',
+  ico: 'image/x-icon',
+  avif: 'image/avif'
 }
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const PDF_MIME = 'application/pdf'
+
+/** D75: pdf.js needs the header, and a renamed file must not reach it. Every real PDF starts with `%PDF-` near the start (some writers prepend junk). */
+const PDF_MAGIC = '%PDF-'
+const PDF_MAGIC_SEARCH_BYTES = 1024
+
+/** D75: an SVG must show its root or its XML prolog in the first 2 KB, after a BOM and whitespace; a renamed file is refused. */
+const SVG_SNIFF_BYTES = 2048
 
 interface CappedRead {
   readonly bytes: Buffer
@@ -107,6 +120,22 @@ function baseView(
   return { path, name, kind, size, content: '', base64: '', mime, sheets: [], truncated: false, mtimeMs }
 }
 
+/** D75: true when the header is in the first 1024 bytes (some writers put junk before it). A renamed non-PDF has none. */
+function hasPdfMagic(bytes: Buffer): boolean {
+  return bytes.subarray(0, PDF_MAGIC_SEARCH_BYTES).includes(PDF_MAGIC)
+}
+
+/**
+ * D75: a renamed non-SVG must not reach the renderer, so the head of the file has to look like SVG: a BOM and
+ * leading whitespace are allowed, then either the XML prolog or the root element must appear in the first 2 KB.
+ */
+function looksLikeSvg(bytes: Buffer): boolean {
+  let head = bytes.subarray(0, SVG_SNIFF_BYTES).toString('utf8')
+  if (head.charCodeAt(0) === 0xfeff) head = head.slice(1)
+  head = head.trimStart()
+  return head.includes('<svg') || head.includes('<?xml')
+}
+
 /** Reads one local file for the viewer. Never throws: a refusal is { ok: false, error }. */
 export async function readFileView(absPath: string): Promise<FileViewResult> {
   try {
@@ -123,15 +152,17 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
     if (!info.isFile()) return fail('Not a file')
     const size = info.size
     const mtimeMs = info.mtimeMs
-    // A cut image or document is useless, so those are refused instead of truncated.
+    // A cut image, document or PDF is useless, so those are refused instead of truncated.
     if (kind === 'image' && size > FILE_VIEW_IMAGE_MAX_BYTES) return fail('Image is too large to show')
     if ((kind === 'sheet' || kind === 'docx') && size > FILE_VIEW_DOC_MAX_BYTES) return fail('File is too large to show')
+    if (kind === 'pdf' && size > FILE_VIEW_PDF_MAX_BYTES) return fail('PDF is too large to show')
 
     const name = basename(absPath)
     const extension = extensionOf(name)
 
     if (kind === 'image') {
       const { bytes } = await readCapped(absPath, size, FILE_VIEW_IMAGE_MAX_BYTES)
+      if (extension === 'svg' && !looksLikeSvg(bytes)) return fail('Not a valid SVG file')
       const view = baseView(absPath, name, kind, size, mtimeMs, IMAGE_MIME[extension] ?? 'application/octet-stream')
       return { ok: true, view: { ...view, base64: bytes.toString('base64') } }
     }
@@ -148,7 +179,9 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
       const { bytes, truncated } = await readCapped(absPath, size, FILE_VIEW_TEXT_MAX_BYTES)
       const read = readText(bytes, truncated)
       const tsv = extension === 'tsv'
-      const table = parseCsv(read.text, tsv ? '\t' : ',')
+      // D75: a .csv may be written with ; | or tab (Excel exports use the locale's list separator); .tsv is always tab.
+      const delimiter = tsv ? '\t' : detectDelimiter(read.text)
+      const table = parseCsv(read.text, delimiter)
       const sheet: FileViewSheet = { name, rows: table.rows, truncated: table.truncated }
       const view = baseView(absPath, name, kind, size, mtimeMs, tsv ? 'text/tab-separated-values' : 'text/csv')
       return { ok: true, view: { ...view, sheets: [sheet], truncated: read.truncated || table.truncated } }
@@ -160,6 +193,15 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
       const read = await readSheets(bytes)
       const view = baseView(absPath, name, kind, size, mtimeMs, XLSX_MIME)
       return { ok: true, view: { ...view, sheets: read.sheets, truncated: read.truncated } }
+    }
+
+    if (kind === 'pdf') {
+      const { bytes, truncated } = await readCapped(absPath, size, FILE_VIEW_PDF_MAX_BYTES)
+      // The file grew between stat and read: refuse rather than hand pdf.js a cut file.
+      if (truncated) return fail('PDF is too large to show')
+      if (!hasPdfMagic(bytes)) return fail('Not a valid PDF file')
+      const view = baseView(absPath, name, kind, size, mtimeMs, PDF_MIME)
+      return { ok: true, view: { ...view, base64: bytes.toString('base64') } }
     }
 
     const { bytes, truncated } = await readCapped(absPath, size, FILE_VIEW_DOC_MAX_BYTES)

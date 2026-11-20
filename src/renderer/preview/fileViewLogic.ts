@@ -11,7 +11,8 @@ const KIND_LABELS: Readonly<Record<FileViewKind, string>> = {
   image: 'Image',
   csv: 'CSV',
   sheet: 'Spreadsheet',
-  docx: 'Word document'
+  docx: 'Word document',
+  pdf: 'PDF document'
 }
 
 /** A0 -> A, Z25 -> Z, 26 -> AA (spreadsheet letters). Anything negative or not finite has no label. */
