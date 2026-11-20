@@ -726,6 +726,7 @@ SessionDeck
 | `e2e-links.cjs` | TRM-5 | Link hover targets |
 | `e2e-fileview.cjs` | TRM-13 | Real Shell session: click each path (md, png, csv, xlsx with 2 sheet tabs, docx) -> Preview tab content; drag-resize and saved width; Detach opens a second window with the file; Close returns to Notes |
 | `e2e-fileview2.cjs` | TRM-13 (D74) | Jarvis `preview_file` opens files; live reload (edit, delete, restore); UTF-16 text; header buttons and Copy path; find (30 of 30) and text zoom; image zoom; a 250-row csv (paging, sort); drop a file on the side panel (CDP drag); the palette item; Settings > Agents' OpenCode row and Re-check |
+| `e2e-fileview3.cjs` | TRM-13 (D74) | Code mode: a temp repo + worktree with a changed .md, a new .csv and a .bin; the Changes list gives the first two an eye button (not the .bin) and clicking it previews the file from its absolute worktree path |
 | `e2e-termview.cjs` | TRM-12 | Real Ctrl+Shift+F keys, query/count/cycling/Esc, built scrollbar rule (plus zoom + scrollback) |
 | `e2e-checklist-draft.cjs` | NTS-5 | Draft survives session switch |
 | `e2e-workers.cjs` | WRK-1..4 | Real plugin → hook → hub → tabs |
