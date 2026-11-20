@@ -23,6 +23,7 @@ function fakeHandlers(): PaletteHandlers {
     showCosts: vi.fn(),
     forkSession: vi.fn(),
     searchConversations: vi.fn(),
+    previewFile: vi.fn(),
     stepAttention: vi.fn(),
     openJarvis: vi.fn(),
     resetJarvis: vi.fn(),

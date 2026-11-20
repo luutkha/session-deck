@@ -1,5 +1,7 @@
 import type { KeyboardEvent, ReactElement } from 'react'
+import { Eye } from 'lucide-react'
 import type { ChangedFile } from '../../../shared/types'
+import { Button } from '../../components/ui/button'
 import { Checkbox } from '../../components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip'
 import { cn } from '../../lib/utils'
@@ -19,12 +21,15 @@ export interface ChangeRowProps {
   /** D60: the commit tick of an uncommitted file; absent = no checkbox (committed already, or no commit box). */
   readonly ticked?: boolean
   readonly onToggleTick?: (path: string) => void
+  /** D74: opens the file in the side-panel viewer; absent = no button (deleted file, unknown type, or no session). */
+  readonly onOpenViewer?: (path: string) => void
 }
 
 const SELECT_KEYS: readonly string[] = ['Enter', ' ']
+const OPEN_VIEWER_LABEL = 'Open in viewer'
 
 /** One changed file in the list: kind badge, name (bold), folder (muted), line counts. */
-export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick }: ChangeRowProps): ReactElement {
+export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick, onOpenViewer }: ChangeRowProps): ReactElement {
   const checkable = file.uncommitted === true && onToggleTick !== undefined
   const { dir, name } = splitPath(file.path)
   const onKeyDown = (event: KeyboardEvent<HTMLLIElement>): void => {
@@ -71,6 +76,24 @@ export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick }: Ch
             <span className="shrink-0 font-semibold text-foreground">{name}</span>
             <span className="min-w-0 truncate text-[11px] text-muted-foreground">{dir}</span>
           </span>
+          {onOpenViewer !== undefined ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`${OPEN_VIEWER_LABEL}: ${file.path}`}
+              title={OPEN_VIEWER_LABEL}
+              data-open-viewer={file.path}
+              className="shrink-0 text-muted-foreground"
+              onClick={(event): void => {
+                event.stopPropagation()
+                onOpenViewer(file.path)
+              }}
+              onKeyDown={(event): void => event.stopPropagation()}
+            >
+              <Eye aria-hidden="true" />
+            </Button>
+          ) : null}
           <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
             {fileCountsLabel(file)}
           </span>

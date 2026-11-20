@@ -595,7 +595,7 @@ describe('jarvis tools', () => {
 describe('Jarvis app tools (D55)', () => {
   it('offers every new tool exactly once', () => {
     const t = setup([session('a', 'API')])
-    const names = ['get_settings', 'update_settings', 'queue_list', 'queue_change', 'checklist_get', 'checklist_change', 'group_change', 'status_change', 'preset_change', 'bulk_action', 'needs_you', 'set_read', 'refresh_usage', 'quota_autopilot', 'cost_report', 'remove_repo', 'file_diff', 'send_review_comments', 'list_workers', 'code_window', 'get_screen_state', 'switch_mode', 'set_view', 'set_grid', 'split_view', 'show_sidebar', 'side_panel', 'open_dialog', 'terminal_zoom', 'worker_tab']
+    const names = ['get_settings', 'update_settings', 'queue_list', 'queue_change', 'checklist_get', 'checklist_change', 'group_change', 'status_change', 'preset_change', 'bulk_action', 'needs_you', 'set_read', 'refresh_usage', 'quota_autopilot', 'cost_report', 'remove_repo', 'file_diff', 'send_review_comments', 'list_workers', 'code_window', 'get_screen_state', 'switch_mode', 'set_view', 'set_grid', 'split_view', 'show_sidebar', 'side_panel', 'preview_file', 'open_dialog', 'terminal_zoom', 'worker_tab']
     for (const name of names) expect(t.call(name, {}).catch(() => 'ok')).toBeDefined()
     const all = createJarvisTools(t.deps).map((tool) => tool.name)
     expect(new Set(all).size).toBe(all.length)
@@ -785,6 +785,32 @@ describe('Jarvis screen tools (D55)', () => {
     expect(t.deps.openSession).toHaveBeenCalledWith('a')
     expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'sidePanel', open: true, tab: 'queue' } })
     await expect(t.call('side_panel', { open: true, tab: 'changes', session: 'API' })).rejects.toThrow('not in a worktree')
+  })
+
+  it('previews a file in the side panel viewer, for a given session or the one on screen (D74)', async () => {
+    const t = setup(
+      [
+        session('a', 'API'),
+        session('w', 'checkout', { worktreeId: 'w1', cwd: 'C:/wt/checkout' })
+      ],
+      [running('a'), running('w')]
+    )
+    await t.call('preview_file', { path: 'C:\\p\\README.md', session: 'API' })
+    expect(t.deps.openSession).toHaveBeenCalledWith('a')
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'previewFile', sessionId: 'a', text: 'C:\\p\\README.md' } })
+    await t.call('preview_file', { path: 'notes.md', session: 'checkout' })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'previewFile', sessionId: 'w', text: 'notes.md' } })
+    await expect(t.call('preview_file', { path: 'C:\\p\\app.exe', session: 'API' })).rejects.toThrow('Supported: Markdown')
+    await expect(t.call('preview_file', {})).rejects.toThrow('"path" is required')
+
+    // No session given: the one the main window shows (its state text names it).
+    vi.mocked(t.deps.ui).mockImplementation(async (mode, action) => {
+      if (action.kind === 'state') return 'Mode: Ops\nOn screen: "API"'
+      t.uiCalls.push({ mode, action })
+      return `ui ${action.kind}`
+    })
+    expect(await t.call('preview_file', { path: 'docs/notes.md' })).toBe('ui previewFile')
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'previewFile', sessionId: 'a', text: 'docs/notes.md' } })
   })
 
   it('shows or dismisses a worker tab by name', async () => {

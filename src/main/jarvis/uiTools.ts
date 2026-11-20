@@ -2,6 +2,7 @@
 // worker tabs. Main resolves names to ids and picks the mode; the window runs the action with the same hooks its
 // buttons use and answers with what it did (jarvisWiring's ui round trip).
 import type { Id, JarvisUiAction, Session, UiMode } from '../../shared/types'
+import { fileViewKindFor } from '../../shared/fileViewKind'
 import type { McpTool } from './mcpProtocol'
 import { resolveSession } from './targets'
 import { optionalBool, optionalText, schema, SESSION_PROP, text } from './toolArgs'
@@ -11,6 +12,9 @@ export const GRID_PRESETS = ['1x1', '2x1', '1x2', '2x2', '2x3', '3x2'] as const
 const GRID_CELLS: Readonly<Record<string, number>> = { '1x1': 1, '2x1': 2, '1x2': 2, '2x2': 4, '2x3': 6, '3x2': 6 }
 const SETTINGS_PAGES = ['general', 'agents', 'code', 'terminal', 'sound', 'automation', 'quota', 'statuses'] as const
 const MODE_PROP = { type: 'string', enum: ['ops', 'code'], description: 'Which mode (default: the one on screen).' }
+/** What the file viewer can show (shared/fileViewKind); used in errors so the model can pick another file. */
+const VIEWER_KINDS = 'Supported: Markdown (.md, .markdown), text (.txt, .log, .json, .yaml, .yml), images (.png, .jpg, .jpeg, .gif, .webp, .bmp), tables (.csv, .tsv, .xlsx) and Word documents (.docx).'
+const ON_SCREEN_LINE = /^On screen: "(.*)"$/
 
 /** The window side of a UI tool: the window runs the action and answers with text. */
 export type JarvisUi = (mode: UiMode | undefined, action: JarvisUiAction) => Promise<string>
@@ -42,6 +46,19 @@ export function createUiTools(deps: JarvisToolDeps): McpTool[] {
     const session = resolveSession(deps.getData(), ref)
     if (session.closedAt !== undefined) throw new Error(`"${session.name}" is closed; open it first (open_session or wake_session).`)
     return session
+  }
+
+  /**
+   * D74: the session the main window shows. The window's state text names it and a screen action needs an id, so the
+   * name goes back through the usual resolver (an ambiguous duplicate name is an error the model can answer).
+   */
+  const onScreenSession = async (): Promise<Session> => {
+    const state = await ui(undefined, { kind: 'state' })
+    for (const line of state.split('\n')) {
+      const found = ON_SCREEN_LINE.exec(line)
+      if (found !== null) return resolveSession(deps.getData(), found[1])
+    }
+    throw new Error('No session is on screen; open one first (open_session) or give a session.')
   }
 
   return [
@@ -160,6 +177,28 @@ export function createUiTools(deps: JarvisToolDeps): McpTool[] {
         }
         const result = await ui(session !== undefined ? modeOf(session) : undefined, { kind: 'sidePanel', open, ...(tab !== undefined ? { tab: tab as 'notes' | 'activity' | 'queue' | 'changes' } : {}) })
         deps.log('side_panel', `${open} ${tab ?? ''}`)
+        return result
+      }
+    },
+    {
+      name: 'preview_file',
+      description: 'Shows a file in the side panel viewer (the Preview tab next to the terminal): Markdown, text/JSON/YAML, images, CSV/TSV, XLSX and DOCX. Give an absolute path or one relative to the session folder. The session defaults to the one on screen; another session is shown first.',
+      inputSchema: schema({
+        path: { type: 'string', description: 'File path: absolute, or relative to the session folder.' },
+        session: SESSION_PROP
+      }, ['path']),
+      run: async (args) => {
+        const path = text(args, 'path').trim()
+        if (fileViewKindFor(path) === null) throw new Error(`The file viewer cannot show "${path}". ${VIEWER_KINDS}`)
+        // A named session is shown first (like side_panel); without one, the file opens next to the session on screen.
+        const named = optionalText(args, 'session') !== undefined ? openSession(args) : undefined
+        const target = named ?? await onScreenSession()
+        if (named !== undefined) {
+          deps.openSession(named.id)
+          await deps.sleep(400)
+        }
+        const result = await ui(modeOf(target), { kind: 'previewFile', sessionId: target.id, text: path })
+        deps.log('preview_file', `${target.name}: ${path}`)
         return result
       }
     },

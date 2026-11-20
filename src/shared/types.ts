@@ -119,6 +119,8 @@ export type JarvisUiAction =
   | { readonly kind: 'split'; readonly how: 'right' | 'down' | 'unsplit' }
   | { readonly kind: 'openToSide'; readonly id: Id; readonly direction: 'right' | 'down' }
   | { readonly kind: 'sidebar'; readonly open: boolean }
+  // D74: show a file in the side-panel viewer (Jarvis tool preview_file). `text` is a path main can resolve for the session.
+  | { readonly kind: 'previewFile'; readonly sessionId: Id; readonly text: string }
   | { readonly kind: 'sidePanel'; readonly open: boolean; readonly tab?: 'notes' | 'activity' | 'queue' | 'changes' }
   | { readonly kind: 'dialog'; readonly name: 'settings' | 'costs' | 'search' | 'away' | 'palette' | 'newSession' | 'none'; readonly section?: string }
   | { readonly kind: 'zoom'; readonly action: 'in' | 'out' | 'reset' }
@@ -946,6 +948,8 @@ export interface FileView {
   readonly sheets: readonly FileViewSheet[]
   /** True when the file or its text was cut at a size cap. */
   readonly truncated: boolean
+  /** D74: the file's modified time (ms); with `size` it tells the live reload that the file changed. */
+  readonly mtimeMs: number
 }
 
 export type FileViewResult =
@@ -959,3 +963,20 @@ export const FILE_VIEW_DOC_MAX_BYTES = 20 * 1024 * 1024
 export const FILE_VIEW_MAX_ROWS = 2000
 export const FILE_VIEW_MAX_COLS = 50
 export const FILE_VIEW_MAX_SHEETS = 20
+
+/** D74: a cheap look at a viewed file, so the open preview can notice that it changed on disk. */
+export type FileViewStat =
+  | { readonly ok: true; readonly mtimeMs: number; readonly size: number }
+  | { readonly ok: false; readonly error: string }
+
+/** D74: what the app knows about the installed OpenCode (Settings > Agents). */
+export interface OpencodeInfo {
+  /** First version-looking token of `opencode --version`, or null when it could not be read. */
+  readonly version: string | null
+  /** Whether `opencode --help` lists `--standalone` (D72). */
+  readonly supportsStandalone: boolean
+  /** When this answer was probed (ms since the epoch); 0 = no probe finished yet. */
+  readonly checkedAt: number
+  /** True while a probe is running. */
+  readonly probing: boolean
+}

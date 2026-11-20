@@ -1,14 +1,17 @@
-// D73: the side panel's Preview tab. A thin header names the file and offers Reload, Detach (its own window) and Close
-// (back to Notes); the body is a loading line, a destructive error, or the existing FileViewPane, which does no IPC.
+// D73/D74: the side panel's Preview tab. A thin header names the file and offers the file actions (Copy path,
+// Open in app, Show in Explorer), Reload, Detach (its own window) and Close; the body is a loading line, a
+// destructive error, or the existing FileViewPane, which does no IPC. The header also carries the live-reload notice.
 import { ExternalLink, RefreshCw, X } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { Button } from '../components/ui/button'
 import { FileViewPane } from '../preview/FileViewPane'
+import { FileActions } from './FileActions'
 import { fileNameFromText, type PreviewRequest } from './fileViewState'
 import { useFileView } from './useFileView'
 
 const EMPTY_MESSAGE = 'Click a file link in a terminal to preview it here.'
 const LOADING_MESSAGE = 'Loading file…'
+const NOTICE_CLASS = { missing: 'text-amber-500', updated: 'text-muted-foreground' } as const
 
 export interface PreviewTabProps {
   readonly request: PreviewRequest | null
@@ -17,7 +20,8 @@ export interface PreviewTabProps {
 }
 
 export function PreviewTab({ request, onClose }: PreviewTabProps): ReactElement {
-  const { state, reload } = useFileView(request)
+  const { state, notice, reload } = useFileView(request)
+  const view = state !== null && state.status === 'ready' ? state.view : null
 
   if (request === null) {
     return (
@@ -26,8 +30,6 @@ export function PreviewTab({ request, onClose }: PreviewTabProps): ReactElement 
       </p>
     )
   }
-
-  const name = state !== null && state.status === 'ready' ? state.view.name : fileNameFromText(request.text)
 
   function detach(): void {
     if (request === null) return
@@ -40,8 +42,18 @@ export function PreviewTab({ request, onClose }: PreviewTabProps): ReactElement 
     <div data-preview-tab="" className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-8 shrink-0 items-center gap-1 border-b border-sidebar-border pl-2 pr-1">
         <span data-preview-name="" className="min-w-0 flex-1 truncate text-[12px] font-medium" title={request.text}>
-          {name}
+          {view?.name ?? fileNameFromText(request.text)}
         </span>
+        {notice !== null && (
+          <span
+            data-preview-notice={notice.kind}
+            className={`shrink-0 text-[11px] ${NOTICE_CLASS[notice.kind]}`}
+            title={notice.text}
+          >
+            {notice.text}
+          </span>
+        )}
+        {view !== null && <FileActions sessionId={request.sessionId} text={request.text} path={view.path} />}
         <Button
           type="button"
           variant="ghost"
@@ -81,7 +93,7 @@ export function PreviewTab({ request, onClose }: PreviewTabProps): ReactElement 
       </header>
 
       {state === null || state.status === 'loading' ? (
-        <p data-preview-loading="" className="px-3 py-3 text-xs text-muted-foreground">
+        <p role="status" data-preview-loading="" className="px-3 py-3 text-xs text-muted-foreground">
           {LOADING_MESSAGE}
         </p>
       ) : state.status === 'error' ? (

@@ -1,14 +1,16 @@
-// Side-panel file viewer (D73): renders one FileView. It does no IPC and reads no disk: main read the
-// file and this shows it. Markdown/CSV/sheet/image/docx each get their own body; the footer is fixed.
-import { useMemo, useState, type MouseEvent, type ReactElement } from 'react'
+// Side-panel file viewer (D73, find/zoom D74 #6): renders one FileView. It does no IPC and reads no
+// disk: main read the file and this shows it. Find, zoom and the table live in their own files.
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
 import type { FileView, Id } from '../../shared/types'
-import { FILE_VIEW_MAX_COLS, FILE_VIEW_MAX_ROWS } from '../../shared/types'
-import { Button } from '../components/ui/button'
-import { MarkdownView } from '../code/changes/MarkdownView'
 import { cn } from '../lib/utils'
-import '../styles/markdown.css'
-import { FileTable } from './FileTable'
-import { formatBytes, imageSrc, kindLabel, sanitizeDocxHtml, visibleSheet } from './fileViewLogic'
+import './preview.css'
+import { FileViewBody } from './FileViewBody'
+import { FileViewFooter } from './FileViewFooter'
+import { FindBar } from './FindBar'
+import { TextZoomToolbar } from './TextZoomToolbar'
+import { nextMatchIndex } from './fileViewFind'
+import { IMAGE_ZOOM_STEPS, nextZoomStep } from './fileViewZoom'
+import { useTextZoom } from './useTextZoom'
 
 export interface FileViewPaneProps {
   readonly view: FileView
@@ -17,234 +19,130 @@ export interface FileViewPaneProps {
   readonly className?: string
 }
 
-const TEXT_TRUNCATED_NOTE = 'File was cut at the preview size cap — the end is missing.'
-const TABLE_TRUNCATED_NOTE = `Showing the first ${String(FILE_VIEW_MAX_ROWS)} rows / ${String(FILE_VIEW_MAX_COLS)} columns.`
-const NO_IMAGE = 'No image data.'
-const EMPTY_TEXT = 'The file is empty.'
-const EMPTY_DOCUMENT = 'The document has no text.'
-const EMPTY_TABLE = 'No table data.'
-const NO_ROWS = 'No rows.'
-const FITTED_LABEL = 'Fit to pane'
-const ACTUAL_SIZE_LABEL = 'Show at 100%'
-
-/** Same dark-theme checkerboard as the Changes preview: a transparent image stays visible. */
-const CHECKERBOARD = {
-  backgroundImage:
-    'linear-gradient(45deg, rgba(128,128,128,0.18) 25%, transparent 25%, transparent 75%, rgba(128,128,128,0.18) 75%), linear-gradient(45deg, rgba(128,128,128,0.18) 25%, transparent 25%, transparent 75%, rgba(128,128,128,0.18) 75%)',
-  backgroundSize: '16px 16px',
-  backgroundPosition: '0 0, 8px 8px'
-} as const
-
-function Notice({ text, failed }: { readonly text: string; readonly failed?: boolean }): ReactElement {
-  return (
-    <p role={failed === true ? 'alert' : undefined} className={cn('px-3 py-2 text-xs', failed === true ? 'text-destructive' : 'text-muted-foreground')}>
-      {text}
-    </p>
-  )
-}
-
-interface FileViewFooterProps {
-  readonly view: FileView
-}
-
-/** Always present: name, kind and size, plus the cap notice when main cut the file. */
-function FileViewFooter({ view }: FileViewFooterProps): ReactElement {
-  return (
-    <footer
-      data-file-footer=""
-      className="flex shrink-0 items-center gap-2 border-t border-sidebar-border px-2 py-1 text-[11px] text-muted-foreground"
-    >
-      <span className="min-w-0 truncate font-medium text-foreground/80" title={view.path}>
-        {view.name}
-      </span>
-      <span className="shrink-0">{kindLabel(view.kind)}</span>
-      <span className="ml-auto shrink-0 tabular-nums">{formatBytes(view.size)}</span>
-      {view.truncated ? (
-        <span data-file-truncated="" className="shrink-0 text-amber-500">
-          cut at the size cap
-        </span>
-      ) : null}
-    </footer>
-  )
-}
-
-interface ImageBodyProps {
-  readonly view: FileView
-  readonly fit: boolean
-  readonly natural: { readonly width: number; readonly height: number } | null
-  readonly onFitChange: (fit: boolean) => void
-  readonly onLoaded: (size: { readonly width: number; readonly height: number }) => void
-}
-
-function ImageBody({ view, fit, natural, onFitChange, onLoaded }: ImageBodyProps): ReactElement {
-  const src = imageSrc(view)
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border px-2 text-[11px] text-muted-foreground">
-        <span data-image-size="" className="min-w-0 truncate tabular-nums">
-          {natural === null ? 'Loading image…' : `${String(natural.width)} × ${String(natural.height)} px`}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          aria-pressed={fit}
-          aria-label={fit ? ACTUAL_SIZE_LABEL : FITTED_LABEL}
-          data-image-fit={fit ? 'fit' : 'actual'}
-          className="text-[11px]"
-          onClick={(): void => onFitChange(!fit)}
-        >
-          {fit ? 'Fit' : '100%'}
-        </Button>
-      </div>
-      {src === '' ? (
-        <Notice text={NO_IMAGE} failed />
-      ) : (
-        <div
-          data-testid="file-view-image"
-          className={cn('min-h-0 flex-1 overflow-auto p-3', fit && 'flex items-center justify-center')}
-          style={CHECKERBOARD}
-        >
-          <img
-            alt={view.name}
-            src={src}
-            className={cn('rounded-md', fit ? 'max-h-full max-w-full object-contain' : 'max-w-none')}
-            onLoad={(event): void =>
-              onLoaded({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })
-            }
-          />
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface TableBodyProps {
-  readonly view: FileView
-  readonly activeSheet: number
-  readonly onSelectSheet: (index: number) => void
-}
-
-function TableBody({ view, activeSheet, onSelectSheet }: TableBodyProps): ReactElement {
-  const sheet = visibleSheet(view, activeSheet)
-  if (sheet === null) return <Notice text={EMPTY_TABLE} />
-  const selected = view.sheets.indexOf(sheet)
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {view.sheets.length > 1 ? (
-        <div
-          role="tablist"
-          aria-label="Sheets"
-          className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-sidebar-border px-1 py-1"
-        >
-          {view.sheets.map((option, index: number) => (
-            <Button
-              key={`${option.name}:${String(index)}`}
-              type="button"
-              role="tab"
-              size="xs"
-              variant={index === selected ? 'secondary' : 'ghost'}
-              aria-selected={index === selected}
-              data-sheet-tab={index}
-              className="shrink-0 text-[11px]"
-              title={option.name}
-              onClick={(): void => onSelectSheet(index)}
-            >
-              {option.name}
-            </Button>
-          ))}
-        </div>
-      ) : null}
-      {sheet.truncated ? (
-        <p data-table-truncated="" className="shrink-0 border-b border-sidebar-border px-3 py-2 text-xs text-muted-foreground">
-          {TABLE_TRUNCATED_NOTE}
-        </p>
-      ) : null}
-      {sheet.rows.length === 0 ? <Notice text={NO_ROWS} /> : <FileTable sheet={sheet} columnLetters={view.kind === 'sheet'} />}
-    </div>
-  )
-}
-
-interface DocxBodyProps {
-  readonly view: FileView
-  readonly sessionId: Id
-}
-
-function DocxBody({ view, sessionId }: DocxBodyProps): ReactElement {
-  const html = useMemo((): string => sanitizeDocxHtml(view.content), [view.content])
-
-  function openLink(event: MouseEvent<HTMLDivElement>): void {
-    const target = event.target instanceof Element ? event.target : null
-    const anchor = target === null ? null : target.closest('a')
-    if (anchor === null) return
-    event.preventDefault()
-    const href = anchor.getAttribute('href') ?? ''
-    // Main re-resolves; never trusts the renderer (same rule as MarkdownView, D12).
-    if (/^https?:\/\//i.test(href)) void window.api.openLink(sessionId, href, false)
-  }
-
-  if (view.content === '') return <Notice text={EMPTY_DOCUMENT} />
-  return (
-    <div className="min-h-0 flex-1 overflow-auto" onClick={openLink}>
-      <div
-        data-markdown=""
-        data-docx=""
-        data-session-id={sessionId}
-        className="px-4 py-3"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    </div>
-  )
-}
-
-function TextBody({ view }: { readonly view: FileView }): ReactElement {
-  if (view.content === '') return <Notice text={EMPTY_TEXT} />
-  return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      {view.truncated ? <p className="px-3 py-2 text-xs text-muted-foreground">{TEXT_TRUNCATED_NOTE}</p> : null}
-      <pre data-file-text="" className="w-max min-w-full px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground/90">
-        {view.content}
-      </pre>
-    </div>
-  )
-}
-
 /**
- * A new file starts over (first sheet, fit to the pane, no stale natural size), so the state lives in a component keyed by
- * the path: an effect that reset it would run AFTER paint and could wipe a size an image's onLoad had just reported.
+ * A new file starts over (first sheet, fit to the pane, no stale natural size), so the state lives in
+ * a component keyed by the path: an effect that reset it would run AFTER paint and could wipe a size
+ * an image's onLoad had just reported.
  */
 export function FileViewPane(props: FileViewPaneProps): ReactElement {
   return <FileViewPaneBody key={props.view.path} {...props} />
 }
 
 function FileViewPaneBody({ view, sessionId, className }: FileViewPaneProps): ReactElement {
+  const sectionRef = useRef<HTMLElement | null>(null)
+  const findInputRef = useRef<HTMLInputElement | null>(null)
   const [activeSheet, setActiveSheet] = useState(0)
   const [fit, setFit] = useState(true)
+  const [imageZoom, setImageZoom] = useState(100)
   const [natural, setNatural] = useState<{ readonly width: number; readonly height: number } | null>(null)
+  const [findOpen, setFindOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [textZoom, zoomBy] = useTextZoom()
+  const canFind = view.kind !== 'image'
+  const activeIndex = total <= 0 ? 0 : Math.min(active, total - 1)
+  const findQuery = findOpen ? query : ''
 
-  function body(): ReactElement {
-    switch (view.kind) {
-      case 'markdown':
-        return <MarkdownView content={view.content} truncated={view.truncated} sessionId={sessionId} />
-      case 'text':
-        return <TextBody view={view} />
-      case 'image':
-        return <ImageBody view={view} fit={fit} natural={natural} onFitChange={setFit} onLoaded={setNatural} />
-      case 'csv':
-      case 'sheet':
-        return <TableBody view={view} activeSheet={activeSheet} onSelectSheet={setActiveSheet} />
-      case 'docx':
-        return <DocxBody view={view} sessionId={sessionId} />
-    }
+  function openFind(): void {
+    if (!canFind) return
+    setFindOpen(true)
+    window.requestAnimationFrame((): void => {
+      findInputRef.current?.focus()
+      findInputRef.current?.select()
+    })
   }
+
+  function closeFind(): void {
+    setFindOpen(false)
+    setQuery('')
+    setActive(0)
+    setTotal(0)
+    sectionRef.current?.focus()
+  }
+
+  function stepMatch(direction: 1 | -1): void {
+    if (total <= 0) return
+    setActive(nextMatchIndex(activeIndex, total, direction))
+    findInputRef.current?.focus()
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLElement>): void {
+    if (event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey)) return
+    if (event.key.toLowerCase() !== 'f' || !canFind) return
+    event.preventDefault()
+    openFind()
+  }
+
+  function changeFit(next: boolean): void {
+    setFit(next)
+    if (!next) setImageZoom(100)
+  }
+
+  function changeImageZoom(direction: 1 | -1): void {
+    setFit(false)
+    setImageZoom((current: number): number => nextZoomStep(current, direction, IMAGE_ZOOM_STEPS))
+  }
+
+  // Ctrl+wheel must be a native passive:false listener: React's synthetic wheel cannot stop the
+  // window's own zoom/scroll default.
+  useEffect((): (() => void) => {
+    const node = sectionRef.current
+    if (node === null) return (): void => undefined
+    function onWheel(event: WheelEvent): void {
+      if (!event.ctrlKey || event.deltaY === 0) return
+      event.preventDefault()
+      const direction: 1 | -1 = event.deltaY < 0 ? 1 : -1
+      if (view.kind === 'image') changeImageZoom(direction)
+      else zoomBy(direction)
+    }
+    node.addEventListener('wheel', onWheel, { passive: false })
+    return (): void => node.removeEventListener('wheel', onWheel)
+  }, [view.kind, zoomBy])
 
   return (
     <section
+      ref={sectionRef}
+      tabIndex={-1}
       aria-label={`Preview: ${view.name}`}
       data-file-view={view.kind}
-      className={cn('flex min-h-0 flex-col bg-card text-xs', className)}
+      onKeyDown={onKeyDown}
+      className={cn('flex min-h-0 flex-col bg-card text-xs focus:outline-none', className)}
     >
-      <div className="flex min-h-0 flex-1 flex-col">{body()}</div>
+      {findOpen ? (
+        <FindBar
+          query={query}
+          active={activeIndex}
+          total={total}
+          inputRef={findInputRef}
+          onQueryChange={(next: string): void => {
+            setQuery(next)
+            setActive(0)
+          }}
+          onNext={(): void => stepMatch(1)}
+          onPrevious={(): void => stepMatch(-1)}
+          onClose={closeFind}
+        />
+      ) : null}
+      {view.kind === 'image' ? null : <TextZoomToolbar zoomPercent={textZoom} onZoom={zoomBy} />}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <FileViewBody
+          view={view}
+          sessionId={sessionId}
+          activeSheet={activeSheet}
+          onSelectSheet={setActiveSheet}
+          query={findQuery}
+          active={activeIndex}
+          onCount={setTotal}
+          zoomPercent={textZoom}
+          fit={fit}
+          imageZoom={imageZoom}
+          natural={natural}
+          onFitChange={changeFit}
+          onImageZoom={changeImageZoom}
+          onLoaded={setNatural}
+        />
+      </div>
       <FileViewFooter view={view} />
     </section>
   )

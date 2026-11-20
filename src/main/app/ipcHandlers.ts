@@ -1,8 +1,9 @@
 import { app, ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'electron'
 import { MAX_LINK_TEXTS } from '../links'
 import { createAppLinkService } from '../links/appLinks'
-import { readFileView } from '../preview'
-import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref, FileViewResult } from '../../shared/types'
+import { readFileView, statFileView } from '../preview'
+import { getOpencodeInfo, recheckOpencode } from '../opencode'
+import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref, FileViewResult, FileViewStat, OpencodeInfo } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from './sessionController'
@@ -318,6 +319,28 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     if (resolved === null || resolved.kind !== 'file') return { ok: false, error: 'Not a file that exists' }
     return readFileView(resolved.target)
   })
+
+  // D74: the open preview polls this (cheap: stat only) to reload when the file changes on disk.
+  ipcMain.handle(IPC.fileViewStat, async (_event, rawId: unknown, rawText: unknown): Promise<FileViewStat> => {
+    const resolved = await links.resolve(assertId(rawId, 'session id'), assertNonEmptyString(rawText, 'link text'))
+    if (resolved === null || resolved.kind !== 'file') return { ok: false, error: 'Not a file that exists' }
+    return statFileView(resolved.target)
+  })
+
+  // D74: the palette's Preview file... picks a file the viewer can show (all files stay selectable).
+  ipcMain.handle(IPC.pickViewFile, async (event): Promise<string | null> => {
+    return showOpenDialog(event.sender.id, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'Viewable files', extensions: ['md', 'markdown', 'txt', 'log', 'json', 'yaml', 'yml', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'csv', 'tsv', 'xlsx', 'docx'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+  })
+
+  // D74: Settings > Agents shows what the installed OpenCode supports and can probe it again after an upgrade.
+  ipcMain.handle(IPC.opencodeInfoGet, async (): Promise<OpencodeInfo> => getOpencodeInfo())
+  ipcMain.handle(IPC.opencodeRecheck, async (): Promise<OpencodeInfo> => recheckOpencode())
 
   ipcMain.handle(IPC.fileViewDetach, async (_event, rawId: unknown, rawText: unknown): Promise<void> => {
     openFileViewer({ sessionId: assertId(rawId, 'session id'), text: assertNonEmptyString(rawText, 'link text') })

@@ -1,7 +1,7 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
   AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisUiCommand, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
-  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, FileViewResult, WindowState, WindowRole,
+  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, FileViewResult, FileViewStat, OpencodeInfo, WindowState, WindowRole,
   BranchStatus, CommitInput, CommitResult, PushResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult,
   GpuInfo, GpuPref
 } from './types'
@@ -63,6 +63,10 @@ export const IPC = {
   gpuSetPref: 'gpu:setPref', // (pref 'auto'|'on'|'off') -> void: saved now, applied at the next start
   gpuReportProbe: 'gpu:reportProbe', // (softwareSeen: boolean) -> void: the window's own WebGL probe found a software renderer (or not)
   linkResolve: 'link:resolve', // (sessionId, candidates[]) -> (ResolvedLink | null)[]; main checks the file system
+  fileViewStat: 'file:viewStat', // (sessionId, text) -> FileViewStat; mtime + size of the viewed file, for live reload (D74)
+  pickViewFile: 'dialog:pickViewFile', // open-file dialog for the palette's "Preview file..." -> absolute path | null (D74)
+  opencodeInfoGet: 'opencode:infoGet', // () -> OpencodeInfo (D74)
+  opencodeRecheck: 'opencode:recheck', // () -> OpencodeInfo; clears the cached probe and probes again (D74)
   fileViewDetach: 'file:viewDetach', // (sessionId, text) -> void; opens the file viewer in its own small window (D73)
   fileViewRead: 'file:viewRead', // (sessionId, text) -> FileViewResult; main re-resolves the link text, reads capped, converts docx/xlsx/csv (D73)
   linkOpen: 'link:open', // (sessionId, text, reveal) -> OpenLinkResult; main re-resolves, never trusts the renderer
@@ -253,6 +257,14 @@ export interface Api {
   readFileView(sessionId: Id, text: string): Promise<FileViewResult>
   /** D73: shows the same file in its own small window (the side-panel viewer's Detach button). */
   detachFileView(sessionId: Id, text: string): Promise<void>
+  /** D74: mtime + size of the viewed file; the open preview polls it to reload when the file changes. */
+  statFileView(sessionId: Id, text: string): Promise<FileViewStat>
+  /** D74: open-file dialog (viewable types first) for the palette's Preview file... -> absolute path or null. */
+  pickViewFile(): Promise<string | null>
+  /** D74: installed OpenCode version and --standalone support (Settings > Agents). */
+  getOpencodeInfo(): Promise<OpencodeInfo>
+  /** D74: probe OpenCode again now (after an upgrade) and return the new answer. */
+  recheckOpencode(): Promise<OpencodeInfo>
   getWindowState(): Promise<WindowState>
   popOutCode(): Promise<void>
   dockCode(): Promise<void>

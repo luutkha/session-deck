@@ -216,6 +216,27 @@ describe('buildPaletteItems: actions group', () => {
   })
 })
 
+describe('buildPaletteItems: preview file (D74)', () => {
+  const open = session({ id: 's1', name: 'Alpha' })
+  const hasPreviewFile = (items: readonly PaletteItem[]): boolean =>
+    items.some((item: PaletteItem): boolean => item.id === 'action:preview-file')
+
+  it('offers "Preview file..." with a session on screen', () => {
+    const items = buildPaletteItems(input({ sessions: [open], activeId: 's1' }))
+    const item = byId(items, 'action:preview-file')
+    expect(item.group).toBe('Actions')
+    expect(item.label).toBe('Preview file...')
+    expect(item.run).toEqual({ kind: 'preview-file' })
+  })
+
+  it('is absent without a session on screen, in the Hub, or for a closed tab', () => {
+    expect(hasPreviewFile(buildPaletteItems(input({ sessions: [open], activeId: null })))).toBe(false)
+    expect(hasPreviewFile(buildPaletteItems(input({ sessions: [open], activeId: 's1', view: 'hub' })))).toBe(false)
+    const closed = session({ id: 's1', name: 'Alpha', closedAt: 1 })
+    expect(hasPreviewFile(buildPaletteItems(input({ sessions: [closed], activeId: 's1' })))).toBe(false)
+  })
+})
+
 describe('buildPaletteItems: this session group', () => {
   const runningSession = session({ id: 's1', name: 'Alpha', statusId: 'working' })
 

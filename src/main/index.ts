@@ -50,6 +50,7 @@ import { asSettingsPatch } from './app/settingsValidation'
 import { classifyGpu, parseGpuDevices, type GpuDevice, type GpuInfo } from './app/gpuInfo'
 import { createGpuModeStore, decideAcceleration, gpuModeFilePath, shouldRestartForSoftware, type GpuModeFile, type GpuModeStore } from './app/gpuMode'
 import type { GpuPref } from '../shared/types'
+import { warmOpencodeProbe } from './opencode'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -182,6 +183,9 @@ if (!gotTheLock) {
     const storePath = storeFilePath(userData)
     const attentionSettingsDir = attentionDir(userData)
     const onError = (where: string, error: unknown): void => logMainError(userData, where, error)
+
+    // D74: find out what the installed OpenCode supports in the background, so the first OpenCode session never waits on it.
+    warmOpencodeProbe()
 
     const iconDeps = {
       isPackaged: app.isPackaged,

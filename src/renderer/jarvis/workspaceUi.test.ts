@@ -3,6 +3,9 @@ import type { JarvisUiCommand } from '../../shared/types'
 import { describeWorkspace, runWorkspaceAction, type WorkspaceUiContext } from './workspaceUi'
 import { registerWorkspaceUi, workspaceUiFor } from './jarvisUiBridge'
 import { modeForCommand } from './useJarvisUi'
+import { requestFileView } from '../viewer/previewBus'
+
+vi.mock('../viewer/previewBus', () => ({ requestFileView: vi.fn(() => true) }))
 
 function ctx(over: Partial<WorkspaceUiContext> = {}): WorkspaceUiContext {
   return {
@@ -145,6 +148,16 @@ describe('runWorkspaceAction, D58', () => {
     runWorkspaceAction({ kind: 'sidebarView', search: 'api' }, hidden)
     expect(setSearch).toHaveBeenCalledWith('api')
     expect(hidden.setSidebarOpen).toHaveBeenCalledWith(true)
+  })
+
+  it('shows a file in the side panel viewer and refuses when no workspace listens (D74)', () => {
+    const c = ctx({ view: 'hub' })
+    const text = runWorkspaceAction({ kind: 'previewFile', sessionId: 'a', text: 'C:\\p\\README.md' }, c)
+    expect(text).toContain('README.md')
+    expect(c.setView).toHaveBeenCalledWith('terminal')
+    expect(requestFileView).toHaveBeenCalledWith({ sessionId: 'a', text: 'C:\\p\\README.md' })
+    vi.mocked(requestFileView).mockReturnValueOnce(false)
+    expect(() => runWorkspaceAction({ kind: 'previewFile', sessionId: 'a', text: 'C:\\p\\README.md' }, ctx())).toThrow('No workspace is ready to show the file.')
   })
 
   it('sets the sort through the sidebar control, and refuses a sidebar that cannot sort (D61)', () => {

@@ -11,6 +11,7 @@ import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SessionActions } from '../state/useSessionStore'
 import { useGlobalNewSessionShortcut } from '../Sidebar/useSidebarKeyboard'
 import { createInputFromPreset } from '../presets/presetLogic'
+import { requestFileView } from '../viewer/previewBus'
 import { codeNewDialog, opsNewDialog, worktreeSessionDialog, type NewDialog } from './newSessionTarget'
 import type { WorkspaceNav } from './useWorkspaceNav'
 
@@ -103,6 +104,18 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
   // D69: keyboard triage. Reads the latest sessions / runtime / active tab at call time, so the callback never changes.
   const triageRef = useRef({ sessions: data?.sessions ?? [], runtime: input.runtime, activeId })
   triageRef.current = { sessions: data?.sessions ?? [], runtime: input.runtime, activeId }
+  // D74: the palette asks the window for a file, then needs the session on screen at answer time.
+  const activeSessionRef = useRef<Session | null>(activeSession)
+  activeSessionRef.current = activeSession
+  /** D74: the open-file dialog, then the file in the side panel's viewer for the session on screen. */
+  const previewFile = useCallback(async (): Promise<void> => {
+    const path = await window.api.pickViewFile()
+    const session = activeSessionRef.current
+    if (path === null || path.trim() === '' || session === null) return
+    if (!requestFileView({ sessionId: session.id, text: path })) {
+      throw new Error('No workspace is ready to show the file.')
+    }
+  }, [])
   const selectSession = nav.selectSession
   const stepAttention = useCallback((delta: 1 | -1): void => {
     const { sessions, runtime, activeId: current } = triageRef.current
@@ -135,6 +148,8 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       showAwaySummary: input.onShowAwaySummary,
       showCosts: (): void => setCostsOpen(true),
       searchConversations: (): void => setSearchOpen(true),
+      // D74: "Preview file..." picks a file and shows it in the side panel's viewer.
+      previewFile,
       // D53: Jarvis lives in this window's right-side panel.
       openJarvis: openJarvisPanel,
       resetJarvis: async (): Promise<void> => {
@@ -149,7 +164,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       newWorktree: () => openNewWorktree(),
       stepAttention
     })
-  }, [data, forkSession, stepAttention, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions])
+  }, [data, forkSession, stepAttention, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions, previewFile])
 
   return {
     newDialog, closeNew, openNew, openNewInStatus, openNewWorktree, openNewInWorktree, handleCreated,

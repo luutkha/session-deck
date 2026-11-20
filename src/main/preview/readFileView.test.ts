@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FILE_VIEW_IMAGE_MAX_BYTES, FILE_VIEW_TEXT_MAX_BYTES, type FileView } from '../../shared/types'
-import { readFileView } from './readFileView'
+import { readFileView, statFileView } from './readFileView'
 
 // A real 1x1 png, small enough to live inline.
 const TINY_PNG_BASE64 =
@@ -142,5 +142,98 @@ describe('readFileView csv', () => {
       ['name', 'score'],
       ['alpha', '1']
     ])
+  })
+})
+
+describe('readFileView utf-16', () => {
+  it('reads a UTF-16 LE text file written by PowerShell as readable text', async () => {
+    const body = 'alpha\r\nbeta\r\n'
+    const bom = Buffer.from([0xff, 0xfe])
+    await writeFile(join(dir, 'ps.txt'), Buffer.concat([bom, Buffer.from(body, 'utf16le')]))
+    const view = await viewOf('ps.txt')
+    expect(view.kind).toBe('text')
+    expect(view.content).toBe(body)
+    expect(view.truncated).toBe(false)
+    expect(view.content.charCodeAt(0)).not.toBe(0xfeff)
+  })
+
+  it('reads a UTF-16 LE csv (without a BOM) as a table', async () => {
+    const csv = 'name,score\r\nalpha,1\r\nbeta,2\r\n'
+    await writeFile(join(dir, 'u16.csv'), Buffer.from(csv, 'utf16le'))
+    const view = await viewOf('u16.csv')
+    expect(view.kind).toBe('csv')
+    expect(view.sheets).toHaveLength(1)
+    expect(view.sheets[0].rows).toEqual([
+      ['name', 'score'],
+      ['alpha', '1'],
+      ['beta', '2']
+    ])
+    expect(view.truncated).toBe(false)
+  })
+
+  it('cuts a truncated UTF-16 file at a line break and flags it', async () => {
+    const line = `${'x'.repeat(63)}\r\n`
+    const full = line.repeat(Math.ceil((FILE_VIEW_TEXT_MAX_BYTES + 4096) / (line.length * 2)))
+    const bytes = Buffer.from(full, 'utf16le')
+    expect(bytes.length).toBeGreaterThan(FILE_VIEW_TEXT_MAX_BYTES)
+    await writeFile(join(dir, 'big16.txt'), bytes)
+    const view = await viewOf('big16.txt')
+    expect(view.size).toBe(bytes.length)
+    expect(view.truncated).toBe(true)
+    expect(view.content.endsWith('\n')).toBe(true)
+    expect(Buffer.byteLength(view.content, 'utf16le')).toBeLessThanOrEqual(FILE_VIEW_TEXT_MAX_BYTES)
+    expect(full.startsWith(view.content)).toBe(true)
+  })
+})
+
+describe('readFileView mtime', () => {
+  it("carries the file's modified time from the same stat", async () => {
+    const target = join(dir, 'stamp.txt')
+    await writeFile(target, 'x\n')
+    const info = await stat(target)
+    const view = await viewOf('stamp.txt')
+    expect(view.mtimeMs).toBe(info.mtimeMs)
+    expect(view.size).toBe(info.size)
+  })
+})
+
+describe('statFileView', () => {
+  async function expectStatRefused(target: string): Promise<void> {
+    const result = await statFileView(target)
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('expected the stat to be refused')
+    expect(result.error.length).toBeGreaterThan(0)
+  }
+
+  it('returns mtime and size of a regular file the viewer knows', async () => {
+    const target = join(dir, 'plain.txt')
+    await writeFile(target, 'abc')
+    const info = await stat(target)
+    const result = await statFileView(target)
+    expect(result).toEqual({ ok: true, mtimeMs: info.mtimeMs, size: 3 })
+  })
+
+  it('refuses a relative path', async () => {
+    await expectStatRefused('plain.txt')
+  })
+
+  it('refuses a directory', async () => {
+    await mkdir(join(dir, 'folder.txt'))
+    await expectStatRefused(join(dir, 'folder.txt'))
+  })
+
+  it('refuses a UNC path without touching the disk', async () => {
+    await expectStatRefused('\\\\server\\share\\a.txt')
+  })
+
+  it('refuses a missing file', async () => {
+    await expectStatRefused(join(dir, 'gone.txt'))
+  })
+
+  it('refuses a kind the viewer does not know, like readFileView', async () => {
+    await writeFile(join(dir, 'app.exe'), 'MZ')
+    await writeFile(join(dir, 'icon.svg'), '<svg/>')
+    await expectStatRefused(join(dir, 'app.exe'))
+    await expectStatRefused(join(dir, 'icon.svg'))
   })
 })

@@ -25,6 +25,7 @@ function view(overrides: Partial<FileView> = {}): FileView {
     mime: '',
     sheets: [],
     truncated: false,
+    mtimeMs: 0,
     ...overrides
   }
 }

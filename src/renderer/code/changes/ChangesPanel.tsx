@@ -6,6 +6,8 @@ import { Button } from '../../components/ui/button'
 import { ScrollArea } from '../../components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
 import { cn } from '../../lib/utils'
+import { requestFileView } from '../../viewer/previewBus'
+import { absoluteChangedPath, canOpenInViewer } from './absolutePath'
 import { ChangeRow } from './ChangeRow'
 import { DiffView } from './DiffView'
 import { countsLabel } from './changesFormat'
@@ -34,6 +36,10 @@ export interface ChangesPanelProps {
    */
   readonly target?: ChangesTarget
   readonly className?: string
+  /** D74: the session the side-panel viewer shows the file for; with `viewerRoot`, rows offer "Open in viewer". */
+  readonly viewerSessionId?: Id
+  /** D74: the absolute worktree folder the changed paths are relative to (a worktree session's cwd). */
+  readonly viewerRoot?: string
 }
 
 export interface ChangesTarget {
@@ -191,12 +197,15 @@ interface ChangesBodyProps {
   readonly list: WorktreeChangesResult
   readonly onSelect: (path: string) => void
   readonly ticks: Ticks
+  /** D74: shows a changed file in the side-panel viewer; null = no viewer target known. */
+  readonly openInViewer: ((path: string) => void) | null
 }
 
 function fileRows(
   changes: WorktreeChanges,
   onSelect: (path: string) => void,
-  ticks: Ticks
+  ticks: Ticks,
+  openInViewer: ((path: string) => void) | null
 ): ReactElement {
   const anyUncommitted = changes.files.some((file): boolean => file.uncommitted === true)
   return (
@@ -208,6 +217,7 @@ function fileRows(
           selected={false}
           onSelect={onSelect}
           {...(anyUncommitted ? { ticked: !ticks.unticked.has(file.path), onToggleTick: ticks.toggle } : {})}
+          {...(openInViewer !== null && canOpenInViewer(file) ? { onOpenViewer: openInViewer } : {})}
         />
       ))}
     </ul>
@@ -220,7 +230,7 @@ function headerTitle(list: WorktreeChangesResult): string {
 }
 
 /** The file list, or the message that replaces it (IPC failure, git problem, no files). */
-function ChangesBody({ list, onSelect, ticks }: ChangesBodyProps): ReactElement {
+function ChangesBody({ list, onSelect, ticks, openInViewer }: ChangesBodyProps): ReactElement {
   const { changes } = list
   if (changes === null) {
     return list.error !== null ? (
@@ -238,7 +248,7 @@ function ChangesBody({ list, onSelect, ticks }: ChangesBodyProps): ReactElement 
   return (
     <ScrollArea className="min-h-0 flex-1">
       {list.error !== null ? <PanelMessage text={list.error} failed /> : null}
-      {fileRows(changes, onSelect, ticks)}
+      {fileRows(changes, onSelect, ticks, openInViewer)}
     </ScrollArea>
   )
 }
@@ -302,7 +312,7 @@ function CommentsStrip({ annotations, target, stale, onRemove, onSend }: Comment
 
 /** Changed files of one worktree; a click opens that file's read-only diff in place of the list.
  *  With a target session, diff lines can carry comments that are sent to the session as one prompt. */
-export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProps): ReactElement {
+export function ChangesPanel({ worktreeId, target, className, viewerSessionId, viewerRoot }: ChangesPanelProps): ReactElement {
   const list = useWorktreeChanges(worktreeId)
   const git = useGitActions(worktreeId, list.changes, list.refresh)
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -361,6 +371,12 @@ export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProp
   const commentCount = annotations.length
   const showStrip = commentCount > 0
   const annotateOn = target !== undefined
+  // D74: rows open a file in the side-panel viewer when both the session and the worktree folder are known.
+  const openInViewer = viewerSessionId !== undefined && viewerRoot !== undefined && viewerRoot.trim() !== ''
+    ? (path: string): void => {
+        requestFileView({ sessionId: viewerSessionId, text: absoluteChangedPath(viewerRoot, path) })
+      }
+    : null
 
   return (
     <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
@@ -387,6 +403,7 @@ export function ChangesPanel({ worktreeId, target, className }: ChangesPanelProp
               list={list}
               onSelect={(path: string): void => setSelection({ worktreeId, path })}
               ticks={{ unticked: git.unticked, toggle: git.toggleFile }}
+              openInViewer={openInViewer}
             />
           </>
         ) : viewMode === 'preview' && previewable ? (

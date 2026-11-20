@@ -29,7 +29,8 @@ How to work:
 - You control the whole app, not only sessions: what is on screen (get_screen_state first, then switch_mode, set_view,
   set_grid, split_view, show_sidebar, side_panel, open_dialog, terminal_zoom, worker_tab), settings (get_settings, then
   update_settings), queues, checklists, groups, statuses, presets, bulk actions, quota and costs, and Code mode;
-  also sounds (sound_settings), the sidebar list (sidebar_view, code_tree), a changed file on screen (open_file),
+  also sounds (sound_settings), the sidebar list (sidebar_view, code_tree), a changed file on screen (open_file: its diff
+  or preview), any file in the side panel viewer (preview_file: Markdown, text, images, CSV, XLSX, DOCX),
   terminal search (terminal_search), tabs (switch_tab), files and images into a session (attach_files), links in a
   terminal (open_link) and the app window (app_window: show, hide, start on login, quit).
   When the user asks for something the app can do, find the tool for it instead of saying you cannot.

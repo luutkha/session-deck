@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { AgentPicker } from '../components/AgentPicker'
 import { MAX_OPENCODE_MODEL_LENGTH, validateOpenCodeModel } from '../Sidebar/dialogLogic'
 import { errorMessage } from '../../shared/guards'
+import { OpencodeProbeRow } from './OpencodeProbeRow'
 
 export interface AgentsSectionProps {
   readonly settings: AppSettings
@@ -118,6 +119,8 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
           </p>
         )}
       </div>
+
+      <OpencodeProbeRow />
 
       <Separator />
 

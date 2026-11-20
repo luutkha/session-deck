@@ -9,6 +9,7 @@ import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SidePanelTab } from '../timeline/sidePanelTab'
 import { applySidebarView, describeSidebarView, type SidebarViewControl } from './sidebarView'
 import type { ChangesFileRequest } from '../code/changes/changesRequest'
+import { requestFileView } from '../viewer/previewBus'
 import {
   clampSidebarWidth,
   SIDEBAR_WIDTH_DEFAULT,
@@ -299,6 +300,14 @@ export function runWorkspaceAction(action: JarvisUiAction, ctx: WorkspaceUiConte
     case 'changesFile': {
       ctx.requestChangesFile({ worktreeId: action.worktreeId, path: action.path, view: action.view })
       return action.path === null ? 'The Changes panel shows the list of changed files.' : `Showing ${action.path} (${action.view}) in the Changes panel.`
+    }
+    case 'previewFile': {
+      // D74: the workspace's viewer listener opens the side panel on its Preview tab; it needs the terminal view.
+      if (ctx.view !== 'terminal') ctx.setView('terminal')
+      if (!requestFileView({ sessionId: action.sessionId, text: action.text })) {
+        throw new Error('No workspace is ready to show the file.')
+      }
+      return `Showing ${action.text} in the side panel viewer.`
     }
     case 'sound':
       throw new Error('Sounds are set by the window, not the workspace.')

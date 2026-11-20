@@ -48,6 +48,8 @@ import type {
   FileDiff,
   FilePreview,
   FileViewResult,
+  FileViewStat,
+  OpencodeInfo,
   WindowState,
   WindowRole,
   GpuInfo,
@@ -488,6 +490,22 @@ const api: Api = {
 
   readFileView(sessionId: Id, text: string): Promise<FileViewResult> {
     return ipcRenderer.invoke(IPC.fileViewRead, sessionId, text)
+  },
+
+  statFileView(sessionId: Id, text: string): Promise<FileViewStat> {
+    return ipcRenderer.invoke(IPC.fileViewStat, sessionId, text)
+  },
+
+  pickViewFile(): Promise<string | null> {
+    return ipcRenderer.invoke(IPC.pickViewFile)
+  },
+
+  getOpencodeInfo(): Promise<OpencodeInfo> {
+    return ipcRenderer.invoke(IPC.opencodeInfoGet)
+  },
+
+  recheckOpencode(): Promise<OpencodeInfo> {
+    return ipcRenderer.invoke(IPC.opencodeRecheck)
   },
 
   detachFileView(sessionId: Id, text: string): Promise<void> {

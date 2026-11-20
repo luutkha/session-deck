@@ -1,1 +1,1 @@
-export { readFileView } from './readFileView'
+export { readFileView, statFileView } from './readFileView'

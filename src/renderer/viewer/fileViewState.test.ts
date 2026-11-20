@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import type { FileView, FileViewResult } from '../../shared/types'
+import type { FileView, FileViewResult, FileViewStat } from '../../shared/types'
 import {
+  beginFileViewLive,
   beginFileViewLoad,
+  clearFileViewUpdated,
   failFileViewLoad,
   fileNameFromText,
   FILE_VIEW_LOAD_FAILED,
-  finishFileViewLoad
+  FILE_VIEW_MISSING_TEXT,
+  FILE_VIEW_UPDATED_TEXT,
+  fileViewNotice,
+  fileViewRequestKey,
+  finishFileViewLoad,
+  noteFileViewStat,
+  noteFileViewUpdated,
+  shouldReload,
+  shownFileViewState
 } from './fileViewState'
 
 function fileView(name = 'notes.md'): FileView {
@@ -18,12 +28,14 @@ function fileView(name = 'notes.md'): FileView {
     base64: '',
     mime: '',
     sheets: [],
-    truncated: false
+    truncated: false,
+    mtimeMs: 1500
   }
 }
 
 const READY: FileViewResult = { ok: true, view: fileView() }
 const FAILED: FileViewResult = { ok: false, error: 'That file is not readable.' }
+const STAT: FileViewStat = { ok: true, mtimeMs: 1500, size: 12 }
 
 describe('beginFileViewLoad', () => {
   it('starts loading for the given nonce', () => {
@@ -72,5 +84,63 @@ describe('fileNameFromText', () => {
     expect(fileNameFromText('docs\\notes.md')).toBe('notes.md')
     expect(fileNameFromText('C:\\work dir\\src\\a.ts:12:5')).toBe('a.ts')
     expect(fileNameFromText('src/readme.md')).toBe('readme.md')
+  })
+})
+
+describe('shownFileViewState', () => {
+  it('draws loading, never the old file, while the stored state belongs to another request', () => {
+    const shown = finishFileViewLoad(beginFileViewLoad(1), 1, READY)
+    const loaded = { key: 'a', state: shown }
+    expect(shownFileViewState(loaded, 'a')).toBe(shown)
+    expect(shownFileViewState(loaded, 'b')).toEqual({ status: 'loading', nonce: 1 })
+    expect(shownFileViewState(null, 'a')).toBeNull()
+  })
+
+  it('keys a load by request and reload counter', () => {
+    const base = fileViewRequestKey('s1', 'a.md', 1, 0)
+    expect(fileViewRequestKey('s1', 'a.md', 1, 0)).toBe(base)
+    expect(fileViewRequestKey('s1', 'a.md', 2, 0)).not.toBe(base)
+    expect(fileViewRequestKey('s1', 'a.md', 1, 1)).not.toBe(base)
+    expect(fileViewRequestKey('s2', 'a.md', 1, 0)).not.toBe(base)
+    expect(fileViewRequestKey('s1', 'b.md', 1, 0)).not.toBe(base)
+  })
+})
+
+describe('shouldReload', () => {
+  it('reloads only when mtime or size differ', () => {
+    expect(shouldReload(fileView(), STAT)).toBe(false)
+    expect(shouldReload(fileView(), { ok: true, mtimeMs: 1600, size: 12 })).toBe(true)
+    expect(shouldReload(fileView(), { ok: true, mtimeMs: 1500, size: 13 })).toBe(true)
+  })
+
+  it('does not reload when the stat failed', () => {
+    expect(shouldReload(fileView(), { ok: false, error: 'gone' })).toBe(false)
+  })
+})
+
+describe('live notice state', () => {
+  it('shows the missing notice until a stat says the file is back', () => {
+    const gone = noteFileViewStat(beginFileViewLive(), { ok: false, error: 'gone' })
+    expect(gone.missing).toBe(true)
+    expect(fileViewNotice(gone)).toEqual({ kind: 'missing', text: FILE_VIEW_MISSING_TEXT })
+    expect(noteFileViewStat(gone, STAT).missing).toBe(false)
+  })
+
+  it('keeps the same object while the stat says nothing new', () => {
+    const idle = beginFileViewLive()
+    expect(noteFileViewStat(idle, STAT)).toBe(idle)
+  })
+
+  it('flashes Updated, then clears only the flash its timer was started for', () => {
+    const updated = noteFileViewUpdated(1000)
+    expect(fileViewNotice(updated)).toEqual({ kind: 'updated', text: FILE_VIEW_UPDATED_TEXT })
+    expect(clearFileViewUpdated(updated, 999)).toBe(updated)
+    expect(clearFileViewUpdated(updated, 1000).updatedAt).toBeNull()
+    expect(fileViewNotice(clearFileViewUpdated(updated, 1000))).toBeNull()
+  })
+
+  it('lets "gone" win over the Updated flash', () => {
+    const gone = noteFileViewStat(noteFileViewUpdated(1000), { ok: false, error: 'gone' })
+    expect(fileViewNotice(gone)?.kind).toBe('missing')
   })
 })

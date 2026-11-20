@@ -23,6 +23,8 @@ export type PaletteCommand =
   | { readonly kind: 'search-conversations' }
   | { readonly kind: 'open-jarvis' }
   | { readonly kind: 'reset-jarvis' }
+  /** D74: picks a file and shows it in the side panel's viewer for the session on screen. */
+  | { readonly kind: 'preview-file' }
   | { readonly kind: 'sleep'; readonly id: Id }
   | { readonly kind: 'set-keep-awake'; readonly id: Id; readonly keepAwake: boolean }
   | { readonly kind: 'set-status'; readonly id: Id; readonly statusId: Id }
@@ -314,7 +316,7 @@ function modeItems(input: PaletteInput): readonly PaletteItem[] {
 }
 
 function actionItems(input: PaletteInput): readonly PaletteItem[] {
-  const { view, windowRole, sessions, runtime } = input
+  const { view, windowRole, sessions, runtime, activeId } = input
   const items: PaletteItem[] = [
     {
       id: 'action:new-session',
@@ -411,6 +413,17 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
     keywords: 'search find history transcript conversation grep',
     run: { kind: 'search-conversations' }
   })
+  // D74: the viewer shows a file for a session, so it needs one on screen (not the Hub or no open tab).
+  if (view !== 'hub' && findOpenSession(sessions, activeId) !== null) {
+    items.push({
+      id: 'action:preview-file',
+      group: 'Actions',
+      label: 'Preview file...',
+      detail: 'Open a file in the side panel viewer (Markdown, text, images, CSV, XLSX, DOCX)',
+      keywords: 'preview view open file markdown image csv xlsx docx side panel reader',
+      run: { kind: 'preview-file' }
+    })
+  }
   items.push({
     id: 'action:show-costs',
     group: 'Actions',
