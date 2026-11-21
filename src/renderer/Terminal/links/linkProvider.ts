@@ -2,8 +2,10 @@ import type { IDisposable, IBufferRange, ILink, ILinkProvider, Terminal } from '
 import type { Id } from '../../../shared/types'
 import { requestFileView } from '../../viewer/previewBus'
 import { detectLinkCandidates, type LinkCandidate } from './detectLinks'
+import { chooseLinks, collectResolveTexts } from './linkChoice'
 import { createLinkCache, type LinkCache } from './linkCache'
 import { decideLinkClick } from './linkClick'
+import { detectSpacedPathGroups, hasSpacedPathHint, type SpacedGroup } from './spacedPaths'
 
 interface Segment {
   /** 1-based buffer row this physical line maps to. */
@@ -117,18 +119,22 @@ export function registerLinkProvider(term: Terminal, sessionId: Id): IDisposable
   const cache = createLinkCache()
 
   function resolveAndBuild(
-    candidates: readonly LinkCandidate[],
+    plain: readonly LinkCandidate[],
+    groups: readonly SpacedGroup[],
     lines: readonly Segment[],
     callback: (links: ILink[] | undefined) => void
   ): void {
+    // D75: plain candidates first, then the spaced-path alternatives (longest first), so the
+    // batch stays inside the main-process limit even on a very long line.
     const uncached: string[] = []
-    for (const candidate of candidates) {
-      if (!cache.has(candidate.text) && !uncached.includes(candidate.text)) {
-        uncached.push(candidate.text)
+    for (const text of collectResolveTexts(plain, groups)) {
+      if (!cache.has(text) && !uncached.includes(text)) {
+        uncached.push(text)
       }
     }
     const finish = (): void => {
-      const links = buildLinks(candidates, lines, cache, sessionId)
+      const chosen = chooseLinks(plain, groups, (text) => cache.get(text))
+      const links = buildLinks(chosen, lines, cache, sessionId)
       callback(links.length > 0 ? links : undefined)
     }
     if (uncached.length === 0) {
@@ -161,11 +167,16 @@ export function registerLinkProvider(term: Terminal, sessionId: Id): IDisposable
         return
       }
       const candidates = detectLinkCandidates(windowed.text)
-      if (candidates.length === 0) {
+      // D75: unquoted paths with spaces are verified on disk as alternatives of the plain
+      // fragments; the hint keeps the extra work off lines that cannot contain one.
+      const groups = hasSpacedPathHint(windowed.text)
+        ? detectSpacedPathGroups(windowed.text)
+        : []
+      if (candidates.length === 0 && groups.length === 0) {
         callback(undefined)
         return
       }
-      resolveAndBuild(candidates, windowed.lines, callback)
+      resolveAndBuild(candidates, groups, windowed.lines, callback)
     }
   }
 

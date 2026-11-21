@@ -126,6 +126,27 @@ describe('detectLinkCandidates: offsets and ordering', () => {
   })
 })
 
+describe('detectLinkCandidates: non-ASCII names (D75)', () => {
+  it('keeps accented letters inside a path token', () => {
+    expect(texts('C:\\Docs\\Bản_vẽ\\plan.pdf')).toEqual(['C:\\Docs\\Bản_vẽ\\plan.pdf'])
+    expect(texts('naïve.txt')).toEqual(['naïve.txt'])
+  })
+
+  it('keeps Vietnamese words in a path', () => {
+    expect(texts('C:\\Docs\\Báo\\plan.pdf')).toEqual(['C:\\Docs\\Báo\\plan.pdf'])
+  })
+
+  it('matches CJK names', () => {
+    expect(texts('C:\\Docs\\日本語\\レポート.pdf')).toEqual(['C:\\Docs\\日本語\\レポート.pdf'])
+    expect(texts('報告書.txt')).toEqual(['報告書.txt'])
+  })
+
+  it('does not treat accented prose as a link', () => {
+    expect(texts('café au lait')).toEqual([])
+    expect(texts('Báo cáo tháng 10')).toEqual([])
+  })
+})
+
 describe('detectLinkCandidates: negatives', () => {
   it('ignores version numbers', () => {
     expect(texts('1.2.3')).toEqual([])

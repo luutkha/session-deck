@@ -32,7 +32,9 @@ interface ProtectedRange {
 
 const URL_RE = /(?:https?:\/\/|mailto:)[^\s"'`<>]+/gi
 const FULL_URL_RE = /^(?:https?:\/\/|mailto:)\S+$/i
-const TOKEN_RE = /[A-Za-z0-9_\-.:/\\~@+%$#&]+/g
+// D75: letters, digits and combining marks of every script belong to a token, so Vietnamese
+// (`Bản_vẽ`) and CJK names are not cut into fragments.
+const TOKEN_RE = /[\p{L}\p{N}\p{M}_\-.:/\\~@+%$#&]+/gu
 const POSITION_PREFIX_RE = /^(?::\d+(?::\d+)?|\(\d+(?:,\d+)?\))/
 const POSITION_SUFFIX_RE = /(?::\d+(?::\d+)?|\(\d+(?:,\d+)?\))$/
 const TRAILING_PUNCT = new Set(['.', ',', ';', ':', '!', '?', ')', ']', '}', "'", '"', '`'])
@@ -43,7 +45,7 @@ const QUOTES = new Set(['"', "'", '`'])
  * it is balanced by an opening `(` inside the match (e.g. Wikipedia URLs).
  * Returns the trimmed exclusive end offset.
  */
-function trimTrailing(line: string, start: number, end: number): number {
+export function trimTrailing(line: string, start: number, end: number): number {
   let e = end
   while (e > start) {
     const ch = line[e - 1]
@@ -74,7 +76,7 @@ function intersectsAny(start: number, end: number, ranges: readonly ProtectedRan
 
 /** A bare filename token (no separators) with a real, alphabetic extension. */
 function isBareFilename(value: string): boolean {
-  if (!/^[A-Za-z0-9_\-]+(?:\.[A-Za-z0-9_\-]+)+$/.test(value)) return false
+  if (!/^[\p{L}\p{N}\p{M}_\-]+(?:\.[\p{L}\p{N}\p{M}_\-]+)+$/u.test(value)) return false
   return isFileWithExtension(value)
 }
 
@@ -84,10 +86,10 @@ function isBareFilenameLoose(value: string): boolean {
 }
 
 function isFileWithExtension(value: string): boolean {
-  if (!/[A-Za-z]/.test(value)) return false
-  if (!/\.[A-Za-z][A-Za-z0-9]*$/.test(value)) return false
+  if (!/\p{L}/u.test(value)) return false
+  if (!/\.[\p{L}][\p{L}\p{N}]*$/u.test(value)) return false
   // Prose abbreviations such as `e.g` / `i.e` are not files.
-  if (/^[A-Za-z]\.[A-Za-z]$/.test(value)) return false
+  if (/^\p{L}\.\p{L}$/u.test(value)) return false
   return true
 }
 
@@ -97,11 +99,11 @@ function isFileWithExtension(value: string): boolean {
  */
 function looksLikePath(value: string, allowSpaces: boolean): boolean {
   if (value.length === 0) return false
-  if (/^[A-Za-z]:[\\/]/.test(value)) return true // C:\... or C:/...
+  if (/^\p{L}:[\\/]/u.test(value)) return true // C:\... or C:/...
   if (/^\\\\[^\\/]+[\\/]/.test(value)) return true // \\server\share\...
   if (/^(?:~|\.{1,2})[\\/]/.test(value)) return true // ~/ ./ ../
   if (/[\\/]/.test(value)) {
-    if (/\.[A-Za-z][A-Za-z0-9]*$/.test(value)) return true // src/main/index.ts
+    if (/\.[\p{L}][\p{L}\p{N}]*$/u.test(value)) return true // src/main/index.ts
     if (/[\\/]$/.test(value)) return true // src/main/
     return false
   }
