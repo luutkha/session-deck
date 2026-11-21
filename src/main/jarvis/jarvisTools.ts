@@ -45,6 +45,7 @@ import { createDigestTools } from './digestTools'
 import { createLayoutTools } from './layoutTools'
 import { createPanelTools } from './panelTools'
 import type { CodeGitOps } from '../app/codeGitOps'
+import { sessionModelProblem } from '../app/sessionController'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
 export const READY_MIN_RUN_MS = 3000
@@ -78,7 +79,9 @@ export interface JarvisToolDeps {
   readonly getRuntime: (id: Id) => RuntimeState | undefined
   readonly controller: {
     createSession(input: CreateSessionInput): Session
-    forkSession(id: Id): Session
+    forkSession(id: Id): Session | Promise<Session>
+    /** D79: change an OpenCode session's model (see SessionController.setOpencodeModel). */
+    setOpencodeModel(id: Id, model: string | undefined): 'restarted' | 'next-start' | 'restart-failed'
     removeSession(id: Id): void
     removeWorktree(id: Id): void
     closeSession(id: Id): void
@@ -733,14 +736,43 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'fork_session',
-      description: "Forks a Claude session: a new session continues a copy of its conversation; the original is not changed.",
+      description: "Forks a conversation into a new session; the original is not changed. A Claude session copies its conversation (Claude's own fork). An OpenCode session is COPIED (export then import): tell the user it is a copy, not a true fork, and that the two conversations now move apart.",
       inputSchema: schema({ session: SESSION_PROP, open: { type: 'boolean' } }, ['session']),
       run: async (args) => {
         const session = resolveSession(deps.getData(), args.session)
-        const fork = deps.controller.forkSession(session.id)
+        const fork = await deps.controller.forkSession(session.id)
         deps.log('fork_session', `${session.name} -> ${fork.name}`)
         if (optionalBool(args, 'open') === true) deps.openSession(fork.id)
-        return `Forked "${session.name}" into "${fork.name}" (id ${fork.id}).`
+        return agentOf(fork) === 'opencode'
+          ? `Copied "${session.name}" into "${fork.name}" (id ${fork.id}). OpenCode has no true fork: this is a copy of its conversation, so the two now move apart.`
+          : `Forked "${session.name}" into "${fork.name}" (id ${fork.id}).`
+      }
+    },
+    {
+      name: 'set_session_model',
+      description: "Changes the model of an OpenCode session, given as provider/model. A running session keeps its conversation: it is restarted on the new model (same conversation). A sleeping, stopped or closed one gets the model for its next start. Claude sessions and shell sessions have no per-session model.",
+      inputSchema: schema({
+        session: SESSION_PROP,
+        model: { type: 'string', description: 'provider/model, like opencode/deepseek-v4.1-flash-free.' }
+      }, ['session', 'model']),
+      run: async (args) => {
+        const session = resolveSession(deps.getData(), args.session)
+        const agent = agentOf(session)
+        if (agent === 'shell') throw new Error(`"${session.name}" is a shell session: it has no model.`)
+        if (agent === 'claude') {
+          throw new Error(`"${session.name}" is a Claude session: its model is a launch setting (Settings > Agents, or the session's own launch), not a per-session one. Only OpenCode sessions can change model here.`)
+        }
+        const model = text(args, 'model').trim()
+        const problem = sessionModelProblem(model)
+        if (problem !== null) throw new Error(problem)
+        const result = deps.controller.setOpencodeModel(session.id, model)
+        pushUndo(`change the model of "${session.name}" (put the old one back)`, () => {
+          deps.controller.setOpencodeModel(session.id, session.model ?? undefined)
+        })
+        deps.log('set_session_model', `${session.name}: ${session.model ?? '(default)'} -> ${model}`)
+        if (result === 'restarted') return `"${session.name}" now runs ${model}; its conversation was restarted on it.`
+        if (result === 'restart-failed') return `"${session.name}" now uses ${model}, but it could not be started again: it is asleep and starts on ${model} when you wake it (wake_session).`
+        return `"${session.name}" now uses ${model}; it starts on it the next time (${stateText(session, deps.getRuntime(session.id))}).`
       }
     },
     {
@@ -1062,7 +1094,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'undo_last_action',
-      description: 'Undoes your last reversible action (sleep, wake, close, create session, rename, status, group, notes, keep awake, create group, schedules), one step per call. Removals cannot be undone.',
+      description: 'Undoes your last reversible action (sleep, wake, close, create session, rename, status, group, notes, keep awake, model, create group, schedules), one step per call. Removals cannot be undone.',
       inputSchema: schema({}),
       run: async () => undoLast()
     },

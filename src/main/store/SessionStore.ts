@@ -48,6 +48,7 @@ import {
   reorderStatuses as reorderStatusesReducer,
   setClaudeSessionId as setClaudeSessionIdReducer,
   setOpencodeSessionId as setOpencodeSessionIdReducer,
+  setSessionModel as setSessionModelReducer,
   setKeepAwake as setKeepAwakeReducer,
   setLastActiveAt as setLastActiveAtReducer,
   setGroupCollapsed as setGroupCollapsedReducer,
@@ -203,6 +204,11 @@ export class SessionStore {
     this.data = next
     this.saver.schedule(next)
     this.emit(next)
+  }
+
+  /** D79: sets or clears the OpenCode model of a session (persisted). No-op when identical. */
+  setSessionModel(id: Id, model: string | undefined): void {
+    this.commitIfChanged(setSessionModelReducer(this.data, id, model))
   }
 
   /** Exempts the session from (or returns it to) the idle sleep timer (persisted). */

@@ -161,10 +161,19 @@ describe('pickSessionToAdopt', () => {
 
 describe('listOpencodeSessions', () => {
   it('runs the read-only list command with an argument array and parses the output', async () => {
-    const run = vi.fn(async (_args: string[]): Promise<string> => JSON.stringify([info({ id: 'ses_aaaabbbbcccc' })]))
+    const run = vi.fn(async (_args: string[], _cwd?: string): Promise<string> => JSON.stringify([info({ id: 'ses_aaaabbbbcccc' })]))
     await expect(listOpencodeSessions(run)).resolves.toEqual([info({ id: 'ses_aaaabbbbcccc' })])
     expect(run).toHaveBeenCalledTimes(1)
-    expect(run.mock.calls[0][0]).toEqual(['session', 'list', '--format', 'json'])
+    expect(run.mock.calls[0][0]).toEqual(['session', 'list', '--format', 'json', '--max-count', '300'])
+  })
+
+  it('forwards the session folder as the runner cwd (the CLI lists only its own project)', async () => {
+    const run = vi.fn(async (_args: string[], _cwd?: string): Promise<string> => '[]')
+    await listOpencodeSessions(run, 'C:\\works\\repo')
+    expect(run).toHaveBeenCalledWith(
+      ['session', 'list', '--format', 'json', '--max-count', '300'],
+      'C:\\works\\repo'
+    )
   })
 
   it('returns [] when the runner rejects (CLI missing, non-zero exit)', async () => {

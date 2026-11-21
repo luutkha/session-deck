@@ -240,8 +240,8 @@ function thisSessionItems(
     items.push(sleepItem(session, name, detail))
   }
   items.push(keepAwakeItem(session, name, detail), readItem(session, name, detail, state))
-  // D52: only Claude conversations can be forked (Claude Code's --fork-session).
-  if ((session.agent ?? 'claude') === 'claude') {
+  // D52/D79: a Claude conversation forks with Claude's own --fork-session; an OpenCode one is copied (export/import).
+  if ((session.agent ?? 'claude') !== 'shell') {
     items.push({
       id: `this:fork:${session.id}`,
       group: 'This session',

@@ -9,15 +9,21 @@
  * `--format json` prints an array of objects with: id (`ses_...`), title, updated (epoch ms), created (epoch ms),
  * projectId, directory (an absolute path, backslash-separated on Windows). Fields are read tolerantly: an entry
  * without a valid `ses_` id is dropped, a missing title/directory/timestamp only makes that entry unusable for
- * adoption. The CLI lists the project of the directory it runs in; the directory field is still filtered on,
- * because a project can span several folders.
+ * adoption. The CLI lists the project of the directory it runs in, so the runner MUST run in the session's own
+ * folder (D79: from another folder the list is empty); the directory field is still filtered on, because a project
+ * can span several folders. `--max-count 300` keeps a busy project from hiding the row this launch continued.
  */
 
 /** OpenCode conversation id shape used by this module (`ses_` + alphanumerics). */
 const OPENCODE_SESSION_ID_RE = /^ses_[A-Za-z0-9]+$/
 
+/** D79: how many of a project's newest sessions the listing asks for (the CLI default is 100). */
+export const SESSION_LIST_MAX_COUNT = 300
+
 /** Arguments of the read-only list command (an array, never a shell string). */
-const SESSION_LIST_ARGS: readonly string[] = ['session', 'list', '--format', 'json']
+const SESSION_LIST_ARGS: readonly string[] = [
+  'session', 'list', '--format', 'json', '--max-count', String(SESSION_LIST_MAX_COUNT)
+]
 
 /**
  * How far before the launch a listed session may have been created or updated and still be the one this launch
@@ -76,6 +82,11 @@ function normalizeDirectory(path: string): string {
   let end = lowered.length
   while (end > 1 && lowered.charAt(end - 1) === '/') end -= 1
   return lowered.slice(0, end)
+}
+
+/** True when two folder paths name the same folder (`C:\Work\X` == `c:/work/x/`). */
+export function sameDirectory(a: string, b: string): boolean {
+  return normalizeDirectory(a) === normalizeDirectory(b)
 }
 
 /** The later of the two timestamps the CLI printed, or undefined when it printed neither. */
@@ -140,13 +151,18 @@ function parseJsonOutput(text: string): unknown {
 
 /**
  * Runs `opencode session list --format json` through the injected runner (so unit tests never spawn the real CLI)
- * and returns the parsed list. Any failure (could not run, non-zero exit via a rejected promise, unreadable output)
- * yields `[]`: recovering an id is an enhancement, never a reason to block a launch.
+ * and returns the parsed list. `cwd` is the folder the CLI must run in: it lists the project of its working
+ * directory, so a session in another project is found only when its own folder is passed (D79). Any failure (could
+ * not run, non-zero exit via a rejected promise, unreadable output) yields `[]`: recovering an id is an
+ * enhancement, never a reason to block a launch.
  */
-export async function listOpencodeSessions(run: (args: string[]) => Promise<string>): Promise<OpencodeSessionInfo[]> {
+export async function listOpencodeSessions(
+  run: (args: string[], cwd?: string) => Promise<string>,
+  cwd?: string
+): Promise<OpencodeSessionInfo[]> {
   let output: string
   try {
-    output = await run([...SESSION_LIST_ARGS])
+    output = cwd === undefined ? await run([...SESSION_LIST_ARGS]) : await run([...SESSION_LIST_ARGS], cwd)
   } catch {
     return []
   }

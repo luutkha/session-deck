@@ -58,7 +58,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
       startTimes.set('new', clock)
       return created
     }),
-    forkSession: vi.fn((id: string) => session('fork', `${id} (fork)`)),
+    forkSession: vi.fn((id: string): Session | Promise<Session> => session('fork', `${id} (fork)`)),
     removeSession: vi.fn(),
     removeWorktree: vi.fn(),
     closeSession: vi.fn(),
@@ -69,6 +69,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     }),
     restartSession: vi.fn(async () => undefined),
     sleepSession: vi.fn(),
+    setOpencodeModel: vi.fn((_id: string, _model: string | undefined): 'restarted' | 'next-start' | 'restart-failed' => 'restarted'),
     wakeSession: vi.fn((id: string) => {
       states.set(id, running(id))
       startTimes.set(id, clock)
@@ -965,5 +966,70 @@ describe('jarvis tools: the rest of the app (D58)', () => {
     expect(t.control.loginItem.set).toHaveBeenCalledWith(true)
     expect(await t.call('app_window', { action: 'quit' })).toContain('said no')
     expect(t.control.quit).not.toHaveBeenCalled()
+  })
+})
+
+describe('Jarvis set_session_model (D79)', () => {
+  const MODEL = 'opencode/deepseek-v4.1-flash-free'
+
+  it('changes the model of a running OpenCode session and undoes it with the old model', async () => {
+    const { call, controller } = setup(
+      [session('o', 'Open', { agent: 'opencode', model: 'p/old' })],
+      [running('o')]
+    )
+    expect(await call('set_session_model', { session: 'open', model: MODEL })).toBe(
+      `"Open" now runs ${MODEL}; its conversation was restarted on it.`
+    )
+    expect(controller.setOpencodeModel).toHaveBeenCalledWith('o', MODEL)
+    expect(await call('undo_last_action')).toContain('Undone: change the model of "Open"')
+    expect(controller.setOpencodeModel).toHaveBeenLastCalledWith('o', 'p/old')
+  })
+
+  it('says when the new model only applies at the next start (sleeping, stopped, closed or no conversation)', async () => {
+    const t = setup([session('o', 'Open', { agent: 'opencode', closedAt: 3 })])
+    t.controller.setOpencodeModel.mockReturnValueOnce('next-start')
+    expect(await t.call('set_session_model', { session: 'open', model: MODEL })).toContain('it starts on it the next time')
+  })
+
+  it('reports a session that was not restarted (model stored, asleep)', async () => {
+    const t = setup([session('o', 'Open', { agent: 'opencode' })], [running('o')])
+    t.controller.setOpencodeModel.mockReturnValueOnce('restart-failed')
+    const text = await t.call('set_session_model', { session: 'open', model: MODEL })
+    expect(text).toContain(`now uses ${MODEL}`)
+    expect(text).toContain('could not be started again')
+    expect(text).toContain('wake_session')
+  })
+
+  it('refuses Claude and shell sessions with a clear message and changes nothing', async () => {
+    const { call, controller } = setup([session('a', 'API'), session('s', 'Shell', { agent: 'shell' })])
+    await expect(call('set_session_model', { session: 'api', model: MODEL })).rejects.toThrow('"API" is a Claude session')
+    await expect(call('set_session_model', { session: 'shell', model: MODEL })).rejects.toThrow('"Shell" is a shell session')
+    expect(controller.setOpencodeModel).not.toHaveBeenCalled()
+  })
+
+  it('refuses a flag-looking, malformed or over-long model before touching the session', async () => {
+    const { call, controller } = setup([session('o', 'Open', { agent: 'opencode' })])
+    await expect(call('set_session_model', { session: 'open', model: '-rf' })).rejects.toThrow('looks like a command flag')
+    await expect(call('set_session_model', { session: 'open', model: 'provider model' })).rejects.toThrow('is not a model id')
+    await expect(call('set_session_model', { session: 'open', model: `p/${'x'.repeat(120)}` })).rejects.toThrow('too long')
+    await expect(call('set_session_model', { session: 'open' })).rejects.toThrow('"model" is required')
+    expect(controller.setOpencodeModel).not.toHaveBeenCalled()
+  })
+})
+
+describe('Jarvis fork_session (D79)', () => {
+  it('calls an OpenCode result a copy, not a true fork', async () => {
+    const t = setup([session('o', 'Open', { agent: 'opencode', opencodeSessionId: 'ses_abc12345678' })])
+    t.controller.forkSession.mockReturnValueOnce(Promise.resolve(session('c', 'Open (fork)', { agent: 'opencode' })))
+    expect(await t.call('fork_session', { session: 'open' })).toBe(
+      'Copied "Open" into "Open (fork)" (id c). OpenCode has no true fork: this is a copy of its conversation, so the two now move apart.'
+    )
+  })
+
+  it('still forks a Claude session and reports what the controller refused', async () => {
+    const t = setup([session('a', 'API'), session('w', 'Web')])
+    expect(await t.call('fork_session', { session: 'api' })).toBe('Forked "API" into "a (fork)" (id fork).')
+    t.controller.forkSession.mockRejectedValueOnce(new Error('Nothing to fork yet: this session has no saved conversation.'))
+    await expect(t.call('fork_session', { session: 'web' })).rejects.toThrow('Nothing to fork yet')
   })
 })

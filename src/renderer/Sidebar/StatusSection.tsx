@@ -168,7 +168,7 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
                 onMoveToGroup={(gid): void => onMoveSession(session.id, gid)}
                 onNewGroupAndMove={(): void => onCreateGroupAndMove(session.id)}
                 onCloseSession={(): void => onCloseSession(session.id)}
-                onFork={onForkSession !== undefined && (session.agent ?? 'claude') === 'claude' ? (): void => onForkSession(session.id) : undefined}
+                onFork={onForkSession !== undefined && (session.agent ?? 'claude') !== 'shell' ? (): void => onForkSession(session.id) : undefined}
                 onRemoveSession={(): void => onRequestRemoveSession(session.id)}
               >
                 {card}

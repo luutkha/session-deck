@@ -333,11 +333,11 @@ describe('sessionController.forkSession (D52)', () => {
     process.env.CLAUDE_CONFIG_DIR = config
   }
 
-  it('creates a Claude session in the same folder and group and starts it on a copy of the conversation', () => {
+  it('creates a Claude session in the same folder and group and starts it on a copy of the conversation', async () => {
     withTranscript(PARENT_ID)
     const parent = makeSession({ id: 'p', name: 'Backend', groupId: null, claudeArgs: ['--verbose'] })
     const { controller, pty, store } = setup([parent])
-    const fork = controller.forkSession('p')
+    const fork = await controller.forkSession('p')
     expect(fork).toMatchObject({ name: 'Backend (fork)', cwd: parent.cwd, claudeArgs: ['--verbose'] })
     expect(fork.agent ?? 'claude').toBe('claude')
     expect(fork.claudeSessionId).toBeDefined()
@@ -347,12 +347,12 @@ describe('sessionController.forkSession (D52)', () => {
     expect(store.get().sessions.find((s) => s.id === 'p')?.claudeSessionId).toBe(PARENT_ID)
   })
 
-  it('refuses a session without a saved conversation, and non-Claude sessions', () => {
+  it('refuses a session without a saved conversation, and a shell session', async () => {
     process.env.CLAUDE_CONFIG_DIR = tempDir()
-    const { controller, store } = setup([makeSession({ id: 'p' }), makeSession({ id: 'oc', agent: 'opencode' })])
-    expect(() => controller.forkSession('p')).toThrow('Nothing to fork yet')
-    expect(() => controller.forkSession('oc')).toThrow('Only Claude Code sessions')
-    expect(() => controller.forkSession('nope')).toThrow('Unknown session')
+    const { controller, store } = setup([makeSession({ id: 'p' }), makeSession({ id: 'sh', agent: 'shell' })])
+    await expect(controller.forkSession('p')).rejects.toThrow('Nothing to fork yet')
+    await expect(controller.forkSession('sh')).rejects.toThrow('Shell sessions cannot be forked')
+    await expect(controller.forkSession('nope')).rejects.toThrow('Unknown session')
     expect(store.get().sessions).toHaveLength(2)
   })
 })

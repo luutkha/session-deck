@@ -634,6 +634,13 @@ export interface JarvisSettings {
 export const JARVIS_MODEL_RE = /^[A-Za-z0-9._:[\]-]*$/
 export const JARVIS_MODEL_MAX = 100
 
+/**
+ * D79: an OpenCode model set on one session (`set_session_model`): letters, digits, `.`, `-`, `_`, `/` and `:` only,
+ * at most 100 characters. A value starting with `-` is refused separately (it would look like a CLI flag).
+ */
+export const SESSION_MODEL_RE = /^[A-Za-z0-9._\-/:]+$/
+export const SESSION_MODEL_MAX = 100
+
 /** App launch behaviour (D50). */
 export interface LaunchSettings {
   /** Sessions that were running when SessionDeck quit are resumed in the background on the next launch. */

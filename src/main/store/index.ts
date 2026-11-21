@@ -14,6 +14,7 @@ export {
   reorderStatuses,
   setClaudeSessionId,
   setOpencodeSessionId,
+  setSessionModel,
   setGroupCollapsed,
   setSessionStatus,
   upsertStatus

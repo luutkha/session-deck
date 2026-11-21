@@ -33,7 +33,7 @@ async function main() {
     const visiblePanes = () => ev('Array.from(document.querySelectorAll(".terminal-pane__viewport")).filter((v) => { const r = v.getBoundingClientRect(); return r.width > 0 && r.height > 0 }).length')
 
     const names = (await rpc('tools/list', {})).result.tools.map((x) => x.name)
-    t.check('tools/list offers the D55 tools (87 in all with D58 + D60 + D74)', names.length === 87 && ['get_screen_state', 'set_grid', 'update_settings', 'bulk_action', 'queue_change'].every((n) => names.includes(n)), String(names.length))
+    t.check('tools/list offers the D55 tools (88 in all with D58 + D60 + D74)', names.length === 88 && ['get_screen_state', 'set_grid', 'update_settings', 'bulk_action', 'queue_change'].every((n) => names.includes(n)), String(names.length))
 
     // Three shell sessions in one folder.
     for (const name of ['ctl one', 'ctl two', 'ctl three']) await tool('create_session', { folder, name, agent: 'shell' })

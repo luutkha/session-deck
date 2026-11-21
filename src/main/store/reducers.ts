@@ -307,6 +307,20 @@ export function setOpencodeSessionId(data: StoreData, id: Id, opencodeSessionId:
   return { ...data, sessions }
 }
 
+/** D79: sets or clears a session's OpenCode model (cleared = field removed). Same value again = same data back. */
+export function setSessionModel(data: StoreData, id: Id, model: string | undefined): StoreData {
+  const index = findSessionIndex(data, id)
+  if (data.sessions[index].model === model) {
+    return data
+  }
+  const sessions = data.sessions.map((s, i) => {
+    if (i !== index) return s
+    const { model: _model, ...rest } = s
+    return model === undefined ? rest : { ...rest, model }
+  })
+  return { ...data, sessions }
+}
+
 /** Sets or clears the keep-awake flag (cleared = field removed). Same value again = same data back. */
 export function setKeepAwake(data: StoreData, id: Id, keepAwake: boolean): StoreData {
   const index = findSessionIndex(data, id)

@@ -283,7 +283,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         onMoveToGroup={(groupId): void => onMoveSession(session.id, groupId)}
         onNewGroupAndMove={(): void => onCreateGroupAndMove(session.id)}
         onCloseSession={(): void => onCloseSession(session.id)}
-        onFork={onForkSession !== undefined && (session.agent ?? 'claude') === 'claude' ? (): void => onForkSession(session.id) : undefined}
+        onFork={onForkSession !== undefined && (session.agent ?? 'claude') !== 'shell' ? (): void => onForkSession(session.id) : undefined}
         onRemoveSession={(): void => onRequestRemoveSession(session.id)}
       >
         {card}

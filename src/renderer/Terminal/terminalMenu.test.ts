@@ -32,13 +32,19 @@ describe('menuRows (D59)', () => {
     expect(menuRows('a', session(), false, []).closePane).toBe(false)
   })
 
-  it('offers Fork only for a Claude session with a saved conversation, never Jarvis', () => {
+  it('offers Fork for a Claude session with a saved conversation, never Jarvis', () => {
     expect(menuRows('a', session({ claudeSessionId: 'x1' }), false, []).fork).toBe(true)
     expect(menuRows('a', session({ agent: 'claude', claudeSessionId: 'x1' }), false, []).fork).toBe(true)
     expect(menuRows('a', session(), false, []).fork).toBe(false)
     expect(menuRows('a', session({ agent: 'shell', claudeSessionId: 'x1' }), false, []).fork).toBe(false)
     expect(menuRows('a', session({ role: 'jarvis', claudeSessionId: 'x1' }), false, []).fork).toBe(false)
     expect(menuRows('a', undefined, false, []).fork).toBe(false)
+  })
+
+  it('offers Fork for an OpenCode session with a saved conversation (D79: a copy)', () => {
+    expect(menuRows('a', session({ agent: 'opencode', opencodeSessionId: 'ses_abc12345678' }), false, []).fork).toBe(true)
+    expect(menuRows('a', session({ agent: 'opencode' }), false, []).fork).toBe(false)
+    expect(menuRows('a', session({ agent: 'opencode', opencodeSessionId: 'ses_abc12345678', role: 'jarvis' }), false, []).fork).toBe(false)
   })
 })
 

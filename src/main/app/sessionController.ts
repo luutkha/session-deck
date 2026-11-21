@@ -1,4 +1,6 @@
 import type { AttentionReason, HookEvent, Id, Session, CreateSessionInput, ShellKind } from '../../shared/types'
+import { SESSION_MODEL_MAX, SESSION_MODEL_RE } from '../../shared/types'
+import { errorMessage } from '../../shared/guards'
 import { execFile } from 'node:child_process'
 import type { ActiveSessions } from './activeSessions'
 import { SessionStore } from '../store'
@@ -17,29 +19,44 @@ import { appendTrustBuffer, isTrustPrompt, shouldAnswerTrustPrompt, TRUST_ANSWER
 import { createAutoStatusApplier } from '../automation/applyAutoStatus'
 import { opencodePluginHealth, isOpencodeUsageLimit, OPENCODE_PLUGIN_HEALTH_GRACE_MS } from '../opencode/health'
 import { listOpencodeSessions, pickSessionToAdopt } from '../opencode/sessions'
+import { isSessionExport, parseImportedSessionId, pickNewSessionId, remapExportIds, writeForkFile } from '../opencode/fork'
 
 const MAX_FALLBACK_ATTEMPTS = 1
 /** Session names are at most 100 characters (store rule). */
 const MAX_FORK_NAME = 100
-/** D79: the read-only `opencode session list` runner must never hold a launch hostage. */
-const OPENCODE_RUN_TIMEOUT_MS = 10_000
-const OPENCODE_RUN_MAX_BUFFER = 4 * 1024 * 1024
+/**
+ * D79: the `opencode` runner serves the read-only session list and the fork's export/import. A hung CLI must never
+ * hold a launch hostage (the list runs in the background), but a long conversation's export/import needs more than
+ * the list does, so the limit is generous and only these rare calls ever wait for it.
+ */
+const OPENCODE_RUN_TIMEOUT_MS = 30_000
+const OPENCODE_RUN_MAX_BUFFER = 20 * 1024 * 1024
 /** D79 usage-limit scan: the last lines of the screen, like the Claude detector's tail. */
 const OPENCODE_LIMIT_SCAN_LINES = 25
 const OPENCODE_LIMIT_TAIL_CHARS = 8000
 
+/** A shell-safe token: ids, flags and model ids need no quotes; anything else is quoted defensively. */
+function shellToken(token: string): string {
+  return /^[A-Za-z0-9_./:=@\\-]+$/.test(token) ? token : `"${token.replace(/"/g, '""')}"`
+}
+
 /**
- * Runs `opencode <args>` (read-only session-id recovery, D79). Resolved like capabilities.ts: `opencode.cmd` on
- * Windows needs the shell, and the arguments are always an internal array (never user text).
+ * Runs `opencode <args>` (read-only session list, and the fork's export/import, D79). Resolved like capabilities.ts:
+ * `opencode.cmd` on Windows needs the shell, and the arguments are always an internal array (never user text). On
+ * Windows the command line is built here from those tokens, each quoted, so a temp path with a space survives.
+ * `cwd` matters: `opencode session list` lists the project of the folder it runs in.
  */
-function defaultOpencodeRun(args: string[]): Promise<string> {
+function defaultOpencodeRun(args: string[], cwd?: string): Promise<string> {
   return new Promise((resolve, reject): void => {
     try {
+      const shell = process.platform === 'win32'
+      const file = shell ? ['opencode', ...args.map(shellToken)].join(' ') : 'opencode'
       execFile(
-        'opencode',
-        args,
+        file,
+        shell ? [] : args,
         {
-          shell: process.platform === 'win32',
+          ...(cwd !== undefined ? { cwd } : {}),
+          shell,
           timeout: OPENCODE_RUN_TIMEOUT_MS,
           windowsHide: true,
           encoding: 'utf8',
@@ -57,6 +74,30 @@ function defaultOpencodeRun(args: string[]): Promise<string> {
       reject(error)
     }
   })
+}
+
+/** D79: what a model change needed: a restart of the live conversation, or only its next start. */
+export type OpencodeModelResult = 'restarted' | 'next-start' | 'restart-failed'
+
+/**
+ * D79: null when `model` is a usable model id for one OpenCode session, otherwise a one-line reason. The rule is
+ * narrower than the config-file rule (`isOpencodeModel`): a model given in a chat command is spelled plainly and can
+ * never look like a CLI flag.
+ */
+export function sessionModelProblem(model: string): string | null {
+  if (model.length === 0) return 'The model is empty: give provider/model, like opencode/deepseek-v4.1-flash-free.'
+  if (model.startsWith('-')) return `"${model}" looks like a command flag, not a model. Give provider/model, like opencode/deepseek-v4.1-flash-free.`
+  if (model.length > SESSION_MODEL_MAX) return `The model id is too long (max ${SESSION_MODEL_MAX} characters).`
+  if (!SESSION_MODEL_RE.test(model)) {
+    return `"${model}" is not a model id: only letters, digits, ".", "-", "_", "/" and ":" are allowed.`
+  }
+  return null
+}
+
+/** D52/D79: "<name> (fork)", within the store's 100-character session name limit. */
+function forkName(name: string): string {
+  const fork = `${name} (fork)`
+  return fork.length <= MAX_FORK_NAME ? fork : `${name.slice(0, MAX_FORK_NAME - 7)} (fork)`
 }
 
 interface SessionStartState {
@@ -81,8 +122,8 @@ export interface SessionControllerDeps {
    * D79: OpenCode sessions report through the same hook (the last screen lines are matched conservatively).
    */
   readonly onUsageLimit?: (id: Id) => void
-  /** D79: runs `opencode <args>` for read-only session-id recovery; tests inject a fake so no CLI is spawned. */
-  readonly runOpencode?: (args: string[]) => Promise<string>
+  /** D79: runs `opencode <args>` in `cwd` (session list; fork export/import); tests inject a fake so no CLI is spawned. */
+  readonly runOpencode?: (args: string[], cwd?: string) => Promise<string>
   /** D79: how long an OpenCode process may stay silent before its plugin is reported missing (tests shorten it). */
   readonly opencodeHealthGraceMs?: number
   /** D53/D54: what a session adds to its launch (Jarvis: Claude arguments or OpenCode config keys). */
@@ -92,10 +133,19 @@ export interface SessionControllerDeps {
 export interface SessionController {
   createSession(input: CreateSessionInput): Session
   /**
-   * D52: a new Claude session that continues a copy of this session's conversation (same folder, group, args and
-   * worktree). Throws for a non-Claude session or one with no saved conversation yet.
+   * D52: a new session on a copy of this session's conversation (same folder, group, args and worktree; name +
+   * " (fork)"). Claude uses Claude's own `--fork-session`; an OpenCode conversation is COPIED through
+   * `session export` / `session import` (D79), so it says "copy" and takes a moment. Throws for a shell session or one
+   * with no saved conversation, and leaves no session behind on any failure.
    */
-  forkSession(id: Id): Session
+  forkSession(id: Id): Promise<Session>
+  /**
+   * D79: changes the OpenCode model of one session. A running conversation is put to sleep and woken on the new model
+   * (it resumes with `-s`, so nothing is lost); a sleeping, stopped or closed one, or one with no conversation id yet,
+   * only stores it for its next start. `undefined` clears it (OpenCode's own default). Throws for a Claude, shell or
+   * unknown session, or a model id that is not `provider/model`.
+   */
+  setOpencodeModel(id: Id, model: string | undefined): OpencodeModelResult
   removeSession(id: Id): void
   /** Code mode: stops and removes every session of the worktree, then the worktree (the folder is not touched). */
   removeWorktree(id: Id): void
@@ -261,7 +311,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     if (track.recovering) return
     track.recovering = true
     try {
-      const sessions = await listOpencodeSessions(runOpencode)
+      const sessions = await listOpencodeSessions(runOpencode, session.cwd)
       // The process may have exited, slept or been removed while the CLI ran; the plugin may have reported too.
       const current = findSession(id)
       if (!current || current.agent !== 'opencode' || current.opencodeSessionId !== undefined) return
@@ -663,6 +713,115 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     store.removeWorktree(id)
   }
 
+  /**
+   * D79: OpenCode has no true fork, so this is a COPY: export the conversation, import the JSON as a new OpenCode
+   * session, then create the SessionDeck session on that new id (it resumes with `-s`, so it opens on the copy). Steps
+   * that cannot be taken back are ordered so a failure leaves nothing behind: the SessionDeck session is created
+   * last, and removed again if it cannot start. The temp file is always deleted (in a finally).
+   */
+  async function copyOpencodeSession(parent: Session): Promise<Session> {
+    const sourceId = parent.opencodeSessionId
+    if (sourceId === undefined) {
+      throw new Error('Nothing to fork yet: this OpenCode session has no saved conversation. Send it a prompt first.')
+    }
+    validateCwd(parent.cwd)
+
+    let exported: string
+    try {
+      exported = await runOpencode(['session', 'export', sourceId])
+    } catch (error) {
+      throw new Error(`Could not copy the OpenCode conversation: ${errorMessage(error)}`)
+    }
+    if (!isSessionExport(exported)) {
+      throw new Error('Could not copy the OpenCode conversation: the CLI did not print session JSON.')
+    }
+
+    // Import keeps the ids of what it reads: without fresh ids it says "Session already exists" (or fails).
+    const remapped = remapExportIds(exported)
+    const file = await writeForkFile(remapped.json)
+    let copyId: string | null
+    try {
+      const before = await listOpencodeSessions(runOpencode, parent.cwd)
+      let output: string
+      try {
+        // In the session's own folder: a copy belongs to that project, and import takes the project from its folder.
+        output = await runOpencode(['session', 'import', file.path], parent.cwd)
+      } catch (error) {
+        throw new Error(`Could not copy the OpenCode conversation: ${errorMessage(error)}`)
+      }
+      copyId = parseImportedSessionId(output)
+      if (copyId === null && remapped.sessionId !== null && output.includes(remapped.sessionId)) copyId = remapped.sessionId
+      if (copyId === null) {
+        // Import does not always say which id it created: the one new row of this folder's list is the copy.
+        copyId = pickNewSessionId(before, await listOpencodeSessions(runOpencode, parent.cwd), parent.cwd)
+      }
+    } finally {
+      await file.cleanup()
+    }
+    if (copyId === null) {
+      throw new Error('OpenCode imported the conversation but did not say which new session it is, so no session was added.')
+    }
+
+    const session = store.createSession({
+      cwd: parent.cwd,
+      name: forkName(parent.name),
+      groupId: parent.groupId,
+      statusId: null,
+      claudeArgs: [],
+      agent: 'opencode',
+      ...(parent.model !== undefined ? { model: parent.model } : {}),
+      ...(parent.opencodePermissions !== undefined ? { opencodePermissions: parent.opencodePermissions } : {}),
+      ...(parent.worktreeId !== undefined ? { worktreeId: parent.worktreeId } : {})
+    })
+    try {
+      // Stored BEFORE the start: `-s <copyId>` is what opens the copy instead of a fresh conversation.
+      store.setOpencodeSessionId(session.id, copyId)
+      startSession(findSession(session.id) ?? session, 'resume')
+    } catch (error) {
+      store.removeSession(session.id)
+      startState.delete(session.id)
+      runtime.forget(session.id)
+      throw error
+    }
+    notice(`Copied "${parent.name}" into "${session.name}": an OpenCode copy of the conversation, not a true fork.`)
+    return findSession(session.id) ?? session
+  }
+
+  /** Puts a running session to sleep: stops its process, keeps the card and conversation. No-op otherwise. */
+  function sleepNow(id: Id): void {
+    const session = findSession(id)
+    if (!session) return
+    if (isClosed(id)) return
+    const state = runtime.get(id)
+    if (!state || state.run !== 'running' || state.sleeping) return
+
+    // The kill is intentional: drop the start state so the next activation auto-resumes with --resume, and mark
+    // the runtime asleep BEFORE killing so the pty exit handler ignores the exit instead of treating it as a crash.
+    startState.delete(id)
+    clearOpencodeHealth(id)
+    // Sleep keeps the bell (reason and time) so the user sees what finished or needs them on return.
+    attention.suspend(id)
+    runtime.markSleeping(id)
+    if (pty.isRunning(id)) {
+      pty.kill(id)
+    }
+  }
+
+  /** Starts a sleeping session again the way activation does. False when it is not sleeping or could not start. */
+  function wakeNow(id: Id): boolean {
+    const session = findSession(id)
+    if (!session || isClosed(id)) return false
+    if (runtime.get(id)?.sleeping !== true) return false
+    try {
+      // Same path as activation, but the active session is left alone.
+      tryAutoStartSession(id)
+    } catch (error) {
+      logMainError(userDataDir, `wake session ${id}`, error)
+      return false
+    }
+    return true
+  }
+
   return {
     createSession(input: CreateSessionInput): Session {
       // A session in a worktree always runs in the worktree folder; input.cwd is ignored then.
@@ -685,20 +844,21 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       return session
     },
 
-    forkSession(id: Id): Session {
+    async forkSession(id: Id): Promise<Session> {
       const parent = findSession(id)
       if (!parent) throw new Error(`Unknown session: ${id}`)
-      if (parent.agent === 'opencode' || parent.agent === 'shell' || parent.claudeSessionId === undefined) {
-        throw new Error('Only Claude Code sessions can be forked.')
+      if (parent.agent === 'shell') throw new Error('Shell sessions cannot be forked.')
+      if (parent.agent === 'opencode') return copyOpencodeSession(parent)
+      if (parent.claudeSessionId === undefined) {
+        throw new Error('Nothing to fork yet: this session has no saved conversation. Send it a prompt first.')
       }
       if (!transcriptExists(parent.claudeSessionId)) {
         throw new Error('Nothing to fork yet: this session has no saved conversation. Send it a prompt first.')
       }
       validateCwd(parent.cwd)
-      const name = `${parent.name} (fork)`
       const session = store.createSession({
         cwd: parent.cwd,
-        name: name.length <= MAX_FORK_NAME ? name : `${parent.name.slice(0, MAX_FORK_NAME - 7)} (fork)`,
+        name: forkName(parent.name),
         groupId: parent.groupId,
         statusId: null,
         claudeArgs: [...parent.claudeArgs],
@@ -714,6 +874,32 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         throw error
       }
       return findSession(session.id) ?? session
+    },
+
+    setOpencodeModel(id: Id, model: string | undefined): OpencodeModelResult {
+      const session = findSession(id)
+      if (!session) throw new Error(`Unknown session: ${id}`)
+      if (session.agent === 'shell') throw new Error(`"${session.name}" is a shell session: it has no model.`)
+      if ((session.agent ?? 'claude') === 'claude') {
+        throw new Error(`"${session.name}" is a Claude session: its model is a launch setting (Settings > Agents), not a per-session one.`)
+      }
+      const trimmed = model === undefined ? undefined : model.trim()
+      const next = trimmed === undefined || trimmed.length === 0 ? undefined : trimmed
+      if (next !== undefined) {
+        const problem = sessionModelProblem(next)
+        if (problem !== null) throw new Error(problem)
+      }
+      // The same model again: nothing to store and no reason to drop a running conversation.
+      if (session.model === next) return 'next-start'
+      store.setSessionModel(id, next)
+
+      const state = runtime.get(id)
+      const running = pty.isRunning(id) && state?.run === 'running' && state.sleeping !== true
+      // Without a conversation id a restart would open a FRESH conversation, so a live one is left alone: it keeps
+      // running the old model and the new one applies to its next start.
+      if (!running || isClosed(id) || session.opencodeSessionId === undefined) return 'next-start'
+      sleepNow(id)
+      return wakeNow(id) ? 'restarted' : 'restart-failed'
     },
 
     removeSession(id: Id): void {
@@ -822,36 +1008,11 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     },
 
     sleepSession(id: Id): void {
-      const session = findSession(id)
-      if (!session) return
-      if (isClosed(id)) return
-      const state = runtime.get(id)
-      if (!state || state.run !== 'running' || state.sleeping) return
-
-      // The kill is intentional: drop the start state so the next activation auto-resumes with --resume, and mark
-      // the runtime asleep BEFORE killing so the pty exit handler ignores the exit instead of treating it as a crash.
-      startState.delete(id)
-      clearOpencodeHealth(id)
-      // Sleep keeps the bell (reason and time) so the user sees what finished or needs them on return.
-      attention.suspend(id)
-      runtime.markSleeping(id)
-      if (pty.isRunning(id)) {
-        pty.kill(id)
-      }
+      sleepNow(id)
     },
 
     wakeSession(id: Id): boolean {
-      const session = findSession(id)
-      if (!session || isClosed(id)) return false
-      if (runtime.get(id)?.sleeping !== true) return false
-      try {
-        // Same path as activation, but the active session is left alone.
-        tryAutoStartSession(id)
-      } catch (error) {
-        logMainError(userDataDir, `wake session ${id}`, error)
-        return false
-      }
-      return true
+      return wakeNow(id)
     },
 
     resumeInBackground(id: Id): boolean {

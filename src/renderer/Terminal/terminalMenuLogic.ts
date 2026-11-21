@@ -11,8 +11,12 @@ export function menuRows(
   return {
     split: canSplit,
     closePane: splitPaneIds.length > 1 && splitPaneIds.includes(id),
-    fork: session !== undefined && (session.agent ?? 'claude') === 'claude' && session.role !== 'jarvis' &&
-      typeof session.claudeSessionId === 'string' && session.claudeSessionId.length > 0
+    // D52: a Claude session forks its saved conversation. D79: an OpenCode one is COPIED through export/import, so it
+    // needs its conversation id too. A shell has neither; Jarvis never forks itself.
+    fork: session !== undefined && session.role !== 'jarvis' && (session.agent ?? 'claude') !== 'shell' &&
+      ((session.agent ?? 'claude') === 'claude'
+        ? typeof session.claudeSessionId === 'string' && session.claudeSessionId.length > 0
+        : typeof session.opencodeSessionId === 'string' && session.opencodeSessionId.length > 0)
   }
 }
 

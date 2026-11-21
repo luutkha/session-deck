@@ -4,10 +4,10 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile, stat, truncate, writeFile } from 'node:fs/promises'
 import { ipcMain } from 'electron'
-import type { HookEvent, JarvisConfirmRequest, JarvisSchedule, JarvisUiAction, JarvisUiCommand, JarvisVoiceResult, Session, UiMode } from '../../shared/types'
+import type { HookEvent, JarvisConfirmRequest, JarvisSchedule, JarvisSettings, JarvisUiAction, JarvisUiCommand, JarvisVoiceResult, Session, UiMode } from '../../shared/types'
 import { IPC } from '../../shared/ipc'
 import { assertBoolean, assertNonEmptyString } from '../app/ipcValidation'
-import type { SessionController } from '../app/sessionController'
+import { sessionModelProblem, type SessionController } from '../app/sessionController'
 import type { SessionStore } from '../store'
 import { createMcpHttpServer } from './mcpHttpServer'
 import type { McpTool } from './mcpProtocol'
@@ -53,6 +53,27 @@ export interface JarvisWiring {
   onHookEvent(event: HookEvent): void
   registerIpc(): void
   stop(): Promise<void>
+}
+
+/** D54/D79: what a Settings change to Jarvis's engine or OpenCode model needs the next time Jarvis opens. */
+export type JarvisSwitchPlan =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'model'; readonly model: string | undefined }
+  | { readonly kind: 'recreate' }
+
+/**
+ * D54: another engine cannot continue this conversation, so Jarvis is recreated. D79: an OpenCode model change on an
+ * OpenCode Jarvis KEEPS the conversation (the controller restarts it on the new model and resumes with `-s`); the
+ * Claude model is a launch argument and needs nothing here. A model id the per-session rule refuses still switches
+ * (as a new conversation), so a value already stored in Settings can never stop Jarvis from opening.
+ */
+export function jarvisSwitchPlan(current: Session | undefined, settings: JarvisSettings): JarvisSwitchPlan {
+  if (current === undefined) return { kind: 'none' }
+  if ((current.agent ?? 'claude') !== settings.agent) return { kind: 'recreate' }
+  if (settings.agent !== 'opencode' || (current.model ?? '') === settings.opencodeModel) return { kind: 'none' }
+  const model = settings.opencodeModel.trim()
+  if (model.length > 0 && sessionModelProblem(model) !== null) return { kind: 'recreate' }
+  return { kind: 'model', model: model.length > 0 ? model : undefined }
 }
 
 export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
@@ -181,9 +202,8 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
         serial(async (): Promise<unknown> => {
           const current = findJarvis()
           if (fresh || current === undefined) return resetJarvis()
-          const settings = deps.store.getSettings().jarvis
-          const engineChanged = (current.agent ?? 'claude') !== settings.agent || (settings.agent === 'opencode' && (current.model ?? '') !== settings.opencodeModel)
-          if (engineChanged) return openJarvis()
+          // D79: an OpenCode model change keeps the conversation, so it goes through openJarvis like a new engine.
+          if (jarvisSwitchPlan(current, deps.store.getSettings().jarvis).kind !== 'none') return openJarvis()
           return deps.controller.restartSession(current.id)
         }).catch((error: unknown) => deps.onError('restart_jarvis', error))
       }, RESTART_DELAY_MS)
@@ -210,9 +230,13 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     const settings = deps.store.getSettings().jarvis
     const wantModel = settings.agent === 'opencode' ? settings.opencodeModel : ''
     const current = findJarvis()
-    // D54: the engine (or OpenCode model) changed in Settings: the old conversation cannot move, start a new Jarvis.
-    if (current !== undefined && ((current.agent ?? 'claude') !== settings.agent || (settings.agent === 'opencode' && (current.model ?? '') !== wantModel))) {
+    // D54/D79: the engine (or an invalid OpenCode model) changed: the old conversation cannot move, start a new
+    // Jarvis. A valid OpenCode model change keeps the conversation (D79): the same session continues on the new model.
+    const plan = jarvisSwitchPlan(current, settings)
+    if (current !== undefined && plan.kind === 'recreate') {
       deps.controller.removeSession(current.id)
+    } else if (current !== undefined && plan.kind === 'model') {
+      deps.controller.setOpencodeModel(current.id, plan.model)
     }
     const existing = findJarvis()
     if (existing !== undefined) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Id, AttentionReason, CreateSessionInput, RuntimeState, Session, StoreData } from '../../shared/types'
@@ -188,7 +188,8 @@ function setup(sessions: Session[] = [], options: SetupOptions = {}) {
   // v2.x is the normal case here (--standalone present); the probe itself would spawn the real opencode CLI.
   setOpencodeSupportsStandaloneForTests(true)
   const saver = vi.fn()
-  const store = new SessionStore(makeStoreData(sessions), { schedule: saver }, { newId: () => 'new-id', now: () => 10 })
+  let nextId = 0
+  const store = new SessionStore(makeStoreData(sessions), { schedule: saver }, { newId: () => `new-id-${++nextId}`, now: () => 10 })
   const pty = createMockPty()
   const runtime = createRuntimeRegistry()
   const notice = vi.fn()
@@ -351,7 +352,7 @@ describe('opencode sessions: session-id recovery (D79)', () => {
     const cwd = tempDir()
     let output = '[]'
     const run = vi.fn(async (args: string[]) => {
-      expect(args).toEqual(['session', 'list', '--format', 'json'])
+      expect(args).toEqual(['session', 'list', '--format', 'json', '--max-count', '300'])
       return output
     })
     const { controller, store } = setup([], { runOpencode: run })
@@ -492,5 +493,212 @@ describe('opencode sessions: usage-limit scan (D79)', () => {
 
     pty.fireData(created.id, `Free usage limit reached\n${'plain output line\n'.repeat(30)}`)
     expect(onUsageLimit).not.toHaveBeenCalled()
+  })
+})
+
+describe('opencode sessions: session-id recovery runs in the session folder (D79)', () => {
+  it('passes the session cwd to the listing, so another project cannot hide the conversation', async () => {
+    const cwd = tempDir()
+    const run = vi.fn(async (_args: string[], _cwd?: string): Promise<string> => listRow(OC_ID, cwd, Date.now()))
+    const { controller } = setup([], { runOpencode: run })
+    const created = controller.createSession({ cwd, agent: 'opencode' })
+
+    controller.sleepSession(created.id)
+    controller.setActiveSession(created.id)
+
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+    expect(run.mock.calls[0][1]).toBe(cwd)
+  })
+})
+
+describe('opencode sessions: setOpencodeModel (D79)', () => {
+  const NEW_MODEL = 'opencode/deepseek-v4.1-flash-free'
+
+  it('restarts a running conversation on the new model and resumes it with -s', () => {
+    const { controller, store, pty, stateOf } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'opencode', model: 'p/old' })
+    controller.handleHookEvent({ sessionId: created.id, event: 'AgentSession', message: OC_ID })
+
+    expect(controller.setOpencodeModel(created.id, NEW_MODEL)).toBe('restarted')
+
+    const stored = store.get().sessions.find((s) => s.id === created.id)!
+    expect(stored.model).toBe(NEW_MODEL)
+    const opts = pty.getLastStartOpts(created.id)!
+    expect(opts.internalArgs).toEqual(['--standalone', '-s', OC_ID])
+    expect(JSON.parse(opts.env.OPENCODE_CONFIG_CONTENT).model).toBe(NEW_MODEL)
+    expect(stateOf(created.id)?.sleeping).not.toBe(true)
+    expect(stateOf(created.id)?.run).toBe('running')
+  })
+
+  it('only stores the model for a session with no conversation id (a restart would lose the conversation)', () => {
+    const { controller, store, pty, stateOf } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'opencode', model: 'p/old' })
+    const before = pty.getLastStartOpts(created.id)
+
+    expect(controller.setOpencodeModel(created.id, NEW_MODEL)).toBe('next-start')
+
+    expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBe(NEW_MODEL)
+    expect(pty.getLastStartOpts(created.id)).toBe(before)
+    expect(stateOf(created.id)?.sleeping).not.toBe(true)
+  })
+
+  it('only stores the model for a sleeping session, which starts on it when woken', () => {
+    const { controller, store, pty } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'opencode', model: 'p/old' })
+    controller.handleHookEvent({ sessionId: created.id, event: 'AgentSession', message: OC_ID })
+    controller.sleepSession(created.id)
+
+    expect(controller.setOpencodeModel(created.id, NEW_MODEL)).toBe('next-start')
+    expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBe(NEW_MODEL)
+
+    controller.setActiveSession(created.id)
+    const opts = pty.getLastStartOpts(created.id)!
+    expect(opts.internalArgs).toEqual(['--standalone', '-s', OC_ID])
+    expect(JSON.parse(opts.env.OPENCODE_CONFIG_CONTENT).model).toBe(NEW_MODEL)
+  })
+
+  it('only stores the model for a stopped or closed session', () => {
+    const { controller, store, pty } = setup()
+    const stopped = controller.createSession({ cwd: tempDir(), agent: 'opencode', model: 'p/old' })
+    pty.fireExit(stopped.id, 0)
+    expect(controller.setOpencodeModel(stopped.id, NEW_MODEL)).toBe('next-start')
+
+    const closed = controller.createSession({ cwd: tempDir(), agent: 'opencode', model: 'p/old' })
+    controller.closeSession(closed.id)
+    expect(controller.setOpencodeModel(closed.id, NEW_MODEL)).toBe('next-start')
+
+    expect(store.get().sessions.find((s) => s.id === closed.id)!.model).toBe(NEW_MODEL)
+  })
+
+  it('clears the model with undefined (OpenCode default) and does not restart for the same value', () => {
+    const { controller, store, pty } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'opencode', model: 'p/old' })
+    controller.handleHookEvent({ sessionId: created.id, event: 'AgentSession', message: OC_ID })
+
+    const before = pty.getLastStartOpts(created.id)
+    expect(controller.setOpencodeModel(created.id, 'p/old')).toBe('next-start')
+    expect(pty.getLastStartOpts(created.id)).toBe(before)
+
+    expect(controller.setOpencodeModel(created.id, undefined)).toBe('restarted')
+    expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBeUndefined()
+    expect('model' in JSON.parse(pty.getLastStartOpts(created.id)!.env.OPENCODE_CONFIG_CONTENT)).toBe(false)
+  })
+
+  it('refuses Claude and shell sessions and validates the model id', () => {
+    const { controller, store } = setup()
+    const claude = controller.createSession({ cwd: tempDir() })
+    const shell = controller.createSession({ cwd: tempDir(), agent: 'shell' })
+    const opencode = controller.createSession({ cwd: tempDir(), agent: 'opencode' })
+
+    expect(() => controller.setOpencodeModel(claude.id, NEW_MODEL)).toThrow('is a Claude session')
+    expect(() => controller.setOpencodeModel(shell.id, NEW_MODEL)).toThrow('shell session')
+    expect(() => controller.setOpencodeModel('nope', NEW_MODEL)).toThrow('Unknown session')
+    expect(() => controller.setOpencodeModel(opencode.id, '-rf')).toThrow('looks like a command flag')
+    expect(() => controller.setOpencodeModel(opencode.id, 'provider model')).toThrow('is not a model id')
+    expect(() => controller.setOpencodeModel(opencode.id, `p/${'x'.repeat(99)}`)).toThrow('too long')
+    expect(() => controller.setOpencodeModel(opencode.id, 'p/m@latest')).toThrow('is not a model id')
+    expect(store.get().sessions.find((s) => s.id === opencode.id)!.model).toBeUndefined()
+  })
+})
+
+describe('opencode sessions: copy fork (D79)', () => {
+  const COPY_ID = 'ses_copy12345678'
+  const EXPORT = JSON.stringify({ info: { id: OC_ID }, messages: [{ id: 'msg_1', type: 'user', text: 'hello' }] })
+
+  /** A fake CLI: export prints EXPORT, import answers with `importOutput`, and the list shows the copy once imported. */
+  function cli(options: { importOutput?: string; listCopyAfterImport?: boolean; importError?: string } = {}) {
+    let imported = false
+    return vi.fn(async (args: string[], _cwd?: string): Promise<string> => {
+      if (args[1] === 'export') return EXPORT
+      if (args[1] === 'import') {
+        if (options.importError !== undefined) throw new Error(options.importError)
+        imported = options.listCopyAfterImport !== false
+        return options.importOutput ?? ''
+      }
+      return imported ? JSON.stringify([{ id: COPY_ID, directory: 'C:\\copied', created: 1, updated: 1 }]) : '[]'
+    })
+  }
+
+  it('exports, imports and creates a session on the new conversation (a copy, not a true fork)', async () => {
+    const cwd = tempDir()
+    const run = cli({ importOutput: `Imported session ${COPY_ID}` })
+    const { controller, store, pty, notice } = setup([], { runOpencode: run })
+    const parent = controller.createSession({ cwd, agent: 'opencode', model: 'p/m' })
+    controller.handleHookEvent({ sessionId: parent.id, event: 'AgentSession', message: OC_ID })
+
+    const fork = await controller.forkSession(parent.id)
+
+    expect(fork.name).toBe(`${parent.name} (fork)`)
+    expect(fork.cwd).toBe(cwd)
+    expect(fork.agent).toBe('opencode')
+    expect(fork.model).toBe('p/m')
+    expect(fork.opencodeSessionId).toBe(COPY_ID)
+    expect(store.get().sessions).toHaveLength(2)
+    const opts = pty.getLastStartOpts(fork.id)!
+    expect(opts.internalArgs).toEqual(['--standalone', '-s', COPY_ID])
+    expect(JSON.parse(opts.env.OPENCODE_CONFIG_CONTENT).model).toBe('p/m')
+    expect(store.get().sessions.find((s) => s.id === parent.id)!.opencodeSessionId).toBe(OC_ID)
+    expect(String(notice.mock.calls[0][0])).toContain('not a true fork')
+  })
+
+  it('finds the new id in the before/after list when import prints none, and deletes the temp file', async () => {
+    const cwd = tempDir()
+    const files: string[] = []
+    const run = cli({ listCopyAfterImport: true })
+    const { controller } = setup([], { runOpencode: run })
+    const parent = controller.createSession({ cwd, agent: 'opencode' })
+    controller.handleHookEvent({ sessionId: parent.id, event: 'AgentSession', message: OC_ID })
+    run.mockImplementation(async (args: string[], _cwd?: string): Promise<string> => {
+      if (args[1] === 'export') return EXPORT
+      if (args[1] === 'import') {
+        files.push(args[2])
+        return ''
+      }
+      return files.length > 0 ? JSON.stringify([{ id: COPY_ID, directory: cwd, created: 1, updated: 1 }]) : '[]'
+    })
+
+    const fork = await controller.forkSession(parent.id)
+
+    expect(fork.opencodeSessionId).toBe(COPY_ID)
+    expect(files).toHaveLength(1)
+    expect(existsSync(files[0])).toBe(false)
+    // Import runs in the session's folder, and both listings (before and after) do too.
+    const importCall = run.mock.calls.find((call) => call[0][1] === 'import')
+    expect(importCall?.[1]).toBe(cwd)
+    const listCwds = run.mock.calls.filter((call) => call[0][1] === 'list').map((call) => call[1])
+    expect(listCwds).toEqual([cwd, cwd])
+  })
+
+  it('leaves no session behind when the import fails', async () => {
+    const cwd = tempDir()
+    const { controller, store } = setup([], { runOpencode: cli({ importError: 'boom' }) })
+    const parent = controller.createSession({ cwd, agent: 'opencode' })
+    controller.handleHookEvent({ sessionId: parent.id, event: 'AgentSession', message: OC_ID })
+
+    await expect(controller.forkSession(parent.id)).rejects.toThrow('Could not copy the OpenCode conversation: boom')
+    expect(store.get().sessions).toHaveLength(1)
+  })
+
+  it('refuses (and adds nothing) when import neither prints the id nor adds a row', async () => {
+    const cwd = tempDir()
+    const { controller, store } = setup([], { runOpencode: cli({ listCopyAfterImport: false }) })
+    const parent = controller.createSession({ cwd, agent: 'opencode' })
+    controller.handleHookEvent({ sessionId: parent.id, event: 'AgentSession', message: OC_ID })
+
+    await expect(controller.forkSession(parent.id)).rejects.toThrow('did not say which new session')
+    expect(store.get().sessions).toHaveLength(1)
+  })
+
+  it('refuses an OpenCode session with no saved conversation and an export that is not JSON', async () => {
+    const cwd = tempDir()
+    const noId = setup([], { runOpencode: cli() })
+    const parent = noId.controller.createSession({ cwd, agent: 'opencode' })
+    await expect(noId.controller.forkSession(parent.id)).rejects.toThrow('Nothing to fork yet')
+
+    const badExport = setup([], { runOpencode: async (): Promise<string> => 'Session not found: ses_x12345678' })
+    const withId = badExport.controller.createSession({ cwd, agent: 'opencode' })
+    badExport.controller.handleHookEvent({ sessionId: withId.id, event: 'AgentSession', message: OC_ID })
+    await expect(badExport.controller.forkSession(withId.id)).rejects.toThrow('did not print session JSON')
+    expect(badExport.store.get().sessions).toHaveLength(1)
   })
 })
