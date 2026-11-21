@@ -17,6 +17,7 @@ import { createSoundRelay } from './app/soundRelay'
 import { createUsageService, createUsageRefresher, readClaudeAccessToken, fetchOAuthUsage } from './usage'
 import { registerIpcHandlers } from './app/ipcHandlers'
 import { createMainWindow, focusSessionInWindow, showMainWindow } from './app/window'
+import { createViewerWindowSet } from './app/viewerWindows'
 import { createWindowRegistry } from './app/windowRegistry'
 import { createActiveSessions } from './app/activeSessions'
 import { createCodeWiring } from './app/codeWiring'
@@ -231,6 +232,7 @@ if (!gotTheLock) {
     const activeSessions = createActiveSessions()
 
     // Code mode (D31): the main window, plus the Code window while it is popped out. Events go to both.
+    const viewerWindows = createViewerWindowSet()
     const windows = createWindowRegistry<BrowserWindow>({
       createWindow: (role) => createMainWindow({
         preloadPath: path.join(__dirname, '../preload/index.mjs'),
@@ -764,7 +766,7 @@ if (!gotTheLock) {
       popOutCode: () => { windows.popOutCode() },
       dockCode: () => windows.dockCode(),
       openFileViewer: (request) => {
-        createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, viewer: request })
+        viewerWindows.request(() => createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, viewer: request }).window)
       },
       userDataDir: userData,
       loginItem: createLoginItem(app),
