@@ -54,6 +54,7 @@
     "e2e:fileview-types": "node scripts/e2e-fileview-types.cjs",
     "e2e:fileview-spaces": "node scripts/e2e-fileview-spaces.cjs",
     "e2e:fileview-bigpdf": "node scripts/e2e-fileview-bigpdf.cjs",
+    "e2e:fileview-menu": "node scripts/e2e-fileview-menu.cjs",
     "e2e:annotate": "node scripts/e2e-annotate.cjs",
     "e2e:preview": "node scripts/e2e-preview.cjs",
     "e2e:grid": "node scripts/e2e-grid.cjs",

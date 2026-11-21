@@ -13,7 +13,7 @@ import type { PtyReplay } from '../../shared/ipc'
 import { HiddenQueue } from './hiddenQueue'
 import { SeqGate } from './seqGate'
 import type { TermView } from './termView'
-import type { ZoomAction } from './paneFactory'
+import type { ContextMenuPoint, ZoomAction } from './paneFactory'
 import {
   applyReducedEffects,
   attachRenderer,
@@ -183,8 +183,8 @@ export interface TerminalPanesOptions {
   readonly onZoom?: (action: ZoomAction) => void
   /** Ctrl+Shift+F inside a pane: the owner opens its search bar for the active pane (W3). */
   readonly onSearch?: () => void
-  /** A right-click in a pane (D59): the owner opens the terminal menu for that pane at the point. */
-  readonly onContextMenu?: (id: Id, point: { readonly x: number; readonly y: number }) => void
+  /** A right-click in a pane (D59): the owner opens the terminal menu for that pane at the point (with the link, D76). */
+  readonly onContextMenu?: (id: Id, point: ContextMenuPoint) => void
 }
 
 /**

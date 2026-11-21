@@ -6,6 +6,7 @@ import { chooseLinks, collectResolveTexts } from './linkChoice'
 import { createLinkCache, type LinkCache } from './linkCache'
 import { decideLinkClick } from './linkClick'
 import { detectSpacedPathGroups, hasSpacedPathHint, type SpacedGroup } from './spacedPaths'
+import { clearHoveredLink, setHoveredLink, type HoveredLink } from './hoveredLink'
 
 interface Segment {
   /** 1-based buffer row this physical line maps to. */
@@ -71,6 +72,7 @@ function toRange(candidate: LinkCandidate, lines: readonly Segment[]): IBufferRa
 }
 
 function buildLinks(
+  term: Terminal,
   candidates: readonly LinkCandidate[],
   lines: readonly Segment[],
   cache: LinkCache,
@@ -82,10 +84,15 @@ function buildLinks(
     if (link === undefined || link === null) continue
     const range = toRange(candidate, lines)
     if (range === null) continue
+    // D76: the right-click menu acts on the link under the pointer, so the provider records it (and clears it on
+    // leave) while xterm tracks the hover. `text` stays exactly as shown; main re-resolves it on every action.
+    const hoveredLink: HoveredLink = { sessionId, text: candidate.text, link }
     links.push({
       range,
       text: candidate.text,
       decorations: { underline: true, pointerCursor: true },
+      hover: (): void => setHoveredLink(term, hoveredLink),
+      leave: (): void => clearHoveredLink(term, hoveredLink),
       activate: (event: MouseEvent, text: string): void => {
         const action = decideLinkClick(link, event)
         // D73: the viewer lives in the side panel of this window; with no listener (no workspace) keep
@@ -134,7 +141,7 @@ export function registerLinkProvider(term: Terminal, sessionId: Id): IDisposable
     }
     const finish = (): void => {
       const chosen = chooseLinks(plain, groups, (text) => cache.get(text))
-      const links = buildLinks(chosen, lines, cache, sessionId)
+      const links = buildLinks(term, chosen, lines, cache, sessionId)
       callback(links.length > 0 ? links : undefined)
     }
     if (uncached.length === 0) {

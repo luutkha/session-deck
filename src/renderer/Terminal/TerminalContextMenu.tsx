@@ -1,16 +1,25 @@
 // The terminal right-click menu (D59), adapted from stablyai/orca (MIT, (c) 2026 Lovecast Inc.): a Radix dropdown
 // anchored at the click point. The workspace decides which rows apply (split, close pane, fork) and does the work.
 import { useRef, type ReactElement } from 'react'
-import { Clipboard, Copy, Eraser, FolderOpen, GitFork, PanelBottomClose, PanelRightClose, RotateCcw, Search, TextSelect, X } from 'lucide-react'
+import { Clipboard, Copy, Eraser, ExternalLink, FolderOpen, GitFork, PanelBottomClose, PanelRightClose, PanelRightOpen, RotateCcw, Search, TextSelect, X } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import type { HoveredLink } from './links/hoveredLink'
 import { isOpeningGesture } from './terminalMenuLogic'
+
+/** One row of the link section (D76); the workspace builds it from `linkMenuRows` plus its action. */
+export interface TerminalContextLinkRow {
+  readonly id: string
+  readonly label: string
+  readonly onSelect: () => void
+}
 
 /** Where and for which pane the menu is open. */
 export interface TerminalMenuTarget {
@@ -21,11 +30,17 @@ export interface TerminalMenuTarget {
   readonly hasSelection: boolean
   /** Date.now() when it opened: the opening click must not close it again. */
   readonly openedAt: number
+  /** D76: the link under the pointer when the menu opened; absent = the menu is the plain D59 one. */
+  readonly link?: HoveredLink
 }
 
 export interface TerminalContextMenuProps {
   readonly target: TerminalMenuTarget | null
   readonly onClose: () => void
+  /** D76: rows acting on the link under the pointer, rendered above the separator before the usual rows. */
+  readonly linkRows?: readonly TerminalContextLinkRow[]
+  /** D76: what the link rows act on (file/folder name or URL host), shown as a muted one-line header. */
+  readonly linkHeading?: string
   readonly onCopy: () => void
   readonly onPaste: () => void
   readonly onSelectAll: () => void
@@ -41,6 +56,24 @@ export interface TerminalContextMenuProps {
   readonly onClosePane?: () => void
   /** Absent = not a Claude session with a saved conversation. */
   readonly onFork?: () => void
+}
+
+/** The icon of a link row: the row id is the contract with `linkMenuRows` (D76). */
+function linkRowIcon(id: string): ReactElement {
+  switch (id) {
+    case 'preview':
+      return <PanelRightOpen />
+    case 'reveal':
+      return <FolderOpen />
+    case 'copyPath':
+    case 'copyUrl':
+      return <Copy />
+    case 'open':
+    case 'openFolder':
+    case 'openUrl':
+    default:
+      return <ExternalLink />
+  }
 }
 
 export function TerminalContextMenu(props: TerminalContextMenuProps): ReactElement | null {
@@ -80,6 +113,31 @@ export function TerminalContextMenu(props: TerminalContextMenuProps): ReactEleme
           if (isOpeningGesture(openedAt.current, Date.now())) event.preventDefault()
         }}
       >
+        {props.linkRows !== undefined && props.linkRows.length > 0 ? (
+          <>
+            {props.linkHeading !== undefined ? (
+              <DropdownMenuLabel
+                data-testid="terminal-link-menu-heading"
+                className="max-w-64 truncate"
+                title={props.linkHeading}
+              >
+                {props.linkHeading}
+              </DropdownMenuLabel>
+            ) : null}
+            {props.linkRows.map((row: TerminalContextLinkRow): ReactElement => (
+              <DropdownMenuItem
+                key={row.id}
+                data-link-menu-row={row.id}
+                className="whitespace-nowrap"
+                onSelect={row.onSelect}
+              >
+                {linkRowIcon(row.id)}
+                {row.label}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem disabled={!target.hasSelection} onSelect={props.onCopy}>
           <Copy />
           Copy

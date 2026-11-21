@@ -9,6 +9,7 @@ import { terminalOptionsFor } from './terminalOptions'
 import { DEFAULT_TERM_VIEW, fontSizeFor, type TermView } from './termView'
 import type { RendererKind } from './terminalRenderer'
 import { registerLinkProvider } from './links/linkProvider'
+import { getHoveredLink, type HoveredLink } from './links/hoveredLink'
 import { attachFileDrop, clipboardHasImageOnly, pasteImageKeysFor } from './inputExtras'
 import { readRightClickMode } from './rightClickPref'
 import {
@@ -20,6 +21,14 @@ import {
 
 /** What a pane asks the workspace to do on Ctrl+= / Ctrl+- / Ctrl+0 or Ctrl+wheel (terminal comfort). */
 export type ZoomAction = 'in' | 'out' | 'reset'
+
+/** Where a right-click asked for the menu, plus (D76) the link under the pointer at that moment. */
+export interface ContextMenuPoint {
+  readonly x: number
+  readonly y: number
+  /** Absent = the pointer was not over a detected link, so the menu gets no link rows. */
+  readonly link?: HoveredLink
+}
 
 /**
  * One terminal pane's xterm view: the Terminal itself, its fit addon and the GPU
@@ -45,7 +54,7 @@ export interface TerminalView {
   /** Set by the workspace so Ctrl+Shift+F can open the search bar; absent = swallowed but no bar. */
   onSearch: (() => void) | null
   /** Set by the workspace (D59): a right-click asks it to open the terminal menu at this point (window coordinates). */
-  onContextMenu: ((point: { readonly x: number; readonly y: number }) => void) | null
+  onContextMenu: ((point: ContextMenuPoint) => void) | null
   /** The container the terminal was opened into (for live refits); set by openTerminalView. */
   openedElement: HTMLElement | null
 }
@@ -159,7 +168,7 @@ export function buildTerminalView(
     readonly termView?: TermView
     readonly onZoom?: (action: ZoomAction) => void
     readonly onSearch?: () => void
-    readonly onContextMenu?: (point: { readonly x: number; readonly y: number }) => void
+    readonly onContextMenu?: (point: ContextMenuPoint) => void
   } = {}
 ): TerminalView {
   const term = new Terminal(terminalOptionsFor(options.termView ?? DEFAULT_TERM_VIEW))
@@ -315,7 +324,11 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
     event.preventDefault()
     const action = decideRightClick(readRightClickMode(), event.ctrlKey, view.term.hasSelection())
     if (action === 'menu' && view.onContextMenu !== null) {
-      view.onContextMenu({ x: event.clientX, y: event.clientY })
+      // D76: read the hover record at click time (a left link has already cleared it, so no stale rows).
+      const link = getHoveredLink(view.term)
+      view.onContextMenu(link === null
+        ? { x: event.clientX, y: event.clientY }
+        : { x: event.clientX, y: event.clientY, link })
     } else if (action === 'copy') {
       void copySelectionToClipboard(view.term)
     } else if (action === 'paste' || !view.term.hasSelection()) {
