@@ -147,7 +147,10 @@ async function main() {
     await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: hp.x - 120, y: hp.y, button: 'left', buttons: 0, clickCount: 1 })
     await sleep(500)
     const after = await widthOf()
-    t.check('dragging the left edge makes the panel wider', after - before > 90 && after - before < 150, `${before} -> ${after}`)
+    // The panel may grow by the drag, but never past the room that leaves the terminal its minimum (window - sidebar - 420).
+    const room = await app.evaluate(`window.innerWidth - (document.querySelector('[class*="border-r"]')?.getBoundingClientRect().width ?? 0) - 420`)
+    const expectedWidth = Math.min(before + 120, room)
+    t.check('dragging the left edge widens the panel by the drag, held to the room the terminal keeps', after - before > 25 && Math.abs(after - expectedWidth) <= 3, `${before} -> ${after} (room ${room})`)
     const stored = await app.evaluate(`window.localStorage.getItem('sessiondeck.sidePanelWidth.v1')`)
     t.check('the new width is saved', Number(stored) === Math.round(after), String(stored))
 

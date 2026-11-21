@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { FileViewSheet } from '../../shared/types'
 import { Button } from '../components/ui/button'
-import { findTableMatches } from './fileViewFind'
+import { findTableMatches, isBlankQuery } from './fileViewFind'
 import { BodyCell } from './tableCells'
 import { TableHeaderRow } from './TableHeaderRow'
 import { TablePager } from './TablePager'
@@ -98,7 +98,7 @@ export function FileTable(props: FileTableProps): ReactElement {
   }, [activeMatch, headerRow])
 
   useEffect((): void => {
-    if (query === '') return
+    if (isBlankQuery(query)) return
     scrollRef.current
       ?.querySelector<HTMLElement>('[data-find-current]')
       ?.scrollIntoView({ block: 'center', inline: 'nearest' })

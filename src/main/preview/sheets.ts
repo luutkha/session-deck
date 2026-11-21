@@ -20,6 +20,8 @@ export function cellToText(value: unknown): string {
   if (value instanceof Date) {
     const iso = value.toISOString()
     const time = iso.slice(11, 19)
+    // A time-only cell (serial 0.5 with a time format) arrives as Excel's day zero: show the time, not a made-up 1899 date.
+    if (iso.startsWith('1899-12-3')) return time
     // Excel dates are day values; a real time is only shown when the cell carries one.
     return time === '00:00:00' ? iso.slice(0, 10) : `${iso.slice(0, 10)} ${time}`
   }

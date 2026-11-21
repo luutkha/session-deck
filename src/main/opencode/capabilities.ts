@@ -109,32 +109,40 @@ export function warmOpencodeProbe(): void {
   void probeOpencode().catch((): void => undefined)
 }
 
-/** Synchronous probe kept for a session launched before the async warm-up finished (D72 behaviour). */
-function detectSupportsStandaloneSync(): boolean {
+/** The synchronous probe blocks the MAIN thread, so it gets a much shorter leash than the async one (review fix). */
+const SYNC_PROBE_TIMEOUT_MS = 3000
+
+/**
+ * Synchronous probe kept for a session launched before the async warm-up finished (D72 behaviour). Returns null when the
+ * probe could not give an answer (it timed out, the CLI is missing, empty output): the caller uses the D72 default for that
+ * launch but does NOT store it, so one failed probe cannot fix a wrong answer for the whole run.
+ */
+function detectSupportsStandaloneSync(): boolean | null {
   try {
     const shell = process.platform === 'win32'
     const result = shell
-      ? spawnSync('opencode --help', { shell: true, timeout: PROBE_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' })
-      : spawnSync('opencode', ['--help'], { timeout: PROBE_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' })
-    if (result.error !== undefined) return true
+      ? spawnSync('opencode --help', { shell: true, timeout: SYNC_PROBE_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' })
+      : spawnSync('opencode', ['--help'], { timeout: SYNC_PROBE_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' })
+    if (result.error !== undefined) return null
     const helpText = `${result.stdout ?? ''}${result.stderr ?? ''}`
-    if (helpText.trim().length === 0) return true
+    if (helpText.trim().length === 0) return null
     return parseSupportsStandalone(helpText)
   } catch {
-    return true
+    return null
   }
 }
 
 /**
  * Whether the installed `opencode` accepts `--standalone`. A finished probe or a test override answers from the
- * cache; otherwise (nothing probed yet) the old synchronous probe runs once and is stored (D72/D74).
+ * cache; otherwise (nothing probed yet) the synchronous probe runs; only a REAL answer is stored (D72/D74).
  */
 export function opencodeSupportsStandalone(): boolean {
   if (supportsStandaloneOverride !== undefined) return supportsStandaloneOverride
   if (cached.checkedAt > 0) return cached.supportsStandalone
-  const supportsStandalone = detectSupportsStandaloneSync()
-  cached = { ...cached, supportsStandalone, checkedAt: Date.now() }
-  return supportsStandalone
+  const answer = detectSupportsStandaloneSync()
+  if (answer === null) return true
+  cached = { ...cached, supportsStandalone: answer, checkedAt: Date.now() }
+  return answer
 }
 
 /** Clears the cache, the in-flight probe and the test seams (tests only). */

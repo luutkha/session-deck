@@ -2,6 +2,7 @@
 // resolved by the caller (a terminal link); the renderer never touches the disk. Every read is size-capped and
 // errors come back as { ok: false }, never as a throw. D74: the view carries the file's mtime so the open preview
 // can notice that the file changed on disk, and `statFileView` offers the same look without reading the bytes.
+import { checkZip } from './zipGuard'
 import { open, stat } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { basename, isAbsolute } from 'node:path'
@@ -19,10 +20,9 @@ import {
   type FileViewStat
 } from '../../shared/types'
 import { detectDelimiter, parseCsv } from './csv'
-import { readDocxHtml } from './docx'
 import { decodeTextBytes } from './encoding'
 import { pdfDeliveryFor } from './pdfDelivery'
-import { readSheets } from './sheets'
+import { OfficeLimitError, runOffice } from './officeRunner'
 
 const IMAGE_MIME: Readonly<Record<string, string>> = {
   png: 'image/png',
@@ -137,12 +137,26 @@ function looksLikeSvg(bytes: Buffer): boolean {
   return head.includes('<svg') || head.includes('<?xml')
 }
 
+/**
+ * The message for a read that threw. A parser's own text can be long and technical ("Can't find end of central directory :
+ * is this a zip file ? If it is, see https://..."): the user gets one plain sentence per kind, plus a short detail without links.
+ */
+export function readErrorMessage(kind: FileViewKind | null, error: unknown): string {
+  const detail = errorMessage(error).replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
+  const suffix = detail === '' ? '' : ` (${detail})`
+  if (kind === 'sheet') return `Could not read this spreadsheet: it is empty, damaged or not a real .xlsx file${suffix}`
+  if (kind === 'docx') return `Could not read this Word document: it is damaged or not a real .docx file${suffix}`
+  return detail === '' ? 'Could not read the file' : `Could not read the file: ${detail}`
+}
+
 /** Reads one local file for the viewer. Never throws: a refusal is { ok: false, error }. */
 export async function readFileView(absPath: string): Promise<FileViewResult> {
+  let kindForError: FileViewKind | null = null
   try {
     const checked = checkPath(absPath)
     if (!checked.ok) return fail(checked.error)
     const kind = checked.kind
+    kindForError = kind
 
     let info: Stats
     try {
@@ -192,7 +206,11 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
     if (kind === 'sheet') {
       const { bytes, truncated } = await readCapped(absPath, size, FILE_VIEW_DOC_MAX_BYTES)
       if (truncated) return fail('File is too large to show')
-      const read = await readSheets(bytes)
+      // D75: a zip bomb (tiny file, gigabytes inflated) must never reach the parser: it runs in the MAIN process.
+      const zip = checkZip(bytes)
+      if (!zip.ok) return fail(zip.error)
+      // Parsed in a worker thread under a memory and time limit (officeRunner.ts): the parser itself cannot be trusted with a hostile file.
+      const read = await runOffice('sheet', bytes)
       const view = baseView(absPath, name, kind, size, mtimeMs, XLSX_MIME)
       return { ok: true, view: { ...view, sheets: read.sheets, truncated: read.truncated } }
     }
@@ -216,11 +234,14 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
 
     const { bytes, truncated } = await readCapped(absPath, size, FILE_VIEW_DOC_MAX_BYTES)
     if (truncated) return fail('File is too large to show')
-    const read = await readDocxHtml(bytes)
+    const zip = checkZip(bytes)
+    if (!zip.ok) return fail(zip.error)
+    const read = await runOffice('docx', bytes)
     const view = baseView(absPath, name, kind, size, mtimeMs, DOCX_MIME)
     return { ok: true, view: { ...view, content: read.html, truncated: read.truncated } }
   } catch (error) {
-    return fail(`Could not read the file: ${errorMessage(error)}`)
+    if (error instanceof OfficeLimitError) return fail(error.message)
+    return fail(readErrorMessage(kindForError, error))
   }
 }
 
@@ -235,10 +256,14 @@ export async function statFileView(absPath: string): Promise<FileViewStat> {
     let info: Stats
     try {
       info = await stat(absPath)
-    } catch {
-      return { ok: false, error: 'File not found or not readable' }
+    } catch (error) {
+      // Only a file that is really GONE (ENOENT/ENOTDIR) is reported as gone. A lock (EBUSY), a permission blip (EPERM) or a
+      // network hiccup is "not readable right now": the live reload must not claim the file no longer exists.
+      const code = (error as NodeJS.ErrnoException | null)?.code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return { ok: false, error: 'File not found', gone: true }
+      return { ok: false, error: 'File is not readable right now' }
     }
-    if (!info.isFile()) return { ok: false, error: 'Not a file' }
+    if (!info.isFile()) return { ok: false, error: 'Not a file', gone: true }
     return { ok: true, mtimeMs: info.mtimeMs, size: info.size }
   } catch (error) {
     return { ok: false, error: `Could not read the file: ${errorMessage(error)}` }

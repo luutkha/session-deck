@@ -16,7 +16,7 @@ import {
   type SidePanelTab
 } from '../timeline/sidePanelTab'
 import { SidePanelResizeHandle } from '../shell/SidePanelResizeHandle'
-import { SIDE_PANEL_KEEP_FOR_MAIN, SIDE_PANEL_WIDTH_DEFAULT } from '../shell/sidePanelWidth'
+import { SIDE_PANEL_WIDTH_DEFAULT, visibleSidePanelWidth } from '../shell/sidePanelWidth'
 import { cn } from '../lib/utils'
 import { PreviewTab } from '../viewer/PreviewTab'
 import type { PreviewRequest } from '../viewer/fileViewState'
@@ -44,6 +44,8 @@ export interface NotesPanelProps {
   readonly onClosePreview?: () => void
   /** D73: the panel's width and its draggable left edge (the workspace owns the width hook). */
   readonly width?: number
+  /** The widest the panel may be drawn right now (window minus sidebar minus the terminal's room); the workspace computes it. */
+  readonly maxWidth?: number
   readonly resizing?: boolean
   readonly onResizeDrag?: (width: number) => void
   readonly onResizeCommit?: (width: number) => void
@@ -71,7 +73,8 @@ function hasFiles(event: DragEvent<HTMLElement>): boolean {
 export function NotesPanel(props: NotesPanelProps): ReactElement {
   const { session, actions, onClose, storageKey = SIDE_PANEL_TAB_KEY, changesTarget, runtimeState } = props
   const previewRequest = props.previewRequest ?? null
-  const width = props.width ?? SIDE_PANEL_WIDTH_DEFAULT
+  // The stored width can be wider than the window allows: draw (and drag from) the width the panel really has.
+  const width = visibleSidePanelWidth(props.width ?? SIDE_PANEL_WIDTH_DEFAULT, props.maxWidth ?? Number.POSITIVE_INFINITY)
   const { onResizeDrag, onResizeCommit, onResizeReset, onResizingChange } = props
   const notes = useSessionNotes(session, actions)
   const [draft, setDraft] = useChecklistDraft(session.id)
@@ -164,7 +167,7 @@ export function NotesPanel(props: NotesPanelProps): ReactElement {
         !props.resizing && 'transition-[width] duration-200'
       )}
       // The terminal always keeps SIDE_PANEL_KEEP_FOR_MAIN px, so a small window never loses it to a wide panel.
-      style={{ width, maxWidth: `calc(100vw - ${String(SIDE_PANEL_KEEP_FOR_MAIN)}px)` }}
+      style={{ width }}
       onDragEnter={dragEnter}
       onDragOver={dragOver}
       onDragLeave={dragLeave}
@@ -181,8 +184,9 @@ export function NotesPanel(props: NotesPanelProps): ReactElement {
       {onResizeDrag !== undefined && onResizeCommit !== undefined && onResizeReset !== undefined && onResizingChange !== undefined ? (
         <SidePanelResizeHandle
           width={width}
-          onDrag={onResizeDrag}
-          onCommit={onResizeCommit}
+          // A drag or key step can never go past what fits on screen: the saved width is the one the user SAW.
+          onDrag={(next: number): void => onResizeDrag(visibleSidePanelWidth(next, props.maxWidth ?? Number.POSITIVE_INFINITY))}
+          onCommit={(next: number): void => onResizeCommit(visibleSidePanelWidth(next, props.maxWidth ?? Number.POSITIVE_INFINITY))}
           onReset={onResizeReset}
           onDraggingChange={onResizingChange}
         />

@@ -18,6 +18,23 @@ export function clampSidePanelWidth(value: number): number {
   return Math.min(SIDE_PANEL_WIDTH_MAX, Math.max(SIDE_PANEL_WIDTH_MIN, Math.round(value)))
 }
 
+/**
+ * The widest the panel may be DRAWN: the window minus the sessions sidebar (as drawn) minus the room the terminal keeps.
+ * Never below the panel's own minimum (a tiny window gets the minimum, not a negative width).
+ */
+export function maxSidePanelWidth(viewportWidth: number, sidebarShownWidth: number): number {
+  const free = viewportWidth - Math.max(0, sidebarShownWidth) - SIDE_PANEL_KEEP_FOR_MAIN
+  return Math.max(SIDE_PANEL_WIDTH_MIN, Number.isFinite(free) ? Math.floor(free) : SIDE_PANEL_WIDTH_MAX)
+}
+
+/**
+ * The width the panel really has: the stored one, held to `maxWidth`. The drag handle and the arrow keys must start from
+ * THIS number: starting from the stored one made the first pixels of a drag do nothing and committed a width never seen.
+ */
+export function visibleSidePanelWidth(stored: number, maxWidth: number): number {
+  return Math.min(clampSidePanelWidth(stored), Math.max(SIDE_PANEL_WIDTH_MIN, maxWidth))
+}
+
 /** The stored value, or the default for a missing, broken or out-of-range one (an out-of-range number is clamped). */
 export function parseSidePanelWidth(raw: string | null): number {
   if (raw === null || raw.trim() === '') return SIDE_PANEL_WIDTH_DEFAULT

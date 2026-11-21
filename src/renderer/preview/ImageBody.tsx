@@ -1,7 +1,7 @@
 // Image body of the preview pane (D73, zoom D74 #6): Fit or an explicit 10..800% level, which the
 // pane steps with the -, + buttons and Ctrl+wheel.
 import { Minus, Plus } from 'lucide-react'
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import type { FileView } from '../../shared/types'
 import { Button } from '../components/ui/button'
 import { cn } from '../lib/utils'
@@ -20,6 +20,7 @@ export interface ImageBodyProps {
 }
 
 const NO_IMAGE = 'No image data.'
+const BROKEN_IMAGE = 'Could not draw this image: the file may be damaged or not really an image.'
 const FITTED_LABEL = 'Fit to pane'
 const ACTUAL_SIZE_LABEL = 'Show at 100%'
 
@@ -34,6 +35,9 @@ const CHECKERBOARD = {
 export function ImageBody(props: ImageBodyProps): ReactElement {
   const { view, fit, zoom, natural, onFitChange, onZoom, onLoaded } = props
   const src = imageSrc(view)
+  // A damaged image never fires onLoad: remember WHICH source failed so a live reload with new bytes tries again.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  const failed = src !== '' && failedSrc === src
   const size =
     fit || natural === null
       ? undefined
@@ -43,7 +47,7 @@ export function ImageBody(props: ImageBodyProps): ReactElement {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border px-2 text-[11px] text-muted-foreground">
         <span data-image-size="" className="min-w-0 truncate tabular-nums">
-          {natural === null ? 'Loading image…' : `${String(natural.width)} × ${String(natural.height)} px`}
+          {failed ? 'Cannot draw image' : natural === null ? 'Loading image…' : `${String(natural.width)} × ${String(natural.height)} px`}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
           <Button
@@ -83,6 +87,8 @@ export function ImageBody(props: ImageBodyProps): ReactElement {
       </div>
       {src === '' ? (
         <Notice text={NO_IMAGE} failed />
+      ) : failed ? (
+        <Notice text={BROKEN_IMAGE} failed />
       ) : (
         <div
           data-testid="file-view-image"
@@ -94,6 +100,7 @@ export function ImageBody(props: ImageBodyProps): ReactElement {
             src={src}
             style={size}
             className={cn('rounded-md', fit ? 'max-h-full max-w-full object-contain' : 'max-w-none')}
+            onError={(): void => setFailedSrc(src)}
             onLoad={(event): void =>
               onLoaded({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })
             }

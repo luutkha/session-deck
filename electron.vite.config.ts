@@ -5,7 +5,16 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        // officeWorker.js is a second entry: the spreadsheet / Word parsers run in a worker thread with a memory limit.
+        input: {
+          index: resolve('src/main/index.ts'),
+          officeWorker: resolve('src/main/preview/officeWorker.ts')
+        }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()]

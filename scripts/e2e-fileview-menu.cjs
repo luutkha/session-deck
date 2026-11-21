@@ -73,14 +73,14 @@ async function main() {
       await sleep(300)
     }
     // Hover (so the link is "hovered"), then a real right button press/release, then read the menu.
-    const rightClick = async (row, col) => {
+    const rightClick = async (row, col, ctrl = false) => {
       const p = await point(row, col)
       await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.g.left + p.g.w - 2, y: p.g.top + p.g.h - 2, button: 'none' })
       await sleep(150)
       await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none' })
       await waitFor(() => app.evaluate(`!!document.querySelector('.xterm-cursor-pointer')`), 900, 100)
-      await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'right', buttons: 2, clickCount: 1 })
-      await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'right', buttons: 0, clickCount: 1 })
+      await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'right', buttons: 2, clickCount: 1, modifiers: ctrl ? 2 : 0 })
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'right', buttons: 0, clickCount: 1, modifiers: ctrl ? 2 : 0 })
       await waitFor(() => app.evaluate(`!!document.querySelector('[data-testid="terminal-context-menu"]')`), 4000, 150)
       await sleep(250)
       return app.evaluate(`({ link: [...document.querySelectorAll('[data-link-menu-row]')].map((n) => n.getAttribute('data-link-menu-row')), items: [...document.querySelectorAll('[data-testid="terminal-context-menu"] [role=menuitem]')].map((n) => n.innerText.trim()) })`)
@@ -137,6 +137,21 @@ async function main() {
     m = await rightClick(4, 3)
     t.check('no stale link rows after the pointer left the link', m.link.length === 0, JSON.stringify(m.link))
     await closeMenu()
+    // ---- quick copy/paste mode: a plain right-click on a link pastes (no menu); Ctrl+right-click shows the menu WITH link rows
+    await app.evaluate(`window.localStorage.setItem('sessiondeck.rightclick.v1', 'paste')`)
+    const quickPoint = await point(0, 8)
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: quickPoint.g.left + quickPoint.g.w - 2, y: quickPoint.g.top + quickPoint.g.h - 2, button: 'none' })
+    await sleep(150)
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: quickPoint.x, y: quickPoint.y, button: 'none' })
+    await waitFor(() => app.evaluate(`!!document.querySelector('.xterm-cursor-pointer')`), 900, 100)
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: quickPoint.x, y: quickPoint.y, button: 'right', buttons: 2, clickCount: 1 })
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: quickPoint.x, y: quickPoint.y, button: 'right', buttons: 0, clickCount: 1 })
+    await sleep(900)
+    t.check('quick mode: a plain right-click on a link opens no menu (it pastes)', (await app.evaluate(`!!document.querySelector('[data-testid="terminal-context-menu"]')`)) === false)
+    m = await rightClick(0, 8, true)
+    t.check('quick mode: Ctrl+right-click on a link shows the menu with the link rows', same(m.link, ['preview', 'open', 'reveal', 'copyPath']), JSON.stringify(m.link))
+    await closeMenu()
+    await app.evaluate(`window.localStorage.setItem('sessiondeck.rightclick.v1', 'menu')`)
   } catch (error) {
     t.check('run completed without exception', false, String((error && error.stack) || error))
   } finally {

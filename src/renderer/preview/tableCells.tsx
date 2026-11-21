@@ -2,7 +2,7 @@
 // grip, and a body cell. Kept out of FileTable so the table keeps one clear job.
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { MIN_COLUMN_WIDTH, type SortDirection } from './tableLogic'
-import { splitByMatches } from './fileViewFind'
+import { isBlankQuery, splitByMatches } from './fileViewFind'
 
 const MATCH_CLASS = 'rounded-sm bg-amber-400/30 text-inherit'
 const CURRENT_CLASS = 'rounded-sm bg-amber-400 text-black'
@@ -16,7 +16,7 @@ export interface HighlightedTextProps {
 }
 
 export function HighlightedText({ text, query, firstMatch, active }: HighlightedTextProps): ReactElement {
-  if (firstMatch < 0 || query === '') return <>{text}</>
+  if (firstMatch < 0 || isBlankQuery(query)) return <>{text}</>
   const segments = splitByMatches(text, query)
   let ordinal = firstMatch
   return (
@@ -51,6 +51,11 @@ export interface HeaderCellProps {
   readonly children: ReactNode
 }
 
+/**
+ * Column drag. The handle CAPTURES the pointer, so move/up keep arriving at it even when the button is released outside
+ * the window, and its listeners live on the element itself: if the table unmounts mid-drag (a sheet switch) they go with it
+ * instead of staying on `window` and resizing a column on later mouse moves. pointercancel and a lost capture end the drag too.
+ */
 function startResize(
   event: ReactPointerEvent<HTMLSpanElement>,
   column: number,
@@ -59,16 +64,33 @@ function startResize(
 ): void {
   event.preventDefault()
   event.stopPropagation()
+  const handle = event.currentTarget
+  const pointerId = event.pointerId
   const startX = event.clientX
+  try {
+    handle.setPointerCapture(pointerId)
+  } catch {
+    // A pointer that is already gone cannot be captured; the drag simply never starts.
+    return
+  }
   const move = (moveEvent: PointerEvent): void => {
     onResize(column, Math.max(MIN_COLUMN_WIDTH, width + moveEvent.clientX - startX))
   }
   const stop = (): void => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', stop)
+    handle.removeEventListener('pointermove', move)
+    handle.removeEventListener('pointerup', stop)
+    handle.removeEventListener('pointercancel', stop)
+    handle.removeEventListener('lostpointercapture', stop)
+    try {
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId)
+    } catch {
+      // Already released.
+    }
   }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', stop)
+  handle.addEventListener('pointermove', move)
+  handle.addEventListener('pointerup', stop)
+  handle.addEventListener('pointercancel', stop)
+  handle.addEventListener('lostpointercapture', stop)
 }
 
 export function HeaderCell(props: HeaderCellProps): ReactElement {

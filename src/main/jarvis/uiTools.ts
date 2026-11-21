@@ -1,6 +1,8 @@
 // Jarvis tools that change what is on screen (D55): mode, view, grid, split, sidebar, side panel, dialogs, zoom and
 // worker tabs. Main resolves names to ids and picks the mode; the window runs the action with the same hooks its
 // buttons use and answers with what it did (jarvisWiring's ui round trip).
+import { stat } from 'node:fs/promises'
+import { win32 } from 'node:path'
 import type { Id, JarvisUiAction, Session, UiMode } from '../../shared/types'
 import { fileViewKindFor } from '../../shared/fileViewKind'
 import type { McpTool } from './mcpProtocol'
@@ -189,10 +191,18 @@ export function createUiTools(deps: JarvisToolDeps): McpTool[] {
       }, ['path']),
       run: async (args) => {
         const path = text(args, 'path').trim()
-        if (fileViewKindFor(path) === null) throw new Error(`The file viewer cannot show "${path}". ${VIEWER_KINDS}`)
+        // A position suffix (`notes.md:12`, `notes.md:12:5`) is fine: the kind and the file are those of the path before it.
+        const filePath = path.replace(/:\d+(?::\d+)?$/, '')
+        if (fileViewKindFor(filePath) === null) throw new Error(`The file viewer cannot show "${path}". ${VIEWER_KINDS}`)
         // A named session is shown first (like side_panel); without one, the file opens next to the session on screen.
         const named = optionalText(args, 'session') !== undefined ? openSession(args) : undefined
         const target = named ?? await onScreenSession()
+        // Say so when the file is not there (the tool used to answer "Showing ..." for a path that does not exist).
+        const absolute = win32.isAbsolute(filePath) ? win32.normalize(filePath) : win32.resolve(target.cwd, filePath)
+        if (absolute.startsWith('\\')) throw new Error('Network paths (UNC) are not previewed.')
+        const info = await stat(absolute).catch((): null => null)
+        if (info === null) throw new Error(`File not found: ${absolute}`)
+        if (!info.isFile()) throw new Error(`Not a file: ${absolute}`)
         if (named !== undefined) {
           deps.openSession(named.id)
           await deps.sleep(400)

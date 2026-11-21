@@ -10,6 +10,9 @@ import { opencodeAgeText, opencodeHint, opencodeStatusText } from './opencodeInf
 const INITIAL_INFO: OpencodeInfo = { version: null, supportsStandalone: true, checkedAt: 0, probing: true }
 const NO_BRIDGE_INFO: OpencodeInfo = { version: null, supportsStandalone: true, checkedAt: 0, probing: false }
 const AGE_REFRESH_MS = 30_000
+/** While a probe runs the row re-asks this often, at most POLL_MAX_TRIES times (about 30 s). */
+const POLL_MS = 700
+const POLL_MAX_TRIES = 40
 
 /** The bridge is absent in plain vite dev, so every call goes through this guard instead of `window.api.foo()`. */
 function apiOrNull(): Window['api'] | null {
@@ -42,6 +45,39 @@ export function OpencodeProbeRow(): ReactElement {
       cancelled = true
     }
   }, [])
+
+  // The row asks once on mount. When it opens while the background probe is still running (up to ~8 s if the OpenCode CLI is
+  // slow) that answer is "Checking..." and used to stay so until the dialog was reopened: ask again until the probe settles.
+  // Capped, so a probe that never finishes cannot make the row poll forever.
+  const probing = info.probing
+  useEffect((): (() => void) | undefined => {
+    if (!probing) return undefined
+    const api = apiOrNull()
+    if (api === null) return undefined
+    let cancelled = false
+    let tries = 0
+    const timer = window.setInterval((): void => {
+      tries += 1
+      if (tries > POLL_MAX_TRIES) {
+        // Still no answer: stop asking and hand the Re-check button back instead of a row stuck on "Checking...".
+        window.clearInterval(timer)
+        if (!cancelled) setInfo((previous: OpencodeInfo): OpencodeInfo => ({ ...previous, probing: false }))
+        return
+      }
+      api
+        .getOpencodeInfo()
+        .then((next: OpencodeInfo): void => {
+          if (cancelled) return
+          setInfo(next)
+          setNow(Date.now())
+        })
+        .catch((): void => undefined)
+    }, POLL_MS)
+    return (): void => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [probing])
 
   // The age text is relative: refresh it while the row is open.
   useEffect((): (() => void) => {

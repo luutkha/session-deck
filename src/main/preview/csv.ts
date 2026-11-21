@@ -57,11 +57,16 @@ function sampleLines(text: string, maxLines: number): string[] {
   return lines
 }
 
-/** Fields one line has with `delimiter`, counting only delimiters outside quoted cells. */
-function countFields(line: string, delimiter: string): number {
+/**
+ * Fields one line has with `delimiter`, counting only delimiters outside quoted cells. `wellFormed` is false when a
+ * quote shows up in the MIDDLE of an unquoted field: valid CSV only opens a quote at the start of a field, so a line
+ * like `1;"1,5"` read with ',' (fields `1;"1` and `5"`) proves ',' is not its delimiter even though it gives 2 fields.
+ */
+function countFields(line: string, delimiter: string): { readonly fields: number; readonly wellFormed: boolean } {
   let fields = 1
   let inQuotes = false
   let fieldLength = 0
+  let wellFormed = true
   for (let index = 0; index < line.length; index += 1) {
     const ch = line[index]
     if (inQuotes) {
@@ -77,14 +82,18 @@ function countFields(line: string, delimiter: string): number {
     else if (ch === delimiter) {
       fields += 1
       fieldLength = 0
-    } else fieldLength += 1
+    } else {
+      if (ch === '"') wellFormed = false
+      fieldLength += 1
+    }
   }
-  return fields
+  return { fields, wellFormed }
 }
 
 /**
  * D75: picks the delimiter of a `.csv` file from `,` `;` tab `|`. A candidate wins by giving the SAME field count
- * (> 1) on the most of the first 20 non-blank lines; ties keep the candidate order. A single-column file falls
+ * (> 1) on the most of the first 20 non-blank lines, counting only lines where no quote opens mid-field (a sign of the
+ * wrong delimiter); ties keep the candidate order. A single-column file falls
  * back to ',', so it still shows as one column instead of one row.
  */
 export function detectDelimiter(text: string): CsvDelimiter {
@@ -94,8 +103,8 @@ export function detectDelimiter(text: string): CsvDelimiter {
   for (const candidate of DELIMITER_CANDIDATES) {
     const linesByCount = new Map<number, number>()
     for (const line of lines) {
-      const fields = countFields(line, candidate)
-      if (fields > 1) linesByCount.set(fields, (linesByCount.get(fields) ?? 0) + 1)
+      const { fields, wellFormed } = countFields(line, candidate)
+      if (fields > 1 && wellFormed) linesByCount.set(fields, (linesByCount.get(fields) ?? 0) + 1)
     }
     let sameCount = 0
     for (const count of linesByCount.values()) sameCount = Math.max(sameCount, count)

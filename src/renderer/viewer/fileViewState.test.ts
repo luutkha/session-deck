@@ -120,7 +120,7 @@ describe('shouldReload', () => {
 
 describe('live notice state', () => {
   it('shows the missing notice until a stat says the file is back', () => {
-    const gone = noteFileViewStat(beginFileViewLive(), { ok: false, error: 'gone' })
+    const gone = noteFileViewStat(beginFileViewLive(), { ok: false, error: 'gone', gone: true })
     expect(gone.missing).toBe(true)
     expect(fileViewNotice(gone)).toEqual({ kind: 'missing', text: FILE_VIEW_MISSING_TEXT })
     expect(noteFileViewStat(gone, STAT).missing).toBe(false)
@@ -140,7 +140,7 @@ describe('live notice state', () => {
   })
 
   it('lets "gone" win over the Updated flash', () => {
-    const gone = noteFileViewStat(noteFileViewUpdated(1000), { ok: false, error: 'gone' })
+    const gone = noteFileViewStat(noteFileViewUpdated(1000), { ok: false, error: 'gone', gone: true })
     expect(fileViewNotice(gone)?.kind).toBe('missing')
   })
 })

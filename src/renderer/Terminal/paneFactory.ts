@@ -324,8 +324,10 @@ export function openTerminalView(view: TerminalView, element: HTMLElement): void
     event.preventDefault()
     const action = decideRightClick(readRightClickMode(), event.ctrlKey, view.term.hasSelection())
     if (action === 'menu' && view.onContextMenu !== null) {
-      // D76: read the hover record at click time (a left link has already cleared it, so no stale rows).
-      const link = getHoveredLink(view.term)
+      // D76: read the hover record at click time (a left link has already cleared it, so no stale rows). Only for a REAL
+      // right-click: the keyboard Menu key / Shift+F10 raises the same event with no pointer over any link, so it must
+      // not pick up whatever link the pointer last hovered.
+      const link = event.button === 2 ? getHoveredLink(view.term) : null
       view.onContextMenu(link === null
         ? { x: event.clientX, y: event.clientY }
         : { x: event.clientX, y: event.clientY, link })

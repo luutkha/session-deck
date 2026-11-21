@@ -975,7 +975,7 @@ export const FILE_VIEW_MAX_SHEETS = 20
 /** D74: a cheap look at a viewed file, so the open preview can notice that it changed on disk. */
 export type FileViewStat =
   | { readonly ok: true; readonly mtimeMs: number; readonly size: number }
-  | { readonly ok: false; readonly error: string }
+  | { readonly ok: false; readonly error: string; readonly gone?: boolean }
 
 /** D74: what the app knows about the installed OpenCode (Settings > Agents). */
 export interface OpencodeInfo {

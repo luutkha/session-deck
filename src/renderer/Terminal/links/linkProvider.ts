@@ -5,6 +5,7 @@ import { detectLinkCandidates, type LinkCandidate } from './detectLinks'
 import { chooseLinks, collectResolveTexts } from './linkChoice'
 import { createLinkCache, type LinkCache } from './linkCache'
 import { decideLinkClick } from './linkClick'
+import { readLineText } from './lineCells'
 import { detectSpacedPathGroups, hasSpacedPathHint, type SpacedGroup } from './spacedPaths'
 import { clearHoveredLink, setHoveredLink, type HoveredLink } from './hoveredLink'
 
@@ -15,6 +16,10 @@ interface Segment {
   readonly start: number
   /** Length in characters of this physical line. */
   readonly length: number
+  /** Per character of this line: the 1-based column where it starts (wide characters shift later ones). */
+  readonly startCells: readonly number[]
+  /** Per character of this line: the 1-based column of the last cell it covers (a wide character covers two). */
+  readonly endCells: readonly number[]
 }
 
 interface WindowedLine {
@@ -46,27 +51,30 @@ function collectLogicalLine(term: Terminal, bufferLineNumber: number): WindowedL
     const line = buffer.getLine(y)
     if (line === undefined) break
     if (lines.length > 0 && !line.isWrapped) break
-    const value = line.translateToString(true)
-    lines.push({ y: y + 1, start: text.length, length: value.length })
-    text += value
+    // Text AND columns come from the cells: a wide (CJK, emoji) character takes two columns, so "offset + 1" is not a column.
+    const read = readLineText(line)
+    lines.push({ y: y + 1, start: text.length, length: read.text.length, startCells: read.startCells, endCells: read.endCells })
+    text += read.text
   }
   if (lines.length === 0) return undefined
   return { text, lines }
 }
 
-/** Maps a character offset in the logical text back to a 1-based cell. */
-function locate(offset: number, lines: readonly Segment[]): Position | null {
+/** Maps a character offset in the logical text back to a 1-based cell: where it starts, or where it ends (`last`). */
+function locate(offset: number, lines: readonly Segment[], last: boolean): Position | null {
   for (const segment of lines) {
     if (offset < segment.start + segment.length) {
-      return { x: offset - segment.start + 1, y: segment.y }
+      const index = offset - segment.start
+      const x = (last ? segment.endCells[index] : segment.startCells[index]) ?? index + 1
+      return { x, y: segment.y }
     }
   }
   return null
 }
 
 function toRange(candidate: LinkCandidate, lines: readonly Segment[]): IBufferRange | null {
-  const start = locate(candidate.start, lines)
-  const end = locate(candidate.end - 1, lines)
+  const start = locate(candidate.start, lines, false)
+  const end = locate(candidate.end - 1, lines, true)
   if (start === null || end === null) return null
   return { start, end }
 }

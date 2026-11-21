@@ -25,8 +25,9 @@ import { needsYouItems } from '../attention/needsYou'
 import { useAttentionShortcuts } from '../attention/useAttentionShortcuts'
 import { SidebarResizeHandle } from '../shell/SidebarResizeHandle'
 import { SIDEBAR_KEEP_FOR_MAIN } from '../shell/sidebarWidth'
+import { useViewportWidth } from '../shell/useViewportWidth'
 import { useSidebarWidth } from '../shell/useSidebarWidth'
-import { SIDE_PANEL_WIDTH_DEFAULT, SIDE_PANEL_WIDTH_PREVIEW } from '../shell/sidePanelWidth'
+import { SIDE_PANEL_WIDTH_DEFAULT, SIDE_PANEL_WIDTH_PREVIEW, maxSidePanelWidth } from '../shell/sidePanelWidth'
 import { useSidePanelWidth } from '../shell/useSidePanelWidth'
 import { EmptyState } from '../shell/EmptyState'
 import { StatusBar } from '../shell/StatusBar'
@@ -195,6 +196,10 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   // D73: a terminal file link asks this workspace to show its file in the side panel's Preview tab. The request stays
   // (also while the terminal view is away); a nonce makes the same link read again.
   const sidePanelWidth = useSidePanelWidth()
+  // How wide the panel can really be: the window, minus the sidebar as DRAWN (it is capped by the window too), minus the terminal's room.
+  const viewportWidth = useViewportWidth()
+  const sidebarShown = sidebarOpen ? Math.min(sidebarWidth.width, viewportWidth - SIDEBAR_KEEP_FOR_MAIN) : 0
+  const sidePanelMax = maxSidePanelWidth(viewportWidth, sidebarShown)
   const [sidePanelResizing, setSidePanelResizing] = useState(false)
   const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null)
   const previewNonce = useRef(0)
@@ -217,6 +222,13 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
     storeSidePanelTab('notes', keys.sidePanel)
     setSidePanelEpoch((n: number): number => n + 1)
   }, [keys.sidePanel])
+  // A preview belongs to the session whose folder resolved it: once that session is removed the request can only fail
+  // (Reload keeps erroring), so it is dropped. `sessions` is null until the store arrives: nothing to decide yet.
+  const previewSessionId = previewRequest?.sessionId ?? null
+  const previewSessionGone = previewSessionId !== null && sessions !== null && !sessions.some((s: Session): boolean => s.id === previewSessionId)
+  useEffect((): void => {
+    if (previewSessionGone) closePreview()
+  }, [previewSessionGone, closePreview])
   const jarvisUi = useRef<WorkspaceUiContext | null>(null)
   jarvisUi.current = {
     mode,
@@ -480,6 +492,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                 previewRequest={previewRequest}
                 onClosePreview={closePreview}
                 width={sidePanelWidth.width}
+                maxWidth={sidePanelMax}
                 resizing={sidePanelResizing}
                 onResizeDrag={sidePanelWidth.setLive}
                 onResizeCommit={sidePanelWidth.commit}

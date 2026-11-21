@@ -1,7 +1,7 @@
 // Highlights find matches inside rendered HTML (markdown, docx) for the preview pane (D74 #6).
 // Only text nodes are touched (TreeWalker), never attributes or <script>/<style> content, and every
 // pass first unwraps the previous marks, so changing the query never nests highlights.
-import { FIND_HIGHLIGHT_MAX } from './fileViewFind'
+import { FIND_HIGHLIGHT_MAX, foldCase, isBlankQuery } from './fileViewFind'
 
 const MATCH_SELECTOR = 'mark[data-find-match]'
 const BLOCKED_PARENTS = new Set<string>(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA'])
@@ -25,8 +25,8 @@ export function clearFindHighlights(root: HTMLElement): void {
  */
 export function highlightRendered(root: HTMLElement, query: string, activeIndex: number): number {
   clearFindHighlights(root)
-  if (query.trim() === '') return 0
-  const needle = query.toLowerCase()
+  if (isBlankQuery(query)) return 0
+  const needle = foldCase(query)
   const nodes: Text[] = []
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node: Node): number => {
@@ -45,7 +45,7 @@ export function highlightRendered(root: HTMLElement, query: string, activeIndex:
   let ordinal = 0
   for (const textNode of nodes) {
     const text = textNode.nodeValue ?? ''
-    const haystack = text.toLowerCase()
+    const haystack = foldCase(text)
     let from = 0
     let index = haystack.indexOf(needle, from)
     if (index < 0) continue

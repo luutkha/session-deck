@@ -97,7 +97,8 @@ export function beginFileViewLive(): FileViewLiveState {
 
 /** A stat came back: a missing file keeps the shown content and shows the notice until the file is back. */
 export function noteFileViewStat(live: FileViewLiveState, stat: FileViewStat): FileViewLiveState {
-  const missing = !stat.ok
+  // Only a stat that says the file is GONE counts: a locked or briefly unreadable file keeps its content and no notice.
+  const missing = !stat.ok && stat.gone === true
   if (missing === live.missing) return live
   return { ...live, missing }
 }

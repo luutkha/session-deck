@@ -104,15 +104,28 @@ function decodeUtf8(bytes: Buffer): string {
  * Decodes the bytes of a viewed text/csv file to a string. `truncated` says the size cap cut the bytes, so a
  * trailing half character is dropped instead of becoming a replacement character.
  */
+/** A UTF-16 text cut between the two halves of a surrogate pair would end on a lone high surrogate (shown as a broken glyph). */
+function dropLoneTrailingSurrogate(text: string): string {
+  if (text.length === 0) return text
+  const last = text.charCodeAt(text.length - 1)
+  return last >= 0xd800 && last <= 0xdbff ? text.slice(0, -1) : text
+}
+
 export function decodeTextBytes(bytes: Buffer, opts?: { truncated?: boolean }): string {
   const truncated = opts?.truncated === true
   const bom = bomOf(bytes)
   if (bom !== null) {
     const body = bytes.subarray(bom.length)
-    if (bom.utf16 !== null) return decodeUtf16(truncated ? evenLength(body) : body, bom.utf16)
+    if (bom.utf16 !== null) {
+      const text = decodeUtf16(truncated ? evenLength(body) : body, bom.utf16)
+      return truncated ? dropLoneTrailingSurrogate(text) : text
+    }
     return decodeUtf8(truncated ? repairUtf8Tail(body) : body)
   }
   const utf16 = sniffUtf16(bytes)
-  if (utf16 !== null) return decodeUtf16(truncated ? evenLength(bytes) : bytes, utf16)
+  if (utf16 !== null) {
+    const text = decodeUtf16(truncated ? evenLength(bytes) : bytes, utf16)
+    return truncated ? dropLoneTrailingSurrogate(text) : text
+  }
   return decodeUtf8(truncated ? repairUtf8Tail(bytes) : bytes)
 }

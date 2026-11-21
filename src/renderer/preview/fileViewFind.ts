@@ -3,6 +3,26 @@
 // nextMatchIndex wraps the counter shown in the find bar.
 export const FIND_HIGHLIGHT_MAX = 2000
 
+/**
+ * Lower-cases WITHOUT changing the length: 'İ'.toLowerCase() is two UTF-16 units (i + U+0307), which shifted every later
+ * index, so a highlight landed on the wrong character (or was empty) while the counter still counted it. A character whose
+ * lower-case form has another length stays as it is; everything else maps one to one, so indices match the original text.
+ */
+export function foldCase(text: string): string {
+  let out = ''
+  for (const ch of text) {
+    const lower = ch.toLowerCase()
+    out += lower.length === ch.length ? lower : ch
+  }
+  return out
+}
+
+/** A query made only of blanks is no query (the same in text, tables and rendered documents). */
+export function isBlankQuery(query: string): boolean {
+  return query.trim() === ''
+}
+
+
 export interface TextSegment {
   readonly text: string
   readonly match: boolean
@@ -15,9 +35,9 @@ export function splitByMatches(
   max: number = FIND_HIGHLIGHT_MAX
 ): readonly TextSegment[] {
   if (text === '') return []
-  if (query === '') return [{ text, match: false }]
-  const haystack = text.toLowerCase()
-  const needle = query.toLowerCase()
+  if (isBlankQuery(query)) return [{ text, match: false }]
+  const haystack = foldCase(text)
+  const needle = foldCase(query)
   const segments: TextSegment[] = []
   let from = 0
   let count = 0
@@ -35,9 +55,9 @@ export function splitByMatches(
 
 /** The number of highlights splitByMatches would draw (the cap applies). */
 export function countMatches(text: string, query: string, max: number = FIND_HIGHLIGHT_MAX): number {
-  if (text === '' || query === '') return 0
-  const haystack = text.toLowerCase()
-  const needle = query.toLowerCase()
+  if (text === '' || isBlankQuery(query)) return 0
+  const haystack = foldCase(text)
+  const needle = foldCase(query)
   let count = 0
   let from = 0
   while (count < max) {
@@ -58,7 +78,7 @@ export function nextMatchIndex(current: number, total: number, direction: 1 | -1
 
 /** The "3/17" counter; "0/0" when the query is empty or nothing matched. */
 export function matchCounter(query: string, active: number, total: number): string {
-  if (query === '' || total <= 0) return '0/0'
+  if (isBlankQuery(query) || total <= 0) return '0/0'
   return `${String(Math.min(Math.max(active, 0), total - 1) + 1)}/${String(total)}`
 }
 
@@ -76,12 +96,12 @@ export function findTableMatches(
   max: number = FIND_HIGHLIGHT_MAX
 ): readonly TableMatch[] {
   const matches: TableMatch[] = []
-  if (query === '') return matches
-  const needle = query.toLowerCase()
+  if (isBlankQuery(query)) return matches
+  const needle = foldCase(query)
   for (let row = 0; row < rows.length; row += 1) {
     const cells = rows[row] ?? []
     for (let col = 0; col < cells.length; col += 1) {
-      const haystack = (cells[col] ?? '').toLowerCase()
+      const haystack = foldCase(cells[col] ?? '')
       let from = 0
       let inCell = 0
       for (;;) {

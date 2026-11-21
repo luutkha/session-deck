@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AppSettings, AwaySummary, JarvisUiAction, QueuedPrompt, RuntimeState, Session, StoreData, TimelineTurn, UiMode, UsageState, WorktreeChanges } from '../../shared/types'
 import { DEFAULT_APP_SETTINGS } from '../../shared/types'
 import { createJarvisTools, READY_TIMEOUT_MS, type JarvisToolDeps } from './jarvisTools'
@@ -788,29 +790,61 @@ describe('Jarvis screen tools (D55)', () => {
   })
 
   it('previews a file in the side panel viewer, for a given session or the one on screen (D74)', async () => {
-    const t = setup(
-      [
-        session('a', 'API'),
-        session('w', 'checkout', { worktreeId: 'w1', cwd: 'C:/wt/checkout' })
-      ],
-      [running('a'), running('w')]
-    )
-    await t.call('preview_file', { path: 'C:\\p\\README.md', session: 'API' })
-    expect(t.deps.openSession).toHaveBeenCalledWith('a')
-    expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'previewFile', sessionId: 'a', text: 'C:\\p\\README.md' } })
-    await t.call('preview_file', { path: 'notes.md', session: 'checkout' })
-    expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'previewFile', sessionId: 'w', text: 'notes.md' } })
-    await expect(t.call('preview_file', { path: 'C:\\p\\app.exe', session: 'API' })).rejects.toThrow('Supported: Markdown')
-    await expect(t.call('preview_file', {})).rejects.toThrow('"path" is required')
+    // The tool checks the file exists, so these are REAL files.
+    const dir = mkdtempSync(join(tmpdir(), 'sd-preview-file-'))
+    mkdirSync(join(dir, 'docs'))
+    mkdirSync(join(dir, 'wt'))
+    writeFileSync(join(dir, 'README.md'), '# r')
+    writeFileSync(join(dir, 'docs', 'notes.md'), '# n')
+    writeFileSync(join(dir, 'wt', 'notes.md'), '# w')
+    try {
+      const t = setup(
+        [
+          session('a', 'API', { cwd: dir }),
+          session('w', 'checkout', { worktreeId: 'w1', cwd: join(dir, 'wt') })
+        ],
+        [running('a'), running('w')]
+      )
+      const readme = join(dir, 'README.md')
+      await t.call('preview_file', { path: readme, session: 'API' })
+      expect(t.deps.openSession).toHaveBeenCalledWith('a')
+      expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'previewFile', sessionId: 'a', text: readme } })
+      await t.call('preview_file', { path: 'notes.md', session: 'checkout' })
+      expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'previewFile', sessionId: 'w', text: 'notes.md' } })
+      await expect(t.call('preview_file', { path: 'C:\\p\\app.exe', session: 'API' })).rejects.toThrow('Supported: Markdown')
+      await expect(t.call('preview_file', {})).rejects.toThrow('"path" is required')
 
-    // No session given: the one the main window shows (its state text names it).
-    vi.mocked(t.deps.ui).mockImplementation(async (mode, action) => {
-      if (action.kind === 'state') return 'Mode: Ops\nOn screen: "API"'
-      t.uiCalls.push({ mode, action })
-      return `ui ${action.kind}`
-    })
-    expect(await t.call('preview_file', { path: 'docs/notes.md' })).toBe('ui previewFile')
-    expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'previewFile', sessionId: 'a', text: 'docs/notes.md' } })
+      // No session given: the one the main window shows (its state text names it).
+      vi.mocked(t.deps.ui).mockImplementation(async (mode, action) => {
+        if (action.kind === 'state') return 'Mode: Ops' + String.fromCharCode(10) + 'On screen: "API"'
+        t.uiCalls.push({ mode, action })
+        return `ui ${action.kind}`
+      })
+      expect(await t.call('preview_file', { path: 'docs/notes.md' })).toBe('ui previewFile')
+      expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'previewFile', sessionId: 'a', text: 'docs/notes.md' } })
+
+      // A position suffix is fine: the file is the one before it, and the text is passed on as given.
+      expect(await t.call('preview_file', { path: 'docs/notes.md:12:3' })).toBe('ui previewFile')
+      expect(t.uiCalls.at(-1)).toEqual({ mode: 'ops', action: { kind: 'previewFile', sessionId: 'a', text: 'docs/notes.md:12:3' } })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('preview_file says so when the file is missing, a folder or a network path, and shows nothing', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sd-preview-missing-'))
+    mkdirSync(join(dir, 'folder.md'))
+    try {
+      const t = setup([session('a', 'API', { cwd: dir })], [running('a')])
+      const before = t.uiCalls.length
+      await expect(t.call('preview_file', { path: 'missing.md', session: 'API' })).rejects.toThrow('File not found')
+      await expect(t.call('preview_file', { path: 'folder.md', session: 'API' })).rejects.toThrow('Not a file')
+      await expect(t.call('preview_file', { path: '\\\\server\\share\\x.md', session: 'API' })).rejects.toThrow('Network paths')
+      expect(t.uiCalls.length).toBe(before) // nothing was sent to the window
+      expect(t.deps.openSession).not.toHaveBeenCalled()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('shows or dismisses a worker tab by name', async () => {

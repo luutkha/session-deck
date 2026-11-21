@@ -42,9 +42,16 @@ export function clampPdfZoom(percent: number): number {
   return Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, Math.round(percent)))
 }
 
-/** One ladder step; an off-ladder value (the fit percentage) moves to the next step past it. */
+/**
+ * One ladder step; an off-ladder value (the fit percentage) moves to the next step past it. When there is NO step in
+ * that direction (Fit at 48% zooming out, Fit at 400% zooming in) the zoom stays where it is: the ladder's end is on the
+ * wrong side of such a value and used to make "Zoom out" zoom IN (and "Zoom in" zoom out).
+ */
 export function stepPdfZoom(currentPercent: number, direction: 1 | -1): number {
-  return clampPdfZoom(nextZoomStep(currentPercent, direction, PDF_ZOOM_STEPS))
+  const value = Number.isFinite(currentPercent) ? currentPercent : 100
+  const next = nextZoomStep(value, direction, PDF_ZOOM_STEPS)
+  if ((direction === -1 && next > value) || (direction === 1 && next < value)) return Math.round(value)
+  return clampPdfZoom(next)
 }
 
 /** Scale that makes a page of `pageWidth` fit the pane; 1 when there is no usable width yet. */
