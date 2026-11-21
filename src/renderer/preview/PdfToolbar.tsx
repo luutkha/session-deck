@@ -4,6 +4,7 @@ import { Minus, Plus } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { Button } from '../components/ui/button'
 import { PDF_ZOOM_MAX, PDF_ZOOM_MIN, pdfPageLabel, pdfPercentLabel } from './pdfLogic'
+import { streamedPdfNote } from './pdfRange'
 
 export interface PdfToolbarProps {
   readonly current: number
@@ -11,17 +12,24 @@ export interface PdfToolbarProps {
   readonly scale: number
   readonly zoom: number
   readonly fit: boolean
+  /** Size of a big PDF read in ranges (D75); null for a PDF delivered whole. */
+  readonly streamedBytes?: number | null
   readonly onZoom: (direction: 1 | -1) => void
   readonly onFit: () => void
 }
 
 export function PdfToolbar(props: PdfToolbarProps): ReactElement {
-  const { current, total, scale, zoom, fit, onZoom, onFit } = props
+  const { current, total, scale, zoom, fit, streamedBytes = null, onZoom, onFit } = props
   return (
     <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border px-2 text-[11px] text-muted-foreground">
       <span data-pdf-page-label="" className="min-w-0 truncate tabular-nums">
         {pdfPageLabel(current, total)}
       </span>
+      {streamedBytes !== null ? (
+        <span data-pdf-streamed="" className="min-w-0 flex-1 truncate text-[11px]" title="Pages are read from the file as you scroll to them">
+          {streamedPdfNote(streamedBytes)}
+        </span>
+      ) : null}
       <div className="flex shrink-0 items-center gap-0.5">
         <Button
           type="button"

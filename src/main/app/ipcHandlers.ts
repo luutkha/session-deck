@@ -1,17 +1,19 @@
 import { app, ipcMain, dialog, type BrowserWindow, type OpenDialogOptions } from 'electron'
 import { MAX_LINK_TEXTS } from '../links'
 import { createAppLinkService } from '../links/appLinks'
-import { readFileView, statFileView } from '../preview'
+import { readFileView, readPdfRange, statFileView } from '../preview'
 import { getOpencodeInfo, recheckOpencode } from '../opencode'
-import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref, FileViewResult, FileViewStat, OpencodeInfo } from '../../shared/types'
+import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref, FileViewResult, FileViewRangeResult, FileViewStat, OpencodeInfo } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
+import { FILE_VIEW_PDF_STREAM_MAX_BYTES } from '../../shared/types'
 import type { SessionController } from './sessionController'
 import type { ActiveSessions } from './activeSessions'
 import {
   assertId,
   assertNullableId,
   assertNonEmptyString,
+  assertFiniteInt,
   assertBoolean,
   assertIndex,
   assertIdList,
@@ -318,6 +320,16 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     const resolved = await links.resolve(assertId(rawId, 'session id'), assertNonEmptyString(rawText, 'link text'))
     if (resolved === null || resolved.kind !== 'file') return { ok: false, error: 'Not a file that exists' }
     return readFileView(resolved.target)
+  })
+
+  // D75: a PDF over 30 MB is not sent whole: pdf.js asks for byte ranges. Main re-resolves the text like every viewer call,
+  // checks the numbers, and readPdfRange caps one answer at FILE_VIEW_PDF_RANGE_MAX_BYTES.
+  ipcMain.handle(IPC.fileViewRange, async (_event, rawId: unknown, rawText: unknown, rawStart: unknown, rawEnd: unknown): Promise<FileViewRangeResult> => {
+    const start = assertFiniteInt(rawStart, 'range start', 0, FILE_VIEW_PDF_STREAM_MAX_BYTES)
+    const end = assertFiniteInt(rawEnd, 'range end', 0, FILE_VIEW_PDF_STREAM_MAX_BYTES)
+    const resolved = await links.resolve(assertId(rawId, 'session id'), assertNonEmptyString(rawText, 'link text'))
+    if (resolved === null || resolved.kind !== 'file') return { ok: false, error: 'Not a file that exists' }
+    return readPdfRange(resolved.target, start, end)
   })
 
   // D74: the open preview polls this (cheap: stat only) to reload when the file changes on disk.

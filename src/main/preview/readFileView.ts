@@ -21,6 +21,7 @@ import {
 import { detectDelimiter, parseCsv } from './csv'
 import { readDocxHtml } from './docx'
 import { decodeTextBytes } from './encoding'
+import { pdfDeliveryFor } from './pdfDelivery'
 import { readSheets } from './sheets'
 
 const IMAGE_MIME: Readonly<Record<string, string>> = {
@@ -57,7 +58,7 @@ interface DecodedText {
   readonly truncated: boolean
 }
 
-type PathCheck = { readonly ok: true; readonly kind: FileViewKind } | { readonly ok: false; readonly error: string }
+export type PathCheck = { readonly ok: true; readonly kind: FileViewKind } | { readonly ok: false; readonly error: string }
 
 function fail(error: string): FileViewResult {
   return { ok: false, error }
@@ -69,7 +70,7 @@ function extensionOf(name: string): string {
 }
 
 /** The shared refusals of both entry points: same rules, same messages, no disk touched. */
-function checkPath(absPath: string): PathCheck {
+export function checkPath(absPath: string): PathCheck {
   if (typeof absPath !== 'string' || absPath.length === 0) return { ok: false, error: 'No file path' }
   if (!isAbsolute(absPath)) return { ok: false, error: 'Not an absolute path' }
   // UNC paths are network shares: never touched, not even a stat.
@@ -155,7 +156,8 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
     // A cut image, document or PDF is useless, so those are refused instead of truncated.
     if (kind === 'image' && size > FILE_VIEW_IMAGE_MAX_BYTES) return fail('Image is too large to show')
     if ((kind === 'sheet' || kind === 'docx') && size > FILE_VIEW_DOC_MAX_BYTES) return fail('File is too large to show')
-    if (kind === 'pdf' && size > FILE_VIEW_PDF_MAX_BYTES) return fail('PDF is too large to show')
+    // D75: a PDF over the whole-file cap is streamed in ranges; only one beyond the stream cap is refused.
+    if (kind === 'pdf' && pdfDeliveryFor(size) === 'refused') return fail('PDF is too large to show (over 1 GB)')
 
     const name = basename(absPath)
     const extension = extensionOf(name)
@@ -196,6 +198,14 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
     }
 
     if (kind === 'pdf') {
+      if (pdfDeliveryFor(size) === 'streamed') {
+        // D75: a big PDF is never loaded whole. Only the head is read, to refuse a renamed file before the
+        // renderer starts asking pdf.js to fetch byte ranges of it.
+        const { bytes } = await readCapped(absPath, size, PDF_MAGIC_SEARCH_BYTES)
+        if (!hasPdfMagic(bytes)) return fail('Not a valid PDF file')
+        const view = baseView(absPath, name, kind, size, mtimeMs, PDF_MIME)
+        return { ok: true, view: { ...view, streamed: true } }
+      }
       const { bytes, truncated } = await readCapped(absPath, size, FILE_VIEW_PDF_MAX_BYTES)
       // The file grew between stat and read: refuse rather than hand pdf.js a cut file.
       if (truncated) return fail('PDF is too large to show')

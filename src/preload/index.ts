@@ -48,6 +48,7 @@ import type {
   FileDiff,
   FilePreview,
   FileViewResult,
+  FileViewRangeResult,
   FileViewStat,
   OpencodeInfo,
   WindowState,
@@ -490,6 +491,10 @@ const api: Api = {
 
   readFileView(sessionId: Id, text: string): Promise<FileViewResult> {
     return ipcRenderer.invoke(IPC.fileViewRead, sessionId, text)
+  },
+
+  readFileViewRange(sessionId: Id, text: string, start: number, end: number): Promise<FileViewRangeResult> {
+    return ipcRenderer.invoke(IPC.fileViewRange, sessionId, text, start, end)
   },
 
   statFileView(sessionId: Id, text: string): Promise<FileViewStat> {

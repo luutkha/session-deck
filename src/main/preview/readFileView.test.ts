@@ -104,9 +104,9 @@ describe('readFileView pdf', () => {
     expect(Buffer.from(view.base64, 'base64').equals(bytes)).toBe(true)
   })
 
-  it('refuses a pdf over the size cap without reading it', async () => {
+  it('streams a pdf over the size cap without sending its bytes', async () => {
     const target = join(dir, 'huge.pdf')
-    // A sparse file just over the cap: stat refuses it before any bytes are read, so this stays fast.
+    // A sparse file just over the cap: only its first 1024 bytes are read for the magic check, so this stays fast.
     const handle = await open(target, 'w')
     try {
       await handle.write('%PDF-1.4\n')
@@ -114,14 +114,12 @@ describe('readFileView pdf', () => {
     } finally {
       await handle.close()
     }
-    try {
-      const result = await readFileView(target)
-      expect(result.ok).toBe(false)
-      if (result.ok) throw new Error('expected the read to be refused')
-      expect(result.error).toContain('too large')
-    } finally {
-      await rm(target, { force: true })
-    }
+    const result = await readFileView(target)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(`expected a streamed view: ${result.error}`)
+    expect(result.view.streamed).toBe(true)
+    expect(result.view.base64).toBe('')
+    expect(result.view.size).toBe(FILE_VIEW_PDF_MAX_BYTES + 1)
   })
 })
 

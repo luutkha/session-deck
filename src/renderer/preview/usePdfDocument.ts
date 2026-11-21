@@ -1,11 +1,13 @@
-// Document state of the PDF body (D75): one pdf.js document per view.base64, loaded lazily and
-// destroyed when the view changes or the pane unmounts. Live reload keeps the scroll offset when the
-// new file has the same page count.
+// Document state of the PDF body (D75): one pdf.js document per view, loaded lazily and destroyed
+// when the view changes or the pane unmounts. A PDF over FILE_VIEW_PDF_MAX_BYTES arrives streamed
+// (`streamed: true`, empty base64): pdf.js then reads byte ranges through main instead of the whole file.
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
-import type { FileView } from '../../shared/types'
+import type { PDFDataRangeTransport, PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
+import type { FileView, Id } from '../../shared/types'
+import { decodeBase64Bytes } from './pdfBytes'
 import { loadPdfJs } from './pdfjs'
 import { isPasswordError, type PdfPageSize } from './pdfLogic'
+import { openPdfStream, type PdfStream } from './pdfStream'
 
 export type PdfStatus = 'loading' | 'ready' | 'password' | 'error'
 
@@ -20,20 +22,33 @@ export interface PdfDocumentState {
 
 /** pdf.js 5 removed eval support from its API; the flag stays harmless and states the CSP rule. */
 interface PdfLoadOptions {
-  readonly data: Uint8Array
+  readonly data?: Uint8Array
+  readonly range?: PDFDataRangeTransport
+  readonly rangeChunkSize?: number
+  readonly disableAutoFetch?: boolean
+  readonly disableStream?: boolean
   readonly isEvalSupported: false
 }
 
-/** base64 of the whole file (main caps it at FILE_VIEW_PDF_MAX_BYTES) to the bytes pdf.js wants. */
-function decodeBase64(base64: string): Uint8Array {
-  const binary = window.atob(base64.replace(/\s+/g, ''))
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
-  return bytes
+/** A big file: ranges on demand, no whole-file stream, no eval. */
+function streamedOptions(transport: PDFDataRangeTransport): PdfLoadOptions {
+  return {
+    range: transport,
+    rangeChunkSize: 1 << 20,
+    disableAutoFetch: true,
+    disableStream: true,
+    isEvalSupported: false
+  }
+}
+
+function logPdfError(error: unknown): void {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  console.error(`Could not read this PDF (${detail})`, error)
 }
 
 export function usePdfDocument(
   view: FileView,
+  sessionId: Id,
   scrollRef: RefObject<HTMLDivElement | null>
 ): PdfDocumentState {
   const pageCountRef = useRef(0)
@@ -44,20 +59,49 @@ export function usePdfDocument(
 
   useEffect((): (() => void) => {
     let cancelled = false
+    let failed = false
     let task: PDFDocumentLoadingTask | null = null
+    let stream: PdfStream | null = null
     const previousPages = pageCountRef.current
     const scrollTop = scrollRef.current?.scrollTop ?? 0
     setStatus('loading')
     setDoc(null)
     setPages([])
+    // A failed range arrives after loading started; a failed first request comes through the catch.
+    const fail = (error: unknown): void => {
+      if (cancelled || failed) return
+      failed = true
+      if (isPasswordError(error)) {
+        setStatus('password')
+        return
+      }
+      setStatus('error')
+      logPdfError(error)
+      if (task !== null) void task.destroy().catch((): undefined => undefined)
+    }
     void (async (): Promise<void> => {
       try {
         const pdfjs = await loadPdfJs()
         if (cancelled) return
-        task = pdfjs.getDocument({
-          data: decodeBase64(view.base64),
-          isEvalSupported: false
-        } as PdfLoadOptions)
+        let options: PdfLoadOptions
+        if (view.streamed === true) {
+          const opened = await openPdfStream({
+            pdfjs,
+            size: view.size,
+            readRange: (start: number, end: number) =>
+              window.api.readFileViewRange(sessionId, view.path, start, end),
+            onError: fail
+          })
+          if (cancelled) {
+            opened.cancel()
+            return
+          }
+          stream = opened
+          options = streamedOptions(opened.transport)
+        } else {
+          options = { data: decodeBase64Bytes(view.base64), isEvalSupported: false }
+        }
+        task = pdfjs.getDocument(options)
         const loaded = await task.promise
         if (cancelled) return
         const sizes = await Promise.all(
@@ -76,19 +120,15 @@ export function usePdfDocument(
         setDoc(loaded)
         setStatus('ready')
       } catch (error: unknown) {
-        if (cancelled) return
-        setStatus(isPasswordError(error) ? 'password' : 'error')
-        if (!isPasswordError(error)) {
-          const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-          console.error(`Could not read this PDF (${detail})`, error)
-        }
+        fail(error)
       }
     })()
     return (): void => {
       cancelled = true
+      stream?.cancel()
       if (task !== null) void task.destroy().catch((): undefined => undefined)
     }
-  }, [view.base64, scrollRef])
+  }, [view.base64, view.path, view.size, view.streamed, view.mtimeMs, sessionId, scrollRef])
 
   const clearSavedScroll = useCallback((): void => setSavedScroll(null), [])
   return { status, doc, pages, savedScroll, clearSavedScroll }

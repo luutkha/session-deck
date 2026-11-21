@@ -56,7 +56,7 @@ export function FileViewBody(props: FileViewBodyProps): ReactElement {
         />
       )
     case 'pdf':
-      return <PdfBody view={view} />
+      return <PdfBody view={view} sessionId={sessionId} />
     case 'csv':
     case 'sheet':
       return (

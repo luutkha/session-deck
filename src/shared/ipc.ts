@@ -1,7 +1,7 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
   AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisUiCommand, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
-  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, FileViewResult, FileViewStat, OpencodeInfo, WindowState, WindowRole,
+  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, FileViewResult, FileViewRangeResult, FileViewStat, OpencodeInfo, WindowState, WindowRole,
   BranchStatus, CommitInput, CommitResult, PushResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult,
   GpuInfo, GpuPref
 } from './types'
@@ -63,6 +63,7 @@ export const IPC = {
   gpuSetPref: 'gpu:setPref', // (pref 'auto'|'on'|'off') -> void: saved now, applied at the next start
   gpuReportProbe: 'gpu:reportProbe', // (softwareSeen: boolean) -> void: the window's own WebGL probe found a software renderer (or not)
   linkResolve: 'link:resolve', // (sessionId, candidates[]) -> (ResolvedLink | null)[]; main checks the file system
+  fileViewRange: 'file:viewRange', // (sessionId, text, start, end) -> FileViewRangeResult; a byte range of a big PDF (D75)
   fileViewStat: 'file:viewStat', // (sessionId, text) -> FileViewStat; mtime + size of the viewed file, for live reload (D74)
   pickViewFile: 'dialog:pickViewFile', // open-file dialog for the palette's "Preview file..." -> absolute path | null (D74)
   opencodeInfoGet: 'opencode:infoGet', // () -> OpencodeInfo (D74)
@@ -258,6 +259,8 @@ export interface Api {
   /** D73: shows the same file in its own small window (the side-panel viewer's Detach button). */
   detachFileView(sessionId: Id, text: string): Promise<void>
   /** D74: mtime + size of the viewed file; the open preview polls it to reload when the file changes. */
+  /** D75: bytes [start, end) of a big PDF (the viewer's streamed mode); main re-resolves the text and caps the range. */
+  readFileViewRange(sessionId: Id, text: string, start: number, end: number): Promise<FileViewRangeResult>
   statFileView(sessionId: Id, text: string): Promise<FileViewStat>
   /** D74: open-file dialog (viewable types first) for the palette's Preview file... -> absolute path or null. */
   pickViewFile(): Promise<string | null>

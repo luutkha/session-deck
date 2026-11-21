@@ -2,7 +2,7 @@
 // render in this window. Fit-to-width by default, its own page/zoom toolbar, lazy per-page drawing.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import type { FileView } from '../../shared/types'
+import type { FileView, Id } from '../../shared/types'
 import { Notice } from './Notice'
 import { PdfPageView } from './PdfPage'
 import { PdfToolbar } from './PdfToolbar'
@@ -21,16 +21,18 @@ import { usePdfPageObserver } from './usePdfPageObserver'
 
 export interface PdfBodyProps {
   readonly view: FileView
+  /** A streamed PDF reads its byte ranges through main with this session's context (D75). */
+  readonly sessionId: Id
 }
 
 const PASSWORD_NOTICE = 'This PDF is password protected'
 const ERROR_NOTICE = 'Could not read this PDF'
 const EMPTY_NOTICE = 'This PDF has no pages.'
 
-export function PdfBody({ view }: PdfBodyProps): ReactElement {
+export function PdfBody({ view, sessionId }: PdfBodyProps): ReactElement {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const { status, doc, pages, savedScroll, clearSavedScroll } = usePdfDocument(view, scrollRef)
+  const { status, doc, pages, savedScroll, clearSavedScroll } = usePdfDocument(view, sessionId, scrollRef)
   const containerWidth = usePdfContainerWidth(scrollRef)
   const active = status === 'ready' && doc !== null
   const { visible, observe } = usePdfPageObserver(scrollRef, active)
@@ -57,13 +59,13 @@ export function PdfBody({ view }: PdfBodyProps): ReactElement {
   // A zoom or a re-layout changes the page heights under a fixed scrollTop; keep the label honest.
   useLayoutEffect((): void => {
     const node = scrollRef.current
-    if (node !== null && status === 'ready') setCurrent(pdfCurrentPage(boxes, node.scrollTop))
+    if (node !== null && status === 'ready') setCurrent(pdfCurrentPage(boxes, node.scrollTop, node.clientHeight, node.scrollHeight))
   }, [boxes, status])
 
   function handleScroll(): void {
     const node = scrollRef.current
     if (node === null || status !== 'ready') return
-    setCurrent(pdfCurrentPage(boxes, node.scrollTop))
+    setCurrent(pdfCurrentPage(boxes, node.scrollTop, node.clientHeight, node.scrollHeight))
   }
 
   const zoomBy = useCallback(
@@ -100,6 +102,7 @@ export function PdfBody({ view }: PdfBodyProps): ReactElement {
           scale={scale}
           zoom={zoom}
           fit={fit}
+          streamedBytes={view.streamed === true ? view.size : null}
           onZoom={zoomBy}
           onFit={(): void => setFit(true)}
         />
@@ -140,7 +143,7 @@ export function PdfBody({ view }: PdfBodyProps): ReactElement {
             data-pdf-loading=""
             className="flex h-full items-center justify-center p-4 text-xs text-muted-foreground"
           >
-            Rendering...
+            {view.streamed === true ? 'Loading a large PDF...' : 'Rendering...'}
           </p>
         ) : null}
         {status === 'password' ? (

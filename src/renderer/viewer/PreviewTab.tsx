@@ -53,7 +53,10 @@ export function PreviewTab({ request, onClose }: PreviewTabProps): ReactElement 
             {notice.text}
           </span>
         )}
-        {view !== null && <FileActions sessionId={request.sessionId} text={request.text} path={view.path} />}
+        {/* Also after a failed read: a file the viewer refuses (too big, not a real PDF...) must stay reachable. */}
+        {(view !== null || state?.status === 'error') && (
+          <FileActions sessionId={request.sessionId} text={request.text} path={view?.path ?? request.text} />
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -97,9 +100,14 @@ export function PreviewTab({ request, onClose }: PreviewTabProps): ReactElement 
           {LOADING_MESSAGE}
         </p>
       ) : state.status === 'error' ? (
-        <p role="alert" data-preview-error="" className="px-3 py-2 text-xs text-destructive">
-          {state.error}
-        </p>
+        <div className="px-3 py-2 text-xs">
+          <p role="alert" data-preview-error="" className="text-destructive">
+            {state.error}
+          </p>
+          <p data-preview-error-hint="" className="mt-1 text-muted-foreground">
+            You can still open it with the buttons above: Open in default app, Show in Explorer or Copy path.
+          </p>
+        </div>
       ) : (
         <FileViewPane view={state.view} sessionId={request.sessionId} className="min-h-0 flex-1" />
       )}

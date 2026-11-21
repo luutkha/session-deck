@@ -948,6 +948,8 @@ export interface FileView {
   readonly sheets: readonly FileViewSheet[]
   /** True when the file or its text was cut at a size cap. */
   readonly truncated: boolean
+  /** D75: a PDF over FILE_VIEW_PDF_MAX_BYTES is NOT sent whole: `base64` is '' and the renderer reads byte ranges with `readFileViewRange` (pdf.js range transport). `size` is the whole file. */
+  readonly streamed?: boolean
   /** D74: the file's modified time (ms); with `size` it tells the live reload that the file changed. */
   readonly mtimeMs: number
 }
@@ -962,6 +964,10 @@ export const FILE_VIEW_TEXT_MAX_BYTES = 1024 * 1024
 export const FILE_VIEW_DOC_MAX_BYTES = 20 * 1024 * 1024
 /** D75: a PDF is sent whole (base64) to the renderer, which draws it with pdf.js; bigger files are refused. */
 export const FILE_VIEW_PDF_MAX_BYTES = 30 * 1024 * 1024
+/** D75: a bigger PDF is read in ranges (never loaded whole); beyond this it is refused. */
+export const FILE_VIEW_PDF_STREAM_MAX_BYTES = 1024 * 1024 * 1024
+/** D75: the largest single range main hands out (pdf.js asks for far less per request). */
+export const FILE_VIEW_PDF_RANGE_MAX_BYTES = 8 * 1024 * 1024
 export const FILE_VIEW_MAX_ROWS = 2000
 export const FILE_VIEW_MAX_COLS = 50
 export const FILE_VIEW_MAX_SHEETS = 20
@@ -982,3 +988,8 @@ export interface OpencodeInfo {
   /** True while a probe is running. */
   readonly probing: boolean
 }
+
+/** D75: one byte range of a big PDF, base64. `start` echoes the request so the renderer can feed pdf.js. */
+export type FileViewRangeResult =
+  | { readonly ok: true; readonly start: number; readonly base64: string }
+  | { readonly ok: false; readonly error: string }

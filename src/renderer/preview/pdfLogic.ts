@@ -79,8 +79,28 @@ export function pdfPageBoxes(
   return boxes
 }
 
-/** The page at the top edge of the viewport: a gap belongs to the page above it. */
-export function pdfCurrentPage(boxes: readonly PdfPageBox[], scrollTop: number): number {
+/**
+ * The page at the top edge of the viewport: a gap belongs to the page above it. Scrolled all the way down (the
+ * optional viewport and content heights say so) the LAST page counts, like in any PDF viewer: with two short
+ * pages on screen the top-edge rule alone would never reach the final page number.
+ */
+export function pdfCurrentPage(
+  boxes: readonly PdfPageBox[],
+  scrollTop: number,
+  viewportHeight?: number,
+  contentHeight?: number
+): number {
+  const last = boxes[boxes.length - 1]
+  if (
+    last !== undefined &&
+    positiveFinite(viewportHeight ?? Number.NaN) &&
+    positiveFinite(contentHeight ?? Number.NaN) &&
+    Number.isFinite(scrollTop) &&
+    scrollTop + (viewportHeight ?? 0) >= (contentHeight ?? Number.POSITIVE_INFINITY) - 2 &&
+    scrollTop > 0
+  ) {
+    return last.index
+  }
   const reference = Number.isFinite(scrollTop) ? scrollTop + 1 : 0
   let current = 0
   for (const box of boxes) {
