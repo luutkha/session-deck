@@ -15,6 +15,7 @@ import {
 } from './reminder'
 import { writeSettingsFile } from './claudeSettings'
 import { writeOpencodePlugin, opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from '../opencode'
+import type { OpencodePermissionPolicy } from '../opencode/pluginEnv'
 import { writeWorkerPlugin, workerPluginEnv } from '../workers/workerPluginEnv'
 import { isRecord } from '../../shared/guards'
 
@@ -54,8 +55,8 @@ export interface AttentionService {
   stop(): Promise<void>
   claudeArgs(): string[]
   envFor(sessionId: string): Record<string, string>
-  /** Env entries for an OpenCode session (its injected plugin, permission bypass). Throws when not started. */
-  opencodeEnv(): Record<string, string>
+  /** Env entries for an OpenCode session (its injected plugin, permission policy). Throws when not started. */
+  opencodeEnv(permissionPolicy?: OpencodePermissionPolicy): Record<string, string>
   /** Env entries for a Claude terminal so OpenCode processes it starts report to the worker tabs. Throws when not started. */
   workerEnv(): Record<string, string>
   /** Where the local hook server listens and its token (diagnostics and tests). Throws when not started. */
@@ -221,13 +222,13 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
       }
     },
 
-    opencodeEnv(): Record<string, string> {
+    opencodeEnv(permissionPolicy: OpencodePermissionPolicy = 'yolo'): Record<string, string> {
       if (!started || pluginFilePath === null || workerPluginPath === null) {
         throw new Error('AttentionService not started')
       }
       // The worker plugin loads first, so the parent (owner) OpenCode process reports itself before it can start
       // any worker; the session plugin follows (see docs/DECISIONS D19 and the worker-tabs handshake).
-      return opencodePluginEnv([workerPluginPath, pluginFilePath], process.env[OPENCODE_PLUGIN_ENV_VAR])
+      return opencodePluginEnv([workerPluginPath, pluginFilePath], process.env[OPENCODE_PLUGIN_ENV_VAR], permissionPolicy)
     },
 
     workerEnv(): Record<string, string> {

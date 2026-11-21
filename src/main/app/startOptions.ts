@@ -121,7 +121,11 @@ export function buildOpencodeStartOptions(
   if (session.opencodeSessionId !== undefined && session.opencodeSessionId.length > 0) {
     internalArgs.push('-s', session.opencodeSessionId)
   }
-  const env: Record<string, string> = { ...attention.envFor(session.id), ...attention.opencodeEnv() }
+  const env: Record<string, string> = {
+    ...attention.envFor(session.id),
+    // D79: 'ask' leaves the user's own OpenCode permission rules alone; absent = 'yolo' (D10).
+    ...attention.opencodeEnv(session.opencodePermissions ?? 'yolo')
+  }
   const key = OPENCODE_PLUGIN_ENV_VAR
   if (typeof session.model === 'string' && session.model.length > 0) {
     env[key] = applyConfigPatch(env[key], { model: session.model })

@@ -122,6 +122,13 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
 
       <OpencodeProbeRow />
 
+      <div className="flex flex-col gap-1" data-opencode-plugin-health="">
+        <p className="text-xs text-muted-foreground">
+          The injected OpenCode plugin reports a session&apos;s status. If it does not load, that session&apos;s card shows
+          &quot;Status unavailable: the OpenCode plugin did not load&quot;; the session still runs.
+        </p>
+      </div>
+
       <Separator />
 
       <div className="space-y-1.5">

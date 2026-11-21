@@ -1,9 +1,12 @@
-// Conversation search (D52): finds text in the saved Claude Code conversations of SessionDeck's sessions.
-// Read-only: transcripts live in <CLAUDE_CONFIG_DIR | ~/.claude>/projects/<project>/<conversation id>.jsonl and are
-// never written. Parsed transcripts are cached by file size and modification time.
+// Conversation search (D52): finds text in the saved conversations of SessionDeck's sessions. Claude Code
+// transcripts live in <CLAUDE_CONFIG_DIR | ~/.claude>/projects/<project>/<conversation id>.jsonl and are read only;
+// parsed transcripts are cached by file size and modification time. OpenCode sessions (D79) have no such file: their
+// turns come from the injected `opencode session export` runner (opencodeTranscript.ts), cached per session and
+// capped at a few processes at once. Nothing here writes a transcript.
 import { join } from 'node:path'
 import type { ConversationHit, ConversationSearchResult, Id, Session } from '../../shared/types'
 import { isRecord } from '../../shared/guards'
+import { exportOpencodeSession } from './opencodeTranscript'
 
 export const SEARCH_QUERY_MIN = 2
 export const SEARCH_QUERY_MAX = 200
@@ -84,11 +87,15 @@ export interface ConversationSearchDeps {
   readonly readdir: (dir: string) => Promise<readonly string[]>
   readonly stat: (file: string) => Promise<{ readonly size: number; readonly mtimeMs: number } | null>
   readonly readFile: (file: string) => Promise<string>
+  /** D79: the injected `opencode session export` runner (see main/opencode/exportRunner.ts); absent = no OpenCode search. */
+  readonly runOpencodeExport?: (args: string[]) => Promise<string>
+  /** Clock for the OpenCode cache (tests); Date.now otherwise. */
+  readonly now?: () => number
 }
 
 export interface ConversationSearch {
   search(sessions: readonly Session[], query: string): Promise<ConversationSearchResult>
-  /** D54: the saved messages of one Claude session (cached like search); null when it has no saved conversation. */
+  /** D54: the saved messages of one session (cached like search); null when it has no saved conversation. */
   messagesOfSession(session: Session): Promise<readonly TranscriptMessage[] | null>
 }
 
@@ -113,8 +120,80 @@ interface CacheEntry {
   readonly messages: readonly TranscriptMessage[]
 }
 
+/**
+ * D79: how long an OpenCode export may answer get_last_answer / Jarvis's reply. fleet_digest asks for every session
+ * in one turn, and an export is a whole process; a few seconds are enough to share one export between those calls.
+ */
+export const OPENCODE_ANSWER_TTL_MS = 5000
+/** In a search the session's own last-active time rules; this only stops a very old entry from being reused forever. */
+export const OPENCODE_SEARCH_MAX_AGE_MS = 60_000
+/** At most this many `opencode session export` processes at once, so a big fleet does not swamp the machine. */
+export const OPENCODE_MAX_CONCURRENT = 3
+
+interface OpencodeEntry {
+  /** The session's last-active time when the export was started (D61); a changed value means new messages. */
+  readonly key: number
+  readonly at: number
+  readonly messages: readonly TranscriptMessage[] | null
+}
+
 export function createConversationSearch(deps: ConversationSearchDeps): ConversationSearch {
   const cache = new Map<string, CacheEntry>()
+  const opencodeCache = new Map<string, OpencodeEntry>()
+  const opencodeFlights = new Map<string, Promise<readonly TranscriptMessage[] | null>>()
+  let opencodeActive = 0
+  const opencodeWaiting: Array<() => void> = []
+  const now = (): number => (deps.now ?? Date.now)()
+
+  /** Runs one export when a slot is free (first in, first out); the caller waits otherwise. */
+  async function withOpencodeSlot<T>(task: () => Promise<T>): Promise<T> {
+    if (opencodeActive >= OPENCODE_MAX_CONCURRENT) {
+      // The task that frees the slot hands it over, so `opencodeActive` already counts this caller.
+      await new Promise<void>((resolve) => opencodeWaiting.push(resolve))
+    } else {
+      opencodeActive += 1
+    }
+    try {
+      return await task()
+    } finally {
+      const next = opencodeWaiting.shift()
+      if (next !== undefined) next()
+      else opencodeActive -= 1
+    }
+  }
+
+  /** D61: the session's own "updated" time; a turn or a prompt moves it, so a new value means new messages. */
+  function updatedAt(session: Session): number {
+    return session.lastActiveAt ?? session.createdAt
+  }
+
+  /**
+   * D79: the turns of an OpenCode session. Reused while the session's updated time is unchanged and the entry is
+   * younger than `maxAgeMs`; concurrent callers share one process. null (no id, no runner, a failed export) means
+   * "no conversation", never an empty one.
+   */
+  async function opencodeMessages(session: Session, maxAgeMs: number): Promise<readonly TranscriptMessage[] | null> {
+    const sessionId = session.opencodeSessionId
+    const run = deps.runOpencodeExport
+    if (sessionId === undefined || run === undefined) return null
+    const startedAt = now()
+    const key = updatedAt(session)
+    const cached = opencodeCache.get(sessionId)
+    if (cached !== undefined && cached.key === key && startedAt - cached.at < maxAgeMs) return cached.messages
+    const flying = opencodeFlights.get(sessionId)
+    if (flying !== undefined) return flying
+    const flight = withOpencodeSlot(() => exportOpencodeSession(sessionId, run))
+      .then((messages): readonly TranscriptMessage[] | null => {
+        opencodeCache.set(sessionId, { key, at: now(), messages })
+        return messages
+      })
+      .catch((): readonly TranscriptMessage[] | null => null)
+      .finally((): void => {
+        opencodeFlights.delete(sessionId)
+      })
+    opencodeFlights.set(sessionId, flight)
+    return flight
+  }
 
   /** conversation id -> transcript path, from one listing of the projects folder. */
   async function locate(ids: ReadonlySet<string>): Promise<Map<string, string>> {
@@ -154,7 +233,12 @@ export function createConversationSearch(deps: ConversationSearchDeps): Conversa
 
   return {
     async messagesOfSession(session: Session): Promise<readonly TranscriptMessage[] | null> {
-      if ((session.agent ?? 'claude') !== 'claude' || session.claudeSessionId === undefined) return null
+      const agent = session.agent ?? 'claude'
+      if (agent === 'opencode') {
+        // D79: the real turns come from the export, not the screen; null when it cannot be read.
+        return opencodeMessages(session, OPENCODE_ANSWER_TTL_MS)
+      }
+      if (agent !== 'claude' || session.claudeSessionId === undefined) return null
       const path = (await locate(new Set([session.claudeSessionId]))).get(session.claudeSessionId)
       return path === undefined ? null : messagesOf(path)
     },
@@ -165,6 +249,8 @@ export function createConversationSearch(deps: ConversationSearchDeps): Conversa
         throw new Error(`Search text must be ${SEARCH_QUERY_MIN} to ${SEARCH_QUERY_MAX} characters`)
       }
       const claude = sessions.filter((s) => (s.agent ?? 'claude') === 'claude' && s.claudeSessionId !== undefined)
+      // D79: OpenCode sessions with a conversation id are searched through the export (no local transcript file).
+      const opencode = sessions.filter((s) => (s.agent ?? 'claude') === 'opencode' && s.opencodeSessionId !== undefined)
       const paths = await locate(new Set(claude.map((s) => s.claudeSessionId as string)))
       const hits: ConversationHit[] = []
       let truncated = false
@@ -180,6 +266,23 @@ export function createConversationSearch(deps: ConversationSearchDeps): Conversa
         }
         searched += 1
         const found = findInMessages(messages, session.id, query, MAX_HITS_PER_SESSION + 1)
+        if (found.length > MAX_HITS_PER_SESSION) truncated = true
+        hits.push(...found.slice(0, MAX_HITS_PER_SESSION))
+      }
+      // Bounded concurrency: opencodeMessages queues on at most OPENCODE_MAX_CONCURRENT processes; results are kept in
+      // session order so the output stays stable.
+      const opencodeFound = await Promise.all(
+        opencode.map((session) =>
+          opencodeMessages(session, OPENCODE_SEARCH_MAX_AGE_MS)
+            .then((messages): ConversationHit[] | null =>
+              messages === null ? null : findInMessages(messages, session.id, query, MAX_HITS_PER_SESSION + 1)
+            )
+            .catch((): ConversationHit[] | null => null)
+        )
+      )
+      for (const found of opencodeFound) {
+        if (found === null) continue
+        searched += 1
         if (found.length > MAX_HITS_PER_SESSION) truncated = true
         hits.push(...found.slice(0, MAX_HITS_PER_SESSION))
       }

@@ -327,6 +327,9 @@ Update: on the VM (adapters: Microsoft Hyper-V Video, Microsoft Remote Display A
 **D70 · 2026-11-13 · Adjustable sessions sidebar** · active
 "next feature i want is the right panel (which contain the sessions) can not adjust width, so i want able to adjust it". The panel that holds the sessions is the sidebar (it is on the left in this app); that is the one made draggable. Edge drag 220-640px (default 300), saved per user in localStorage, one width for Ops and Code, keyboard + double-click reset. The panels on the right (notes, changes, Jarvis) were not changed.
 
+**D79 · 2026-11-22 · Jarvis fleet digest + OpenCode parity** · active
+After the suggestions: "for new feature, do 1. for opencode enhance, do all propose". So: Jarvis `fleet_digest` (one call, every session: state, time in state, last prompt, reply tail, pending question, cost today, uncommitted files); and every OpenCode enhancement proposed: OpenCode Jarvis replies on the panel/read-aloud, real answer text + transcript search via `opencode session export`, session-id recovery from `opencode session list`, plugin-health check with status fallback, `set_session_model`, copy-style fork via export/import, opt-in "ask me" permissions (yolo stays the default, D10), usage-limit detection for autopilot, and the `opencode serve` API path behind a setting. Other Jarvis ideas (session_diff, remember, restorable removals, handoff, context_guard, watch_add, budget_guard, fan_out, brief me) were NOT chosen.
+
 **D78 · 2026-11-21 · Leftovers from the D77 bug hunt** · active
 "do 2 and 4" (cleanup of the leftovers, and push). Detached viewer windows are capped at 8 (`app/viewerWindows.ts`): past it the oldest is focused instead. Excel error cells (#DIV/0!) stay blank: read-excel-file drops `t="e"` cells itself (`parseSheet.js`), showing them needs a fork. The palette's Preview file... is hidden (not silent) when no session is open, kept as is.
 

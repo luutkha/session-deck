@@ -159,4 +159,22 @@ describe('runtimeRegistry', () => {
     expect(timed.get('s1')?.attention).toBeNull()
     expect(timed.get('s1')).not.toHaveProperty('attentionAt')
   })
+
+  it('D79: setOpencodePlugin records the health, emits once, and a restart starts unknown', () => {
+    let emissions = 0
+    registry.subscribe(() => {
+      emissions++
+    })
+    registry.markRunning('s1')
+    registry.setOpencodePlugin('s1', 'missing')
+    expect(registry.get('s1')?.opencodePlugin).toBe('missing')
+    expect(emissions).toBe(2)
+    registry.setOpencodePlugin('s1', 'missing')
+    expect(emissions).toBe(2)
+
+    registry.markRunning('s1')
+    expect(registry.get('s1')).not.toHaveProperty('opencodePlugin')
+    registry.setOpencodePlugin('s1', 'ok')
+    expect(registry.get('s1')?.opencodePlugin).toBe('ok')
+  })
 })

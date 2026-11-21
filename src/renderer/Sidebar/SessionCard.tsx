@@ -1,4 +1,4 @@
-import { Moon, X } from 'lucide-react'
+import { AlertTriangle, Moon, X } from 'lucide-react'
 import { memo, useMemo, useRef, type HTMLAttributes, type ReactElement, type ReactNode, type MouseEvent, type Ref } from 'react'
 import type { AttentionReason, Id, RuntimeState, Session, SessionActivity, StatusDef } from '../../shared/types'
 import type { SelectClickModifiers } from '../state/multiSelect'
@@ -253,6 +253,18 @@ export function SessionCardView(props: SessionCardProps): ReactElement {
           </span>
         )}
         <AgentBadge agent={sessionAgent(session)} remote={runtime?.remoteControl === true} keepAwake={session.keepAwake === true} />
+        {runtime?.opencodePlugin === 'missing' ? (
+          // D79: advisory only. The session still runs; its busy/idle status is simply not reported.
+          <span
+            role="img"
+            aria-label="Status unavailable: the OpenCode plugin did not load"
+            title="Status unavailable: the OpenCode plugin did not load"
+            data-opencode-plugin-missing=""
+            className="flex shrink-0 items-center text-muted-foreground/70"
+          >
+            <AlertTriangle className="size-3" aria-hidden="true" />
+          </span>
+        ) : null}
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/session:opacity-100 group-focus-within/session:opacity-100">
           {contextMenuTrigger}
           <Tooltip>
@@ -354,7 +366,8 @@ function sameRuntime(prev: RuntimeState | undefined, next: RuntimeState | undefi
     (prev.activityMessage ?? null) === (next.activityMessage ?? null) &&
     (prev.activityAt ?? null) === (next.activityAt ?? null) &&
     (prev.sleeping === true) === (next.sleeping === true) &&
-    (prev.remoteControl === true) === (next.remoteControl === true)
+    (prev.remoteControl === true) === (next.remoteControl === true) &&
+    (prev.opencodePlugin ?? null) === (next.opencodePlugin ?? null)
   )
 }
 

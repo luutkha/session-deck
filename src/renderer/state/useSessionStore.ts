@@ -58,6 +58,7 @@ export function useSessionStore(): UseSessionStoreResult {
   const apiRef = useRef<Api | null>(null)
   const unsubStoreRef = useRef<(() => void) | null>(null)
   const unsubRuntimeRef = useRef<(() => void) | null>(null)
+  const unsubNoticeRef = useRef<(() => void) | null>(null)
 
   const notify = useCallback(() => {
     for (const listener of listenersRef.current) {
@@ -137,6 +138,8 @@ export function useSessionStore(): UseSessionStoreResult {
 
         unsubStoreRef.current = api.onStoreChanged(updateData)
         unsubRuntimeRef.current = api.onRuntime(updateRuntime)
+        // D79: a one-line advisory notice from main uses the existing banner (same slot as an action error).
+        unsubNoticeRef.current = typeof api.onNotice === 'function' ? api.onNotice(setError) : null
       } catch (err) {
         setError(errorMessage(err))
       }
@@ -147,9 +150,11 @@ export function useSessionStore(): UseSessionStoreResult {
     return (): void => {
       unsubStoreRef.current?.()
       unsubRuntimeRef.current?.()
+      unsubNoticeRef.current?.()
       runtimeBatch.dispose()
       unsubStoreRef.current = null
       unsubRuntimeRef.current = null
+      unsubNoticeRef.current = null
     }
   }, [notify, updateData, updateRuntime, runtimeBatch, setError])
 

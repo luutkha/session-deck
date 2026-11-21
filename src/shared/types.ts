@@ -36,6 +36,12 @@ export type SessionRun = 'running' | 'exited'
 /** Which coding agent a session runs. Absent on a stored session = 'claude'. */
 export type AgentKind = 'claude' | 'opencode' | 'shell'
 
+/**
+ * OpenCode tool-permission policy (D79, D10): 'yolo' merges `permission: {"*": "allow"}` into the session's own
+ * config content and is the default; 'ask' leaves the user's own OpenCode permission rules untouched.
+ */
+export type OpencodePermissions = 'yolo' | 'ask'
+
 /** Which UI a session belongs to (D31). 'code' = it lives in a git worktree (Session.worktreeId present). */
 export type UiMode = 'ops' | 'code'
 
@@ -56,6 +62,8 @@ export interface Session {
   readonly opencodeSessionId?: string
   /** OpenCode only: "provider/model", injected via the config content `model` key (the TUI CLI has no --model flag). Absent or empty = OpenCode's own default. */
   readonly model?: string
+  /** OpenCode only (D79): how tool permissions are handled. Absent = 'yolo' (D10 default); 'ask' keeps the user's own OpenCode rules. */
+  readonly opencodePermissions?: OpencodePermissions
   /** Present (epoch ms) = the user closed this session: its process is stopped and it lives in the sidebar "Closed" section until reopened. A process that merely exits stays open (not closed). */
   readonly closedAt?: number
   /** True = never auto-sleep this session (the idle timer skips it; a manual Sleep still works). Absent = false. */
@@ -278,6 +286,11 @@ export interface RuntimeState {
   readonly sleeping?: boolean
   /** True while the running Claude process has Remote Control active (claude.ai/code or the phone app can drive it). */
   readonly remoteControl?: boolean
+  /**
+   * OpenCode only (D79): health of the injected plugin. Absent = not known yet (still starting); 'ok' = at least one
+   * plugin event arrived; 'missing' = silence past the grace window, so the session's status cannot be trusted.
+   */
+  readonly opencodePlugin?: 'ok' | 'missing'
 }
 
 /** working = a turn is running; needs-input = Claude is asking for permission/input; finished = the turn ended. */
@@ -293,6 +306,8 @@ export interface CreateSessionInput {
   readonly agent?: AgentKind
   /** OpenCode only: "provider/model". */
   readonly model?: string
+  /** OpenCode only (D79): 'yolo' (default when absent) or 'ask' (use the user's own OpenCode permission rules). */
+  readonly opencodePermissions?: OpencodePermissions
   /** Code mode: start the session inside this worktree. Main then uses the worktree path as cwd (input.cwd is ignored). */
   readonly worktreeId?: Id
   /** D53: main only (the IPC validation rejects this key); set when SessionDeck creates the Jarvis session. */

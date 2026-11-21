@@ -68,6 +68,14 @@ function asWakeOptions(raw: unknown): { readonly sendContinue: boolean } {
 export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
   const { store, runtime, usage, pty, controller, send, onError } = deps
   let lastAway: AwaySummary | null = null
+  // D79: advisory notices (an ambiguous OpenCode conversation, for one) use the renderer's existing banner.
+  controller.setNoticeHandler((message: string): void => {
+    try {
+      send(IPC.evNotice, message)
+    } catch (error) {
+      onError('session notice', error)
+    }
+  })
   // The quota IPC answers only after the state file was read, so a click during startup cannot be overwritten by load().
   let autopilotReady: Promise<void> = Promise.resolve()
 

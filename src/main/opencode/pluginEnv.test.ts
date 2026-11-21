@@ -92,11 +92,71 @@ describe('buildOpencodeConfigContent with several plugins (worker + session plug
   })
 })
 
+describe('buildOpencodeConfigContent permission policy', () => {
+  it("keeps today's output for the default and for an explicit 'yolo'", () => {
+    const existingValues = [undefined, JSON.stringify({ model: 'm', permission: { edit: 'deny' } })]
+    for (const existing of existingValues) {
+      expect(buildOpencodeConfigContent(PLUGIN_DIR, existing, 'yolo')).toBe(buildOpencodeConfigContent(PLUGIN_DIR, existing))
+    }
+  })
+
+  it("adds no permission rule under 'ask' when the user exports nothing", () => {
+    const config = parse(buildOpencodeConfigContent(PLUGIN_DIR, undefined, 'ask'))
+    expect(config).toEqual({ plugin: [PLUGIN_ENTRY] })
+    expect(config.permission).toBeUndefined()
+  })
+
+  it("keeps the user's own permission rules exactly as written under 'ask'", () => {
+    const existing = JSON.stringify({
+      model: 'm',
+      plugin: ['file:///user-plugin.mjs'],
+      permission: { edit: 'deny', bash: { '*': 'ask' } }
+    })
+    const config = parse(buildOpencodeConfigContent(PLUGIN_DIR, existing, 'ask'))
+    expect(config.model).toBe('m')
+    expect(config.plugin).toEqual(['file:///user-plugin.mjs', PLUGIN_ENTRY])
+    expect(config.permission).toEqual({ edit: 'deny', bash: { '*': 'ask' } })
+  })
+
+  it("does not override a '*' rule the user wrote themselves under 'ask'", () => {
+    const existing = JSON.stringify({ permission: { '*': 'deny' } })
+    const config = parse(buildOpencodeConfigContent(PLUGIN_DIR, existing, 'ask'))
+    expect(config.permission).toEqual({ '*': 'deny' })
+  })
+
+  it("leaves an unparseable config untouched under 'ask'", () => {
+    const existing = '{ not json'
+    expect(buildOpencodeConfigContent(PLUGIN_DIR, existing, 'ask')).toBe(existing)
+  })
+
+  it("leaves a non-object config untouched under 'ask'", () => {
+    for (const existing of ['[]', '"text"', 'null', '42']) {
+      expect(buildOpencodeConfigContent(PLUGIN_DIR, existing, 'ask')).toBe(existing)
+    }
+  })
+
+  it("still filters legacy entries and deduplicates plugins under 'ask'", () => {
+    const existing = JSON.stringify({
+      plugin: ['C:\\old\\sessiondeck-opencode-plugin.mjs', PLUGIN_ENTRY]
+    })
+    const config = parse(buildOpencodeConfigContent(PLUGIN_DIR, existing, 'ask'))
+    expect(config.plugin).toEqual([PLUGIN_ENTRY])
+    expect(config.permission).toBeUndefined()
+  })
+})
+
 describe('opencodePluginEnv', () => {
   it('returns the config under OPENCODE_CONFIG_CONTENT', () => {
     const env = opencodePluginEnv(PLUGIN_DIR, undefined)
     expect(Object.keys(env)).toEqual([OPENCODE_PLUGIN_ENV_VAR])
     expect(parse(env[OPENCODE_PLUGIN_ENV_VAR]).model).toBeUndefined()
+  })
+
+  it("forwards the 'ask' policy and defaults to 'yolo'", () => {
+    expect(parse(opencodePluginEnv(PLUGIN_DIR, undefined, 'ask')[OPENCODE_PLUGIN_ENV_VAR])).toEqual({ plugin: [PLUGIN_ENTRY] })
+    expect(opencodePluginEnv(PLUGIN_DIR, undefined)[OPENCODE_PLUGIN_ENV_VAR]).toBe(
+      opencodePluginEnv(PLUGIN_DIR, undefined, 'yolo')[OPENCODE_PLUGIN_ENV_VAR]
+    )
   })
 })
 

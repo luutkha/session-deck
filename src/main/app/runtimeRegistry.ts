@@ -29,6 +29,12 @@ function withoutRemoteControl(state: RuntimeState): RuntimeState {
   return rest
 }
 
+/** D79: plugin health belongs to one running process; a (re)start starts unknown again. */
+function withoutOpencodePlugin(state: RuntimeState): RuntimeState {
+  const { opencodePlugin: _opencodePlugin, ...rest } = state
+  return rest
+}
+
 export interface RuntimeRegistry {
   markRunning(id: Id): void
   markExited(id: Id, code: number | null): void
@@ -37,6 +43,8 @@ export interface RuntimeRegistry {
   setAttention(id: Id, reason: AttentionReason | null): void
   /** Marks whether the running process has Remote Control active; a no-op when unchanged. */
   setRemoteControl(id: Id, active: boolean): void
+  /** D79: the injected OpenCode plugin's health for this process; a no-op when unchanged. */
+  setOpencodePlugin(id: Id, status: 'ok' | 'missing'): void
   /** Sets the Claude activity of a session. `at` is epoch ms of the change. */
   setActivity(id: Id, activity: SessionActivity | null, message: string | null, at: number): void
   forget(id: Id): void
@@ -68,7 +76,7 @@ export function createRuntimeRegistry(now: () => number = Date.now): RuntimeRegi
   return {
     markRunning(id: Id): void {
       const state = getOrCreate(id)
-      const next: RuntimeState = withoutSleeping(withoutActivity({ ...state, run: 'running', exitCode: null }))
+      const next: RuntimeState = withoutOpencodePlugin(withoutSleeping(withoutActivity({ ...state, run: 'running', exitCode: null })))
       states.set(id, next)
       emit(next)
     },
@@ -111,6 +119,16 @@ export function createRuntimeRegistry(now: () => number = Date.now): RuntimeRegi
         return
       }
       const next: RuntimeState = active ? { ...state, remoteControl: true } : withoutRemoteControl(state)
+      states.set(id, next)
+      emit(next)
+    },
+
+    setOpencodePlugin(id: Id, status: 'ok' | 'missing'): void {
+      const state = getOrCreate(id)
+      if (state.opencodePlugin === status) {
+        return
+      }
+      const next: RuntimeState = { ...state, opencodePlugin: status }
       states.set(id, next)
       emit(next)
     },

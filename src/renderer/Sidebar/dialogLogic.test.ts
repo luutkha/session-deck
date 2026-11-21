@@ -396,6 +396,25 @@ describe('buildCreateInput (remote control)', () => {
   })
 })
 
+describe('buildCreateInput (OpenCode permissions, D79)', () => {
+  it('defaults to yolo: no opencodePermissions field at all', () => {
+    const result = buildCreateInput(form({ agent: 'opencode' }))
+    expect(result.ok && 'opencodePermissions' in result.input).toBe(false)
+  })
+
+  it('the opt-in checkbox sends "ask"', () => {
+    const result = buildCreateInput(form({ agent: 'opencode', openCodeAskPermissions: true }))
+    expect(result.ok && result.input.opencodePermissions).toBe('ask')
+  })
+
+  it('is never sent for Claude or Shell sessions', () => {
+    for (const agent of ['claude', 'shell'] as const) {
+      const result = buildCreateInput(form({ agent, openCodeAskPermissions: true }))
+      expect(result.ok && 'opencodePermissions' in result.input).toBe(false)
+    }
+  })
+})
+
 describe('initialFolder', () => {
   const at = (cwd: string, createdAt: number): Pick<Session, 'cwd' | 'createdAt'> => ({ cwd, createdAt })
 

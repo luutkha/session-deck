@@ -47,6 +47,7 @@ interface MockProcess {
 
 function createMockPty(): PtyManager & {
   fireExit: (id: Id, code: number | null) => void
+  fireData: (id: Id, data: string) => void
   getLastStartOpts: (id: Id) => StartOptions | undefined
 } {
   const processes = new Map<Id, MockProcess>()
@@ -112,6 +113,12 @@ function createMockPty(): PtyManager & {
       for (const cb of exitListeners) cb(id, code)
     },
 
+    fireData(id: Id, data: string): void {
+      const proc = processes.get(id)
+      if (proc) proc.buffer += data
+      for (const cb of dataListeners) cb(id, data, 0)
+    },
+
     getLastStartOpts(id: Id): StartOptions | undefined {
       return processes.get(id)?.startOpts
     },
@@ -171,23 +178,35 @@ function createFakeAttention(): AttentionService {
   } as unknown as AttentionService
 }
 
-function setup(sessions: Session[] = []) {
+interface SetupOptions {
+  readonly runOpencode?: (args: string[]) => Promise<string>
+  readonly opencodeHealthGraceMs?: number
+  readonly onUsageLimit?: (id: Id) => void
+}
+
+function setup(sessions: Session[] = [], options: SetupOptions = {}) {
   // v2.x is the normal case here (--standalone present); the probe itself would spawn the real opencode CLI.
   setOpencodeSupportsStandaloneForTests(true)
   const saver = vi.fn()
   const store = new SessionStore(makeStoreData(sessions), { schedule: saver }, { newId: () => 'new-id', now: () => 10 })
   const pty = createMockPty()
   const runtime = createRuntimeRegistry()
+  const notice = vi.fn()
   const controller = createSessionController({
     store,
     pty,
     attention: createFakeAttention(),
     runtime,
     sendPtyData: vi.fn(),
-    userDataDir: tempDir()
+    userDataDir: tempDir(),
+    // Unit tests never spawn the real CLI: the default list is empty.
+    runOpencode: options.runOpencode ?? (async () => '[]'),
+    ...(options.opencodeHealthGraceMs !== undefined ? { opencodeHealthGraceMs: options.opencodeHealthGraceMs } : {}),
+    ...(options.onUsageLimit !== undefined ? { onUsageLimit: options.onUsageLimit } : {})
   })
+  controller.setNoticeHandler(notice)
   const stateOf = (id: Id): RuntimeState | undefined => runtime.get(id)
-  return { controller, store, pty, runtime, stateOf, saver }
+  return { controller, store, pty, runtime, stateOf, saver, notice }
 }
 
 const CLAUDE_FLAGS = ['--dangerously-skip-permissions', '--session-id', '--resume', '--settings']
@@ -309,7 +328,9 @@ describe('opencode sessions: sleep + wake and close/reopen', () => {
     expect(opts.internalArgs).toEqual(['--standalone', '-s', OC_ID])
     expect(store.get().sessions.find((s) => s.id === created.id)!.closedAt).toBeUndefined()
   })
+})
 
+describe('opencode sessions: close/reopen starts a fresh opencode when the id is unknown', () => {
   it('reopen of an opencode session whose id was never reported starts a fresh opencode', () => {
     const { controller, pty } = setup()
     const created = controller.createSession({ cwd: tempDir(), agent: 'opencode' })
@@ -318,5 +339,158 @@ describe('opencode sessions: sleep + wake and close/reopen', () => {
     controller.reopenSession(created.id)
 
     expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--standalone'])
+  })
+})
+
+function listRow(id: string, directory: string, at: number): string {
+  return JSON.stringify([{ id, directory, created: at, updated: at }])
+}
+
+describe('opencode sessions: session-id recovery (D79)', () => {
+  it('a resume without an id lists sessions and adopts the single match (same setter as the plugin)', async () => {
+    const cwd = tempDir()
+    let output = '[]'
+    const run = vi.fn(async (args: string[]) => {
+      expect(args).toEqual(['session', 'list', '--format', 'json'])
+      return output
+    })
+    const { controller, store } = setup([], { runOpencode: run })
+    const created = controller.createSession({ cwd, agent: 'opencode' })
+    expect(run).not.toHaveBeenCalled()
+
+    controller.sleepSession(created.id)
+    output = listRow(OC_ID, cwd, Date.now())
+    controller.setActiveSession(created.id)
+
+    await vi.waitFor(() => {
+      expect(store.get().sessions.find((s) => s.id === created.id)!.opencodeSessionId).toBe(OC_ID)
+    })
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('several matches are not guessed: nothing is stored and one notice is shown', async () => {
+    const cwd = tempDir()
+    let output = '[]'
+    const run = vi.fn(async () => output)
+    const { controller, store, notice } = setup([], { runOpencode: run })
+    const created = controller.createSession({ cwd, agent: 'opencode' })
+
+    controller.sleepSession(created.id)
+    const at = Date.now()
+    output = JSON.stringify([
+      { id: OC_ID, directory: cwd, created: at, updated: at },
+      { id: 'ses_second12345678', directory: cwd, created: at, updated: at }
+    ])
+    controller.setActiveSession(created.id)
+
+    await vi.waitFor(() => expect(notice).toHaveBeenCalledTimes(1))
+    expect(String(notice.mock.calls[0][0])).toContain('several conversations match this launch')
+    expect(store.get().sessions.find((s) => s.id === created.id)!.opencodeSessionId).toBeUndefined()
+  })
+
+  it('a plugin-health "missing" with no id also recovers through the list', async () => {
+    vi.useFakeTimers()
+    try {
+      const cwd = tempDir()
+      const run = vi.fn(async () => listRow(OC_ID, cwd, Date.now()))
+      const { controller, store, stateOf } = setup([], { runOpencode: run, opencodeHealthGraceMs: 1000 })
+      const created = controller.createSession({ cwd, agent: 'opencode' })
+
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(stateOf(created.id)?.opencodePlugin).toBe('missing')
+      await vi.waitFor(() => {
+        expect(store.get().sessions.find((s) => s.id === created.id)!.opencodeSessionId).toBe(OC_ID)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never runs for a Claude session resumed without a conversation id', async () => {
+    const run = vi.fn(async () => '[]')
+    const { controller } = setup([], { runOpencode: run })
+    const created = controller.createSession({ cwd: tempDir() })
+
+    controller.sleepSession(created.id)
+    controller.setActiveSession(created.id)
+    await Promise.resolve()
+
+    expect(run).not.toHaveBeenCalled()
+  })
+})
+
+describe('opencode sessions: plugin health (D79)', () => {
+  it('is "missing" after the grace window without a plugin event, and "ok" once one arrives', async () => {
+    vi.useFakeTimers()
+    try {
+      const { controller, stateOf } = setup([], { opencodeHealthGraceMs: 1000 })
+      const created = controller.createSession({ cwd: tempDir(), agent: 'opencode' })
+      expect(stateOf(created.id)?.opencodePlugin).toBeUndefined()
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(stateOf(created.id)?.opencodePlugin).toBe('missing')
+
+      controller.handleHookEvent({ sessionId: created.id, event: 'AgentSession', message: OC_ID })
+      expect(stateOf(created.id)?.opencodePlugin).toBe('ok')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('an event inside the window marks it "ok" at once and the window never fires later', async () => {
+    vi.useFakeTimers()
+    try {
+      const { controller, stateOf } = setup([], { opencodeHealthGraceMs: 1000 })
+      const created = controller.createSession({ cwd: tempDir(), agent: 'opencode' })
+      controller.handleHookEvent({ sessionId: created.id, event: 'Stop' })
+      expect(stateOf(created.id)?.opencodePlugin).toBe('ok')
+
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(stateOf(created.id)?.opencodePlugin).toBe('ok')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a fresh process starts unknown again (a previous ok is cleared on restart)', async () => {
+    const { controller, stateOf } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'opencode' })
+    controller.handleHookEvent({ sessionId: created.id, event: 'AgentSession', message: OC_ID })
+    expect(stateOf(created.id)?.opencodePlugin).toBe('ok')
+
+    await controller.restartSession(created.id)
+    expect(stateOf(created.id)?.opencodePlugin).toBeUndefined()
+  })
+})
+
+describe('opencode sessions: usage-limit scan (D79)', () => {
+  it('reports a limit once per occurrence and again after a new prompt', () => {
+    const onUsageLimit = vi.fn()
+    const { controller, pty } = setup([], { onUsageLimit })
+    const created = controller.createSession({ cwd: tempDir(), agent: 'opencode' })
+
+    pty.fireData(created.id, 'Reading files...\nFree usage limit reached, resets at 5pm\n')
+    expect(onUsageLimit).toHaveBeenCalledTimes(1)
+
+    // The same banner redrawn while the turn is cut off is not a second occurrence.
+    pty.fireData(created.id, 'Free usage limit reached, resets at 5pm\n')
+    expect(onUsageLimit).toHaveBeenCalledTimes(1)
+
+    controller.handleHookEvent({ sessionId: created.id, event: 'UserPromptSubmit' })
+    pty.fireData(created.id, 'Free usage limit reached, resets at 5pm\n')
+    expect(onUsageLimit).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores ordinary output and a limit line that scrolled out of the last 25 lines', () => {
+    const onUsageLimit = vi.fn()
+    const { controller, pty } = setup([], { onUsageLimit })
+    const created = controller.createSession({ cwd: tempDir(), agent: 'opencode' })
+
+    pty.fireData(created.id, 'Done.\nChecking src/rate-limit.ts and error handling\n')
+    expect(onUsageLimit).not.toHaveBeenCalled()
+
+    pty.fireData(created.id, `Free usage limit reached\n${'plain output line\n'.repeat(30)}`)
+    expect(onUsageLimit).not.toHaveBeenCalled()
   })
 })

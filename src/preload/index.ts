@@ -543,6 +543,12 @@ const api: Api = {
     const handler = (_event: Electron.IpcRendererEvent, state: WindowState) => cb(state)
     ipcRenderer.on(IPC.evWindowState, handler)
     return () => ipcRenderer.off(IPC.evWindowState, handler)
+  },
+
+  onNotice(cb: (message: string) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, message: string) => cb(message)
+    ipcRenderer.on(IPC.evNotice, handler)
+    return () => ipcRenderer.off(IPC.evNotice, handler)
   }
 }
 

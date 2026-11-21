@@ -102,6 +102,7 @@ function parseSession(raw: unknown, index: number): Session {
     ...(opencode.agent ? { agent: opencode.agent } : {}),
     ...(opencode.opencodeSessionId ? { opencodeSessionId: opencode.opencodeSessionId } : {}),
     ...(opencode.model ? { model: opencode.model } : {}),
+    ...(opencode.opencodePermissions ? { opencodePermissions: opencode.opencodePermissions } : {}),
     ...(raw.closedAt !== undefined ? { closedAt: raw.closedAt as number } : {}),
     ...(raw.keepAwake === true ? { keepAwake: true } : {}),
     ...(notes !== undefined ? { notes } : {}),
@@ -122,9 +123,10 @@ interface AgentFields {
   readonly agent: 'opencode' | 'shell' | undefined
   readonly opencodeSessionId: string | undefined
   readonly model: string | undefined
+  readonly opencodePermissions: 'yolo' | 'ask' | undefined
 }
 
-const NO_AGENT_FIELDS: AgentFields = { agent: undefined, opencodeSessionId: undefined, model: undefined }
+const NO_AGENT_FIELDS: AgentFields = { agent: undefined, opencodeSessionId: undefined, model: undefined, opencodePermissions: undefined }
 
 /**
  * The optional agent fields of one session. Absent = a claude session (no agent field stored). An invalid
@@ -140,7 +142,7 @@ function parseAgentFields(raw: Record<string, unknown>, index: number): AgentFie
     throw new Error(`Invalid store: sessions[${index}].agent must be "claude", "opencode" or "shell"`)
   }
   if (agent === 'shell') {
-    return { agent: 'shell', opencodeSessionId: undefined, model: undefined }
+    return { agent: 'shell', opencodeSessionId: undefined, model: undefined, opencodePermissions: undefined }
   }
   if (agent !== 'opencode') {
     return NO_AGENT_FIELDS
@@ -162,7 +164,11 @@ function parseAgentFields(raw: Record<string, unknown>, index: number): AgentFie
     model = raw.model.length > 0 ? raw.model : undefined
   }
 
-  return { agent: 'opencode', opencodeSessionId, model }
+  // D79: an invalid policy is dropped (the session keeps the D10 yolo default), never failing the file.
+  const opencodePermissions =
+    raw.opencodePermissions === 'yolo' || raw.opencodePermissions === 'ask' ? raw.opencodePermissions : undefined
+
+  return { agent: 'opencode', opencodeSessionId, model, opencodePermissions }
 }
 
 /** Valid notes are kept; invalid notes and the empty string yield undefined (field absent). */

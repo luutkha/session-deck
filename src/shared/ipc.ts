@@ -119,7 +119,8 @@ export const IPC = {
   evJarvisReply: 'ev:jarvisReply', // main -> renderer: Jarvis's reply text after a turn (Claude engine), for reading aloud (D54)
   evJarvisSchedules: 'ev:jarvisSchedules', // main -> renderer: JarvisSchedule[] changed (D54)
   evJarvisConfirm: 'ev:jarvisConfirm', // main -> renderer (main window): JarvisConfirmRequest, ask the user Yes/No (D53)
-  evJarvisUi: 'ev:jarvisUi' // main -> renderer (one window): JarvisUiCommand, change what is on screen (D55)
+  evJarvisUi: 'ev:jarvisUi', // main -> renderer (one window): JarvisUiCommand, change what is on screen (D55)
+  evNotice: 'ev:notice' // main -> renderer: (message string) one-line advisory notice in the store banner (D79)
 } as const
 
 /** Buffered output for reattach. `seq` = sequence number of the last chunk included (0 if none).
@@ -273,6 +274,8 @@ export interface Api {
   dockCode(): Promise<void>
   onWorktreeChanges(cb: (changes: WorktreeChanges) => void): () => void
   onWindowState(cb: (state: WindowState) => void): () => void
+  /** D79: a one-line advisory notice from main (shown in the existing banner, never an error by itself). */
+  onNotice(cb: (message: string) => void): () => void
 }
 
 /** Command-line flag main passes to the Code window (webPreferences.additionalArguments); preload reads it. */

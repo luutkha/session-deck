@@ -416,6 +416,26 @@ describe('jarvis tools', () => {
     expect(text).toContain('screen of a')
   })
 
+  it('returns an OpenCode session\'s last reply from its exported conversation (D79)', async () => {
+    const { call, answers } = setup([session('o', 'OC Agent', { agent: 'opencode', opencodeSessionId: 'ses_abc123' })], [running('o', { activity: 'finished' })])
+    answers.set('o', 'Deploy finished on port 8080')
+    expect(await call('get_last_answer', { session: 'OC Agent' })).toBe('Last reply of "OC Agent":\nDeploy finished on port 8080')
+  })
+
+  it('falls back to the screen for an OpenCode session without a conversation id (D79)', async () => {
+    const { call } = setup([session('o', 'OC Agent', { agent: 'opencode' })], [running('o')])
+    const text = await call('get_last_answer', { session: 'OC Agent' })
+    expect(text).toContain('No saved conversation to read')
+    expect(text).toContain('screen of o')
+  })
+
+  it('falls back to the screen when an OpenCode export has no reply (D79)', async () => {
+    const { call } = setup([session('o', 'OC Agent', { agent: 'opencode', opencodeSessionId: 'ses_abc123' })], [running('o', { activity: 'working' })])
+    const text = await call('get_last_answer', { session: 'OC Agent' })
+    expect(text).toContain('No saved conversation to read')
+    expect(text).toContain('screen of o')
+  })
+
   it('reports plan usage, cost today and running sessions', async () => {
     const { call, setUsage, turns, deps } = setup([session('a', 'API')], [running('a')])
     const now = deps.now()

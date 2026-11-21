@@ -85,6 +85,8 @@ export interface CreateSessionForm {
   readonly agent?: AgentKind
   /** OpenCode model text; only read when agent is 'opencode'. */
   readonly modelRaw?: string
+  /** OpenCode only (D79): ask before running tools (use the user's own OpenCode permission rules); off = yolo. */
+  readonly openCodeAskPermissions?: boolean
   /** Claude only: start with Remote Control so claude.ai/code and the phone app can drive the session. */
   readonly remoteControl?: boolean
 }
@@ -127,7 +129,9 @@ export function buildCreateInput(form: CreateSessionForm): BuildCreateInputResul
       input: {
         ...shared,
         agent,
-        ...(modelResult.value.length > 0 ? { model: modelResult.value } : {})
+        ...(modelResult.value.length > 0 ? { model: modelResult.value } : {}),
+        // Yolo stays the default (D10); the checkbox opts into the user's own OpenCode rules.
+        ...(form.openCodeAskPermissions === true ? { opencodePermissions: 'ask' as const } : {})
       }
     }
   }

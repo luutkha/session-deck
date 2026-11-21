@@ -171,6 +171,15 @@ describe('ipcValidation', () => {
       expect(input.statusId).toBeNull()
     })
 
+    it('D79: accepts the OpenCode permission policy for OpenCode sessions only, and rejects anything else', () => {
+      expect(asCreateSessionInput({ cwd: '/home', agent: 'opencode', opencodePermissions: 'ask' }).opencodePermissions).toBe('ask')
+      expect(asCreateSessionInput({ cwd: '/home', agent: 'opencode', opencodePermissions: 'yolo' }).opencodePermissions).toBe('yolo')
+      expect(asCreateSessionInput({ cwd: '/home', agent: 'claude', opencodePermissions: 'ask' }).opencodePermissions).toBeUndefined()
+      expect(() => asCreateSessionInput({ cwd: '/home', agent: 'opencode', opencodePermissions: 'always' })).toThrow(
+        'opencodePermissions must be "yolo" or "ask"'
+      )
+    })
+
     it('throws for missing cwd', () => {
       expect(() => asCreateSessionInput({})).toThrow('Invalid cwd: must be a non-empty string')
     })

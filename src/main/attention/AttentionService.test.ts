@@ -361,6 +361,20 @@ describe('AttentionService', () => {
       expect(plugins[plugins.length - 1].endsWith('sessiondeck-opencode-plugin')).toBe(true)
       expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT).permission).toEqual({ '*': 'allow' })
     })
+
+    it('D79: the "ask" policy leaves the permission object exactly as the environment had it', async () => {
+      const previous = process.env.OPENCODE_CONFIG_CONTENT
+      delete process.env.OPENCODE_CONFIG_CONTENT
+      try {
+        const env = service.opencodeEnv('ask')
+        const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT)
+        expect(parsed.plugin).toBeDefined()
+        expect(parsed.permission).toBeUndefined()
+      } finally {
+        if (previous === undefined) delete process.env.OPENCODE_CONFIG_CONTENT
+        else process.env.OPENCODE_CONFIG_CONTENT = previous
+      }
+    })
   })
 })
 

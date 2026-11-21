@@ -52,6 +52,7 @@ import { classifyGpu, parseGpuDevices, type GpuDevice, type GpuInfo } from './ap
 import { createGpuModeStore, decideAcceleration, gpuModeFilePath, shouldRestartForSoftware, type GpuModeFile, type GpuModeStore } from './app/gpuMode'
 import type { GpuPref } from '../shared/types'
 import { warmOpencodeProbe } from './opencode'
+import { createOpencodeExportRunner } from './opencode/exportRunner'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -481,7 +482,9 @@ if (!gotTheLock) {
           return null
         }
       },
-      readFile: (file) => readFile(file, 'utf-8')
+      readFile: (file) => readFile(file, 'utf-8'),
+      // D79: OpenCode has no transcript file; its turns come from `opencode session export` through this runner.
+      runOpencodeExport: createOpencodeExportRunner()
     })
 
     // Jarvis (D53): when each session's process started and last printed, so a prompt is typed only once it settled.

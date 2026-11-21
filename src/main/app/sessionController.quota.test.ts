@@ -199,11 +199,11 @@ describe('sessionController usage-limit signal', () => {
     expect(onUsageLimit).not.toHaveBeenCalled()
   })
 
-  it('ignores the message of an OpenCode session', () => {
+  it('reports a limit message of an OpenCode session through the same hook (D79)', () => {
     const { controller, fake, onUsageLimit } = setup([makeSession({ id: 'o1', agent: 'opencode' })])
     controller.handleHookEvent(hook('o1', 'UserPromptSubmit'))
     fake.fireData('o1', LIMIT_LINE)
-    expect(onUsageLimit).not.toHaveBeenCalled()
+    expect(onUsageLimit).toHaveBeenCalledTimes(1)
   })
 
   it('ignores ordinary output', () => {

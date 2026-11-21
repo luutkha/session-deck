@@ -256,7 +256,11 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     onHookEvent(event: HookEvent): void {
       if (event.event !== 'Stop') return
       const session = deps.store.get().sessions.find((s) => s.id === event.sessionId)
-      if (session === undefined || !isJarvis(session) || (session.agent ?? 'claude') !== 'claude') return
+      if (session === undefined || !isJarvis(session)) return
+      // D79: an OpenCode Jarvis reads its reply from `opencode session export` like Claude reads its transcript; the
+      // injected lastAnswer does that (and returns null when the export has nothing), so no id and no reply = nothing.
+      const agent = session.agent ?? 'claude'
+      if (agent !== 'claude' && (agent !== 'opencode' || session.opencodeSessionId === undefined)) return
       deps.tools.lastAnswer(session).then((text) => {
         if (text !== null && text.trim().length > 0) deps.broadcast(IPC.evJarvisReply, text)
       }).catch((error: unknown) => deps.onError('jarvis reply', error))

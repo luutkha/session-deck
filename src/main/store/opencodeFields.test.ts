@@ -43,6 +43,17 @@ describe('createSession reducer: agent / model fields', () => {
     expect(stored.claudeSessionId).toBe('s1')
   })
 
+  it('D79: only the opt-in "ask" permission policy is stored (yolo stays implicit)', () => {
+    const ask = createSession(baseData(), ocInput({ opencodePermissions: 'ask' }), META)
+    expect(ask.data.sessions[0].opencodePermissions).toBe('ask')
+
+    const yolo = createSession(baseData(), ocInput({ opencodePermissions: 'yolo' }), META)
+    expect(yolo.data.sessions[0].opencodePermissions).toBeUndefined()
+
+    const claude = createSession(baseData(), { cwd: 'C:/proj', opencodePermissions: 'ask' }, META)
+    expect(claude.data.sessions[0].opencodePermissions).toBeUndefined()
+  })
+
   it('an explicit claude agent behaves like the default', () => {
     const { data } = createSession(baseData(), { cwd: 'C:/proj', agent: 'claude', model: 'p/m' }, META)
     expect(data.sessions[0].agent).toBeUndefined()
@@ -137,10 +148,25 @@ describe('persistence: opencode fields in stored sessions', () => {
   })
 
   it('a round-trip of an opencode session parses back with all fields', () => {
-    const { data } = createSession(baseData(), ocInput(), META)
+    const { data } = createSession(baseData(), ocInput({ opencodePermissions: 'ask' }), META)
     const withId = setOpencodeSessionId(data, 's1', OC_ID)
     const parsed = parseStoreData(JSON.parse(JSON.stringify(withId)))
     expect(parsed.sessions[0]).toEqual(withId.sessions[0])
+    expect(parsed.sessions[0].opencodePermissions).toBe('ask')
+  })
+
+  it('D79: an invalid stored permission policy is dropped, never failing the file', () => {
+    const parsed = parseStoreData({
+      version: 1,
+      sessions: [
+        {
+          id: 's1', name: 'n', cwd: 'C:/p', groupId: null, statusId: null,
+          order: 0, createdAt: 1, claudeArgs: [], agent: 'opencode', opencodePermissions: 'always'
+        }
+      ],
+      groups: [], statuses: [], groupOrder: []
+    })
+    expect(parsed.sessions[0].opencodePermissions).toBeUndefined()
   })
 
   it('an opencode session may be stored without a model, with a model, closed, with a checklist (combinable)', () => {

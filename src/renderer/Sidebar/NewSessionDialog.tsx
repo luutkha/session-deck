@@ -67,6 +67,8 @@ export function NewSessionDialog({
   const [statusChoice, setStatusChoice] = useState<string>(NO_VALUE_CHOICE)
   const [argsRaw, setArgsRaw] = useState('')
   const [modelRaw, setModelRaw] = useState(defaultOpenCodeModel ?? '')
+  // D79: OpenCode only, off by default (yolo, D10). Never sent for Claude/Shell.
+  const [askPermissions, setAskPermissions] = useState(false)
   const [remoteControl, setRemoteControl] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -125,7 +127,7 @@ export function NewSessionDialog({
     }
     const groupId = creatingGroup || groupChoice === NO_VALUE_CHOICE ? null : groupChoice
     const statusId = statusChoice === NO_VALUE_CHOICE ? null : statusChoice
-    const built = buildCreateInput({ folder, name, groupId, statusId, argsRaw, agent, modelRaw, remoteControl })
+    const built = buildCreateInput({ folder, name, groupId, statusId, argsRaw, agent, modelRaw, remoteControl, openCodeAskPermissions: askPermissions })
     if (!built.ok) {
       setError(built.error)
       return
@@ -146,7 +148,7 @@ export function NewSessionDialog({
 
     const groupId = creatingGroup || groupChoice === NO_VALUE_CHOICE ? null : groupChoice
     const statusId = statusChoice === NO_VALUE_CHOICE ? null : statusChoice
-    const built = buildCreateInput({ folder, name, groupId, statusId, argsRaw, agent, modelRaw, remoteControl })
+    const built = buildCreateInput({ folder, name, groupId, statusId, argsRaw, agent, modelRaw, remoteControl, openCodeAskPermissions: askPermissions })
     if (!built.ok) {
       setError(built.error)
       return
@@ -240,6 +242,7 @@ export function NewSessionDialog({
             argsRaw={argsRaw}
             modelRaw={modelRaw}
             remoteControl={remoteControl}
+            askPermissions={askPermissions}
             modelError={modelError}
             newGroupName={newGroupName}
             groups={orderedGroups(data)}
@@ -256,6 +259,7 @@ export function NewSessionDialog({
             onArgsChange={setArgsRaw}
             onModelChange={setModelRaw}
             onRemoteControlChange={setRemoteControl}
+            onAskPermissionsChange={setAskPermissions}
           />
 
           {error !== null ? (

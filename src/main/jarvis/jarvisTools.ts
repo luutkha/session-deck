@@ -41,6 +41,7 @@ import { createControlTools, type JarvisControlDeps } from './controlTools'
 import { createGitTools } from './gitTools'
 import { createSystemTools, type JarvisSystemDeps } from './systemTools'
 import { createPrefsTools } from './prefsTools'
+import { createDigestTools } from './digestTools'
 import { createLayoutTools } from './layoutTools'
 import { createPanelTools } from './panelTools'
 import type { CodeGitOps } from '../app/codeGitOps'
@@ -106,7 +107,7 @@ export interface JarvisToolDeps {
   readonly rawOutput: (id: Id) => string
   readonly timeline: (id: Id) => readonly TimelineTurn[]
   readonly search: (query: string) => Promise<ConversationSearchResult>
-  /** D54: the reply to the last prompt from the saved Claude conversation; null when there is none. */
+  /** D54/D79: the reply to the last prompt from the saved conversation (a Claude transcript or an OpenCode export); null when there is none. */
   readonly lastAnswer: (session: Session) => Promise<string | null>
   readonly usage: () => UsageState
   /** Every recorded turn of every session (cost today). */
@@ -439,7 +440,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'search_conversations',
-      description: "Searches the saved Claude Code conversations of all sessions for a text (case-insensitive). Returns matching excerpts with the session they belong to, newest first.",
+      description: "Searches the saved conversations of all sessions (Claude Code transcripts and OpenCode exports) for a text (case-insensitive). Returns matching excerpts with the session they belong to, newest first.",
       inputSchema: schema({ query: { type: 'string', description: '2 to 200 characters.' } }, ['query']),
       run: async (args) => {
         const result = await deps.search(text(args, 'query'))
@@ -478,13 +479,17 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'get_last_answer',
-      description: "Returns the session's reply to its last prompt as text, from the saved conversation (complete, not cut by the screen). For OpenCode and shell sessions it falls back to the screen.",
+      description: "Returns the session's reply to its last prompt as text, from the saved conversation (complete, not cut by the screen). For shell sessions (and OpenCode ones without a saved conversation) it falls back to the screen.",
       inputSchema: schema({ session: SESSION_PROP, max_chars: { type: 'integer', description: `Default ${ANSWER_DEFAULT_CHARS}, max ${ANSWER_MAX_CHARS}. A longer answer keeps its end.` } }, ['session']),
       run: async (args) => {
         const session = resolveSession(deps.getData(), args.session)
         const max = optionalInt(args, 'max_chars', ANSWER_DEFAULT_CHARS, ANSWER_MAX_CHARS)
         const state = deps.getRuntime(session.id)
-        const answer = agentOf(session) === 'claude' ? await deps.lastAnswer(session) : null
+        // D79: an OpenCode session with a conversation id answers from `opencode session export` (the dep reads it,
+        // cached); without one there is nothing saved, so the screen below is the only source, as before.
+        const agent = agentOf(session)
+        const readable = agent === 'claude' || (agent === 'opencode' && session.opencodeSessionId !== undefined)
+        const answer = readable ? await deps.lastAnswer(session) : null
         if (answer === null || answer.trim().length === 0) {
           const screen = await deps.screenText(session.id, SCREEN_LINES_DEFAULT)
           const why = answer === null ? 'No saved conversation to read' : 'The last prompt has no reply yet'
@@ -1092,6 +1097,6 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
       sessionsWorking: states.filter((state) => state?.run === 'running' && state.activity === 'working').length
     }
   }
-  tools.push(...createSystemTools({ ...deps.system, appLoad }, deps.log), ...createPrefsTools(deps, ctx), ...createLayoutTools(deps, ctx), ...createPanelTools(deps, ctx))
+  tools.push(...createSystemTools({ ...deps.system, appLoad }, deps.log), ...createPrefsTools(deps, ctx), ...createLayoutTools(deps, ctx), ...createPanelTools(deps, ctx), ...createDigestTools(deps, ctx))
   return Object.assign(tools, { sendPrompt, undoLast })
 }

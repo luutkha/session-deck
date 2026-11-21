@@ -82,6 +82,23 @@ describe('buildStartOptions opencode branch', () => {
     expect(buildOpencodeStartOptions(ocSession({ agent: 'opencode', model: '' }), attention).env.OPENCODE_CONFIG_CONTENT).toBe('{}')
   })
 
+  it('D79: the stored permission policy reaches opencodeEnv; absent stays yolo', () => {
+    const policies: string[] = []
+    const policyAttention = {
+      ...attention,
+      opencodeEnv: (policy?: string): Record<string, string> => {
+        policies.push(policy ?? 'undefined')
+        return { OPENCODE_CONFIG_CONTENT: '{}' }
+      }
+    } as unknown as AttentionService
+
+    buildOpencodeStartOptions(ocSession({ agent: 'opencode', opencodePermissions: 'ask' }), policyAttention)
+    buildOpencodeStartOptions(ocSession({ agent: 'opencode' }), policyAttention)
+    buildOpencodeStartOptions(ocSession({ agent: 'opencode', opencodePermissions: 'yolo' }), policyAttention)
+
+    expect(policies).toEqual(['ask', 'yolo', 'yolo'])
+  })
+
   it('merges extra config keys for Jarvis on OpenCode (D54), next to the model', () => {
     const opts = buildOpencodeStartOptions(ocSession({ agent: 'opencode', model: 'p/m' }), attention, { mcp: { sessiondeck: { type: 'remote' } }, instructions: ['C:/j/p.md'] })
     expect(JSON.parse(opts.env.OPENCODE_CONFIG_CONTENT)).toEqual({ model: 'p/m', mcp: { sessiondeck: { type: 'remote' } }, instructions: ['C:/j/p.md'] })

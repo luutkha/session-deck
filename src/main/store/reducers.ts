@@ -91,13 +91,22 @@ export function emptyStore(): StoreData {
 const SHELL_SESSION_NAME = 'Shell'
 
 /** The agent-specific fields of a new session. Claude gets its conversation id now; OpenCode reports its own later; a shell has none. */
-function agentFieldsFor(input: CreateSessionInput, id: Id): Partial<Pick<Session, 'agent' | 'model' | 'claudeSessionId'>> {
+function agentFieldsFor(
+  input: CreateSessionInput,
+  id: Id
+): Partial<Pick<Session, 'agent' | 'model' | 'claudeSessionId' | 'opencodePermissions'>> {
   if (input.agent === 'shell') {
     return { agent: 'shell' }
   }
   if (input.agent === 'opencode') {
     const model = input.model !== undefined && input.model.trim().length > 0 ? input.model : undefined
-    return { agent: 'opencode', ...(model !== undefined ? { model } : {}) }
+    // Yolo is the default and stays implicit; only the opt-in policy is stored.
+    const opencodePermissions = input.opencodePermissions === 'ask' ? ('ask' as const) : undefined
+    return {
+      agent: 'opencode',
+      ...(model !== undefined ? { model } : {}),
+      ...(opencodePermissions !== undefined ? { opencodePermissions } : {})
+    }
   }
   return { claudeSessionId: id }
 }

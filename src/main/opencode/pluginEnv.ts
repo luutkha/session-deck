@@ -30,13 +30,24 @@ function isLegacyFileEntry(entry: unknown): boolean {
 }
 
 /**
- * The config content that makes OpenCode load the SessionDeck plugins and never ask for permissions
- * ({"*": "allow"}). A config the user already exports is kept: the plugin package directories join its `plugin`
- * list (in order, deduplicated, SessionDeck's own legacy file:// entries removed), the permission rule is
- * merged into its own rules, and every other field (model, provider, ...) survives. An unparseable or
- * non-object value is returned unchanged, so OpenCode keeps its own behaviour instead of failing to start.
+ * How SessionDeck treats OpenCode permissions: 'yolo' forces `{"*": "allow"}` (D10, the default) and 'ask' leaves
+ * the user's own permission rules untouched, so OpenCode asks them itself.
  */
-export function buildOpencodeConfigContent(pluginDirs: string | readonly string[], existing: string | undefined): string {
+export type OpencodePermissionPolicy = 'yolo' | 'ask'
+
+/**
+ * The config content that makes OpenCode load the SessionDeck plugins. A config the user already exports is kept:
+ * the plugin package directories join its `plugin` list (in order, deduplicated, SessionDeck's own legacy file://
+ * entries removed), the permission rule is merged into its own rules under the 'yolo' policy, and every other
+ * field (model, provider, ...) survives. Under 'ask' the permission object is kept exactly as the user wrote it
+ * (absent stays absent, no rule is added). An unparseable or non-object value is returned unchanged, so OpenCode
+ * keeps its own behaviour instead of failing to start.
+ */
+export function buildOpencodeConfigContent(
+  pluginDirs: string | readonly string[],
+  existing: string | undefined,
+  permissionPolicy: OpencodePermissionPolicy = 'yolo'
+): string {
   const dirs = Array.isArray(pluginDirs) ? pluginDirs : [pluginDirs]
   const entries = dirs.map(pluginEntryPath).filter((entry) => entry.length > 0)
 
@@ -59,9 +70,11 @@ export function buildOpencodeConfigContent(pluginDirs: string | readonly string[
   }
   const permission = isRecord(parsed.permission) ? parsed.permission : {}
 
+  const next: Record<string, unknown> = { ...parsed, plugin: nextPlugins }
+  if (permissionPolicy === 'ask') return JSON.stringify(next)
+
   return JSON.stringify({
-    ...parsed,
-    plugin: nextPlugins,
+    ...next,
     permission: { ...permission, '*': 'allow' }
   })
 }
@@ -88,10 +101,12 @@ export function applyConfigPatch(baseContent: string | undefined, patch: Record<
  * Env entries to merge into an OpenCode session's environment (see startOptions.ts). `existing` is the user's own
  * OPENCODE_CONFIG_CONTENT, passed explicitly so tests never depend on the ambient environment. Several plugin
  * package directories load in the given order (the worker plugin first, so the owner process reports itself early).
+ * `permissionPolicy` is forwarded to buildOpencodeConfigContent ('yolo' when omitted, exactly the D10 behaviour).
  */
 export function opencodePluginEnv(
   pluginDirs: string | readonly string[],
-  existing: string | undefined
+  existing: string | undefined,
+  permissionPolicy: OpencodePermissionPolicy = 'yolo'
 ): Record<string, string> {
-  return { [OPENCODE_PLUGIN_ENV_VAR]: buildOpencodeConfigContent(pluginDirs, existing) }
+  return { [OPENCODE_PLUGIN_ENV_VAR]: buildOpencodeConfigContent(pluginDirs, existing, permissionPolicy) }
 }

@@ -134,6 +134,7 @@ describe('sessionCardPropsEqual', () => {
     expect(sessionCardPropsEqual(base, props({ runtime: { ...runtime, activityAt: 5 } }))).toBe(false)
     expect(sessionCardPropsEqual(base, props({ runtime: { ...runtime, sleeping: true } }))).toBe(false)
     expect(sessionCardPropsEqual(base, props({ runtime: { ...runtime, remoteControl: true } }))).toBe(false)
+    expect(sessionCardPropsEqual(base, props({ runtime: { ...runtime, opencodePlugin: 'missing' } }))).toBe(false)
     expect(sessionCardPropsEqual(base, props({ runtime: undefined }))).toBe(false)
   })
 

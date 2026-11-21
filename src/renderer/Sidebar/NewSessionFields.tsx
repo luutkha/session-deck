@@ -31,6 +31,8 @@ export interface NewSessionFieldsProps {
   readonly argsRaw: string
   readonly modelRaw: string
   readonly remoteControl: boolean
+  /** D79: OpenCode only; false = yolo (the default everywhere), true = ask before running tools. */
+  readonly askPermissions: boolean
   readonly modelError: string | null
   readonly newGroupName: string
   readonly groups: readonly Group[]
@@ -47,6 +49,7 @@ export interface NewSessionFieldsProps {
   readonly onArgsChange: (value: string) => void
   readonly onModelChange: (value: string) => void
   readonly onRemoteControlChange: (value: boolean) => void
+  readonly onAskPermissionsChange: (value: boolean) => void
 }
 
 const LABEL_CLASS = 'text-[11px] text-muted-foreground'
@@ -62,6 +65,7 @@ export function NewSessionFields({
   argsRaw,
   modelRaw,
   remoteControl,
+  askPermissions,
   modelError,
   newGroupName,
   groups,
@@ -77,7 +81,8 @@ export function NewSessionFields({
   onStatusChange,
   onArgsChange,
   onModelChange,
-  onRemoteControlChange
+  onRemoteControlChange,
+  onAskPermissionsChange
 }: NewSessionFieldsProps): ReactElement {
   return (
     <div className="space-y-4">
@@ -237,6 +242,23 @@ export function NewSessionFields({
               Empty uses OpenCode&apos;s own default model
             </p>
           )}
+          <div className="flex items-start gap-2 pt-1">
+            <Checkbox
+              id="new-session-opencode-ask"
+              checked={askPermissions}
+              onCheckedChange={(checked) => onAskPermissionsChange(checked === true)}
+              data-opencode-ask-permissions=""
+              className="mt-0.5"
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="new-session-opencode-ask" className="text-xs">
+                Ask before running tools (use my own OpenCode permission rules)
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Off: tools run without asking (the default). On: your own OpenCode permission rules apply.
+              </p>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="space-y-1">

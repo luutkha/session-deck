@@ -1,4 +1,5 @@
 import type { AttentionReason, HookEvent, Id, Session, CreateSessionInput, ShellKind } from '../../shared/types'
+import { execFile } from 'node:child_process'
 import type { ActiveSessions } from './activeSessions'
 import { SessionStore } from '../store'
 import { PtyManager, type StartOptions } from '../pty/PtyManager'
@@ -14,10 +15,49 @@ import { activityFromHook, type ActivitySnapshot } from './activity'
 import { detectOutputSignals, findUsageLimitLine, stripAnsi } from './outputSignals'
 import { appendTrustBuffer, isTrustPrompt, shouldAnswerTrustPrompt, TRUST_ANSWER_DELAY_MS, TRUST_ANSWER_KEYS, TRUST_KEY_GAP_MS } from './trustPrompt'
 import { createAutoStatusApplier } from '../automation/applyAutoStatus'
+import { opencodePluginHealth, isOpencodeUsageLimit, OPENCODE_PLUGIN_HEALTH_GRACE_MS } from '../opencode/health'
+import { listOpencodeSessions, pickSessionToAdopt } from '../opencode/sessions'
 
 const MAX_FALLBACK_ATTEMPTS = 1
 /** Session names are at most 100 characters (store rule). */
 const MAX_FORK_NAME = 100
+/** D79: the read-only `opencode session list` runner must never hold a launch hostage. */
+const OPENCODE_RUN_TIMEOUT_MS = 10_000
+const OPENCODE_RUN_MAX_BUFFER = 4 * 1024 * 1024
+/** D79 usage-limit scan: the last lines of the screen, like the Claude detector's tail. */
+const OPENCODE_LIMIT_SCAN_LINES = 25
+const OPENCODE_LIMIT_TAIL_CHARS = 8000
+
+/**
+ * Runs `opencode <args>` (read-only session-id recovery, D79). Resolved like capabilities.ts: `opencode.cmd` on
+ * Windows needs the shell, and the arguments are always an internal array (never user text).
+ */
+function defaultOpencodeRun(args: string[]): Promise<string> {
+  return new Promise((resolve, reject): void => {
+    try {
+      execFile(
+        'opencode',
+        args,
+        {
+          shell: process.platform === 'win32',
+          timeout: OPENCODE_RUN_TIMEOUT_MS,
+          windowsHide: true,
+          encoding: 'utf8',
+          maxBuffer: OPENCODE_RUN_MAX_BUFFER
+        },
+        (error, stdout): void => {
+          if (error !== null) {
+            reject(error)
+            return
+          }
+          resolve(typeof stdout === 'string' ? stdout : '')
+        }
+      )
+    } catch (error) {
+      reject(error)
+    }
+  })
+}
 
 interface SessionStartState {
   readonly everStartedThisRun: boolean
@@ -38,8 +78,13 @@ export interface SessionControllerDeps {
   /**
    * Called once per turn when a Claude session's screen shows Claude's usage-limit message. Only armed by a
    * UserPromptSubmit hook event in the running process, so a resumed session that redraws an old message is ignored.
+   * D79: OpenCode sessions report through the same hook (the last screen lines are matched conservatively).
    */
   readonly onUsageLimit?: (id: Id) => void
+  /** D79: runs `opencode <args>` for read-only session-id recovery; tests inject a fake so no CLI is spawned. */
+  readonly runOpencode?: (args: string[]) => Promise<string>
+  /** D79: how long an OpenCode process may stay silent before its plugin is reported missing (tests shorten it). */
+  readonly opencodeHealthGraceMs?: number
   /** D53/D54: what a session adds to its launch (Jarvis: Claude arguments or OpenCode config keys). */
   readonly launchExtras?: (session: Session) => LaunchExtras
 }
@@ -84,6 +129,10 @@ export interface SessionController {
   initializeRestoredSessions(): void
   /** A Claude Code hook event: updates the session's activity and, on a change, its auto status. Never throws. */
   handleHookEvent(event: HookEvent): void
+  /**
+   * D79: where one-line notices go (the app's banner). The wiring sets it; notices are advisory and never errors.
+   */
+  setNoticeHandler(handler: (message: string) => void): void
 }
 
 function getOutputTail(pty: PtyManager, sessionId: Id): string {
@@ -99,6 +148,151 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   const startState = new Map<Id, SessionStartState>()
   let initialized = false
   const restoredWithoutClaudeSessionId = new Set<Id>()
+  const runOpencode = deps.runOpencode ?? defaultOpencodeRun
+  const healthGraceMs =
+    deps.opencodeHealthGraceMs !== undefined && Number.isFinite(deps.opencodeHealthGraceMs) && deps.opencodeHealthGraceMs >= 0
+      ? deps.opencodeHealthGraceMs
+      : OPENCODE_PLUGIN_HEALTH_GRACE_MS
+
+  // D79: one entry per running OpenCode process (reset on every start), plus the screen tail used for the
+  // conservative usage-limit scan.
+  interface OpencodeHealthTrack {
+    readonly startedAtMs: number
+    sawPluginEvent: boolean
+    timer: ReturnType<typeof setTimeout> | null
+    recovering: boolean
+    ambiguousNotified: boolean
+  }
+  const opencodeHealth = new Map<Id, OpencodeHealthTrack>()
+  const opencodeLimitTail = new Map<Id, string>()
+  const opencodeLimitSeen = new Map<Id, Set<string>>()
+  let noticeHandler: ((message: string) => void) | null = null
+
+  function notice(message: string): void {
+    try {
+      noticeHandler?.(message)
+    } catch (error) {
+      logMainError(userDataDir, 'session notice', error)
+    }
+  }
+
+  function clearOpencodeHealth(id: Id): void {
+    const track = opencodeHealth.get(id)
+    if (track?.timer !== null && track?.timer !== undefined) clearTimeout(track.timer)
+    opencodeHealth.delete(id)
+    opencodeLimitTail.delete(id)
+    opencodeLimitSeen.delete(id)
+  }
+
+  function resetOpencodeLimitScan(id: Id): void {
+    opencodeLimitTail.delete(id)
+    opencodeLimitSeen.delete(id)
+  }
+
+  function rescheduleHealth(id: Id, track: OpencodeHealthTrack, delayMs: number): void {
+    track.timer = setTimeout(() => {
+      track.timer = null
+      if (opencodeHealth.get(id) !== track) return
+      finishOpencodeHealth(id, track)
+    }, delayMs)
+    ;(track.timer as { unref?: () => void }).unref?.()
+  }
+
+  /** Starts the D79 health window for a fresh OpenCode process. */
+  function beginOpencodeHealth(id: Id, startedAtMs: number): void {
+    const previous = opencodeHealth.get(id)
+    if (previous?.timer !== null && previous?.timer !== undefined) clearTimeout(previous.timer)
+    const track: OpencodeHealthTrack = {
+      startedAtMs,
+      sawPluginEvent: false,
+      timer: null,
+      recovering: false,
+      ambiguousNotified: false
+    }
+    opencodeHealth.set(id, track)
+    rescheduleHealth(id, track, healthGraceMs)
+  }
+
+  /** Evaluates the health window: 'ok' once an event arrived, 'missing' after the grace period. */
+  function finishOpencodeHealth(id: Id, track: OpencodeHealthTrack): void {
+    const session = findSession(id)
+    if (!session || session.agent !== 'opencode') {
+      clearOpencodeHealth(id)
+      return
+    }
+    const health = opencodePluginHealth({
+      startedAtMs: track.startedAtMs,
+      nowMs: Date.now(),
+      sawPluginEvent: track.sawPluginEvent,
+      graceMs: healthGraceMs
+    })
+    if (health === 'starting') {
+      // The clock moved backwards (or the timer fired early): ask again after the window that is still left.
+      rescheduleHealth(id, track, Math.max(0, track.startedAtMs + healthGraceMs - Date.now()))
+      return
+    }
+    runtime.setOpencodePlugin(id, health)
+    if (health === 'missing' && !session.opencodeSessionId) {
+      void recoverOpencodeSessionId(id, track)
+    }
+  }
+
+  /** A plugin event proves it loaded; the health window is over for this process. */
+  function noteOpencodePluginEvent(id: Id): void {
+    const track = opencodeHealth.get(id)
+    if (track !== undefined) {
+      track.sawPluginEvent = true
+      if (track.timer !== null) {
+        clearTimeout(track.timer)
+        track.timer = null
+      }
+    }
+    runtime.setOpencodePlugin(id, 'ok')
+  }
+
+  /**
+   * D79: recovers the conversation id the plugin never reported, by listing OpenCode's sessions and adopting one
+   * only when `pickSessionToAdopt` is sure. Never guesses (ambiguous = a notice, nothing stored), never blocks the
+   * launch, and never runs for Claude or shell sessions.
+   */
+  async function recoverOpencodeSessionId(id: Id, track: OpencodeHealthTrack): Promise<void> {
+    const session = findSession(id)
+    if (!session || session.agent !== 'opencode' || session.opencodeSessionId !== undefined) return
+    if (track.recovering) return
+    track.recovering = true
+    try {
+      const sessions = await listOpencodeSessions(runOpencode)
+      // The process may have exited, slept or been removed while the CLI ran; the plugin may have reported too.
+      const current = findSession(id)
+      if (!current || current.agent !== 'opencode' || current.opencodeSessionId !== undefined) return
+      if (!pty.isRunning(id)) return
+      const knownIds = new Set<string>()
+      for (const other of store.get().sessions) {
+        if (other.id !== id && other.opencodeSessionId !== undefined) knownIds.add(other.opencodeSessionId)
+      }
+      const pick = pickSessionToAdopt({
+        cwd: current.cwd,
+        startedAtMs: track.startedAtMs,
+        knownIds,
+        sessions
+      })
+      if (pick.kind === 'adopt') {
+        try {
+          store.setOpencodeSessionId(id, pick.id)
+        } catch {
+          // Same validation as the plugin's value: a pick it rejects is simply ignored.
+        }
+      } else if (pick.kind === 'ambiguous' && !track.ambiguousNotified) {
+        track.ambiguousNotified = true
+        notice(`OpenCode session "${current.name}": several conversations match this launch, so none was adopted.`)
+      }
+    } catch (error) {
+      logMainError(userDataDir, `opencode session-id recovery ${id}`, error)
+    } finally {
+      track.recovering = false
+    }
+  }
+
   // Sessions with a turn submitted in the running process that has not reported the usage limit yet (edge trigger).
   const limitArmed = new Set<Id>()
   const applyAutoStatus = createAutoStatusApplier({
@@ -206,7 +400,11 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   // again after a question was answered remotely (hooks only report the next Stop).
   function readScreenSignals(id: Id, data: string): void {
     const agent = findSession(id)?.agent
-    if (agent === 'opencode' || agent === 'shell') return
+    if (agent === 'shell') return
+    if (agent === 'opencode') {
+      readOpencodeUsageLimit(id, data)
+      return
+    }
     const signals = detectOutputSignals(data)
     if (signals.usageLimit) reportUsageLimit(id, data)
     if (signals.remoteControl && runtime.get(id)?.remoteControl !== true) {
@@ -219,6 +417,32 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       attention.clear(id)
       runtime.setActivity(id, 'working', null, Date.now())
       applyAutoStatus(id, 'working')
+    }
+  }
+
+  /**
+   * D79: OpenCode has no screen parser for status, but a plan/provider limit must still reach the autopilot. Only
+   * the last screen lines are checked, with the conservative `isOpencodeUsageLimit` wording, and the same message
+   * is reported once (resetting on a new prompt or process) so a redrawn limit banner cannot spam the hook.
+   */
+  function readOpencodeUsageLimit(id: Id, data: string): void {
+    const combined = (opencodeLimitTail.get(id) ?? '') + stripAnsi(data)
+    const tail = combined.length <= OPENCODE_LIMIT_TAIL_CHARS ? combined : combined.slice(-OPENCODE_LIMIT_TAIL_CHARS)
+    opencodeLimitTail.set(id, tail)
+    const lines = tail.split(/\r?\n/).slice(-OPENCODE_LIMIT_SCAN_LINES)
+    const text = lines.join('\n')
+    if (!isOpencodeUsageLimit(text)) return
+    if (isClosed(id)) return
+    const matchingLines = lines.filter((line) => isOpencodeUsageLimit(line)).map((line) => line.trim())
+    const seen = opencodeLimitSeen.get(id) ?? new Set<string>()
+    if (matchingLines.every((line) => seen.has(line))) return
+    for (const line of matchingLines) seen.add(line)
+    opencodeLimitSeen.set(id, seen)
+    captureUsageLimitWording(text)
+    try {
+      deps.onUsageLimit?.(id)
+    } catch (error) {
+      logMainError(userDataDir, 'usage limit report', error)
     }
   }
 
@@ -269,6 +493,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     // The next process has no turn of its own until a prompt is submitted.
     limitArmed.delete(id)
     forgetTrustPrompt(id)
+    clearOpencodeHealth(id)
     // A session removed from the store must not get a runtime entry or event back.
     if (!findSession(id)) {
       startState.delete(id)
@@ -352,9 +577,18 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       pty.start(opts)
       runtime.markRunning(sessionWithId.id)
       if (mode === 'new') trustFirstStart.add(sessionWithId.id)
+      if (sessionWithId.agent === 'opencode') {
+        beginOpencodeHealth(sessionWithId.id, state.startTime ?? Date.now())
+        // D79: a resumed conversation whose id was lost can be found again in `opencode session list`.
+        if (mode === 'resume' && sessionWithId.opencodeSessionId === undefined) {
+          const track = opencodeHealth.get(sessionWithId.id)
+          if (track !== undefined) void recoverOpencodeSessionId(sessionWithId.id, track)
+        }
+      }
     } catch (error) {
       startState.delete(sessionWithId.id)
       forgetTrustPrompt(sessionWithId.id)
+      clearOpencodeHealth(sessionWithId.id)
       runtime.markExited(sessionWithId.id, null)
       throw error
     }
@@ -413,6 +647,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     runtime.forget(id)
     store.removeSession(id)
     startState.delete(id)
+    clearOpencodeHealth(id)
     if (activeId === id) {
       activeId = null
     }
@@ -500,6 +735,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       store.closeSession(id)
       startState.delete(id)
       forgetTrustPrompt(id)
+      clearOpencodeHealth(id)
       if (pty.isRunning(id)) {
         pty.kill(id)
       }
@@ -564,6 +800,13 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         throw error
       }
       runtime.markRunning(id)
+      if (sessionWithId.agent === 'opencode') {
+        beginOpencodeHealth(id, state.startTime ?? Date.now())
+        if (sessionWithId.opencodeSessionId === undefined) {
+          const track = opencodeHealth.get(id)
+          if (track !== undefined) void recoverOpencodeSessionId(id, track)
+        }
+      }
     },
 
     writeToPty(id: Id, data: string): void {
@@ -588,6 +831,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       // The kill is intentional: drop the start state so the next activation auto-resumes with --resume, and mark
       // the runtime asleep BEFORE killing so the pty exit handler ignores the exit instead of treating it as a crash.
       startState.delete(id)
+      clearOpencodeHealth(id)
       // Sleep keeps the bell (reason and time) so the user sees what finished or needs them on return.
       attention.suspend(id)
       runtime.markSleeping(id)
@@ -637,7 +881,10 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
 
     handleHookEvent(event: HookEvent): void {
       try {
-        if (!findSession(event.sessionId)) return
+        const session = findSession(event.sessionId)
+        if (!session) return
+        // D79: any hook from the injected plugin proves it loaded.
+        if (session.agent === 'opencode') noteOpencodePluginEvent(event.sessionId)
         if (event.event === 'AgentSession') {
           handleAgentSessionEvent(event)
           return
@@ -650,8 +897,10 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         // A prompt means someone is at the keyboard (here or via Remote Control): drop any pending ping.
         if (event.event === 'UserPromptSubmit') {
           attention.clear(event.sessionId)
+          // A new turn starts a new limit occurrence: the old screen tail must not be matched again.
+          if (session.agent === 'opencode') resetOpencodeLimitScan(event.sessionId)
           // Only a turn submitted in this process can be cut off by the limit: arm the edge trigger (not for shells).
-          if (findSession(event.sessionId)?.agent !== 'shell') limitArmed.add(event.sessionId)
+          if (session.agent !== 'shell') limitArmed.add(event.sessionId)
         }
         const next = activityFromHook(event, previous)
         runtime.setActivity(event.sessionId, next.activity, next.message, Date.now())
@@ -662,6 +911,10 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       } catch (error) {
         logMainError(userDataDir, `hook event ${event.event}`, error)
       }
+    },
+
+    setNoticeHandler(handler: (message: string) => void): void {
+      noticeHandler = handler
     },
 
     initializeRestoredSessions

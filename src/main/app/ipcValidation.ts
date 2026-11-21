@@ -1,5 +1,5 @@
 import { WORKTREE_NAME_MAX } from '../../shared/types'
-import type { AgentKind, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, CreateWorktreeInput, Group, Id, StatusDef, GpuPref } from '../../shared/types'
+import type { AgentKind, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, CreateWorktreeInput, Group, Id, OpencodePermissions, StatusDef, GpuPref } from '../../shared/types'
 import { buildLaunch } from '../pty/launch'
 import { MAX_NOTES_LENGTH, validateChecklist, validatePreset, validateQueue } from '../store'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
@@ -124,6 +124,7 @@ const ALLOWED_CREATE_SESSION_KEYS = new Set<keyof CreateSessionInput>([
   'claudeArgs',
   'agent',
   'model',
+  'opencodePermissions',
   'worktreeId'
 ])
 
@@ -148,6 +149,10 @@ export function asCreateSessionInput(raw: unknown): CreateSessionInput {
   // The model only applies to OpenCode sessions; for claude and shell sessions it is ignored.
   const model =
     agent === 'opencode' && obj.model !== undefined ? assertOpencodeModel(obj.model, 'createSession input') : undefined
+  const opencodePermissions =
+    agent === 'opencode' && obj.opencodePermissions !== undefined
+      ? assertOpencodePermissions(obj.opencodePermissions, 'createSession input')
+      : undefined
   const worktreeId = obj.worktreeId !== undefined ? assertId(obj.worktreeId, 'worktreeId') : undefined
 
   return {
@@ -158,6 +163,7 @@ export function asCreateSessionInput(raw: unknown): CreateSessionInput {
     claudeArgs,
     ...(agent !== undefined ? { agent } : {}),
     ...(model !== undefined ? { model } : {}),
+    ...(opencodePermissions !== undefined ? { opencodePermissions } : {}),
     ...(worktreeId !== undefined ? { worktreeId } : {})
   }
 }
@@ -252,6 +258,14 @@ function assertOpencodeModel(raw: unknown, context: string): string {
     throw new Error(`Invalid ${context}: model may only contain letters, digits and . _ : / @ + -`)
   }
   return trimmed
+}
+
+/** D79: the OpenCode permission policy, 'yolo' or 'ask'. */
+function assertOpencodePermissions(raw: unknown, context: string): OpencodePermissions {
+  if (raw !== 'yolo' && raw !== 'ask') {
+    throw new Error(`Invalid ${context}: opencodePermissions must be "yolo" or "ask"`)
+  }
+  return raw
 }
 
 function assertClaudeArgs(raw: unknown): readonly string[] {
