@@ -5,7 +5,8 @@ import type { HookEvent, JarvisSettings, Session, StoreData } from '../../shared
 import { IPC } from '../../shared/ipc'
 import type { SessionController } from '../app/sessionController'
 import type { SessionStore } from '../store'
-import { createJarvisWiring, jarvisSwitchPlan, type JarvisWiringDeps } from './jarvisWiring'
+import { createJarvisWiring, jarvisSwitchPlan, watchLimitsFromEnv, type JarvisWiringDeps } from './jarvisWiring'
+import { DEFAULT_WATCH_LIMITS } from './watchService'
 
 // jarvisWiring registers IPC handlers only in registerIpc; no test here calls it, but the import must resolve.
 vi.mock('electron', () => ({ ipcMain: { handle: (): void => undefined } }))
@@ -139,5 +140,14 @@ describe('jarvisSwitchPlan (D54/D79)', () => {
     expect(jarvisSwitchPlan(session('j', 'Jarvis', { agent: 'opencode', model: 'p/old' }), settings('opencode', 'p/m@latest'))).toEqual({
       kind: 'recreate'
     })
+  })
+})
+
+describe('watchLimitsFromEnv (D80 test seam)', () => {
+  it('uses the defaults, accepts whole milliseconds in range, ignores the rest', () => {
+    expect(watchLimitsFromEnv({})).toEqual(DEFAULT_WATCH_LIMITS)
+    expect(watchLimitsFromEnv({ SESSIONDECK_WATCH_WAITING_MS: '5000', SESSIONDECK_WATCH_STUCK_MS: '8000' })).toEqual({ waitingMs: 5000, stuckMs: 8000 })
+    expect(watchLimitsFromEnv({ SESSIONDECK_WATCH_WAITING_MS: '5', SESSIONDECK_WATCH_STUCK_MS: 'abc' })).toEqual(DEFAULT_WATCH_LIMITS)
+    expect(watchLimitsFromEnv({ SESSIONDECK_WATCH_WAITING_MS: '1.5e3' })).toEqual({ waitingMs: 1500, stuckMs: DEFAULT_WATCH_LIMITS.stuckMs })
   })
 })

@@ -75,6 +75,8 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - **A missing provider in a usage update means two things.** A missing Claude row keeps the cached one (main restarts empty); a missing Go row disappears (the toggle is off). No blanket "keep everything" merge.
 
 ## Jarvis and its tools
+- **A finished turn leaves an unread "done" bell on a background session, and `needsUser` counts it.** Anything that must tell "waiting for an answer" from "finished" (watch mode, task plans) uses a permission/question test (`attention === 'permission'` or `isAsking`), not `needsUser`: the first plan version read every finished Claude/OpenCode step as "waiting" and would have timed every step out (found by the D80 review; the shell-only e2e could not see it).
+- **`send_prompt` refuses more than 4000 characters (QUEUE_TEXT_MAX).** Every message a service builds for Jarvis (watch, plan summary, pasted answers) must be capped under it, or the delivery fails on every retry.
 - **2026-11-08 · Jarvis's tools are built before Code mode's wiring.** `index.ts` hands `code.git` in as a getter; a tool group that read `deps.code.git` when it was created crashed startup ("Cannot access 'code' before initialization"; the unit fakes were plain objects). Read late-wired deps inside `run`, and launch the built app after wiring changes.
 - **Reusing a helper with a different purpose bites.** The prompt queue's `canTypeInto` excludes Shell sessions on purpose; Jarvis needs its own `isTypeable`.
 - **A woken session is still "sleeping" until its old process exits** (`wakeAfterExit`). After `wakeSession`, wait for a process started after the wake (with a grace period) before typing.

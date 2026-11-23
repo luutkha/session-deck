@@ -20,9 +20,18 @@ import { createScheduleService } from './scheduleService'
 import { scheduleWhen } from './schedules'
 
 const RESTART_DELAY_MS = 2500
+
+/** D80 test seam: SESSIONDECK_WATCH_WAITING_MS / SESSIONDECK_WATCH_STUCK_MS (whole ms, 1000..1 day) shorten the watch limits; anything else keeps the defaults. */
+export function watchLimitsFromEnv(env: Readonly<Record<string, string | undefined>>): WatchLimits {
+  const read = (name: string, fallback: number): number => {
+    const value = Number(env[name])
+    return Number.isInteger(value) && value >= 1000 && value <= 86_400_000 ? value : fallback
+  }
+  return { waitingMs: read('SESSIONDECK_WATCH_WAITING_MS', DEFAULT_WATCH_LIMITS.waitingMs), stuckMs: read('SESSIONDECK_WATCH_STUCK_MS', DEFAULT_WATCH_LIMITS.stuckMs) }
+}
 import { createVoiceListener } from './voice'
 import { collectFleetDigest, collectWatchRows, planPhaseOf } from './digestTools'
-import { createWatchService } from './watchService'
+import { createWatchService, DEFAULT_WATCH_LIMITS, type WatchLimits } from './watchService'
 import { createPlanService } from './planService'
 import { createPlanTools } from './planTools'
 import { resolveSession } from './targets'
@@ -215,8 +224,13 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       return { enabled: jarvis.watchEnabled, everyMinutes: jarvis.watchEveryMinutes }
     },
     rows: () => collectWatchRows(toolDeps),
+    limits: watchLimitsFromEnv(process.env),
     digest: (onlyNeedingAttention) => collectFleetDigest(toolDeps, { onlyNeedingAttention }),
     deliver: deliverToJarvis,
+    canDeliver: () => {
+      const current = findJarvis()
+      return current !== undefined && jarvisSwitchPlan(current, deps.store.getSettings().jarvis).kind === 'none'
+    },
     now: () => Date.now(),
     setInterval: (callback, ms) => setInterval(callback, ms),
     clearInterval: (timer) => clearInterval(timer),

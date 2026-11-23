@@ -2,6 +2,7 @@
 // every step it depends on is done, and its answer can be pasted into a later prompt as {{stepId}}. Everything lives in
 // memory: a restart of the app forgets every plan. A timer calls tick() every 5 s; create() runs one tick right away.
 // All side effects (sessions, prompts, Jarvis, errors) are injected so unit tests use fakes.
+import { QUEUE_TEXT_MAX } from '../../shared/types'
 import {
   PLAN_ACTIVE_MAX,
   PLAN_ANSWER_MAX,
@@ -32,12 +33,37 @@ const WAITING_PROBLEM = 'waiting for you in that session'
 const TURNED_OFF_PROBLEM = 'Task plans were turned off'
 
 interface StepRun {
-  /** When sendPrompt was called (ms). */
-  readonly sentAt: number
-  /** The tick that sent the prompt; 'finished' is never judged in that same tick. */
-  readonly sentTick: number
-  /** True once a tick saw the session 'working' after the prompt was sent. */
+  /**
+   * When sendPrompt RESOLVED (the text was typed or queued), ms. Undefined while the call is still in flight (it may wake
+   * a session and wait for it to be ready for a minute): nothing is judged until then.
+   */
+  sentAt?: number
+  /** The tick in which the prompt was typed; 'finished' is never judged in that same tick. */
+  sentTick?: number
+  /** True once a tick saw the session 'working' after the prompt was typed. */
   sawWorking: boolean
+}
+
+/** What a pasted answer must at least leave room for; below this the prompt is refused instead of pasting a stub. */
+const PASTE_MIN_CHARS = 40
+/** The message to Jarvis must stay under the prompt limit of send_prompt (QUEUE_TEXT_MAX), with some margin. */
+const DELIVER_MAX_CHARS = QUEUE_TEXT_MAX - 100
+const PLACEHOLDER = /\{\{([^{}]+)\}\}/g
+
+/**
+ * The step's prompt with {{id}} replaced by that dependency's answer, kept within QUEUE_TEXT_MAX: when the answers do not
+ * fit they are cut (with a note) and share the room equally. Throws when even a stub would not fit.
+ */
+export function fillPrompt(prompt: string, answers: ReadonlyMap<string, string>): string {
+  const slots = [...prompt.matchAll(PLACEHOLDER)].length
+  if (slots === 0) return prompt
+  const fixed = prompt.replace(PLACEHOLDER, '').length
+  const room = Math.floor((QUEUE_TEXT_MAX - fixed) / slots)
+  if (room < PASTE_MIN_CHARS) throw new Error('the prompt is too long once the earlier answers are pasted in')
+  return prompt.replace(PLACEHOLDER, (_whole: string, id: string) => {
+    const answer = answers.get(id) ?? ''
+    return answer.length <= room ? answer : `${answer.slice(0, Math.max(0, room - 8))} (cut)`
+  })
 }
 
 function message(error: unknown): string {
@@ -196,11 +222,15 @@ export function createPlanService(deps: PlanServiceDeps): PlanService {
     const sessionId = step.sessionId
     if (sessionId === undefined) return fail(plan, step.id, 'the session was not recorded')
 
-    const phase = deps.sessionPhase(sessionId)
-    if (phase === 'gone') return fail(plan, step.id, 'the session was closed')
     if (step.startedAt !== undefined && deps.now() - step.startedAt > PLAN_STEP_TIMEOUT_MS) {
       return fail(plan, step.id, 'timed out')
     }
+    // The prompt is still being typed (the session is starting or waking): nothing to judge yet.
+    const sent = runs.get(runKey(plan.id, step.id))
+    if (sent !== undefined && sent.sentAt === undefined) return plan
+
+    const phase = deps.sessionPhase(sessionId)
+    if (phase === 'gone') return fail(plan, step.id, 'the session was closed, stopped or put to sleep')
     if (phase === 'waiting') {
       return updateStep(plan, step.id, (current) =>
         current.problem === WAITING_PROBLEM ? current : { ...current, problem: WAITING_PROBLEM }
@@ -208,16 +238,21 @@ export function createPlanService(deps: PlanServiceDeps): PlanService {
     }
     if (phase === 'working') {
       const run = runs.get(runKey(plan.id, step.id))
-      if (run !== undefined && clockTicks > run.sentTick) run.sawWorking = true
+      if (run !== undefined && run.sentTick !== undefined && clockTicks > run.sentTick) run.sawWorking = true
       return updateStep(plan, step.id, withoutProblem)
     }
 
     // 'finished': only on a later tick, and only once it was seen working or the prompt had time to produce a turn.
     const run = runs.get(runKey(plan.id, step.id))
-    if (run !== undefined && clockTicks <= run.sentTick) return plan
+    if (run !== undefined && run.sentTick !== undefined && clockTicks <= run.sentTick) return plan
     const promptAt = run?.sentAt ?? step.startedAt ?? deps.now()
     if (run?.sawWorking !== true && deps.now() - promptAt < PLAN_FINISHED_GRACE_MS) return plan
-    const text = await deps.lastAnswer(sessionId)
+    let text: string | null = null
+    try {
+      text = await deps.lastAnswer(sessionId)
+    } catch (error) {
+      deps.onError('jarvis plan answer', error)
+    }
     const current = plans.find((candidate) => candidate.id === plan.id)
     if (current === undefined || current.status !== 'running') return current ?? plan
     const answer = text === null || text.trim().length === 0 ? NO_ANSWER : text.slice(0, PLAN_ANSWER_MAX)
@@ -246,10 +281,13 @@ export function createPlanService(deps: PlanServiceDeps): PlanService {
       return fail(plan, step.id, message(error))
     }
 
-    let prompt = step.prompt
-    for (const depId of step.dependsOn) {
-      const answer = stepOf(plan, depId)?.answer ?? ''
-      prompt = prompt.split(`{{${depId}}}`).join(answer)
+    let prompt: string
+    try {
+      const answers = new Map<string, string>()
+      for (const depId of step.dependsOn) answers.set(depId, stepOf(plan, depId)?.answer ?? '')
+      prompt = fillPrompt(step.prompt, answers)
+    } catch (error) {
+      return fail(plan, step.id, message(error))
     }
 
     let sending: Promise<string>
@@ -259,7 +297,8 @@ export function createPlanService(deps: PlanServiceDeps): PlanService {
       return fail(plan, step.id, message(error))
     }
     const startedAt = deps.now()
-    runs.set(runKey(plan.id, step.id), { sentAt: startedAt, sentTick: clockTicks, sawWorking: false })
+    const key = runKey(plan.id, step.id)
+    runs.set(key, { sawWorking: false })
     const next = updateStep(plan, step.id, (current) => ({
       ...current,
       status: 'running',
@@ -268,7 +307,14 @@ export function createPlanService(deps: PlanServiceDeps): PlanService {
       startedAt
     }))
     sending
-      .then((text) => deps.log('plan step prompt', `${plan.id}/${step.id}: ${text}`))
+      .then((text) => {
+        const run = runs.get(key)
+        if (run !== undefined) {
+          run.sentAt = deps.now()
+          run.sentTick = clockTicks
+        }
+        deps.log('plan step prompt', `${plan.id}/${step.id}: ${text}`)
+      })
       .catch((error: unknown) => failLate(plan.id, step.id, message(error)))
     return next
   }
@@ -284,24 +330,32 @@ export function createPlanService(deps: PlanServiceDeps): PlanService {
   }
 
   function summaryOf(plan: Plan): string {
-    const lines: string[] = [`[Plan finished] ${plan.goal} (${plan.status})`, '']
+    const head: string[] = [`[Plan finished] ${plan.goal} (${plan.status})`, '']
     for (const step of plan.steps) {
       const parts = [step.id, step.title, step.status]
       if (step.sessionName !== undefined) parts.push(step.sessionName)
       if (step.problem !== undefined) parts.push(step.problem)
-      lines.push(`- ${parts.join(' | ')}`)
+      head.push(`- ${parts.join(' | ')}`)
     }
+    const tail = 'Report to the user in plain words what was done and what failed.'
     const answered = plan.steps.filter((step) => step.status === 'done')
+    // The whole message must fit send_prompt's limit: the answers share what the list and the closing line leave over.
+    const fixed = head.join('\n').length + tail.length + answered.length * 40 + 8
+    const share = Math.floor((DELIVER_MAX_CHARS - fixed) / Math.max(1, answered.length))
+    const each = Math.max(0, Math.min(PLAN_ANSWER_SUMMARY_MAX, share))
+    const lines = [...head]
     if (answered.length > 0) {
       lines.push('')
       for (const step of answered) {
         lines.push(`Answer from ${step.id} (${step.title}):`)
-        lines.push((step.answer ?? NO_ANSWER).slice(0, PLAN_ANSWER_SUMMARY_MAX))
+        const answer = step.answer ?? NO_ANSWER
+        lines.push(answer.length <= each ? answer : `${answer.slice(0, each)} (cut)`)
         lines.push('')
       }
     }
-    lines.push('Report to the user in plain words what was done and what failed.')
-    return lines.join('\n')
+    lines.push(tail)
+    const text = lines.join('\n')
+    return text.length <= DELIVER_MAX_CHARS ? text : `${text.slice(0, DELIVER_MAX_CHARS - 8)} (cut)`
   }
 
   function finishIfOver(plan: Plan): void {
@@ -382,10 +436,16 @@ export function createPlanService(deps: PlanServiceDeps): PlanService {
       }
       const plan: Plan = {
         id: deps.newId(),
-        goal: input.goal,
+        goal: input.goal.trim(),
         status: 'running',
         createdAt: deps.now(),
-        steps: input.steps.map((step): PlanStep => ({ ...step, status: 'pending' }))
+        steps: input.steps.map((step): PlanStep => ({
+          ...step,
+          title: step.title.trim(),
+          prompt: step.prompt.trim(),
+          dependsOn: [...new Set(step.dependsOn)],
+          status: 'pending'
+        }))
       }
       plans = [plan, ...plans]
       prunePlans()

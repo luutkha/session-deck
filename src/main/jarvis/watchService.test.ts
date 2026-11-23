@@ -159,7 +159,7 @@ describe('formatWatchMessage (pure)', () => {
     expect(message).toContain(`${'q'.repeat(159)}…`)
   })
 
-  it('caps the whole message at 7000 characters, giving the digest up first, and hard-caps a huge list', () => {
+  it('caps the whole message under the send limit (3900 characters), giving the digest up first, and hard-caps a huge list', () => {
     const few = [item(), item({ key: 'k2', sessionName: 'Worker', kind: 'stuck' })]
     const message = formatWatchMessage(few, 'digest '.repeat(5000), NOW)
     expect(message.length).toBe(WATCH_MAX_CHARS)
@@ -281,6 +281,10 @@ describe('createWatchService', () => {
     expect(h.timers.size).toBe(1)
     expect([...h.timers.values()].map((timer) => timer.ms)).toEqual([15 * MIN])
     expect([...h.timers.values()][0]?.id).not.toBe(startTimer?.id)
+    // Switching it on already started a check (see the next test); wait for it, then tick again.
+    await vi.waitFor(() => {
+      expect(h.svc.status().reported).toBe(1)
+    })
     await h.svc.tick()
     expect(h.svc.status().reported).toBe(1)
     h.settings.enabled = false
@@ -306,5 +310,37 @@ describe('createWatchService', () => {
       expect(h.delivered).toHaveLength(1)
     })
     expect(h.svc.status().reported).toBe(500)
+  })
+})
+
+describe('review fixes (D80)', () => {
+  it('checks right away when it is switched on, not only after a whole interval', async () => {
+    const h = setup()
+    h.setRows([row({ id: 'api', waiting: true, since: NOW - 5 * MIN })])
+    h.svc.start()
+    await vi.waitFor(() => {
+      expect(h.delivered).toHaveLength(1)
+    })
+    h.svc.refresh()
+    await h.svc.tick()
+    expect(h.delivered).toHaveLength(1)
+  })
+
+  it('does nothing (no digest, no message, nothing remembered) while Jarvis cannot be told', async () => {
+    let jarvisThere = false
+    const h = setup({ canDeliver: () => jarvisThere })
+    h.setRows([row({ id: 'api', waiting: true, since: NOW - 5 * MIN })])
+    await h.svc.tick()
+    expect(h.delivered).toHaveLength(0)
+    expect(h.digests).toHaveLength(0)
+    expect(h.svc.status().reported).toBe(0)
+    jarvisThere = true
+    await h.svc.tick()
+    expect(h.delivered).toHaveLength(1)
+  })
+
+  it('never builds a message longer than the send limit', () => {
+    const many = Array.from({ length: 40 }, (_v, index) => ({ key: `k${index}`, sessionName: `Session ${index}`, kind: 'waiting' as const, since: NOW - 5 * MIN, detail: 'q'.repeat(300) }))
+    expect(formatWatchMessage(many, 'digest '.repeat(2000), NOW).length).toBeLessThanOrEqual(4000)
   })
 })

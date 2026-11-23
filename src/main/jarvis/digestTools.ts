@@ -229,28 +229,44 @@ async function quietUncommitted(read: UncommittedCounter, folder: string): Promi
   }
 }
 
+/**
+ * D80: a session that really waits for an answer (a permission or a question). A finished turn, a bell or an unread
+ * flag also put a session on the "needs you" list, but they are not urgent and a plan must not read them as "waiting".
+ */
+function isRealAsk(session: Session, state: RuntimeState | undefined): boolean {
+  if (session.closedAt !== undefined || state === undefined) return false
+  return state.attention === 'permission' || isAsking(state)
+}
+
 /** D80: what the watch service needs per session (Jarvis and worker tabs are excluded by targetSessions). */
 export function collectWatchRows(deps: JarvisToolDeps): readonly WatchRow[] {
   return targetSessions(deps.getData()).map((session): WatchRow => {
     const state = deps.getRuntime(session.id)
-    const waiting = needsUser(session, state)
+    const waiting = isRealAsk(session, state)
     return {
       id: session.id,
       name: session.name,
       waiting,
-      working: !waiting && isWorking(session, state),
-      since: stateSince(session, state, deps),
+      working: !waiting && isWorking(session, state) && state?.sleeping !== true,
+      // A pending question keeps ONE start time (when it was asked): the bell's own time changes when the user only looks
+      // at the session, and a new `since` would report the same unanswered question again.
+      since: waiting && isAsking(state) && (state?.activityAt ?? 0) > 0 ? state?.activityAt ?? null : stateSince(session, state, deps),
       question: waiting ? state?.activityMessage ?? null : null
     }
   })
 }
 
-/** D80: where a session is, for task plans: working a turn, waiting for the user, done with its turn, or closed/removed. */
+/**
+ * D80: where a session is, for task plans. 'waiting' = a real permission/question (a finished turn's unread bell is NOT
+ * waiting). 'gone' = closed, removed, stopped or asleep: a step cannot finish there (a sleeping session is woken again
+ * by the next prompt, not by this check).
+ */
 export function planPhaseOf(deps: JarvisToolDeps, id: string): 'working' | 'finished' | 'waiting' | 'gone' {
   const session = deps.getData().sessions.find((candidate) => candidate.id === id)
   if (session === undefined || session.closedAt !== undefined) return 'gone'
   const state = deps.getRuntime(id)
-  if (needsUser(session, state)) return 'waiting'
+  if (state === undefined || state.run !== 'running' || state.sleeping === true) return 'gone'
+  if (isRealAsk(session, state)) return 'waiting'
   if (isWorking(session, state)) return 'working'
   return 'finished'
 }

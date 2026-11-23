@@ -6,6 +6,8 @@ import { readUncommittedPaths } from '../git'
 import {
   clipToEnd,
   collectFleetDigest,
+  collectWatchRows,
+  planPhaseOf,
   createDigestTools,
   DIGEST_MAX_CHARS,
   formatFleetDigest,
@@ -338,5 +340,60 @@ describe('fleet_digest tool', () => {
     await expect(tool.run({ only_needing_attention: 'yes' })).rejects.toThrow('"only_needing_attention" must be true or false.')
     await expect(tool.run({ limit: 0 })).rejects.toThrow('"limit" must be a positive whole number.')
     await expect(tool.run({ limit: 1.5 })).rejects.toThrow('"limit" must be a positive whole number.')
+  })
+})
+
+describe('planPhaseOf and collectWatchRows (D80 review fixes)', () => {
+  it('a finished turn with an unread "done" bell is finished, not waiting (a plan must be able to finish)', () => {
+    const deps = depsOf({
+      sessions: [session('a', 'API')],
+      runtime: [running('a', { activity: 'finished', attention: 'done', attentionAt: NOW - MIN })]
+    })
+    expect(planPhaseOf(deps, 'a')).toBe('finished')
+    expect(collectWatchRows(deps)[0]).toMatchObject({ waiting: false, working: false })
+  })
+
+  it('a permission or question is waiting for a plan and for the watch', () => {
+    const deps = depsOf({
+      sessions: [session('a', 'API'), session('b', 'Web')],
+      runtime: [
+        running('a', { activity: 'needs-input', activityMessage: 'Claude needs your permission to use Bash', attention: 'permission', attentionAt: NOW - 5 * MIN }),
+        running('b', { activity: 'needs-input', activityMessage: 'Which database?', activityAt: NOW - 4 * MIN })
+      ]
+    })
+    expect(planPhaseOf(deps, 'a')).toBe('waiting')
+    expect(planPhaseOf(deps, 'b')).toBe('waiting')
+    expect(collectWatchRows(deps).map((row) => row.waiting)).toEqual([true, true])
+  })
+
+  it('working is working; a stopped, sleeping, closed or unknown session is gone', () => {
+    const deps = depsOf({
+      sessions: [session('w', 'W'), session('x', 'X'), session('s', 'S'), session('c', 'C', { closedAt: 5 })],
+      runtime: [
+        running('w', { activity: 'working' }),
+        { sessionId: 'x', run: 'exited', exitCode: 1, attention: null },
+        running('s', { sleeping: true })
+      ]
+    })
+    expect(planPhaseOf(deps, 'w')).toBe('working')
+    expect(planPhaseOf(deps, 'x')).toBe('gone')
+    expect(planPhaseOf(deps, 's')).toBe('gone')
+    expect(planPhaseOf(deps, 'c')).toBe('gone')
+    expect(planPhaseOf(deps, 'nope')).toBe('gone')
+  })
+
+  it('the watch never counts a sleeping session as stuck', () => {
+    const deps = depsOf({ sessions: [session('s', 'S')], runtime: [running('s', { activity: 'working', activityAt: NOW - HOUR, sleeping: true })] })
+    expect(collectWatchRows(deps)[0]).toMatchObject({ waiting: false, working: false })
+  })
+})
+
+describe('collectWatchRows keeps one start time per pending question (D80 e2e finding)', () => {
+  it('uses when it was asked, so clearing the bell does not make it a new episode', () => {
+    const asked = NOW - 5 * MIN
+    const withBell = depsOf({ sessions: [session('a', 'API')], runtime: [running('a', { activity: 'needs-input', activityMessage: 'Which database?', activityAt: asked, attention: 'permission', attentionAt: asked + 1000 })] })
+    const bellCleared = depsOf({ sessions: [session('a', 'API')], runtime: [running('a', { activity: 'needs-input', activityMessage: 'Which database?', activityAt: asked, attention: null })] })
+    expect(collectWatchRows(withBell)[0].since).toBe(asked)
+    expect(collectWatchRows(bellCleared)[0].since).toBe(asked)
   })
 })

@@ -12,7 +12,7 @@ import {
   type PlanService,
   type PlanStepInput
 } from './planTypes'
-import { createPlanService, validatePlanInput } from './planService'
+import { createPlanService, fillPrompt, validatePlanInput } from './planService'
 
 type Phase = 'working' | 'finished' | 'waiting' | 'gone'
 
@@ -44,7 +44,7 @@ interface Harness {
 }
 
 function harness(
-  options: { readonly enabled?: boolean; readonly send?: (sessionId: string, text: string) => Promise<string> } = {}
+  options: { readonly enabled?: boolean; readonly send?: (sessionId: string, text: string) => Promise<string>; readonly answerError?: string } = {}
 ): Harness {
   let enabled = options.enabled ?? true
   let now = 1_000_000
@@ -90,7 +90,10 @@ function harness(
       return send(sessionId, text)
     },
     sessionPhase: (sessionId) => phases.get(sessionId) ?? 'gone',
-    lastAnswer: async (sessionId) => answers.get(sessionId) ?? null,
+    lastAnswer: async (sessionId) => {
+      if (options.answerError !== undefined) throw new Error(options.answerError)
+      return answers.get(sessionId) ?? null
+    },
     deliver: async (text) => {
       delivered.push(text)
     },
@@ -337,7 +340,7 @@ describe('createPlanService', () => {
 
     const after = h.service.get(plan.id)
     expect(after.status).toBe('failed')
-    expect(after.steps[0]).toMatchObject({ status: 'failed', problem: 'the session was closed' })
+    expect(after.steps[0]).toMatchObject({ status: 'failed', problem: 'the session was closed, stopped or put to sleep' })
     expect(after.steps[1]).toMatchObject({ status: 'skipped', problem: 'depends on a which failed' })
     expect(h.delivered).toHaveLength(1)
 
@@ -575,5 +578,92 @@ describe('createPlanService', () => {
     await h.service.tick()
     const plan = h.service.list()[0]
     expect(plan.steps[1]).toMatchObject({ status: 'failed', problem: 'Session "s2" was not found; the step was not started.' })
+  })
+})
+
+describe('fillPrompt (D80)', () => {
+  const answers = new Map([['a', 'x'.repeat(3000)], ['b', 'y'.repeat(3000)]])
+
+  it('pastes answers that fit and leaves a prompt without slots alone', () => {
+    expect(fillPrompt('use {{a}} now', new Map([['a', 'hello']]))).toBe('use hello now')
+    expect(fillPrompt('no slots', answers)).toBe('no slots')
+  })
+
+  it('cuts answers so the whole prompt stays within the send limit, and refuses when there is no room', () => {
+    const filled = fillPrompt('A: {{a}} B: {{b}}', answers)
+    expect(filled.length).toBeLessThanOrEqual(4000)
+    expect(filled).toContain('(cut)')
+    expect(() => fillPrompt('z'.repeat(3990) + '{{a}}', answers)).toThrow('too long')
+  })
+})
+
+describe('plan prompts and summaries stay within the send limit (D80 review)', () => {
+  it('fails a step cleanly (and starts nothing) when the pasted prompt cannot fit', async () => {
+    const h = harness()
+    const plan = h.service.create(planInput([step('a'), step('b', { prompt: 'z'.repeat(3990) + '{{a}}', dependsOn: ['a'] })]))
+    await h.settle()
+    h.setAnswer('s1', 'x'.repeat(500))
+    h.setPhase('s1', 'working')
+    await h.service.tick()
+    h.setPhase('s1', 'finished')
+    await h.service.tick()
+    await h.service.tick()
+    expect(h.service.get(plan.id).steps[1]).toMatchObject({ status: 'failed', problem: expect.stringContaining('too long') })
+  })
+
+  it('keeps the [Plan finished] message under the send limit even with 8 long answers', async () => {
+    const h = harness()
+    const steps = Array.from({ length: 8 }, (_, index) => step(`s${index}`, { title: 'a long title '.repeat(5), target: { kind: 'existing', session: `s${index + 1}` } }))
+    const plan = h.service.create(planInput(steps))
+    await h.settle()
+    for (let i = 0; i < 8; i += 1) h.setAnswer(`s${i + 1}`, 'x'.repeat(4000))
+    for (let n = 0; n < 30 && h.service.get(plan.id).status === 'running'; n += 1) {
+      for (let i = 0; i < 8; i += 1) h.setPhase(`s${i + 1}`, 'working')
+      await h.service.tick()
+      for (let i = 0; i < 8; i += 1) h.setPhase(`s${i + 1}`, 'finished')
+      await h.service.tick()
+    }
+    expect(h.service.get(plan.id).status).toBe('done')
+    expect(h.delivered).toHaveLength(1)
+    expect(h.delivered[0].length).toBeLessThanOrEqual(4000)
+  })
+
+  it('does not judge a step while its prompt is still being typed (a slow wake), then waits for a real turn', async () => {
+    let release: (value: string) => void = () => undefined
+    const h = harness({ send: () => new Promise<string>((resolve) => { release = resolve }) })
+    const plan = h.service.create(planInput([step('a')]))
+    await h.settle()
+    h.setPhase('s1', 'finished')
+    h.advance(60_000)
+    await h.service.tick()
+    await h.service.tick()
+    expect(h.service.get(plan.id).steps[0].status).toBe('running')
+    release('Sent to it.')
+    await h.settle()
+    await h.service.tick()
+    expect(h.service.get(plan.id).steps[0].status).toBe('running')
+    h.setPhase('s1', 'working')
+    await h.service.tick()
+    h.setPhase('s1', 'finished')
+    await h.service.tick()
+    expect(h.service.get(plan.id).steps[0].status).toBe('done')
+  })
+
+  it('a lastAnswer that rejects gives (no answer was found) instead of stopping the tick', async () => {
+    const h = harness({ answerError: 'export failed' })
+    const plan = h.service.create(planInput([step('a')]))
+    await h.settle()
+    h.setPhase('s1', 'working')
+    await h.service.tick()
+    h.setPhase('s1', 'finished')
+    await h.service.tick()
+    expect(h.service.get(plan.id).steps[0]).toMatchObject({ status: 'done', answer: '(no answer was found)' })
+  })
+
+  it('trims text and drops duplicate dependencies when the plan is stored', async () => {
+    const h = harness()
+    const plan = h.service.create(planInput([step('a', { title: '  first  ' }), step('b', { dependsOn: ['a', 'a'] })]))
+    expect(plan.steps[0].title).toBe('first')
+    expect(plan.steps[1].dependsOn).toEqual(['a'])
   })
 })

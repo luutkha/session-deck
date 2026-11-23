@@ -3,20 +3,27 @@
 // state change). Each episode is reported once (`id:kind:since`), a failed delivery is retried on the next tick, and a
 // tick with nothing to say reads no digest, so it costs nothing. The timer, the clock and every IO call are injected
 // (same style as scheduleService), so unit tests never need a real timer or Jarvis.
-import { MAX_WATCH_MINUTES, MIN_WATCH_MINUTES } from '../../shared/types'
+import { MAX_WATCH_MINUTES, MIN_WATCH_MINUTES, QUEUE_TEXT_MAX } from '../../shared/types'
 import { clip } from './toolArgs'
 
 /** A permission or question left unanswered this long is worth telling Jarvis about. */
 export const WATCH_WAITING_MIN_MS = 3 * 60_000
 /** Working with no state change this long looks stuck. */
 export const WATCH_STUCK_MIN_MS = 20 * 60_000
-/** The whole message stops here. */
-export const WATCH_MAX_CHARS = 7000
+/** The whole message stops here: send_prompt refuses more than QUEUE_TEXT_MAX characters, so stay under it. */
+export const WATCH_MAX_CHARS = QUEUE_TEXT_MAX - 100
 /** A detail (the pending question) keeps at most this many characters in the list. */
 const DETAIL_CHARS = 160
 /** The `reported` set never grows past this. */
 const REPORTED_MAX = 500
 const DEFAULT_EVERY_MINUTES = 10
+
+/** How long a session must wait / work before it is reported. Tests (and the e2e) may shorten them. */
+export interface WatchLimits {
+  readonly waitingMs: number
+  readonly stuckMs: number
+}
+export const DEFAULT_WATCH_LIMITS: WatchLimits = { waitingMs: WATCH_WAITING_MIN_MS, stuckMs: WATCH_STUCK_MIN_MS }
 
 export interface WatchItem {
   /** `${id}:${kind}:${since}`: one entry per episode, so the same episode is reported once. */
@@ -58,13 +65,18 @@ function compareItems(a: WatchItem, b: WatchItem): number {
  * Pure: the rows that deserve Jarvis's attention at `now`, minus the episodes already in `reported`.
  * `since === null` (unknown) is ignored: there is no way to tell how long it has been like that.
  */
-export function findWatchItems(rows: readonly WatchRow[], now: number, reported: ReadonlySet<string>): WatchItem[] {
+export function findWatchItems(
+  rows: readonly WatchRow[],
+  now: number,
+  reported: ReadonlySet<string>,
+  limits: WatchLimits = DEFAULT_WATCH_LIMITS
+): WatchItem[] {
   const items: WatchItem[] = []
   for (const row of rows) {
     if (row.since === null) continue
     const since = row.since
-    if (row.waiting && now - since >= WATCH_WAITING_MIN_MS) pushItem(items, row, 'waiting', since, reported)
-    if (row.working && now - since >= WATCH_STUCK_MIN_MS) pushItem(items, row, 'stuck', since, reported)
+    if (row.waiting && now - since >= limits.waitingMs) pushItem(items, row, 'waiting', since, reported)
+    if (row.working && now - since >= limits.stuckMs) pushItem(items, row, 'stuck', since, reported)
   }
   return items.sort(compareItems)
 }
@@ -130,6 +142,13 @@ export interface WatchServiceDeps {
   readonly digest: (onlyNeedingAttention: boolean) => Promise<string>
   /** Hands the message to Jarvis (the same sender the schedules use). */
   readonly deliver: (message: string) => Promise<void>
+  /**
+   * False = Jarvis cannot be told right now without side effects (it was never opened, or its engine/model changed in
+   * Settings so that opening it would replace it). A passive timer must not create or replace Jarvis: the check is skipped.
+   */
+  readonly canDeliver?: () => boolean
+  /** Optional shorter limits (the e2e sets them with SESSIONDECK_WATCH_WAITING_MS / SESSIONDECK_WATCH_STUCK_MS). */
+  readonly limits?: WatchLimits
   readonly now: () => number
   readonly setInterval: (callback: () => void, ms: number) => ReturnType<typeof setInterval>
   readonly clearInterval: (timer: ReturnType<typeof setInterval>) => void
@@ -188,11 +207,12 @@ export function createWatchService(deps: WatchServiceDeps): WatchService {
   async function tick(): Promise<void> {
     if (!deps.settings().enabled) return
     if (busy) return
+    if (deps.canDeliver !== undefined && !deps.canDeliver()) return
     busy = true
     try {
       const now = deps.now()
       lastCheckAt = now
-      const live = findWatchItems(deps.rows(), now, nothingReported)
+      const live = findWatchItems(deps.rows(), now, nothingReported, deps.limits)
       forgetResolved(live)
       const items = live.filter((item) => !reported.has(item.key))
       if (items.length === 0) return
@@ -219,11 +239,14 @@ export function createWatchService(deps: WatchServiceDeps): WatchService {
     }
     const minutes = clampMinutes(settings.everyMinutes)
     if (timer !== null && timerMinutes === minutes) return
+    const turnedOn = timer === null
     clearTimer()
     timerMinutes = minutes
     timer = deps.setInterval(() => {
       void tick()
     }, minutes * 60_000)
+    // Switching it on checks right away: waiting for a whole interval first would leave a stuck session unreported.
+    if (turnedOn) void tick()
   }
 
   function status(): {
