@@ -689,6 +689,20 @@ describe('opencode sessions: copy fork (D79)', () => {
     expect(store.get().sessions).toHaveLength(1)
   })
 
+  it('deletes the imported conversation when the import did not say which one it made', async () => {
+    const cwd = tempDir()
+    const bigExport = JSON.stringify({ info: { id: 'ses_0123456789abAAAAAAAAAAAAAA' }, messages: [] })
+    const run = vi.fn(async (args: string[]): Promise<string> => (args[1] === 'export' ? bigExport : args[1] === 'list' ? '[]' : ''))
+    const { controller } = setup([], { runOpencode: run })
+    const parent = controller.createSession({ cwd, agent: 'opencode' })
+    controller.handleHookEvent({ sessionId: parent.id, event: 'AgentSession', message: OC_ID })
+
+    await expect(controller.forkSession(parent.id)).rejects.toThrow('did not say which new session')
+    const del = run.mock.calls.find((call) => call[0][1] === 'delete')
+    expect(del?.[0][2]).toMatch(/^ses_0123456789ab/)
+    expect(del?.[0][2]).not.toBe('ses_0123456789abAAAAAAAAAAAAAA')
+  })
+
   it('refuses an OpenCode session with no saved conversation and an export that is not JSON', async () => {
     const cwd = tempDir()
     const noId = setup([], { runOpencode: cli() })

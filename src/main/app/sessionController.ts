@@ -713,6 +713,15 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     store.removeWorktree(id)
   }
 
+  /** Best effort: deletes the OpenCode conversation an import created when no SessionDeck session ended up using it. */
+  async function deleteOrphanCopy(id: string): Promise<void> {
+    try {
+      await runOpencode(['session', 'delete', id])
+    } catch {
+      // Already gone or the CLI is unavailable: nothing more to do, the user can delete it in OpenCode.
+    }
+  }
+
   /**
    * D79: OpenCode has no true fork, so this is a COPY: export the conversation, import the JSON as a new OpenCode
    * session, then create the SessionDeck session on that new id (it resumes with `-s`, so it opens on the copy). Steps
@@ -759,6 +768,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       await file.cleanup()
     }
     if (copyId === null) {
+      // The id we generated for the copy is ours alone: remove it if the import did create it (best effort).
+      if (remapped.sessionId !== null) await deleteOrphanCopy(remapped.sessionId)
       throw new Error('OpenCode imported the conversation but did not say which new session it is, so no session was added.')
     }
 
@@ -781,6 +792,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       store.removeSession(session.id)
       startState.delete(session.id)
       runtime.forget(session.id)
+      await deleteOrphanCopy(copyId)
       throw error
     }
     notice(`Copied "${parent.name}" into "${session.name}": an OpenCode copy of the conversation, not a true fork.`)
