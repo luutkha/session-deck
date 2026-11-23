@@ -21,6 +21,14 @@ import { scheduleWhen } from './schedules'
 
 const RESTART_DELAY_MS = 2500
 import { createVoiceListener } from './voice'
+import { collectFleetDigest, collectWatchRows, planPhaseOf } from './digestTools'
+import { createWatchService } from './watchService'
+import { createPlanService } from './planService'
+import { createPlanTools } from './planTools'
+import { resolveSession } from './targets'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { isAbsolute } from 'node:path'
 
 const ACTION_LOG_MAX_BYTES = 1024 * 1024
 /** D55: how long a window may take to carry out a screen command (a mode switch remounts the workspace). */
@@ -177,7 +185,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     onError: deps.onError
   })
 
-  const tools = createJarvisTools({
+  const toolDeps: JarvisToolDeps = {
     ...deps.tools,
     schedules,
     getData: () => deps.store.get(),
@@ -188,7 +196,80 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
     newId: () => randomUUID(),
     now: () => Date.now(),
     sleep
+  }
+  const tools = createJarvisTools(toolDeps)
+
+  // D80: watch mode (a timer tells Jarvis when a session waits for the user or looks stuck) and task plans (a goal split
+  // into steps that run in sessions). Both are off until Settings turns them on and read the setting every time.
+  async function deliverToJarvis(message: string): Promise<void> {
+    const session = await serial(openJarvis)
+    let result = await tools.sendPrompt(session, message, 'auto')
+    for (let attempt = 0; attempt < 3 && /trust its folder/.test(result); attempt += 1) {
+      await sleep(3000)
+      result = await tools.sendPrompt(session, message, 'auto')
+    }
+  }
+  const watch = createWatchService({
+    settings: () => {
+      const jarvis = deps.store.getSettings().jarvis
+      return { enabled: jarvis.watchEnabled, everyMinutes: jarvis.watchEveryMinutes }
+    },
+    rows: () => collectWatchRows(toolDeps),
+    digest: (onlyNeedingAttention) => collectFleetDigest(toolDeps, { onlyNeedingAttention }),
+    deliver: deliverToJarvis,
+    now: () => Date.now(),
+    setInterval: (callback, ms) => setInterval(callback, ms),
+    clearInterval: (timer) => clearInterval(timer),
+    onError: deps.onError,
+    log
   })
+  const plans = createPlanService({
+    enabled: () => deps.store.getSettings().jarvis.plansEnabled,
+    now: () => Date.now(),
+    newId: () => randomUUID().slice(0, 8),
+    findSession: (ref) => {
+      try {
+        const found = resolveSession(deps.store.get(), ref)
+        return { id: found.id, name: found.name }
+      } catch {
+        return null
+      }
+    },
+    createSession: (target) => {
+      const cwd = target.cwd === undefined ? homedir() : target.cwd
+      if (!isAbsolute(cwd) || !existsSync(cwd)) throw new Error(`Folder not found (use a full folder path): ${cwd}`)
+      const agent = target.agent ?? 'claude'
+      const created = deps.controller.createSession({
+        cwd,
+        name: target.name.trim(),
+        claudeArgs: [],
+        agent,
+        ...(agent === 'opencode' && target.model !== undefined ? { model: target.model } : {})
+      })
+      log('plan_session', `"${created.name}" in ${cwd}`)
+      return { id: created.id, name: created.name }
+    },
+    sendPrompt: async (sessionId, text) => {
+      const session = deps.store.get().sessions.find((candidate) => candidate.id === sessionId)
+      if (session === undefined) throw new Error('The session no longer exists.')
+      const result = await tools.sendPrompt(session, text, 'auto')
+      // Not typed (the folder-trust question): the step would otherwise wait for a turn that never starts.
+      if (/Nothing was typed/.test(result)) throw new Error(result)
+      return result
+    },
+    sessionPhase: (sessionId) => planPhaseOf(toolDeps, sessionId),
+    lastAnswer: async (sessionId) => {
+      const session = deps.store.get().sessions.find((candidate) => candidate.id === sessionId)
+      return session === undefined ? null : deps.tools.lastAnswer(session)
+    },
+    deliver: deliverToJarvis,
+    log,
+    setInterval: (callback, ms) => setInterval(callback, ms),
+    clearInterval: (timer) => clearInterval(timer),
+    onError: deps.onError
+  })
+  // The Settings change has no event: the timer follows it within half a minute.
+  let settingsSync: ReturnType<typeof setInterval> | null = null
   // D58: Jarvis restarts itself (a new conversation, or a changed engine/model from Settings). It answers first and
   // restarts a moment later, since the restart ends the call that asked for it.
   const restartTool: McpTool = {
@@ -210,7 +291,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       return fresh ? 'Starting a new Jarvis conversation in a few seconds.' : 'Restarting Jarvis in a few seconds; the conversation continues.'
     }
   }
-  const served: readonly McpTool[] = [...tools, restartTool]
+  const served: readonly McpTool[] = [...tools, ...createPlanTools(plans, log), restartTool]
   const server = createMcpHttpServer({ token, tools: () => served, version: deps.appVersion })
 
   function findJarvis(): Session | undefined {
@@ -275,6 +356,9 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       started = true
       await schedules.load()
       schedules.start()
+      watch.start()
+      plans.start()
+      settingsSync = setInterval(() => watch.refresh(), 30_000)
     },
 
     onHookEvent(event: HookEvent): void {
@@ -322,6 +406,9 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
 
     async stop(): Promise<void> {
       schedules.stop()
+      watch.stop()
+      plans.stop()
+      if (settingsSync !== null) clearInterval(settingsSync)
       voice.cancel()
       for (const [id] of pending) answer(id, false)
       for (const [id] of pendingUi) uiAnswer(id, false, 'SessionDeck is closing.')

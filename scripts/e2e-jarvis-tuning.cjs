@@ -39,7 +39,7 @@ async function main() {
     // ---- the tools exist
     const names = (await rpc('tools/list', {})).result.tools.map((x) => x.name)
     const added = ['get_system_info', 'gpu_setting', 'terminal_settings', 'sidebar_width', 'jarvis_panel_settings']
-    t.check('tools/list offers the five tuning tools (88 in all)', names.length === 88 && added.every((n) => names.includes(n)), `${names.length} missing: ${added.filter((n) => !names.includes(n))}`)
+    t.check('tools/list offers the five tuning tools (91 in all)', names.length === 91 && added.every((n) => names.includes(n)), `${names.length} missing: ${added.filter((n) => !names.includes(n))}`)
 
     // ---- Jarvis reads the PC
     const info = await tool('get_system_info')

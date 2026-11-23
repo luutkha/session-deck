@@ -55,7 +55,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
       away: { enabled: false, afterMinutes: 30 },
       reminder: { enabled: false, afterMinutes: 5 },
       code: { worktreesRoot: '', shell: 'pwsh' as const, autoTrustWorktrees: true },
-      jarvis: { model: 'opus', agent: 'opencode' as const, opencodeModel: 'opencode/deepseek-v4.1-flash-free' }
+      jarvis: { model: 'opus', agent: 'opencode' as const, opencodeModel: 'opencode/deepseek-v4.1-flash-free', watchEnabled: true, watchEveryMinutes: 15, plansEnabled: true }
     }
     const data = parseStoreData(storeWith(settings))
     expect(data.settings).toEqual(settings)
@@ -71,7 +71,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
   })
 
   it('settings saved before Jarvis existed give Jarvis Sonnet (D53)', () => {
-    expect(parseStoreData(storeWith({ hub: { scrollToBusiest: true } })).settings?.jarvis).toEqual({ model: 'sonnet', agent: 'claude', opencodeModel: '' })
+    expect(parseStoreData(storeWith({ hub: { scrollToBusiest: true } })).settings?.jarvis).toEqual({ model: 'sonnet', agent: 'claude', opencodeModel: '', watchEnabled: false, watchEveryMinutes: 10, plansEnabled: false })
   })
 
   it('the Jarvis model accepts aliases, full ids and empty, and rejects shell characters', () => {
@@ -82,6 +82,10 @@ describe('parseStoredSettings / parseStoreData settings', () => {
     expect(() => updateSettings(data, { jarvis: { model: 'sonnet & calc' } })).toThrow('jarvis.model')
     expect(parseStoreData(storeWith({ jarvis: { model: 'a|b' } })).settings).toBeUndefined()
     expect(() => updateSettings(data, { jarvis: { agent: 'shell' as never } })).toThrow()
+    // D80: watch mode and task plans are opt-in, and the interval is a whole number of minutes in range.
+    expect(updateSettings(data, { jarvis: { watchEnabled: true, watchEveryMinutes: 30, plansEnabled: true } }).settings?.jarvis).toMatchObject({ watchEnabled: true, watchEveryMinutes: 30, plansEnabled: true })
+    for (const bad of [0, 121, 1.5, -3]) expect(() => updateSettings(data, { jarvis: { watchEveryMinutes: bad } })).toThrow('jarvis.watchEveryMinutes')
+    expect(() => updateSettings(data, { jarvis: { watchEnabled: 'yes' as never } })).toThrow()
     expect(updateSettings(data, { jarvis: { agent: 'opencode', opencodeModel: 'opencode/x-free' } }).settings?.jarvis).toMatchObject({ agent: 'opencode', opencodeModel: 'opencode/x-free' })
   })
 

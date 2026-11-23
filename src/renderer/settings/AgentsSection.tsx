@@ -1,10 +1,16 @@
 import { useEffect, useState, type KeyboardEvent, type ReactElement } from 'react'
 import type { AppSettings, SettingsPatch } from '../../shared/types'
-import { JARVIS_MODEL_MAX, JARVIS_MODEL_RE } from '../../shared/types'
+import {
+  JARVIS_MODEL_MAX,
+  JARVIS_MODEL_RE,
+  MAX_WATCH_MINUTES,
+  MIN_WATCH_MINUTES
+} from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { AgentPicker } from '../components/AgentPicker'
 import { MAX_OPENCODE_MODEL_LENGTH, validateOpenCodeModel } from '../Sidebar/dialogLogic'
 import { errorMessage } from '../../shared/guards'
@@ -13,6 +19,48 @@ import { OpencodeProbeRow } from './OpencodeProbeRow'
 export interface AgentsSectionProps {
   readonly settings: AppSettings
   readonly actions: Pick<SessionActions, 'updateSettings'>
+}
+
+// D80: the two opt-in Jarvis features, off by default.
+export const WATCH_LABEL = 'Watch the fleet'
+export const WATCH_MINUTES_LABEL = 'Check every N minutes'
+export const WATCH_HELP =
+  "Jarvis checks your sessions on a timer and is told when one waits for you for 3+ minutes or looks stuck for 20+ minutes. Off by default. It uses Jarvis's model only when something needs attention."
+export const PLANS_LABEL = 'Task plans'
+export const PLANS_HELP =
+  'Lets Jarvis split a goal into steps that run in several sessions (plan_create). Off by default. Turning it off cancels plans that are running; sessions already working are left alone.'
+export const WATCH_MINUTES_MESSAGE = `Enter a whole number from ${MIN_WATCH_MINUTES} to ${MAX_WATCH_MINUTES}.`
+
+/** The exact patch the "Watch the fleet" switch sends (exported so tests can check it without a DOM). */
+export function watchEnabledPatch(enabled: boolean): SettingsPatch {
+  return { jarvis: { watchEnabled: enabled } }
+}
+
+/** The exact patch the "Task plans" switch sends (exported so tests can check it without a DOM). */
+export function plansEnabledPatch(enabled: boolean): SettingsPatch {
+  return { jarvis: { plansEnabled: enabled } }
+}
+
+export interface WatchMinutesCommit {
+  /** The patch to send, or null when the text is invalid or already the stored value. */
+  readonly patch: SettingsPatch | null
+  /** A user-facing message when the text is empty, not whole, or out of range, otherwise null. */
+  readonly error: string | null
+}
+
+/**
+ * Validates the "Check every N minutes" text on blur/Enter. A whole number from MIN_WATCH_MINUTES to
+ * MAX_WATCH_MINUTES is accepted; anything else sends nothing (invalid), and the stored value sends nothing either.
+ */
+export function commitWatchMinutes(text: string, current: number): WatchMinutesCommit {
+  const trimmed = text.trim()
+  if (!/^\d+$/.test(trimmed)) return { patch: null, error: WATCH_MINUTES_MESSAGE }
+  const minutes = Number(trimmed)
+  if (minutes < MIN_WATCH_MINUTES || minutes > MAX_WATCH_MINUTES) {
+    return { patch: null, error: WATCH_MINUTES_MESSAGE }
+  }
+  if (minutes === current) return { patch: null, error: null }
+  return { patch: { jarvis: { watchEveryMinutes: minutes } }, error: null }
 }
 
 export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactElement {
@@ -52,6 +100,20 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
 
   const modelValidation = validateOpenCodeModel(modelText)
   const modelError = modelValidation.ok ? null : modelValidation.error
+
+  // D80: "Watch the fleet" and its interval (committed on blur/Enter), plus the opt-in "Task plans".
+  const [watchText, setWatchText] = useState<string>(String(settings.jarvis.watchEveryMinutes))
+  const [watchError, setWatchError] = useState<string | null>(null)
+
+  useEffect((): void => {
+    setWatchText(String(settings.jarvis.watchEveryMinutes))
+  }, [settings.jarvis.watchEveryMinutes])
+
+  function commitWatchEveryMinutes(): void {
+    const result = commitWatchMinutes(watchText, settings.jarvis.watchEveryMinutes)
+    setWatchError(result.error)
+    if (result.patch !== null) void applyPatch(result.patch)
+  }
 
   async function applyPatch(patch: SettingsPatch): Promise<void> {
     setError(null)
@@ -213,6 +275,71 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
             the next time Jarvis starts.
           </p>
         )}
+      </div>
+
+      <Separator />
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="agents-jarvis-watch" className="text-[13px] font-medium text-foreground">
+            {WATCH_LABEL}
+          </Label>
+          <Switch
+            id="agents-jarvis-watch"
+            aria-label={WATCH_LABEL}
+            checked={settings.jarvis.watchEnabled}
+            onCheckedChange={(checked: boolean): void => void applyPatch(watchEnabledPatch(checked))}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">{WATCH_HELP}</p>
+      </div>
+
+      {settings.jarvis.watchEnabled ? (
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="agents-jarvis-watch-minutes" className="text-[13px] font-medium text-foreground">
+            {WATCH_MINUTES_LABEL}
+          </Label>
+          <Input
+            id="agents-jarvis-watch-minutes"
+            type="number"
+            min={MIN_WATCH_MINUTES}
+            max={MAX_WATCH_MINUTES}
+            step={1}
+            required
+            value={watchText}
+            onChange={(event): void => setWatchText(event.target.value)}
+            onBlur={commitWatchEveryMinutes}
+            onKeyDown={(event): void => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                commitWatchEveryMinutes()
+              }
+            }}
+            aria-label={WATCH_MINUTES_LABEL}
+            aria-invalid={watchError !== null}
+            className="w-24 text-xs"
+          />
+          {watchError !== null ? (
+            <p role="alert" className="text-xs text-destructive">
+              {watchError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="agents-jarvis-plans" className="text-[13px] font-medium text-foreground">
+            {PLANS_LABEL}
+          </Label>
+          <Switch
+            id="agents-jarvis-plans"
+            aria-label={PLANS_LABEL}
+            checked={settings.jarvis.plansEnabled}
+            onCheckedChange={(checked: boolean): void => void applyPatch(plansEnabledPatch(checked))}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">{PLANS_HELP}</p>
       </div>
 
       {error !== null ? (

@@ -57,6 +57,7 @@
     "e2e:fileview-menu": "node scripts/e2e-fileview-menu.cjs",
     "e2e:fileview-edge": "node scripts/e2e-fileview-edge.cjs",
     "e2e:opencode-jarvis": "node scripts/e2e-opencode-jarvis.cjs",
+    "e2e:jarvis-plans": "node scripts/e2e-jarvis-plans.cjs",
     "e2e:annotate": "node scripts/e2e-annotate.cjs",
     "e2e:preview": "node scripts/e2e-preview.cjs",
     "e2e:grid": "node scripts/e2e-grid.cjs",

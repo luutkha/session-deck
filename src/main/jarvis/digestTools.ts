@@ -12,6 +12,7 @@ import { clip, optionalBool, optionalInt, schema } from './toolArgs'
 import { targetSessions } from './targets'
 import { stateText, type JarvisToolDeps } from './jarvisTools'
 import type { ToolContext } from './appTools'
+import type { WatchRow } from './watchService'
 
 /** The whole answer stops here, so one call never floods Jarvis's context. */
 export const DIGEST_MAX_CHARS = 6000
@@ -226,6 +227,32 @@ async function quietUncommitted(read: UncommittedCounter, folder: string): Promi
   } catch {
     return null
   }
+}
+
+/** D80: what the watch service needs per session (Jarvis and worker tabs are excluded by targetSessions). */
+export function collectWatchRows(deps: JarvisToolDeps): readonly WatchRow[] {
+  return targetSessions(deps.getData()).map((session): WatchRow => {
+    const state = deps.getRuntime(session.id)
+    const waiting = needsUser(session, state)
+    return {
+      id: session.id,
+      name: session.name,
+      waiting,
+      working: !waiting && isWorking(session, state),
+      since: stateSince(session, state, deps),
+      question: waiting ? state?.activityMessage ?? null : null
+    }
+  })
+}
+
+/** D80: where a session is, for task plans: working a turn, waiting for the user, done with its turn, or closed/removed. */
+export function planPhaseOf(deps: JarvisToolDeps, id: string): 'working' | 'finished' | 'waiting' | 'gone' {
+  const session = deps.getData().sessions.find((candidate) => candidate.id === id)
+  if (session === undefined || session.closedAt !== undefined) return 'gone'
+  const state = deps.getRuntime(id)
+  if (needsUser(session, state)) return 'waiting'
+  if (isWorking(session, state)) return 'working'
+  return 'finished'
 }
 
 /**

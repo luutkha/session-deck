@@ -106,7 +106,7 @@ describe('createJarvisWiring onHookEvent (D54/D79)', () => {
 })
 
 describe('jarvisSwitchPlan (D54/D79)', () => {
-  const settings = (agent: 'claude' | 'opencode', opencodeModel = '', model = 'sonnet'): JarvisSettings => ({ agent, model, opencodeModel })
+  const settings = (agent: 'claude' | 'opencode', opencodeModel = '', model = 'sonnet'): JarvisSettings => ({ agent, model, opencodeModel, watchEnabled: false, watchEveryMinutes: 10, plansEnabled: false })
 
   it('does nothing without a Jarvis, for the same engine, or for a Claude model change', () => {
     expect(jarvisSwitchPlan(undefined, settings('opencode', 'p/m'))).toEqual({ kind: 'none' })

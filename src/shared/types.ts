@@ -628,7 +628,16 @@ export interface JarvisSettings {
   readonly agent: 'claude' | 'opencode'
   /** D54: "provider/model" when Jarvis runs on OpenCode; empty = OpenCode's own default. */
   readonly opencodeModel: string
+  /** D80: opt-in (default off). Jarvis checks the fleet on a timer and is told when a session needs it (stuck, waiting, failed). */
+  readonly watchEnabled: boolean
+  /** D80: minutes between watch checks (MIN_WATCH_MINUTES..MAX_WATCH_MINUTES). */
+  readonly watchEveryMinutes: number
+  /** D80: opt-in (default off). Jarvis may run a multi-session task plan (plan_create and friends). */
+  readonly plansEnabled: boolean
 }
+
+export const MIN_WATCH_MINUTES = 1
+export const MAX_WATCH_MINUTES = 120
 
 /** Jarvis model ids: letters, digits and . _ : [ ] - (they reach cmd.exe as a launch argument). */
 export const JARVIS_MODEL_RE = /^[A-Za-z0-9._:[\]-]*$/
@@ -756,7 +765,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   reminder: { enabled: true, afterMinutes: 10 },
   code: { worktreesRoot: '', shell: 'powershell', autoTrustWorktrees: false },
   // D53: "use sonnet first, changeable".
-  jarvis: { model: 'sonnet', agent: 'claude', opencodeModel: '' }
+  jarvis: { model: 'sonnet', agent: 'claude', opencodeModel: '', watchEnabled: false, watchEveryMinutes: 10, plansEnabled: false }
 }
 
 export const MIN_SLEEP_MINUTES = 1

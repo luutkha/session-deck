@@ -70,7 +70,7 @@ async function main() {
     await app.evaluate(`window.api.createSession({ cwd: ${JSON.stringify(ROOT)}, name: 'plain shell', agent: 'shell' })`)
     await sleep(1500)
     const names = (await (await fetch(cfg.url, { method: 'POST', headers: { ...cfg.headers, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/list', params: {} }) })).json()).result.tools.map((x) => x.name)
-    t.check('tools/list offers fleet_digest (88 tools in all)', names.includes('fleet_digest') && names.length === 88, String(names.length))
+    t.check('tools/list offers fleet_digest (91 tools in all)', names.includes('fleet_digest') && names.length === 91, String(names.length))
     const digest = await tool('fleet_digest')
     t.check('fleet_digest lists both sessions', !digest.error && digest.text.includes('oc digest') && digest.text.includes('plain shell'), digest.text.slice(0, 300))
     t.check('fleet_digest shows the OpenCode reply tail', /reply:[^\r\n]*pong/i.test(digest.text), digest.text.slice(0, 400))

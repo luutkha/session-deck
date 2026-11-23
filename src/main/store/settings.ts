@@ -14,6 +14,8 @@ import type {
 import {
   JARVIS_MODEL_MAX,
   JARVIS_MODEL_RE,
+  MAX_WATCH_MINUTES,
+  MIN_WATCH_MINUTES,
   MAX_REMINDER_MINUTES,
   MAX_SLEEP_MINUTES,
   MIN_REMINDER_MINUTES,
@@ -108,7 +110,10 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
   jarvis: {
     model: isJarvisModel,
     agent: isAgentKind,
-    opencodeModel: isOpencodeModelString
+    opencodeModel: isOpencodeModelString,
+    watchEnabled: isBoolean,
+    watchEveryMinutes: isInteger,
+    plansEnabled: isBoolean
   }
 }
 
@@ -286,6 +291,16 @@ export function settingsProblem(settings: AppSettings): string | null {
   if (settings.jarvis.agent !== 'claude' && settings.jarvis.agent !== 'opencode') return 'jarvis.agent must be "claude" or "opencode"'
   if (!isOpencodeModelString(settings.jarvis.opencodeModel)) {
     return `jarvis.opencodeModel must be a model id of at most ${MAX_OPENCODE_MODEL_LENGTH} characters (letters, digits, ._:/@+-), or empty`
+  }
+
+  if (typeof settings.jarvis.watchEnabled !== 'boolean') return 'jarvis.watchEnabled must be a boolean'
+  if (typeof settings.jarvis.plansEnabled !== 'boolean') return 'jarvis.plansEnabled must be a boolean'
+  if (
+    !Number.isInteger(settings.jarvis.watchEveryMinutes) ||
+    settings.jarvis.watchEveryMinutes < MIN_WATCH_MINUTES ||
+    settings.jarvis.watchEveryMinutes > MAX_WATCH_MINUTES
+  ) {
+    return `jarvis.watchEveryMinutes must be a whole number from ${MIN_WATCH_MINUTES} to ${MAX_WATCH_MINUTES}`
   }
 
   return null
