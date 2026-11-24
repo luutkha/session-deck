@@ -14,6 +14,8 @@ describe('isCursorChatId', () => {
     expect(isCursorChatId('bad id')).toBe(false)
     expect(isCursorChatId('chat/../id')).toBe(false)
     expect(isCursorChatId('')).toBe(false)
+    expect(isCursorChatId('--api-key')).toBe(false)
+    expect(isCursorChatId('-abcdefgh')).toBe(false)
     expect(isCursorChatId(42)).toBe(false)
     expect(isCursorChatId(null)).toBe(false)
     expect(isCursorChatId(undefined)).toBe(false)
@@ -30,6 +32,8 @@ describe('isCursorModel', () => {
 
   it('rejects an empty name, one over 100 chars and shell-special characters', () => {
     expect(isCursorModel('')).toBe(false)
+    expect(isCursorModel('--evil')).toBe(false)
+    expect(isCursorModel('-m')).toBe(false)
     expect(isCursorModel('a'.repeat(101))).toBe(false)
     expect(isCursorModel('model name')).toBe(false)
     expect(isCursorModel('model&calc')).toBe(false)

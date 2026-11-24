@@ -10,7 +10,7 @@ export const CONFIRM_TIMEOUT_MS = 120_000
 
 /** The instructions appended to Jarvis's system prompt; `toolNames` = every tool the MCP server offers. */
 export function jarvisSystemPrompt(toolNames: readonly string[]): string {
-  return `You are Jarvis, the assistant built into SessionDeck, a desktop app that runs many Claude Code, OpenCode and shell sessions.
+  return `You are Jarvis, the assistant built into SessionDeck, a desktop app that runs many Claude Code, OpenCode, Cursor and shell sessions.
 The user talks to you to control the app. You act through the "${MCP_SERVER_NAME}" MCP tools (in Claude Code: mcp__${MCP_SERVER_NAME}__*):
 ${toolNames.join(', ')}.
 

@@ -1016,7 +1016,55 @@ describe('Jarvis set_session_model (D79)', () => {
   it('refuses Claude and shell sessions with a clear message and changes nothing', async () => {
     const { call, controller } = setup([session('a', 'API'), session('s', 'Shell', { agent: 'shell' })])
     await expect(call('set_session_model', { session: 'api', model: MODEL })).rejects.toThrow('"API" is a Claude session')
+    await expect(call('set_session_model', { session: 'api', model: MODEL })).rejects.toThrow('Only OpenCode and Cursor sessions can change model here.')
     await expect(call('set_session_model', { session: 'shell', model: MODEL })).rejects.toThrow('"Shell" is a shell session')
+    expect(controller.setOpencodeModel).not.toHaveBeenCalled()
+  })
+
+  it('changes a Cursor session\'s model with a plain name and undoes it with the old one (D81)', async () => {
+    const { call, controller } = setup(
+      [session('c', 'Cursor', { agent: 'cursor', model: 'gpt-5', cursorChatId: 'chat_12345678' })],
+      [running('c')]
+    )
+    expect(await call('set_session_model', { session: 'cursor', model: 'sonnet-4-thinking' })).toBe(
+      '"Cursor" now runs sonnet-4-thinking; its conversation was restarted on it.'
+    )
+    expect(controller.setOpencodeModel).toHaveBeenCalledWith('c', 'sonnet-4-thinking')
+    expect(await call('undo_last_action')).toContain('Undone: change the model of "Cursor"')
+    expect(controller.setOpencodeModel).toHaveBeenLastCalledWith('c', 'gpt-5')
+  })
+
+  it('an empty model puts a Cursor or OpenCode session back on the agent default (D81)', async () => {
+    const { call, controller } = setup(
+      [session('c', 'Cursor', { agent: 'cursor', model: 'gpt-5', cursorChatId: 'chat_12345678' }), session('o', 'Open', { agent: 'opencode', model: 'p/old' })],
+      [running('c'), running('o')]
+    )
+    expect(await call('set_session_model', { session: 'cursor', model: '' })).toBe("\"Cursor\" now runs the agent's default model; its conversation was restarted on it.")
+    expect(controller.setOpencodeModel).toHaveBeenLastCalledWith('c', undefined)
+    await call('set_session_model', { session: 'open', model: '   ' })
+    expect(controller.setOpencodeModel).toHaveBeenLastCalledWith('o', undefined)
+    expect(await call('undo_last_action')).toContain('Undone: change the model of "Open"')
+    expect(controller.setOpencodeModel).toHaveBeenLastCalledWith('o', 'p/old')
+  })
+
+  it('reopening a session closed a moment ago waits for its old process to exit (D81)', async () => {
+    const { call, controller } = setup([session('c', 'C', { agent: 'cursor', closedAt: 5 })])
+    const real = controller.reopenSession.getMockImplementation()
+    let attempts = 0
+    controller.reopenSession.mockImplementation((id: string) => {
+      attempts += 1
+      if (attempts < 3) throw new Error(`Session is still stopping: ${id}`)
+      real?.(id)
+    })
+    expect(await call('wake_session', { session: 'C' })).toBe('"C" was reopened.')
+    expect(attempts).toBe(3)
+  })
+
+  it('refuses a bad Cursor model name before touching the session', async () => {
+    const { call, controller } = setup([session('c', 'Cursor', { agent: 'cursor' })])
+    await expect(call('set_session_model', { session: 'cursor', model: 'not a model!' })).rejects.toThrow(
+      '"not a model!" is not a Cursor model name: use letters, digits and . _ : / @ - only, like gpt-5 or sonnet-4-thinking.'
+    )
     expect(controller.setOpencodeModel).not.toHaveBeenCalled()
   })
 

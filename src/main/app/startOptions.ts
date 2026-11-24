@@ -151,8 +151,9 @@ export function buildOpencodeStartOptions(
 }
 
 /**
- * Builds the pty launch options for Cursor CLI (D81). `--force` is the yolo default (Cursor's alias of `--yolo`).
- * A new session starts plain `cursor-agent --force [--model m]`; a known chat id resumes with
+ * Builds the pty launch options for Cursor CLI (D81). `--force` is the yolo default (Cursor's alias of `--yolo`);
+ * `--trust` trusts the workspace without prompting (Jarvis types into the pty, so a trust question would swallow a
+ * prompt). A new session starts `cursor-agent --force --trust [--model m]`; a known chat id resumes with
  * `--resume <id>`, otherwise a fresh chat starts. The session folder is the pty cwd, so `--workspace` is not used.
  * Throws when neither `cursor-agent` nor `agent` is on PATH, with the install command for this platform.
  */
@@ -163,6 +164,7 @@ export function buildCursorStartOptions(session: Session, attention: AttentionSe
   }
   const internalArgs = [
     '--force',
+    '--trust',
     ...(typeof session.model === 'string' && session.model.length > 0 ? ['--model', session.model] : []),
     ...(typeof session.cursorChatId === 'string' && session.cursorChatId.length > 0
       ? ['--resume', session.cursorChatId]

@@ -25,7 +25,7 @@ afterEach(() => {
 })
 
 describe('buildCursorStartOptions', () => {
-  it('a new session starts cursor-agent --force with the SESSIONDECK_* env', () => {
+  it('a new session starts cursor-agent --force --trust with the SESSIONDECK_* env', () => {
     installed(['cursor-agent'])
     const opts = buildCursorStartOptions(cursorSession(), attention)
 
@@ -33,7 +33,7 @@ describe('buildCursorStartOptions', () => {
       sessionId: 'deck1',
       cwd: 'C:\\proj',
       claudeArgs: [],
-      internalArgs: ['--force'],
+      internalArgs: ['--force', '--trust'],
       command: 'cursor-agent',
       env: DETECTED_ENV,
       cols: 120,
@@ -53,6 +53,7 @@ describe('buildCursorStartOptions', () => {
     installed(['cursor-agent'])
     expect(buildCursorStartOptions(cursorSession({ model: 'gpt-5' }), attention).internalArgs).toEqual([
       '--force',
+      '--trust',
       '--model',
       'gpt-5'
     ])
@@ -62,23 +63,25 @@ describe('buildCursorStartOptions', () => {
     installed(['cursor-agent'])
     expect(buildCursorStartOptions(cursorSession({ cursorChatId: 'abcdefgh-1234' }), attention).internalArgs).toEqual([
       '--force',
+      '--trust',
       '--resume',
       'abcdefgh-1234'
     ])
   })
 
-  it('model and chat id together keep the contract order: --force, --model, --resume', () => {
+  it('model and chat id together keep the contract order: --force, --trust, --model, --resume', () => {
     installed(['cursor-agent'])
     expect(
       buildCursorStartOptions(cursorSession({ model: 'sonnet-4-thinking', cursorChatId: 'abcdefgh-1234' }), attention)
         .internalArgs
-    ).toEqual(['--force', '--model', 'sonnet-4-thinking', '--resume', 'abcdefgh-1234'])
+    ).toEqual(['--force', '--trust', '--model', 'sonnet-4-thinking', '--resume', 'abcdefgh-1234'])
   })
 
   it('an empty model or chat id is ignored', () => {
     installed(['cursor-agent'])
     expect(buildCursorStartOptions(cursorSession({ model: '', cursorChatId: '' }), attention).internalArgs).toEqual([
-      '--force'
+      '--force',
+      '--trust'
     ])
   })
 
@@ -96,7 +99,7 @@ describe('buildStartOptions cursor routing', () => {
     const opts = buildStartOptions(cursorSession({ claudeSessionId: undefined }), false, attention)
 
     expect(opts.command).toBe('cursor-agent')
-    expect(opts.internalArgs).toEqual(['--force'])
+    expect(opts.internalArgs).toEqual(['--force', '--trust'])
     expect(opts.internalArgs).not.toContain('--session-id')
   })
 

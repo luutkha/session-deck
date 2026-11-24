@@ -58,6 +58,7 @@
     "e2e:fileview-edge": "node scripts/e2e-fileview-edge.cjs",
     "e2e:opencode-jarvis": "node scripts/e2e-opencode-jarvis.cjs",
     "e2e:cursor": "node scripts/e2e-cursor.cjs",
+    "e2e:cursor-jarvis": "node scripts/e2e-cursor-jarvis.cjs",
     "e2e:jarvis-plans": "node scripts/e2e-jarvis-plans.cjs",
     "e2e:jarvis-plans-agents": "node scripts/e2e-jarvis-plans-agents.cjs",
     "e2e:jarvis-watch": "node scripts/e2e-jarvis-watch.cjs",

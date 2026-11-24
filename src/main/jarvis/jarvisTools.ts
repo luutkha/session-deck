@@ -47,6 +47,7 @@ import { createPanelTools } from './panelTools'
 import type { CodeGitOps } from '../app/codeGitOps'
 import { sessionModelProblem } from '../app/sessionController'
 import { isCursorModel } from '../store/cursorValues'
+import { retryWhileStopping } from '../app/retryWhileStopping'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
 export const READY_MIN_RUN_MS = 3000
@@ -81,7 +82,7 @@ export interface JarvisToolDeps {
   readonly controller: {
     createSession(input: CreateSessionInput): Session
     forkSession(id: Id): Session | Promise<Session>
-    /** D79: change an OpenCode session's model (see SessionController.setOpencodeModel). */
+    /** D79/D81: change an OpenCode or Cursor session's model (see SessionController.setOpencodeModel). */
     setOpencodeModel(id: Id, model: string | undefined): 'restarted' | 'next-start' | 'restart-failed'
     removeSession(id: Id): void
     removeWorktree(id: Id): void
@@ -111,7 +112,7 @@ export interface JarvisToolDeps {
   readonly rawOutput: (id: Id) => string
   readonly timeline: (id: Id) => readonly TimelineTurn[]
   readonly search: (query: string) => Promise<ConversationSearchResult>
-  /** D54/D79: the reply to the last prompt from the saved conversation (a Claude transcript or an OpenCode export); null when there is none. */
+  /** D54/D79/D81: the reply to the last prompt from the saved conversation (a Claude transcript or an OpenCode export) or, for Cursor, its last reported reply; null when there is none. */
   readonly lastAnswer: (session: Session) => Promise<string | null>
   readonly usage: () => UsageState
   /** Every recorded turn of every session (cost today). */
@@ -322,7 +323,8 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
   async function startIfNeeded(session: Session): Promise<string | null> {
     const state = deps.getRuntime(session.id)
     if (session.closedAt !== undefined) {
-      await deps.controller.reopenSession(session.id)
+      // A session closed a moment ago may still be exiting: wait for it like the app's own reopen does.
+      await retryWhileStopping(() => deps.controller.reopenSession(session.id))
       return 'reopened'
     }
     if (state?.sleeping === true) {
@@ -756,29 +758,41 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'set_session_model',
-      description: "Changes the model of an OpenCode session, given as provider/model. A running session keeps its conversation: it is restarted on the new model (same conversation). A sleeping, stopped or closed one gets the model for its next start. Claude sessions and shell sessions have no per-session model.",
+      description: "Changes the model of an OpenCode or Cursor session. OpenCode: provider/model, like opencode/deepseek-v4.1-flash-free. Cursor: a plain model name like gpt-5 or sonnet-4-thinking. A running session keeps its conversation: it is restarted on the new model (same conversation). A sleeping, stopped or closed one gets the model for its next start. Claude sessions and shell sessions have no per-session model.",
       inputSchema: schema({
         session: SESSION_PROP,
-        model: { type: 'string', description: 'provider/model, like opencode/deepseek-v4.1-flash-free.' }
+        model: { type: 'string', description: "OpenCode: provider/model, like opencode/deepseek-v4.1-flash-free. Cursor: a plain name, like gpt-5. An empty string goes back to the agent's default model." }
       }, ['session', 'model']),
       run: async (args) => {
         const session = resolveSession(deps.getData(), args.session)
         const agent = agentOf(session)
         if (agent === 'shell') throw new Error(`"${session.name}" is a shell session: it has no model.`)
         if (agent === 'claude') {
-          throw new Error(`"${session.name}" is a Claude session: its model is a launch setting (Settings > Agents, or the session's own launch), not a per-session one. Only OpenCode sessions can change model here.`)
+          throw new Error(`"${session.name}" is a Claude session: its model is a launch setting (Settings > Agents, or the session's own launch), not a per-session one. Only OpenCode and Cursor sessions can change model here.`)
         }
-        const model = text(args, 'model').trim()
-        const problem = sessionModelProblem(model)
-        if (problem !== null) throw new Error(problem)
+        // An empty string puts the session back on the agent's own default model; a missing argument is still an error.
+        const given = typeof args.model === 'string' ? args.model.trim() : text(args, 'model').trim()
+        const model = given.length === 0 ? undefined : given
+        // D81: Cursor takes a plain model name, not OpenCode's provider/model.
+        if (model === undefined) {
+          // Clearing needs no check.
+        } else if (agent === 'cursor') {
+          if (!isCursorModel(model)) {
+            throw new Error(`"${model}" is not a Cursor model name: use letters, digits and . _ : / @ - only, like gpt-5 or sonnet-4-thinking.`)
+          }
+        } else {
+          const problem = sessionModelProblem(model)
+          if (problem !== null) throw new Error(problem)
+        }
         const result = deps.controller.setOpencodeModel(session.id, model)
         pushUndo(`change the model of "${session.name}" (put the old one back)`, () => {
           deps.controller.setOpencodeModel(session.id, session.model ?? undefined)
         })
-        deps.log('set_session_model', `${session.name}: ${session.model ?? '(default)'} -> ${model}`)
-        if (result === 'restarted') return `"${session.name}" now runs ${model}; its conversation was restarted on it.`
-        if (result === 'restart-failed') return `"${session.name}" now uses ${model}, but it could not be started again: it is asleep and starts on ${model} when you wake it (wake_session).`
-        return `"${session.name}" now uses ${model}; it starts on it the next time (${stateText(session, deps.getRuntime(session.id))}).`
+        const shown = model ?? "the agent's default model"
+        deps.log('set_session_model', `${session.name}: ${session.model ?? '(default)'} -> ${model ?? '(default)'}`)
+        if (result === 'restarted') return `"${session.name}" now runs ${shown}; its conversation was restarted on it.`
+        if (result === 'restart-failed') return `"${session.name}" now uses ${shown}, but it could not be started again: it is asleep and starts on ${shown} when you wake it (wake_session).`
+        return `"${session.name}" now uses ${shown}; it starts on it the next time (${stateText(session, deps.getRuntime(session.id))}).`
       }
     },
     {

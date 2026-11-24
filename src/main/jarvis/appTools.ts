@@ -729,7 +729,7 @@ export function createAppTools(deps: JarvisToolDeps, ctx: ToolContext): McpTool[
         const session = sessionRef !== undefined
           ? resolveSession(data, sessionRef)
           : targetSessions(data).find((s) => s.worktreeId === worktree.id && s.closedAt === undefined && (s.agent ?? 'claude') !== 'shell')
-        if (session === undefined || session.worktreeId !== worktree.id) throw new Error(`Worktree "${worktree.name}" has no open Claude or OpenCode session to send to.`)
+        if (session === undefined || session.worktreeId !== worktree.id) throw new Error(`Worktree "${worktree.name}" has no open Claude, OpenCode or Cursor session to send to.`)
         const message = formatReviewMessage(comments)
         if (message === null) throw new Error('No comments to send.')
         deps.log('send_review_comments', `${worktree.name}: ${comments.length} comment(s)`)

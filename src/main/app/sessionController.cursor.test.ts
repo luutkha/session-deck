@@ -194,13 +194,13 @@ describe('cursor sessions: launch and lifecycle', () => {
     const created = controller.createSession({ cwd: tempDir(), agent: 'cursor' })
     expect(attention.prepareCursor).toHaveBeenCalled()
     expect(pty.getLastStartOpts(created.id)!.command).toBe('cursor-agent')
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force'])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--trust'])
 
     controller.handleHookEvent({ sessionId: created.id, event: 'UserPromptSubmit', chatId: CHAT_ID })
     controller.sleepSession(created.id)
     controller.setActiveSession(created.id)
 
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--resume', CHAT_ID])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--trust', '--resume', CHAT_ID])
     expect(store.get().sessions.find((s) => s.id === created.id)!.claudeSessionId).toBeUndefined()
   })
 
@@ -219,5 +219,75 @@ describe('cursor sessions: launch and lifecycle', () => {
   it('refuses to fork a Cursor session with a clear message', async () => {
     const { controller } = setup([{ id: 'c1', name: 'C', cwd: tempDir(), groupId: null, statusId: 'todo', order: 0, createdAt: 1, claudeArgs: [], agent: 'cursor', cursorChatId: CHAT_ID }])
     await expect(controller.forkSession('c1')).rejects.toThrow('Forking a Cursor session is not supported yet')
+  })
+})
+
+describe('cursor sessions: setOpencodeModel (D81)', () => {
+  const NEW_MODEL = 'sonnet-4-thinking'
+
+  it('restarts a running conversation that has a chat id on the new model (--resume + --model)', () => {
+    const { controller, store, pty, stateOf } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'cursor', model: 'gpt-5' })
+    controller.handleHookEvent({ sessionId: created.id, event: 'UserPromptSubmit', chatId: CHAT_ID })
+
+    expect(controller.setOpencodeModel(created.id, NEW_MODEL)).toBe('restarted')
+
+    expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBe(NEW_MODEL)
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual([
+      '--force',
+      '--trust',
+      '--model',
+      NEW_MODEL,
+      '--resume',
+      CHAT_ID
+    ])
+    expect(stateOf(created.id)?.sleeping).not.toBe(true)
+    expect(stateOf(created.id)?.run).toBe('running')
+  })
+
+  it('only stores the model for a running session with no chat id yet; the next start uses it', () => {
+    const { controller, store, pty, stateOf } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'cursor', model: 'gpt-5' })
+    const before = pty.getLastStartOpts(created.id)
+
+    expect(controller.setOpencodeModel(created.id, NEW_MODEL)).toBe('next-start')
+
+    expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBe(NEW_MODEL)
+    expect(pty.getLastStartOpts(created.id)).toBe(before)
+    expect(stateOf(created.id)?.sleeping).not.toBe(true)
+
+    controller.sleepSession(created.id)
+    controller.setActiveSession(created.id)
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--trust', '--model', NEW_MODEL])
+  })
+
+  it('clears the model with undefined, keeps the chat, and does not restart for the same value', () => {
+    const { controller, store, pty } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'cursor', model: 'gpt-5' })
+    controller.handleHookEvent({ sessionId: created.id, event: 'UserPromptSubmit', chatId: CHAT_ID })
+
+    const before = pty.getLastStartOpts(created.id)
+    expect(controller.setOpencodeModel(created.id, 'gpt-5')).toBe('next-start')
+    expect(pty.getLastStartOpts(created.id)).toBe(before)
+
+    expect(controller.setOpencodeModel(created.id, undefined)).toBe('restarted')
+    expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBeUndefined()
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--trust', '--resume', CHAT_ID])
+  })
+
+  it('rejects a bad Cursor model name and accepts what only the Cursor rule allows', () => {
+    const { controller, store } = setup()
+    const created = controller.createSession({ cwd: tempDir(), agent: 'cursor', model: 'gpt-5' })
+
+    expect(() => controller.setOpencodeModel(created.id, 'gpt 5')).toThrow(
+      '"gpt 5" is not a Cursor model name: use letters, digits and . _ : / @ - only, like gpt-5 or sonnet-4-thinking.'
+    )
+    expect(() => controller.setOpencodeModel(created.id, 'provider model')).toThrow('is not a Cursor model name')
+    expect(() => controller.setOpencodeModel(created.id, `g${'x'.repeat(100)}`)).toThrow('is not a Cursor model name')
+    expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBe('gpt-5')
+
+    // '@' is refused by the OpenCode rule and allowed by Cursor's: this session used the Cursor rule.
+    expect(controller.setOpencodeModel(created.id, 'gpt-5@latest')).toBe('next-start')
+    expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBe('gpt-5@latest')
   })
 })

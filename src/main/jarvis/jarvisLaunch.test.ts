@@ -38,4 +38,8 @@ describe('jarvis launch', () => {
     expect(prompt).toContain('list_sessions, wait_for_session.')
     expect(prompt).toContain('mcp__sessiondeck__')
   })
+
+  it('says the app runs Cursor sessions too (D81)', () => {
+    expect(jarvisSystemPrompt([])).toContain('Claude Code, OpenCode, Cursor and shell sessions')
+  })
 })

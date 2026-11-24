@@ -20,7 +20,7 @@ import { createAutoStatusApplier } from '../automation/applyAutoStatus'
 import { opencodePluginHealth, isOpencodeUsageLimit, OPENCODE_PLUGIN_HEALTH_GRACE_MS } from '../opencode/health'
 import { listOpencodeSessions, pickSessionToAdopt } from '../opencode/sessions'
 import { isSessionExport, parseImportedSessionId, pickNewSessionId, remapExportIds, writeForkFile } from '../opencode/fork'
-import { isCursorChatId } from '../store/cursorValues'
+import { isCursorChatId, isCursorModel } from '../store/cursorValues'
 
 const MAX_FALLBACK_ATTEMPTS = 1
 /** Session names are at most 100 characters (store rule). */
@@ -141,10 +141,11 @@ export interface SessionController {
    */
   forkSession(id: Id): Promise<Session>
   /**
-   * D79: changes the OpenCode model of one session. A running conversation is put to sleep and woken on the new model
-   * (it resumes with `-s`, so nothing is lost); a sleeping, stopped or closed one, or one with no conversation id yet,
-   * only stores it for its next start. `undefined` clears it (OpenCode's own default). Throws for a Claude, shell or
-   * unknown session, or a model id that is not `provider/model`.
+   * D79/D81: changes the OpenCode or Cursor model of one session. A running conversation is put to sleep and woken on
+   * the new model (OpenCode resumes with `-s`, Cursor with `--resume <chatId>`, so nothing is lost); a sleeping, stopped
+   * or closed one, or one with no conversation id yet, only stores it for its next start. `undefined` clears it (the
+   * agent's own default). Throws for a Claude, shell or unknown session, or a model the agent's rule refuses
+   * (`provider/model` for OpenCode, a plain name for Cursor).
    */
   setOpencodeModel(id: Id, model: string | undefined): OpencodeModelResult
   removeSession(id: Id): void
@@ -922,14 +923,22 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       const session = findSession(id)
       if (!session) throw new Error(`Unknown session: ${id}`)
       if (session.agent === 'shell') throw new Error(`"${session.name}" is a shell session: it has no model.`)
-      if ((session.agent ?? 'claude') === 'claude') {
+      const agent = session.agent ?? 'claude'
+      if (agent === 'claude') {
         throw new Error(`"${session.name}" is a Claude session: its model is a launch setting (Settings > Agents), not a per-session one.`)
       }
       const trimmed = model === undefined ? undefined : model.trim()
       const next = trimmed === undefined || trimmed.length === 0 ? undefined : trimmed
       if (next !== undefined) {
-        const problem = sessionModelProblem(next)
-        if (problem !== null) throw new Error(problem)
+        // D81: Cursor takes a plain model name on the command line, not OpenCode's provider/model.
+        if (agent === 'cursor') {
+          if (!isCursorModel(next)) {
+            throw new Error(`"${next}" is not a Cursor model name: use letters, digits and . _ : / @ - only, like gpt-5 or sonnet-4-thinking.`)
+          }
+        } else {
+          const problem = sessionModelProblem(next)
+          if (problem !== null) throw new Error(problem)
+        }
       }
       // The same model again: nothing to store and no reason to drop a running conversation.
       if (session.model === next) return 'next-start'
@@ -939,7 +948,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       const running = pty.isRunning(id) && state?.run === 'running' && state.sleeping !== true
       // Without a conversation id a restart would open a FRESH conversation, so a live one is left alone: it keeps
       // running the old model and the new one applies to its next start.
-      if (!running || isClosed(id) || session.opencodeSessionId === undefined) return 'next-start'
+      const conversationId = agent === 'cursor' ? session.cursorChatId : session.opencodeSessionId
+      if (!running || isClosed(id) || conversationId === undefined) return 'next-start'
       sleepNow(id)
       return wakeNow(id) ? 'restarted' : 'restart-failed'
     },
