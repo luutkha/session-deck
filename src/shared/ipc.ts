@@ -69,6 +69,7 @@ export const IPC = {
   opencodeInfoGet: 'opencode:infoGet', // () -> OpencodeInfo (D74)
   opencodeRecheck: 'opencode:recheck', // () -> OpencodeInfo; clears the cached probe and probes again (D74)
   fileViewDetach: 'file:viewDetach', // (sessionId, text) -> void; opens the file viewer in its own small window (D73)
+  changesDetach: 'changes:detach', // (worktreeId) -> void; opens the Changes panel of that worktree in its own window, or focuses the one already open (D83)
   fileViewRead: 'file:viewRead', // (sessionId, text) -> FileViewResult; main re-resolves the link text, reads capped, converts docx/xlsx/csv (D73)
   linkOpen: 'link:open', // (sessionId, text, reveal) -> OpenLinkResult; main re-resolves, never trusts the renderer
   sessionSleep: 'session:sleep', // stop the Claude process of a session (card and conversation stay); activating it later resumes it
@@ -135,6 +136,8 @@ export interface Api {
   readonly windowRole: WindowRole
   /** D73: set only in a detached file-viewer window: the file it shows (link text + the session it belongs to). */
   readonly viewerRequest: { readonly sessionId: Id; readonly text: string } | null
+  /** D83: set only in a detached Changes window: the worktree it shows and the title main gave the window. */
+  readonly changesWindowRequest: { readonly worktreeId: Id; readonly title: string } | null
   getStore(): Promise<{ data: StoreData; runtime: readonly RuntimeState[] }>
   createSession(input: CreateSessionInput): Promise<Session>
   renameSession(id: Id, name: string): Promise<void>
@@ -259,6 +262,8 @@ export interface Api {
   readFileView(sessionId: Id, text: string): Promise<FileViewResult>
   /** D73: shows the same file in its own small window (the side-panel viewer's Detach button). */
   detachFileView(sessionId: Id, text: string): Promise<void>
+  /** D83: shows the worktree's Changes panel in its own window (one per worktree: a second request focuses it). */
+  detachChanges(worktreeId: Id): Promise<void>
   /** D74: mtime + size of the viewed file; the open preview polls it to reload when the file changes. */
   /** D75: bytes [start, end) of a big PDF (the viewer's streamed mode); main re-resolves the text and caps the range. */
   readFileViewRange(sessionId: Id, text: string, start: number, end: number): Promise<FileViewRangeResult>
@@ -282,6 +287,8 @@ export interface Api {
 export const CODE_WINDOW_ARG = '--sessiondeck-window=code'
 /** Launch argument of a detached file-viewer window: this prefix + encodeURIComponent(JSON {sessionId, text}) (D73). */
 export const VIEWER_WINDOW_ARG_PREFIX = '--sessiondeck-viewer='
+/** Launch argument of a detached Changes window: this prefix + encodeURIComponent(JSON {worktreeId, title}) (D83). */
+export const CHANGES_WINDOW_ARG_PREFIX = '--sessiondeck-changes='
 
 declare global {
   interface Window { api: Api }

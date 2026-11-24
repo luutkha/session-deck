@@ -18,6 +18,7 @@ import { createUsageService, createUsageRefresher, readClaudeAccessToken, fetchO
 import { registerIpcHandlers } from './app/ipcHandlers'
 import { createMainWindow, focusSessionInWindow, showMainWindow } from './app/window'
 import { createViewerWindowSet } from './app/viewerWindows'
+import { createChangesWindowSet } from './app/changesWindows'
 import { createWindowRegistry } from './app/windowRegistry'
 import { createActiveSessions } from './app/activeSessions'
 import { createCodeWiring } from './app/codeWiring'
@@ -234,6 +235,7 @@ if (!gotTheLock) {
 
     // Code mode (D31): the main window, plus the Code window while it is popped out. Events go to both.
     const viewerWindows = createViewerWindowSet()
+    const changesWindows = createChangesWindowSet()
     const windows = createWindowRegistry<BrowserWindow>({
       createWindow: (role) => createMainWindow({
         preloadPath: path.join(__dirname, '../preload/index.mjs'),
@@ -772,6 +774,13 @@ if (!gotTheLock) {
       dockCode: () => windows.dockCode(),
       openFileViewer: (request) => {
         viewerWindows.request(() => createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, viewer: request }).window)
+      },
+      // D83: the title comes from the store, never from the renderer; one window per worktree, capped.
+      openChangesWindow: (worktreeId) => {
+        const worktree = store.getWorktree(worktreeId)
+        if (worktree === undefined) return
+        const title = `Changes · ${worktree.name} · SessionDeck`
+        changesWindows.request(worktreeId, () => createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, changes: { worktreeId, title } }).window)
       },
       userDataDir: userData,
       loginItem: createLoginItem(app),

@@ -75,6 +75,8 @@ export interface IpcHandlersDeps {
   readonly dockCode: () => void
   /** D73: opens a detached file-viewer window for a file (the side-panel viewer's Detach). */
   readonly openFileViewer: (request: { readonly sessionId: Id; readonly text: string }) => void
+  /** D83: opens (or focuses) the detached Changes window of a worktree. */
+  readonly openChangesWindow: (worktreeId: Id) => void
   /** Directory of main-errors.log. */
   readonly userDataDir: string
   /** Start-on-login state and toggle (packaged app only). */
@@ -111,7 +113,7 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 }
 
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, conversationSearch, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, openFileViewer, userDataDir, loginItem, onUserActivity } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, conversationSearch, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, openFileViewer, openChangesWindow, userDataDir, loginItem, onUserActivity } = deps
 
   // A burst of store changes (notes, status, rename...) must not send the whole store per change:
   // the first change goes out at once, the rest at most once per interval with the latest state.
@@ -357,6 +359,13 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
 
   ipcMain.handle(IPC.fileViewDetach, async (_event, rawId: unknown, rawText: unknown): Promise<void> => {
     openFileViewer({ sessionId: assertId(rawId, 'session id'), text: assertNonEmptyString(rawText, 'link text') })
+  })
+
+  // D83: main resolves the worktree (never trusts the renderer's title) and refuses an id that is not in the store.
+  ipcMain.handle(IPC.changesDetach, async (_event, rawId: unknown): Promise<void> => {
+    const worktreeId = assertId(rawId, 'worktree id')
+    if (store.getWorktree(worktreeId) === undefined) throw new Error('Unknown worktree.')
+    openChangesWindow(worktreeId)
   })
 
   ipcMain.handle(IPC.linkOpen, async (_event, rawId: unknown, rawText: unknown, rawReveal: unknown) => {

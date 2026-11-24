@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { attachWindowDiagnostics } from './windowDiagnostics'
 import { isSameDocumentNavigation } from './navigation'
-import { IPC, CODE_WINDOW_ARG, VIEWER_WINDOW_ARG_PREFIX } from '../../shared/ipc'
+import { IPC, CHANGES_WINDOW_ARG_PREFIX, CODE_WINDOW_ARG, VIEWER_WINDOW_ARG_PREFIX } from '../../shared/ipc'
 import type { WindowRole } from '../../shared/types'
 
 import type { WindowLike } from './windowRegistry'
@@ -23,6 +23,10 @@ const VIEWER_WIDTH = 860
 const VIEWER_HEIGHT = 720
 const VIEWER_MIN_WIDTH = 420
 const VIEWER_MIN_HEIGHT = 300
+const CHANGES_WIDTH = 1100
+const CHANGES_HEIGHT = 760
+const CHANGES_MIN_WIDTH = 640
+const CHANGES_MIN_HEIGHT = 420
 const MAIN_WINDOW_TITLE = 'SessionDeck'
 const CODE_WINDOW_TITLE = 'SessionDeck · Code'
 
@@ -49,6 +53,8 @@ export interface MainWindowDeps {
   readonly parent?: BrowserWindow
   /** D73: opens a small file-viewer window for this file instead of the app (role stays 'main', it is not registered). */
   readonly viewer?: { readonly sessionId: string; readonly text: string }
+  /** D83: opens a detached Changes window for this worktree (role stays 'main', it is not registered). Exclusive with `viewer`. */
+  readonly changes?: { readonly worktreeId: string; readonly title: string }
 }
 
 export interface MainWindow {
@@ -108,18 +114,26 @@ function viewerOptions(viewer: { readonly sessionId: string; readonly text: stri
   return { title: base.length > 0 ? `${base} · SessionDeck` : MAIN_WINDOW_TITLE, additionalArguments: [VIEWER_WINDOW_ARG_PREFIX + encodeURIComponent(JSON.stringify(viewer))] }
 }
 
+/** The title main built for the worktree and the launch argument carrying the request. */
+function changesOptions(changes: { readonly worktreeId: string; readonly title: string }): { readonly title: string; readonly additionalArguments: readonly string[] } {
+  return { title: changes.title, additionalArguments: [CHANGES_WINDOW_ARG_PREFIX + encodeURIComponent(JSON.stringify(changes))] }
+}
+
 export function createMainWindow(deps: MainWindowDeps): MainWindow {
-  const { preloadPath, iconPath, parent, viewer } = deps
+  const { preloadPath, iconPath, parent, viewer, changes } = deps
+  if (viewer !== undefined && changes !== undefined) throw new Error('A window cannot be both a file viewer and a changes window')
   const role: WindowRole = deps.role ?? 'main'
-  const { additionalArguments, ...placement } = viewer === undefined ? roleOptions(role, parent) : viewerOptions(viewer)
+  const { additionalArguments, ...placement } = changes !== undefined ? changesOptions(changes) : viewer === undefined ? roleOptions(role, parent) : viewerOptions(viewer)
+  const size = changes !== undefined
+    ? { width: CHANGES_WIDTH, height: CHANGES_HEIGHT, minWidth: CHANGES_MIN_WIDTH, minHeight: CHANGES_MIN_HEIGHT }
+    : viewer === undefined
+      ? { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT, minWidth: WINDOW_MIN_WIDTH, minHeight: WINDOW_MIN_HEIGHT }
+      : { width: VIEWER_WIDTH, height: VIEWER_HEIGHT, minWidth: VIEWER_MIN_WIDTH, minHeight: VIEWER_MIN_HEIGHT }
 
   let isWindowFocused = false
 
   const mainWindow = new BrowserWindow({
-    width: viewer === undefined ? DEFAULT_WIDTH : VIEWER_WIDTH,
-    height: viewer === undefined ? DEFAULT_HEIGHT : VIEWER_HEIGHT,
-    minWidth: viewer === undefined ? WINDOW_MIN_WIDTH : VIEWER_MIN_WIDTH,
-    minHeight: viewer === undefined ? WINDOW_MIN_HEIGHT : VIEWER_MIN_HEIGHT,
+    ...size,
     backgroundColor: WINDOW_BACKGROUND,
     icon: loadIcon(iconPath),
     ...titleBarOptions(),
@@ -134,7 +148,7 @@ export function createMainWindow(deps: MainWindowDeps): MainWindow {
     }
   })
 
-  if (role === 'code' || viewer !== undefined) lockTitle(mainWindow)
+  if (role === 'code' || viewer !== undefined || changes !== undefined) lockTitle(mainWindow)
 
   attachWindowDiagnostics(mainWindow, app.getPath('userData'))
 

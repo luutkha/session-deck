@@ -118,6 +118,8 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - Vitest cannot import files under the OS temp dir; create test dirs under `process.cwd()`. Turn fake timers on only after dynamic imports.
 - Plugin events posted with parallel `fetch` arrive out of order; serialize posts.
 
+- e2e: reading a window text ONCE right after its rows appear races the async diff/preview load (flaked 1 in 4 runs). Wait for the text you assert on (`waitFor`), not for a sibling element. A menu can also still be animating when Escape arrives: repeat Escape until it is gone. (D82/D83)
+
 ## Tooling in this environment
 - **Shell quoting mangles code.** Heredocs, `sed`, `node -e` and `python -c` lose backslashes, `$1`-style text and quotes, and can write real CR/LF bytes into string literals. Write code with the Write/Edit tools, or put the script in a file and run the file. A JSON or heredoc edit spec turns a `
 ` meant for a string literal into a real line break (it broke `index.ts` and a test on 2026-11-08); type escapes with the Edit tool.

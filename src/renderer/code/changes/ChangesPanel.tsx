@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { subscribeChangesFileRequest, takeChangesFileRequest } from './changesRequest'
-import { ArrowLeft, LoaderCircle, MessageSquare, RefreshCw, SendHorizontal, X } from 'lucide-react'
+import { ArrowLeft, LoaderCircle, MessageSquare, PictureInPicture2, RefreshCw, SendHorizontal, X } from 'lucide-react'
 import type { AgentKind, ChangedFile, Id, WorktreeChanges } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import { ScrollArea } from '../../components/ui/scroll-area'
@@ -11,6 +11,7 @@ import { absoluteChangedPath, canOpenInViewer } from './absolutePath'
 import { ChangeRow } from './ChangeRow'
 import { DiffView } from './DiffView'
 import { countsLabel } from './changesFormat'
+import { splitEmptyText, splitSelection } from './changesWindowLogic'
 import { isStillChanged } from './changesState'
 import {
   addAnnotation,
@@ -40,7 +41,13 @@ export interface ChangesPanelProps {
   readonly viewerSessionId?: Id
   /** D74: the absolute worktree folder the changed paths are relative to (a worktree session's cwd). */
   readonly viewerRoot?: string
+  /** D83: renders the detach button in the header; absent = no button (the detached window passes nothing). */
+  readonly onDetach?: () => void
+  /** D83: 'stack' (default, the side panel) shows the list OR the diff; 'split' (detached window) shows both. */
+  readonly layout?: ChangesLayout
 }
+
+export type ChangesLayout = 'stack' | 'split'
 
 export interface ChangesTarget {
   readonly sessionId: Id
@@ -58,6 +65,8 @@ const TOOLTIP_DELAY_MS = 300
 const HEADER_TITLE_IDLE = 'Changes'
 const HEADER_TITLE_LOADING = 'Loading changes...'
 const REFRESH_LABEL = 'Refresh changes'
+const DETACH_LABEL = 'Open changes in a separate window'
+const DETACH_TITLE = 'Open in separate window'
 const BACK_LABEL = 'All files'
 const NO_CHANGES_YET = 'No changes yet.'
 const SEND_LABEL = 'Send comments to the agent'
@@ -91,6 +100,29 @@ function RefreshButton({ loading, onRefresh }: { readonly loading: boolean; read
   )
 }
 
+/** D83: opens (or focuses) this worktree's detached Changes window. Only rendered when the caller can detach. */
+function DetachButton({ onDetach }: { readonly onDetach: () => void }): ReactElement {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={DETACH_LABEL}
+          data-changes-detach=""
+          onClick={onDetach}
+        >
+          <PictureInPicture2 aria-hidden="true" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={4}>
+        {DETACH_TITLE}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function sendDisabledReason(target: ChangesTarget | undefined, count: number): string | null {
   if (count === 0) return 'No comments yet.'
   if (target === undefined) return null
@@ -102,6 +134,7 @@ function sendDisabledReason(target: ChangesTarget | undefined, count: number): s
 interface PanelHeaderProps {
   readonly title: string
   readonly selectedPath: string | null
+  readonly layout: ChangesLayout
   readonly loading: boolean
   readonly commentCount: number
   /** Previewable file selected: the header shows the Diff | Preview segmented toggle (rich previews). */
@@ -110,6 +143,7 @@ interface PanelHeaderProps {
   readonly onViewMode: (mode: 'diff' | 'preview') => void
   readonly onBack: () => void
   readonly onRefresh: () => void
+  readonly onDetach?: (() => void) | undefined
 }
 
 const DIFF_TOGGLE_LABEL = 'Show the diff'
@@ -150,17 +184,29 @@ function ViewModeToggle({
 function PanelHeader({
   title,
   selectedPath,
+  layout,
   loading,
   commentCount,
   previewable,
   viewMode,
   onViewMode,
   onBack,
-  onRefresh
+  onRefresh,
+  onDetach
 }: PanelHeaderProps): ReactElement {
+  // The split layout shows list and diff together: there is no "back to the list" step, only the title.
+  const showBack = layout === 'stack' && selectedPath !== null
   return (
     <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
-      {selectedPath === null ? (
+      {showBack ? (
+        <div className="flex min-w-0 items-center gap-1">
+          <Button type="button" variant="ghost" size="xs" onClick={onBack}>
+            <ArrowLeft aria-hidden="true" />
+            {BACK_LABEL}
+          </Button>
+          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{selectedPath}</span>
+        </div>
+      ) : (
         <span className="flex min-w-0 items-center gap-1.5 truncate px-1 text-xs text-muted-foreground">
           {title}
           {commentCount > 0 ? (
@@ -170,17 +216,10 @@ function PanelHeader({
             </span>
           ) : null}
         </span>
-      ) : (
-        <div className="flex min-w-0 items-center gap-1">
-          <Button type="button" variant="ghost" size="xs" onClick={onBack}>
-            <ArrowLeft aria-hidden="true" />
-            {BACK_LABEL}
-          </Button>
-          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{selectedPath}</span>
-        </div>
       )}
       <div className="flex shrink-0 items-center gap-1">
         {selectedPath !== null && previewable ? <ViewModeToggle viewMode={viewMode} onViewMode={onViewMode} /> : null}
+        {onDetach !== undefined ? <DetachButton onDetach={onDetach} /> : null}
         <RefreshButton loading={loading} onRefresh={onRefresh} />
       </div>
     </div>
@@ -199,13 +238,16 @@ interface ChangesBodyProps {
   readonly ticks: Ticks
   /** D74: shows a changed file in the side-panel viewer; null = no viewer target known. */
   readonly openInViewer: ((path: string) => void) | null
+  /** D83: the file highlighted in the split layout's list; null in the stacked layout (the diff replaces it). */
+  readonly selectedPath: string | null
 }
 
 function fileRows(
   changes: WorktreeChanges,
   onSelect: (path: string) => void,
   ticks: Ticks,
-  openInViewer: ((path: string) => void) | null
+  openInViewer: ((path: string) => void) | null,
+  selectedPath: string | null
 ): ReactElement {
   const anyUncommitted = changes.files.some((file): boolean => file.uncommitted === true)
   return (
@@ -214,7 +256,7 @@ function fileRows(
         <ChangeRow
           key={file.path}
           file={file}
-          selected={false}
+          selected={file.path === selectedPath}
           onSelect={onSelect}
           {...(anyUncommitted ? { ticked: !ticks.unticked.has(file.path), onToggleTick: ticks.toggle } : {})}
           {...(openInViewer !== null && canOpenInViewer(file) ? { onOpenViewer: openInViewer } : {})}
@@ -230,7 +272,7 @@ function headerTitle(list: WorktreeChangesResult): string {
 }
 
 /** The file list, or the message that replaces it (IPC failure, git problem, no files). */
-function ChangesBody({ list, onSelect, ticks, openInViewer }: ChangesBodyProps): ReactElement {
+function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath }: ChangesBodyProps): ReactElement {
   const { changes } = list
   if (changes === null) {
     return list.error !== null ? (
@@ -248,7 +290,7 @@ function ChangesBody({ list, onSelect, ticks, openInViewer }: ChangesBodyProps):
   return (
     <ScrollArea className="min-h-0 flex-1">
       {list.error !== null ? <PanelMessage text={list.error} failed /> : null}
-      {fileRows(changes, onSelect, ticks, openInViewer)}
+      {fileRows(changes, onSelect, ticks, openInViewer, selectedPath)}
     </ScrollArea>
   )
 }
@@ -312,7 +354,15 @@ function CommentsStrip({ annotations, target, stale, onRemove, onSend }: Comment
 
 /** Changed files of one worktree; a click opens that file's read-only diff in place of the list.
  *  With a target session, diff lines can carry comments that are sent to the session as one prompt. */
-export function ChangesPanel({ worktreeId, target, className, viewerSessionId, viewerRoot }: ChangesPanelProps): ReactElement {
+export function ChangesPanel({
+  worktreeId,
+  target,
+  className,
+  viewerSessionId,
+  viewerRoot,
+  onDetach,
+  layout = 'stack'
+}: ChangesPanelProps): ReactElement {
   const list = useWorktreeChanges(worktreeId)
   const git = useGitActions(worktreeId, list.changes, list.refresh)
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -322,7 +372,13 @@ export function ChangesPanel({ worktreeId, target, className, viewerSessionId, v
   // Rich previews: the render toggle exists only for previewable files; review (Diff) stays the default.
   const [viewMode, setViewMode] = useState<'diff' | 'preview'>('diff')
   const storedPath = selection !== null && selection.worktreeId === worktreeId ? selection.path : null
-  const selectedPath = isStillChanged(list.changes, storedPath) ? storedPath : null
+  const split = layout === 'split'
+  // The split layout always shows a diff: the selected file while it is changed, otherwise the first one.
+  const selectedPath = split
+    ? splitSelection(list.changes, storedPath)
+    : isStillChanged(list.changes, storedPath)
+      ? storedPath
+      : null
   const diff = useWorktreeFileDiff(worktreeId, selectedPath, list.changes?.computedAt ?? null)
   const previewable = selectedPath !== null && isPreviewable(selectedPath)
   const preview = useWorktreeFilePreview(worktreeId, previewable ? selectedPath : null, viewMode === 'preview', list.changes?.computedAt ?? null)
@@ -369,8 +425,9 @@ export function ChangesPanel({ worktreeId, target, className, viewerSessionId, v
   }
 
   const commentCount = annotations.length
-  const showStrip = commentCount > 0
   const annotateOn = target !== undefined
+  // D83: without a target (the detached window) the annotation UI stays off, drafts included.
+  const showStrip = commentCount > 0 && annotateOn
   // D74: rows open a file in the side-panel viewer when both the session and the worktree folder are known.
   const openInViewer = viewerSessionId !== undefined && viewerRoot !== undefined && viewerRoot.trim() !== ''
     ? (path: string): void => {
@@ -378,12 +435,52 @@ export function ChangesPanel({ worktreeId, target, className, viewerSessionId, v
       }
     : null
 
+  const gitSection = (
+    <GitSection
+      git={git}
+      changes={list.changes}
+      {...(target !== undefined ? { onOpenUrl: (url: string): void => { void window.api.openLink(target.sessionId, url, false) } } : {})}
+    />
+  )
+  const changedFiles = (
+    <ChangesBody
+      list={list}
+      onSelect={(path: string): void => setSelection({ worktreeId, path })}
+      ticks={{ unticked: git.unticked, toggle: git.toggleFile }}
+      openInViewer={openInViewer}
+      selectedPath={split ? selectedPath : null}
+    />
+  )
+  const fileView = selectedPath === null ? null : viewMode === 'preview' && previewable ? (
+    <PreviewView
+      preview={preview.preview}
+      loading={preview.loading}
+      error={preview.error}
+      sessionId={target?.sessionId ?? ''}
+    />
+  ) : (
+    <DiffView
+      diff={diff.diff}
+      loading={diff.loading}
+      error={diff.error}
+      annotations={annotateOn ? annotations : []}
+      onAddComment={annotateOn
+        ? (input): void => {
+            if (selectedPath === null) return
+            update(addAnnotation(annotations, { id: crypto.randomUUID(), path: selectedPath, ...input }, Date.now()))
+          }
+        : undefined}
+    />
+  )
+  const splitHint = split && selectedPath === null ? splitEmptyText(list.changes) : null
+
   return (
     <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
       <section aria-label="Changes" className={cn('flex min-h-0 flex-col', className)}>
         <PanelHeader
           title={headerTitle(list)}
           selectedPath={selectedPath}
+          layout={layout}
           loading={list.loading}
           commentCount={commentCount}
           previewable={previewable}
@@ -391,41 +488,25 @@ export function ChangesPanel({ worktreeId, target, className, viewerSessionId, v
           onViewMode={setViewMode}
           onBack={(): void => setSelection(null)}
           onRefresh={list.refresh}
+          {...(onDetach !== undefined ? { onDetach } : {})}
         />
-        {selectedPath === null ? (
+        {split ? (
+          <div className="flex min-h-0 flex-1">
+            <div data-changes-list="" className="flex w-[300px] shrink-0 flex-col border-r border-border">
+              {gitSection}
+              {changedFiles}
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {fileView ?? (splitHint !== null ? <PanelMessage text={splitHint} failed={false} /> : null)}
+            </div>
+          </div>
+        ) : selectedPath === null ? (
           <>
-            <GitSection
-              git={git}
-              changes={list.changes}
-              {...(target !== undefined ? { onOpenUrl: (url: string): void => { void window.api.openLink(target.sessionId, url, false) } } : {})}
-            />
-            <ChangesBody
-              list={list}
-              onSelect={(path: string): void => setSelection({ worktreeId, path })}
-              ticks={{ unticked: git.unticked, toggle: git.toggleFile }}
-              openInViewer={openInViewer}
-            />
+            {gitSection}
+            {changedFiles}
           </>
-        ) : viewMode === 'preview' && previewable ? (
-          <PreviewView
-            preview={preview.preview}
-            loading={preview.loading}
-            error={preview.error}
-            sessionId={target?.sessionId ?? ''}
-          />
         ) : (
-          <DiffView
-            diff={diff.diff}
-            loading={diff.loading}
-            error={diff.error}
-            annotations={annotateOn ? annotations : []}
-            onAddComment={annotateOn
-              ? (input): void => {
-                  if (selectedPath === null) return
-                  update(addAnnotation(annotations, { id: crypto.randomUUID(), path: selectedPath, ...input }, Date.now()))
-                }
-              : undefined}
-          />
+          fileView
         )}
         {showStrip ? (
           <CommentsStrip

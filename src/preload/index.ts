@@ -57,7 +57,7 @@ import type {
   GpuPref
 } from '../shared/types'
 import type { PtyReplay } from '../shared/ipc'
-import { CODE_WINDOW_ARG, VIEWER_WINDOW_ARG_PREFIX } from '../shared/ipc'
+import { CHANGES_WINDOW_ARG_PREFIX, CODE_WINDOW_ARG, VIEWER_WINDOW_ARG_PREFIX } from '../shared/ipc'
 
 const windowRole: WindowRole = process.argv.includes(CODE_WINDOW_ARG) ? 'code' : 'main'
 
@@ -77,9 +77,25 @@ function readViewerRequest(): { readonly sessionId: string; readonly text: strin
 }
 
 
+/** D83: a detached Changes window carries its worktree in a launch argument; anything malformed means "not one". */
+function readChangesWindowRequest(): { readonly worktreeId: string; readonly title: string } | null {
+  const raw = process.argv.find((arg) => arg.startsWith(CHANGES_WINDOW_ARG_PREFIX))
+  if (raw === undefined) return null
+  try {
+    const parsed: unknown = JSON.parse(decodeURIComponent(raw.slice(CHANGES_WINDOW_ARG_PREFIX.length)))
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const { worktreeId, title } = parsed as { worktreeId?: unknown; title?: unknown }
+    if (typeof worktreeId !== 'string' || worktreeId.length === 0 || typeof title !== 'string') return null
+    return { worktreeId, title }
+  } catch {
+    return null
+  }
+}
+
 const api: Api = {
   windowRole,
   viewerRequest: readViewerRequest(),
+  changesWindowRequest: readChangesWindowRequest(),
 
   getStore(): Promise<{ data: StoreData; runtime: readonly RuntimeState[] }> {
     return ipcRenderer.invoke(IPC.storeGet)
@@ -515,6 +531,10 @@ const api: Api = {
 
   detachFileView(sessionId: Id, text: string): Promise<void> {
     return ipcRenderer.invoke(IPC.fileViewDetach, sessionId, text)
+  },
+
+  detachChanges(worktreeId: Id): Promise<void> {
+    return ipcRenderer.invoke(IPC.changesDetach, worktreeId)
   },
 
   getWorktreeFilePreview(worktreeId: Id, path: string): Promise<FilePreview> {

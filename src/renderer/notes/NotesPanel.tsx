@@ -261,6 +261,10 @@ export function NotesPanel(props: NotesPanelProps): ReactElement {
           // creates it that way), so the changed file's relative path joins onto it.
           viewerSessionId={session.id}
           viewerRoot={session.cwd}
+          // D83: the detached Changes window for this worktree; the side panel stays open.
+          onDetach={(): void => {
+            void window.api.detachChanges(worktreeId).catch(() => undefined)
+          }}
         />
       ) : tab === 'preview' ? (
         <PreviewTab request={previewRequest} onClose={closePreview} />
