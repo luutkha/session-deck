@@ -27,6 +27,8 @@ const CHANGES_WIDTH = 1100
 const CHANGES_HEIGHT = 760
 const CHANGES_MIN_WIDTH = 640
 const CHANGES_MIN_HEIGHT = 420
+/** The size a Changes window opens with when it has no saved bounds (main centers it). */
+export const CHANGES_DEFAULT_SIZE = { width: CHANGES_WIDTH, height: CHANGES_HEIGHT } as const
 const MAIN_WINDOW_TITLE = 'SessionDeck'
 const CODE_WINDOW_TITLE = 'SessionDeck · Code'
 
@@ -54,7 +56,7 @@ export interface MainWindowDeps {
   /** D73: opens a small file-viewer window for this file instead of the app (role stays 'main', it is not registered). */
   readonly viewer?: { readonly sessionId: string; readonly text: string }
   /** D83: opens a detached Changes window for this worktree (role stays 'main', it is not registered). Exclusive with `viewer`. */
-  readonly changes?: { readonly worktreeId: string; readonly title: string }
+  readonly changes?: { readonly worktreeId: string; readonly title: string; readonly bounds?: { readonly x?: number; readonly y?: number; readonly width: number; readonly height: number } }
 }
 
 export interface MainWindow {
@@ -125,7 +127,9 @@ export function createMainWindow(deps: MainWindowDeps): MainWindow {
   const role: WindowRole = deps.role ?? 'main'
   const { additionalArguments, ...placement } = changes !== undefined ? changesOptions(changes) : viewer === undefined ? roleOptions(role, parent) : viewerOptions(viewer)
   const size = changes !== undefined
-    ? { width: CHANGES_WIDTH, height: CHANGES_HEIGHT, minWidth: CHANGES_MIN_WIDTH, minHeight: CHANGES_MIN_HEIGHT }
+    ? changes.bounds === undefined
+      ? { width: CHANGES_WIDTH, height: CHANGES_HEIGHT, minWidth: CHANGES_MIN_WIDTH, minHeight: CHANGES_MIN_HEIGHT }
+      : { ...changes.bounds, minWidth: CHANGES_MIN_WIDTH, minHeight: CHANGES_MIN_HEIGHT }
     : viewer === undefined
       ? { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT, minWidth: WINDOW_MIN_WIDTH, minHeight: WINDOW_MIN_HEIGHT }
       : { width: VIEWER_WIDTH, height: VIEWER_HEIGHT, minWidth: VIEWER_MIN_WIDTH, minHeight: VIEWER_MIN_HEIGHT }

@@ -420,6 +420,92 @@ async function main() {
     if (ws3) await attachMonitor(ws3, detachedIssues)
     t.check('11e: the new window shows the first worktree\'s changes', !!ws3 && !!(await waitFor(async () => (await evalIn(ws3, `document.querySelector('[data-change-path=${js(live.name)}]') ? true : null`)) === true ? true : null, 15000, 300)))
 
+    // ---- 13: Dock back focuses a session of the worktree, opens Changes and closes the detached window
+    // First put the main window on something else, so the dock back has to change both the tab and the side tab.
+    const wtSessions = await ev(`window.api.getStore().then(({ data }) => data.sessions.filter((s) => s.worktreeId === ${js(wt.id)} && s.closedAt === undefined).map((s) => s.id))`)
+    await clickSel(`[data-session-card="${session2.id}"]`)
+    await openTab(session2.id)
+    await clickSel('[data-side-tab="notes"]')
+    const showingElse = await waitFor(async () => ((await sideTabSelected('notes')) === true && (await tabActive(session2.id)) === true ? true : null), 8000, 200)
+    t.check('13a: before the dock back the main window shows the second worktree on Notes', !!showingElse, js({ notes: await sideTabSelected('notes'), secondTab: await tabActive(session2.id) }))
+    const firstTargetId = reopened?.id ?? null
+    if (ws3) await evalIn(ws3, `document.querySelector('[data-changes-attach]')?.click()`)
+    const dockedGone = firstTargetId ? await waitFor(async () => ((await pageIds()).has(firstTargetId) ? null : true), 12000, 300) : null
+    t.check('13b: Dock back closes the detached window (its page target is gone)', !!dockedGone, js({ firstTargetId, targets: [...await pageIds()] }))
+    const dockedState = await waitFor(async () => {
+      const panel = (await ev(`!!document.querySelector('[data-side-tab="changes"][aria-selected="true"]')`)) === true
+      const active = await ev(`document.querySelector('[role=tab][aria-selected="true"]')?.getAttribute('data-tab-id') ?? null`)
+      return panel && Array.isArray(wtSessions) && wtSessions.includes(active) ? { panel, active } : null
+    }, 12000, 250)
+    t.check('13c: ...the main side panel is open on Changes', !!dockedState && dockedState.panel === true)
+    t.check('13d: ...and the active tab is a session of that worktree', !!dockedState && wtSessions.includes(dockedState.active), js({ activeTab: dockedState?.active, wtSessions }))
+    t.check('13e: the main window has no console errors after the dock back', issues.length === 0, issues.join(' | '))
+
+    // ---- 14: Dock back from a worktree whose only session was closed keeps the window and shows an error
+    const openBeforeClose = await ev(`window.api.getStore().then(({ data }) => data.sessions.filter((s) => s.worktreeId === ${js(wt2.id)} && s.closedAt === undefined).map((s) => s.id))`)
+    t.check('14a: the second worktree has one open session before it is closed', Array.isArray(openBeforeClose) && openBeforeClose.length === 1, js(openBeforeClose))
+    await ev(`window.api.closeSession(${js(session2.id)})`)
+    const noOpen = await waitFor(async () => (await ev(`window.api.getStore().then(({ data }) => data.sessions.filter((s) => s.worktreeId === ${js(wt2.id)} && s.closedAt === undefined).length)`)) === 0 ? true : null, 8000, 200)
+    t.check('14b: window.api.closeSession leaves that worktree with no open session', !!noOpen)
+    if (ws2) await evalIn(ws2, `document.querySelector('[data-changes-attach]')?.click()`)
+    const attachError = ws2 ? await waitFor(async () => {
+      const text = await evalIn(ws2, `document.querySelector('[data-changes-attach-error]')?.innerText ?? ''`)
+      return typeof text === 'string' && text.trim() !== '' ? text : null
+    }, 10000, 250) : null
+    t.check('14c: Dock back with no open session keeps the detached window open', !!target2 && (await pageIds()).has(target2.id), js({ target2: target2?.id, targets: [...await pageIds()] }))
+    t.check('14d: ...and [data-changes-attach-error] shows a message', !!attachError && /no session/i.test(attachError), js(attachError))
+
+    // ---- 15: a detached window remembers its position and size per worktree (D84)
+    const idsBeforeMove = await pageIds()
+    await clickSel('[data-changes-detach]')
+    const movedTarget = await waitFor(async () => (await pageTargets()).find((x) => !idsBeforeMove.has(x.id)) ?? null, 20000, 400)
+    const wsMove = movedTarget?.webSocketDebuggerUrl ?? ''
+    if (wsMove) await attachMonitor(wsMove, detachedIssues)
+    t.check('15a: the first worktree opens a detached window to move', !!movedTarget && !!wsMove && !!(await detachedReady(wsMove)), movedTarget?.url)
+    const browserCall = async (method, params) => {
+      const [r] = await cdpIn(browserUrl, [{ method, params }])
+      return r
+    }
+    const near = (a, b) => typeof a === 'number' && Math.abs(a - b) <= 20
+    // CDP's Browser.* window calls are not available for Electron windows: move/resize from inside the page (Electron honours moveTo/resizeTo).
+    const pageBounds = (ws) => evalIn(ws, '({ left: window.screenX, top: window.screenY, width: window.outerWidth, height: window.outerHeight })')
+    if (wsMove) await evalIn(wsMove, 'window.moveTo(120, 90); window.resizeTo(900, 650)')
+    const movedBounds = wsMove ? await waitFor(async () => { const b = await pageBounds(wsMove); return b && near(b.left, 120) && near(b.top, 90) && near(b.width, 900) && near(b.height, 650) ? b : null }, 6000, 250) : null
+    t.check('15b: the window was moved/resized to about 120,90 900x650', !!movedBounds, js(wsMove ? await pageBounds(wsMove) : null))
+    const boundsFile = path.join(userData, 'changes-windows.json')
+    const readBounds = () => {
+      try { return JSON.parse(fs.readFileSync(boundsFile, 'utf8')) } catch { return null }
+    }
+    const saved = await waitFor(() => {
+      const map = readBounds()
+      const b = map && map[wt.id]
+      return b && near(b.width, 900) && near(b.height, 650) && near(b.x, 120) ? b : null
+    }, 8000, 250)
+    t.check('15c: changes-windows.json saves that worktree at about 900x650', !!saved && near(saved.width, 900) && near(saved.height, 650), js(saved))
+    t.check('15d: ...and at about x=120', !!saved && near(saved.x, 120), js(saved))
+    const [closedMoved] = await cdpIn(browserUrl, [{ method: 'Target.closeTarget', params: { targetId: movedTarget.id } }])
+    if (!(closedMoved && closedMoved.success)) {
+      try { await evalIn(wsMove, 'window.close()') } catch { /* already gone */ }
+    }
+    const movedGone = await waitFor(async () => ((await pageIds()).has(movedTarget.id) ? null : true), 8000, 300)
+    t.check('15e: closing the moved window removes its page target', !!movedGone, js({ viaTargetClose: closedMoved?.success === true }))
+    const idsBeforeRestore = await pageIds()
+    await clickSel('[data-changes-detach]')
+    const restoredTarget = await waitFor(async () => (await pageTargets()).find((x) => !idsBeforeRestore.has(x.id)) ?? null, 20000, 400)
+    const wsRestored = restoredTarget?.webSocketDebuggerUrl ?? ''
+    if (wsRestored) await attachMonitor(wsRestored, detachedIssues)
+    t.check('15f: detaching again reopens the first worktree', !!restoredTarget && restoredTarget.id !== movedTarget.id, js({ closed: movedTarget?.id, reopened: restoredTarget?.id }))
+    const restoredReady = wsRestored ? !!(await detachedReady(wsRestored)) : false
+    const restoredBounds = wsRestored ? await waitFor(async () => { const b = await pageBounds(wsRestored); return b && near(b.left, 120) && near(b.top, 90) && near(b.width, 900) && near(b.height, 650) ? b : null }, 8000, 300) : null
+    t.check('15g: the reopened window restores about the same left/top/width/height', !!restoredReady && !!restoredBounds, js(restoredBounds))
+
+    // ---- 16: the saved bounds file holds only well-formed entries
+    let rawBounds = null
+    try { rawBounds = JSON.parse(fs.readFileSync(boundsFile, 'utf8')) } catch { rawBounds = null }
+    const entries = rawBounds && typeof rawBounds === 'object' && !Array.isArray(rawBounds) ? Object.values(rawBounds) : []
+    const wellFormed = rawBounds !== null && entries.length > 0 && entries.every((v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 4 && ['x', 'y', 'width', 'height'].every((k) => Number.isInteger(v[k])))
+    t.check('16a: changes-windows.json parses and every entry has four integers', wellFormed, js({ keys: rawBounds && Object.keys(rawBounds), entries }))
+
     // ---- 12: clean renderers and untouched real config folders
     t.check('12a: no renderer console errors or uncaught exceptions in the main window', issues.length === 0, issues.join(' | '))
     t.check('12b: ...nor in the detached windows', detachedIssues.length === 0, detachedIssues.join(' | '))

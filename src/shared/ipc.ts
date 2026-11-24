@@ -70,6 +70,7 @@ export const IPC = {
   opencodeRecheck: 'opencode:recheck', // () -> OpencodeInfo; clears the cached probe and probes again (D74)
   fileViewDetach: 'file:viewDetach', // (sessionId, text) -> void; opens the file viewer in its own small window (D73)
   changesDetach: 'changes:detach', // (worktreeId) -> void; opens the Changes panel of that worktree in its own window, or focuses the one already open (D83)
+  changesAttach: 'changes:attach', // (worktreeId) -> void; shows that worktree's Changes tab in the app window and closes the detached window (D84)
   fileViewRead: 'file:viewRead', // (sessionId, text) -> FileViewResult; main re-resolves the link text, reads capped, converts docx/xlsx/csv (D73)
   linkOpen: 'link:open', // (sessionId, text, reveal) -> OpenLinkResult; main re-resolves, never trusts the renderer
   sessionSleep: 'session:sleep', // stop the Claude process of a session (card and conversation stay); activating it later resumes it
@@ -264,6 +265,8 @@ export interface Api {
   detachFileView(sessionId: Id, text: string): Promise<void>
   /** D83: shows the worktree's Changes panel in its own window (one per worktree: a second request focuses it). */
   detachChanges(worktreeId: Id): Promise<void>
+  /** D84: "dock back": the app window shows the worktree's Changes tab on one of its sessions, then the detached window closes. Rejects when the worktree has no session. */
+  attachChanges(worktreeId: Id): Promise<void>
   /** D74: mtime + size of the viewed file; the open preview polls it to reload when the file changes. */
   /** D75: bytes [start, end) of a big PDF (the viewer's streamed mode); main re-resolves the text and caps the range. */
   readFileViewRange(sessionId: Id, text: string, start: number, end: number): Promise<FileViewRangeResult>

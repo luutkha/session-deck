@@ -537,6 +537,10 @@ const api: Api = {
     return ipcRenderer.invoke(IPC.changesDetach, worktreeId)
   },
 
+  attachChanges(worktreeId: Id): Promise<void> {
+    return ipcRenderer.invoke(IPC.changesAttach, worktreeId)
+  },
+
   getWorktreeFilePreview(worktreeId: Id, path: string): Promise<FilePreview> {
     return ipcRenderer.invoke(IPC.filePreviewRead, worktreeId, path)
   },

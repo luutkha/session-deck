@@ -1,6 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { describe, expect, it } from 'vitest'
-import { createChangesWindowSet } from './changesWindows'
+import { createChangesWindowSet, pickSessionForChanges } from './changesWindows'
 
 interface FakeWindow {
   readonly win: BrowserWindow
@@ -22,6 +22,7 @@ function fake(): FakeWindow {
     isMinimized: (): boolean => minimized,
     restore: (): void => { restore++; minimized = false },
     focus: (): void => { focus++ },
+    close: (): void => { destroyed = true; onClosed?.() },
     once: (_event: string, cb: () => void): void => { onClosed = cb }
   } as unknown as BrowserWindow
   return {
@@ -89,5 +90,46 @@ describe('detached Changes windows', () => {
     expect(set.request('wt-a', () => a.win)).toBe(true)
     a.destroy()
     expect(set.request('wt-a', () => fake().win)).toBe(true)
+  })
+
+  it('close returns whether the worktree had a window and frees its slot', () => {
+    const set = createChangesWindowSet(1)
+    const a = fake()
+    expect(set.request('wt-a', () => a.win)).toBe(true)
+    expect(set.close('wt-a')).toBe(true)
+    expect(set.close('wt-a')).toBe(false)
+    expect(set.request('wt-b', () => fake().win)).toBe(true)
+  })
+
+  it('close ignores a destroyed window that never reported closed', () => {
+    const set = createChangesWindowSet()
+    const a = fake()
+    expect(set.request('wt-a', () => a.win)).toBe(true)
+    a.destroy()
+    expect(set.close('wt-a')).toBe(false)
+  })
+})
+
+describe('pickSessionForChanges', () => {
+  const session = (id: string, worktreeId: string | undefined, extra: { readonly closedAt?: number } = {}) => ({ id, worktreeId, ...extra })
+
+  it('prefers the session already on screen', () => {
+    const sessions = [session('a', 'wt'), session('b', 'wt'), session('c', 'wt')]
+    expect(pickSessionForChanges(sessions, 'wt', 'b', (id) => id === 'a')?.id).toBe('b')
+  })
+
+  it('otherwise prefers a running one', () => {
+    const sessions = [session('a', 'wt'), session('b', 'wt'), session('c', 'wt')]
+    expect(pickSessionForChanges(sessions, 'wt', null, (id) => id === 'c')?.id).toBe('c')
+  })
+
+  it('otherwise takes the first open session of that worktree', () => {
+    const sessions = [session('closed', 'wt', { closedAt: 1 }), session('other', 'wt-2'), session('first', 'wt'), session('second', 'wt')]
+    expect(pickSessionForChanges(sessions, 'wt', null)?.id).toBe('first')
+  })
+
+  it('returns undefined when the worktree has no open session', () => {
+    expect(pickSessionForChanges([session('a', 'wt', { closedAt: 1 })], 'wt', 'a')).toBeUndefined()
+    expect(pickSessionForChanges([], 'wt', null)).toBeUndefined()
   })
 })

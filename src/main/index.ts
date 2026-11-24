@@ -16,9 +16,10 @@ import { createSessionController } from './app/sessionController'
 import { createSoundRelay } from './app/soundRelay'
 import { createUsageService, createUsageRefresher, readClaudeAccessToken, fetchOAuthUsage } from './usage'
 import { registerIpcHandlers } from './app/ipcHandlers'
-import { createMainWindow, focusSessionInWindow, showMainWindow } from './app/window'
+import { createMainWindow, focusSessionInWindow, showMainWindow, CHANGES_DEFAULT_SIZE } from './app/window'
 import { createViewerWindowSet } from './app/viewerWindows'
-import { createChangesWindowSet } from './app/changesWindows'
+import { createChangesWindowSet, pickSessionForChanges } from './app/changesWindows'
+import { changesBoundsFilePath, createBoundsStore, fitBounds, nodeBoundsStoreIo } from './app/changesWindowBounds'
 import { createWindowRegistry } from './app/windowRegistry'
 import { createActiveSessions } from './app/activeSessions'
 import { createCodeWiring } from './app/codeWiring'
@@ -58,6 +59,10 @@ import { createOpencodeExportRunner } from './opencode/exportRunner'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const SAVER_DELAY_MS = 400
+/** D84: moving/resizing a Changes window saves at most this often. */
+const CHANGES_BOUNDS_SAVE_DELAY_MS = 500
+/** D84: the renderer needs a moment to switch to Code mode and the Changes tab after the session is focused. */
+const ATTACH_FOCUS_DELAY_MS = 450
 
 /** userData when Electron can provide it; the temp dir otherwise, so error logging still has a place to write. */
 function userDataDir(): string {
@@ -186,6 +191,7 @@ if (!gotTheLock) {
     const storePath = storeFilePath(userData)
     const attentionSettingsDir = attentionDir(userData)
     const onError = (where: string, error: unknown): void => logMainError(userData, where, error)
+    const changesBounds = createBoundsStore(changesBoundsFilePath(userData), nodeBoundsStoreIo(onError))
 
     // D74: find out what the installed OpenCode supports in the background, so the first OpenCode session never waits on it.
     warmOpencodeProbe()
@@ -261,6 +267,53 @@ if (!gotTheLock) {
         return
       }
       focusSessionInWindow(mainWindow, id)
+    }
+
+    /**
+     * D84: dock back. Picks an open session of the worktree, shows it in the window focusSession chooses and asks the
+     * same renderer for the Changes tab Jarvis opens. The detached window closes only after all of that succeeded.
+     */
+    async function attachChangesWindow(worktreeId: string): Promise<void> {
+      const activeId = activeSessions.get('code') ?? activeSessions.get('main')
+      const session = pickSessionForChanges(store.get().sessions, worktreeId, activeId, (id) => runtime.get(id)?.run === 'running')
+      if (session === undefined) throw new Error('This worktree has no session to show the changes on.')
+      focusSession(session.id)
+      await new Promise<void>((resolve) => setTimeout(resolve, ATTACH_FOCUS_DELAY_MS))
+      const codeWin = windows.code()
+      const target = session.worktreeId !== undefined && codeWin !== null ? codeWin : mainWindow
+      if (target !== null && !target.isDestroyed()) {
+        target.webContents.send(IPC.evJarvisUi, {
+          id: randomUUID(),
+          mode: 'code',
+          action: { kind: 'sidePanel', open: true, tab: 'changes' }
+        })
+      }
+      changesWindows.close(worktreeId)
+    }
+
+    /** D84: remembers a detached Changes window's normal (not maximised) bounds, debounced while it is dragged/resized. */
+    function trackChangesBounds(worktreeId: string, win: BrowserWindow): void {
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const save = (): void => {
+        if (win.isDestroyed()) return
+        changesBounds.set(worktreeId, win.getNormalBounds())
+      }
+      const schedule = (): void => {
+        if (timer !== null) clearTimeout(timer)
+        timer = setTimeout(() => {
+          timer = null
+          save()
+        }, CHANGES_BOUNDS_SAVE_DELAY_MS)
+      }
+      win.on('resize', schedule)
+      win.on('move', schedule)
+      win.on('close', (): void => {
+        if (timer !== null) {
+          clearTimeout(timer)
+          timer = null
+        }
+        save()
+      })
     }
 
     const notifier = createDesktopNotifier({
@@ -780,8 +833,14 @@ if (!gotTheLock) {
         const worktree = store.getWorktree(worktreeId)
         if (worktree === undefined) return
         const title = `Changes · ${worktree.name} · SessionDeck`
-        changesWindows.request(worktreeId, () => createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, changes: { worktreeId, title } }).window)
+        const bounds = fitBounds(changesBounds.get(worktreeId), screen.getAllDisplays().map((display) => display.workArea), CHANGES_DEFAULT_SIZE)
+        changesWindows.request(worktreeId, () => {
+          const win = createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, changes: { worktreeId, title, bounds } }).window
+          trackChangesBounds(worktreeId, win)
+          return win
+        })
       },
+      attachChangesWindow,
       userDataDir: userData,
       loginItem: createLoginItem(app),
       getGpuInfo: readGpuWithPref,

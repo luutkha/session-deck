@@ -10,6 +10,8 @@ export interface ChangesWindowSet {
    * At the cap the oldest window is focused instead. Returns whether a new window opened.
    */
   readonly request: (worktreeId: string, create: () => BrowserWindow) => boolean
+  /** D84: closes the detached window of a worktree. False when it was not open. */
+  readonly close: (worktreeId: string) => boolean
 }
 
 interface OpenChangesWindow {
@@ -47,6 +49,37 @@ export function createChangesWindowSet(max: number = MAX_CHANGES_WINDOWS): Chang
         if (at >= 0) open.splice(at, 1)
       })
       return true
+    },
+
+    close: (worktreeId): boolean => {
+      for (let i = open.length - 1; i >= 0; i--) if (open[i].win.isDestroyed()) open.splice(i, 1)
+      const entry = open.find((candidate) => candidate.worktreeId === worktreeId)
+      if (entry === undefined) return false
+      const at = open.indexOf(entry)
+      if (at >= 0) open.splice(at, 1)
+      entry.win.close()
+      return true
     }
   }
+}
+
+/** The fields pickSessionForChanges needs; a full Session satisfies them. */
+export interface ChangesSession {
+  readonly id: string
+  readonly worktreeId?: string
+  readonly closedAt?: number
+}
+
+/**
+ * D84: the session that shows a worktree's Changes tab when its detached window docks back. Only open sessions of
+ * that worktree count: the one already on screen first, else a running one, else the first.
+ */
+export function pickSessionForChanges<T extends ChangesSession>(
+  sessions: readonly T[],
+  worktreeId: string,
+  activeId: string | null,
+  isRunning: (id: string) => boolean = () => false
+): T | undefined {
+  const candidates = sessions.filter((session) => session.worktreeId === worktreeId && session.closedAt === undefined)
+  return candidates.find((session) => session.id === activeId) ?? candidates.find((session) => isRunning(session.id)) ?? candidates[0]
 }
