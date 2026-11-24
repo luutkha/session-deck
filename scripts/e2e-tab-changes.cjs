@@ -259,6 +259,17 @@ async function main() {
     t.check('8e: the width the user chose (400) is kept, not overridden to 520', width400 === 400 && storedAfter === '400', `width=${String(await app.evaluate(`(() => { const t = document.querySelector('[data-side-tab]'); const a = t && t.closest('aside'); return a ? Math.round(a.getBoundingClientRect().width) : null })()`))} stored=${String(storedAfter)}`)
 
     // ---- 9: the renderer stayed clean and the real config folders were not touched
+    // ---- 10: a sleeping session still gets View changes (Changes reads git, not the process)
+    await ev('window.api.sleepSession(' + js(session1.id) + ')').catch(() => undefined)
+    const asleep = await waitFor(() => ev(`!!document.querySelector('[role=tab][data-tab-id=${js(session1.id)}] [aria-label="Sleeping"]')`), 8000, 200)
+    t.check('10a: the worktree session is asleep', !!asleep)
+    await ev(`document.querySelector('[aria-label="Close notes"]')?.click()`)
+    await sleep(300)
+    await rightClickTab(session1.id)
+    const sleepItems = await ev(`Array.from(document.querySelectorAll('[data-slot="context-menu-content"] [role=menuitem]')).map((n) => n.textContent.trim())`)
+    t.check('10b: a sleeping tab menu offers View changes', Array.isArray(sleepItems) && sleepItems.includes('View changes'), js(sleepItems))
+    await clickViewChanges()
+    t.check('10c: ...and it opens the Changes tab with the changed files', (await waitFor(() => sideTabSelected('changes'), 5000, 200)) === true && !!(await waitFor(() => ev(`document.body.innerText.includes('a.txt') && document.body.innerText.includes('b.txt')`), 5000, 200)))
     t.check('9a: no renderer console errors or uncaught exceptions during the run', issues.length === 0, issues.join(' | '))
     const after = watched.map(statOf)
     const untouched = watched.every((file, i) => before[i].exists === after[i].exists && (!before[i].exists || (before[i].mtimeMs === after[i].mtimeMs && before[i].size === after[i].size)))
