@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode } from 'react'
-import { Bell, BellOff, Coffee, GitFork, Moon, Sun } from 'lucide-react'
+import { Bell, BellOff, Coffee, GitCompare, GitFork, Moon, Sun } from 'lucide-react'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -37,6 +37,8 @@ export interface SessionContextMenuProps {
   readonly onToggleRead?: () => void
   /** D52: shown for Claude sessions; starts a new session on a copy of the conversation. */
   readonly onFork?: () => void
+  /** D82 (Code mode): shows the session's Changes tab in the side panel. */
+  readonly onViewChanges?: () => void
 }
 
 export function SessionContextMenu(props: SessionContextMenuProps): ReactElement {
@@ -46,7 +48,7 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
     onCloseSession, onRemoveSession,
     sleeping = false, canSleep = false, onSleep, onWake,
     keepAwake = false, onToggleKeepAwake,
-    attention = null, onToggleRead, onFork
+    attention = null, onToggleRead, onFork, onViewChanges
   } = props
   return (
     <ContextMenu>
@@ -124,6 +126,12 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
           <ContextMenuItem onSelect={onToggleKeepAwake}>
             <Coffee aria-hidden="true" />
             {keepAwake ? 'Allow auto-sleep' : 'Keep awake'}
+          </ContextMenuItem>
+        ) : null}
+        {onViewChanges !== undefined ? (
+          <ContextMenuItem onSelect={onViewChanges} data-view-changes="">
+            <GitCompare aria-hidden="true" />
+            View changes
           </ContextMenuItem>
         ) : null}
         {onFork !== undefined ? (

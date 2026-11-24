@@ -93,10 +93,14 @@ async function main() {
       await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, buttons: button === 'right' ? 2 : 1, clickCount: 1 })
       await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, buttons: 0, clickCount: 1 })
     }
+    // Escape until the menu is gone: a key sent while the menu is still animating in can be lost.
     const escape = async () => {
-      await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
-      await app.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
-      await sleep(300)
+      for (let i = 0; i < 4; i++) {
+        await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+        await app.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+        await sleep(300)
+        if (!(await ev(`!!document.querySelector('[data-slot="context-menu-content"]')`))) return
+      }
     }
     const center = (selector) => ev(`(() => { const n = document.querySelector(${js(selector)}); if (!n) return null; n.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const r = n.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } })()`)
     const clickSel = async (selector) => {
@@ -270,6 +274,19 @@ async function main() {
     t.check('10b: a sleeping tab menu offers View changes', Array.isArray(sleepItems) && sleepItems.includes('View changes'), js(sleepItems))
     await clickViewChanges()
     t.check('10c: ...and it opens the Changes tab with the changed files', (await waitFor(() => sideTabSelected('changes'), 5000, 200)) === true && !!(await waitFor(() => ev(`document.body.innerText.includes('a.txt') && document.body.innerText.includes('b.txt')`), 5000, 200)))
+    // ---- 11: the same item in the right-click menu of the session in the Code sidebar
+    await ev(`document.querySelector('[aria-label="Close notes"]')?.click()`)
+    await waitFor(async () => (await panelOpen()) ? null : true, 4000, 200)
+    const session3 = await ev(`window.api.createSession({ cwd: ${js(wt.path)}, name: 'wt three', agent: 'shell', worktreeId: ${js(wt.id)} })`)
+    await waitFor(() => ev(`!!document.querySelector('[data-session-card=${js(session3.id)}]')`), 6000, 200)
+    t.check('11-: the third session has no tab yet', (await ev(`!document.querySelector('[role=tab][data-tab-id=${js(session3.id)}]')`)) === true)
+    const cardPoint = await center(`[data-session-card="${session3.id}"]`)
+    if (cardPoint !== null) await mouse(cardPoint.x, cardPoint.y, 'right')
+    await waitFor(menuOpen, 3000, 100)
+    const cardItems = await menuItems()
+    t.check('11a: the sidebar session menu offers View changes', Array.isArray(cardItems) && cardItems.includes('View changes'), js(cardItems))
+    await clickViewChanges()
+    t.check('11b: ...and it opens that session on its Changes tab', (await waitFor(() => sideTabSelected('changes'), 5000, 200)) === true && (await tabActive(session3.id)) === true)
     t.check('9a: no renderer console errors or uncaught exceptions during the run', issues.length === 0, issues.join(' | '))
     const after = watched.map(statOf)
     const untouched = watched.every((file, i) => before[i].exists === after[i].exists && (!before[i].exists || (before[i].mtimeMs === after[i].mtimeMs && before[i].size === after[i].size)))

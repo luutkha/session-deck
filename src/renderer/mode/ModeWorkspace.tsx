@@ -229,6 +229,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const viewChanges = useCallback((id: Id): void => {
     // The panel exists only in the terminal view, and in the grid activating a tab only focuses a cell: leave first.
     if (view !== 'terminal') nav.setView('terminal')
+    // From the sidebar the session may have no tab yet: open it (opening never wakes a sleeping session), then show it.
+    tabs.open(id)
     nav.activateTab(id)
     const plan = planViewChangesPanel({ notesOpen: nav.notesOpen, width: sidePanelWidth.width, widened: changesWidened.current })
     changesWidened.current = true
@@ -237,7 +239,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
     storeSidePanelTab('changes', keys.sidePanel)
     setSidePanelEpoch((n: number): number => n + 1)
     if (plan.width !== null) sidePanelWidth.commit(plan.width)
-  }, [view, nav.setView, nav.activateTab, nav.notesOpen, nav.toggleNotes, keys.sidePanel, sidePanelWidth.width, sidePanelWidth.commit])
+  }, [view, tabs.open, nav.setView, nav.activateTab, nav.notesOpen, nav.toggleNotes, keys.sidePanel, sidePanelWidth.width, sidePanelWidth.commit])
   // A preview belongs to the session whose folder resolved it: once that session is removed the request can only fail
   // (Reload keeps erroring), so it is dropped. `sessions` is null until the store arrives: nothing to decide yet.
   const previewSessionId = previewRequest?.sessionId ?? null
@@ -347,6 +349,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   onSelect={nav.selectSession}
                   onReopen={nav.reopenSession}
                   onForkSession={commands.forkSession}
+                  onViewChanges={viewChanges}
                   actions={actions}
                   onNewWorktree={commands.openNewWorktree}
                   onNewSessionInWorktree={commands.openNewInWorktree}

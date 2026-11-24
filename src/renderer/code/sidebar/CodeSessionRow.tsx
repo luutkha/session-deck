@@ -39,6 +39,7 @@ export function CodeSessionRow({ session, view }: CodeSessionRowProps): ReactEle
       onNewGroupAndMove={noop}
       onCloseSession={(): void => handlers.onCloseSession(session.id)}
       onFork={view.onForkSession !== undefined && (session.agent ?? 'claude') !== 'shell' ? (): void => view.onForkSession?.(session.id) : undefined}
+      onViewChanges={view.onViewChanges !== undefined ? (): void => view.onViewChanges?.(session.id) : undefined}
       onRemoveSession={(): void => handlers.onRequestRemoveSession(session.id)}
     >
       <CodeSessionCard
