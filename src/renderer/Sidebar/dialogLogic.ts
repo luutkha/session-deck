@@ -7,6 +7,10 @@ const ARG_TOKEN_PATTERN = /^[A-Za-z0-9_@=:,.\/\\-]+$/
 /** An OpenCode "provider/model" token: letters, digits and . _ : / @ + -. Empty = OpenCode's own default. */
 const OPENCODE_MODEL_PATTERN = /^[A-Za-z0-9._:/@+-]+$/
 export const MAX_OPENCODE_MODEL_LENGTH = 200
+
+/** A plain Cursor model name (e.g. gpt-5): letters, digits and . _ : / @ -. Empty = Cursor's own default. */
+const CURSOR_MODEL_PATTERN = /^[A-Za-z0-9._:/@-]+$/
+export const MAX_CURSOR_MODEL_LENGTH = 100
 const WHITESPACE_PATTERN = /\s+/
 export const REMOTE_CONTROL_FLAG = '--remote-control'
 const FALLBACK_NAME = 'session'
@@ -64,6 +68,49 @@ export function validateOpenCodeModel(raw: string): ValidateOpenCodeModelResult 
   return { ok: true, value: trimmed }
 }
 
+export type ValidateCursorModelResult =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly error: string }
+
+/**
+ * Validates a plain Cursor model name ("gpt-5", "sonnet-4-thinking"). Letters, digits and
+ * `. _ : / @ -` only, at most 100 chars after trimming. An empty string is valid: Cursor then
+ * uses its own default model. Returns the trimmed value.
+ */
+export function validateCursorModel(raw: string): ValidateCursorModelResult {
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) {
+    return { ok: true, value: '' }
+  }
+  if (trimmed.length > MAX_CURSOR_MODEL_LENGTH) {
+    return { ok: false, error: `Model is too long (max ${MAX_CURSOR_MODEL_LENGTH} characters)` }
+  }
+  if (!CURSOR_MODEL_PATTERN.test(trimmed)) {
+    return { ok: false, error: 'Model may only contain letters, digits and . _ : / @ -' }
+  }
+  return { ok: true, value: trimmed }
+}
+
+/** The model field's opening value: OpenCode keeps its saved default; Cursor starts empty (its own default). */
+export function initialModelForAgent(agent: AgentKind | undefined, opencodeModel: string): string {
+  return agent === 'cursor' ? '' : opencodeModel
+}
+
+/**
+ * The model field after switching agent: never carry an OpenCode model into Cursor (Cursor starts empty),
+ * and restore the OpenCode default when leaving Cursor. Every other switch keeps the typed text.
+ */
+export function modelAfterAgentChange(
+  previous: AgentKind,
+  next: AgentKind,
+  current: string,
+  opencodeModel: string
+): string {
+  if (next === 'cursor') return ''
+  if (previous === 'cursor') return opencodeModel
+  return current
+}
+
 /** Display name derived from a folder path: the last segment, handling `\` and `/`. */
 export function defaultNameFromFolder(path: string): string {
   const withoutTrailing = path.replace(TRAILING_SEPARATORS_PATTERN, '')
@@ -83,7 +130,7 @@ export interface CreateSessionForm {
   readonly argsRaw: string
   /** Which agent to start; absent = 'claude'. */
   readonly agent?: AgentKind
-  /** OpenCode model text; only read when agent is 'opencode'. */
+  /** OpenCode or Cursor model text; only read when agent is 'opencode' or 'cursor'. */
   readonly modelRaw?: string
   /** OpenCode only (D79): ask before running tools (use the user's own OpenCode permission rules); off = yolo. */
   readonly openCodeAskPermissions?: boolean
@@ -132,6 +179,22 @@ export function buildCreateInput(form: CreateSessionForm): BuildCreateInputResul
         ...(modelResult.value.length > 0 ? { model: modelResult.value } : {}),
         // Yolo stays the default (D10); the checkbox opts into the user's own OpenCode rules.
         ...(form.openCodeAskPermissions === true ? { opencodePermissions: 'ask' as const } : {})
+      }
+    }
+  }
+
+  if (agent === 'cursor') {
+    // Cursor takes no Claude args; an empty model means Cursor's own default.
+    const modelResult = validateCursorModel(form.modelRaw ?? '')
+    if (!modelResult.ok) {
+      return { ok: false, error: modelResult.error }
+    }
+    return {
+      ok: true,
+      input: {
+        ...shared,
+        agent,
+        ...(modelResult.value.length > 0 ? { model: modelResult.value } : {})
       }
     }
   }

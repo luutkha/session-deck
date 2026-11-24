@@ -18,18 +18,26 @@ export interface AgentBadgeProps {
   readonly keepAwake?: boolean
 }
 
+/** The short pill label of a non-Claude agent: 'OC' for OpenCode, 'CU' for Cursor, null for Claude (unmarked). */
+export function agentBadgeCode(agent: AgentKind | undefined): 'OC' | 'CU' | null {
+  const kind = agent ?? 'claude'
+  if (kind === 'opencode') return 'OC'
+  if (kind === 'cursor') return 'CU'
+  return null
+}
+
 /**
- * A quiet pill naming the OpenCode agent. Renders nothing for Claude sessions so
- * the default stays visually unchanged; only OpenCode is called out.
+ * A quiet pill naming the OpenCode or Cursor agent. Renders nothing for Claude sessions so
+ * the default stays visually unchanged; only the other agents are called out.
  */
 export function AgentBadge({ agent, remote = false, keepAwake = false }: AgentBadgeProps): ReactElement | null {
-  const openCode = (agent ?? 'claude') === 'opencode'
-  if (!openCode && !remote && !keepAwake) {
+  const code = agentBadgeCode(agent)
+  if (code === null && !remote && !keepAwake) {
     return null
   }
   return (
     <>
-      {openCode ? <OpenCodePill /> : null}
+      {code !== null ? <AgentPill code={code} label={code === 'OC' ? 'OpenCode' : 'Cursor'} /> : null}
       {remote ? <RemotePill /> : null}
       {keepAwake ? <KeepAwakePill /> : null}
     </>
@@ -74,20 +82,20 @@ function RemotePill(): ReactElement {
   )
 }
 
-function OpenCodePill(): ReactElement {
+function AgentPill({ code, label }: { readonly code: string; readonly label: string }): ReactElement {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Badge
           variant="hostContext"
-          aria-label="OpenCode"
+          aria-label={label}
           className="h-4 px-1 text-[9px] font-semibold leading-none tracking-tight"
         >
-          OC
+          {code}
         </Badge>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4}>
-        OpenCode
+        {label}
       </TooltipContent>
     </Tooltip>
   )

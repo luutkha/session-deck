@@ -585,3 +585,100 @@ async function readdir(dir: string): Promise<string[]> {
   const { readdir: rd } = await import('node:fs/promises')
   return rd(dir)
 }
+
+describe('persistence: cursor fields in stored sessions (D81)', () => {
+  const CURSOR_SESSION = {
+    id: 's1',
+    name: 'c',
+    cwd: 'C:/p',
+    groupId: null,
+    statusId: null,
+    order: 0,
+    createdAt: 1,
+    claudeArgs: [],
+    agent: 'cursor' as const
+  }
+
+  function storeWith(session: Record<string, unknown>): unknown {
+    return {
+      version: 1,
+      sessions: [{ ...CURSOR_SESSION, ...session }],
+      groups: [],
+      statuses: [],
+      groupOrder: []
+    }
+  }
+
+  it('an old stored session without any cursor field loads unchanged', () => {
+    const parsed = parseStoreData({
+      version: 1,
+      sessions: [
+        {
+          id: 's1',
+          name: 'old',
+          cwd: 'C:/p',
+          groupId: null,
+          statusId: null,
+          order: 0,
+          createdAt: 1,
+          claudeArgs: [],
+          claudeSessionId: '11111111-2222-3333-4444-555555555555'
+        }
+      ],
+      groups: [],
+      statuses: [],
+      groupOrder: []
+    })
+    expect(parsed.sessions[0].agent).toBeUndefined()
+    expect(parsed.sessions[0].cursorChatId).toBeUndefined()
+    expect(parsed.sessions[0].model).toBeUndefined()
+  })
+
+  it('keeps a cursor chat id and model, and never the OpenCode fields', () => {
+    const parsed = parseStoreData(
+      storeWith({
+        cursorChatId: 'chat_ABCDEF12',
+        model: 'gpt-5',
+        opencodeSessionId: 'ses_abcdef12345678',
+        opencodePermissions: 'ask'
+      })
+    )
+    expect(parsed.sessions[0]).toMatchObject({ agent: 'cursor', cursorChatId: 'chat_ABCDEF12', model: 'gpt-5' })
+    expect(parsed.sessions[0].opencodeSessionId).toBeUndefined()
+    expect(parsed.sessions[0].opencodePermissions).toBeUndefined()
+    expect(parsed.sessions[0].claudeSessionId).toBeUndefined()
+  })
+
+  it('a cursor session may be stored without chat id or model', () => {
+    const parsed = parseStoreData(storeWith({}))
+    expect(parsed.sessions[0].agent).toBe('cursor')
+    expect(parsed.sessions[0]).not.toHaveProperty('cursorChatId')
+    expect(parsed.sessions[0]).not.toHaveProperty('model')
+  })
+
+  it('rejects an invalid cursorChatId and an invalid cursor model like other required fields', () => {
+    expect(() => parseStoreData(storeWith({ cursorChatId: 'bad id!' }))).toThrow(
+      'Invalid store: sessions[0].cursorChatId'
+    )
+    expect(() => parseStoreData(storeWith({ model: 'bad model&' }))).toThrow('Invalid store: sessions[0].model')
+    expect(() => parseStoreData(storeWith({ model: '' }))).toThrow('Invalid store: sessions[0].model')
+  })
+
+  it('a cursor session survives a save and load round trip', async () => {
+    const path = await tempPath('sessiondeck-cursor-')
+    const data: StoreData = {
+      ...emptyStore(),
+      sessions: [
+        {
+          ...CURSOR_SESSION,
+          agent: 'cursor',
+          cursorChatId: 'chat_ABCDEF12',
+          model: 'sonnet-4-thinking'
+        }
+      ]
+    }
+    await saveStoreFile(path, data)
+    const loaded = await loadStoreFile(path)
+    expect(loaded.data.sessions[0]).toEqual(data.sessions[0])
+  })
+})

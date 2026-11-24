@@ -14,6 +14,7 @@ import {
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
+import { initialModelForAgent, modelAfterAgentChange } from '../../Sidebar/dialogLogic'
 import { cleanErrorMessage } from '../sidebar/errorText'
 import { BaseBranchSelect } from './BaseBranchSelect'
 import { INPUT_CLASS, LABEL_CLASS, SessionAgentFields } from './SessionAgentFields'
@@ -53,7 +54,9 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
   const [existingChoice, setExistingChoice] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [agent, setAgent] = useState<AgentKind>(settings.agents.defaultAgent)
-  const [model, setModel] = useState(settings.agents.opencodeModel)
+  const [model, setModel] = useState(
+    (): string => initialModelForAgent(settings.agents.defaultAgent, settings.agents.opencodeModel)
+  )
   const [creating, setCreating] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement | null>(null)
@@ -84,6 +87,11 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
     modelCheck.ok &&
     sourceReady &&
     !creating
+
+  function changeAgent(next: AgentKind): void {
+    setModel((current) => modelAfterAgentChange(agent, next, current, settings.agents.opencodeModel))
+    setAgent(next)
+  }
 
   async function submit(): Promise<void> {
     if (!canCreate || repoId === null || baseBranch === null || !nameCheck.ok || !modelCheck.ok) return
@@ -251,7 +259,7 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
           <SessionAgentFields
             idPrefix={NAME_ID_PREFIX}
             agent={agent}
-            onAgentChange={setAgent}
+            onAgentChange={changeAgent}
             model={model}
             onModelChange={setModel}
             modelError={modelCheck.ok ? null : modelCheck.error}

@@ -46,6 +46,18 @@ describe('menuRows (D59)', () => {
     expect(menuRows('a', session({ agent: 'opencode' }), false, []).fork).toBe(false)
     expect(menuRows('a', session({ agent: 'opencode', opencodeSessionId: 'ses_abc12345678', role: 'jarvis' }), false, []).fork).toBe(false)
   })
+
+  it('offers Fork for a Cursor session with a non-empty chat id (D81)', () => {
+    expect(menuRows('a', session({ agent: 'cursor', cursorChatId: 'chat-abc123' }), false, []).fork).toBe(true)
+    expect(menuRows('a', session({ agent: 'cursor', cursorChatId: '' }), false, []).fork).toBe(false)
+    expect(menuRows('a', session({ agent: 'cursor' }), false, []).fork).toBe(false)
+  })
+
+  it('reads the conversation id of each agent, never another agent\'s', () => {
+    expect(menuRows('a', session({ agent: 'cursor', opencodeSessionId: 'ses_abc12345678' }), false, []).fork).toBe(false)
+    expect(menuRows('a', session({ agent: 'opencode', cursorChatId: 'chat-abc123' }), false, []).fork).toBe(false)
+    expect(menuRows('a', session({ agent: 'claude', cursorChatId: 'chat-abc123' }), false, []).fork).toBe(false)
+  })
 })
 
 describe('isOpeningGesture', () => {

@@ -105,7 +105,7 @@ function AgentSlot({ session, runtime }: { readonly session: Session; readonly r
         </span>
       ) : null}
       <AgentBadge
-        agent={agent === 'opencode' ? 'opencode' : 'claude'}
+        agent={agent === 'opencode' || agent === 'cursor' ? agent : 'claude'}
         remote={runtime?.remoteControl === true}
         keepAwake={session.keepAwake === true}
       />

@@ -27,6 +27,20 @@ describe('validatePreset', () => {
     expect(validatePreset({ ...base, agent: 'shell' }).claudeArgs).toEqual([])
   })
 
+  it('accepts a cursor preset with a trimmed plain model and no args', () => {
+    expect(validatePreset({ ...base, agent: 'cursor', model: ' gpt-5 ', claudeArgs: ['--x'] })).toEqual({
+      ...base, agent: 'cursor', model: 'gpt-5', claudeArgs: []
+    })
+    expect(validatePreset({ ...base, agent: 'cursor', model: '  ' })).not.toHaveProperty('model')
+    expect(validatePreset({ ...base, agent: 'cursor' })).not.toHaveProperty('model')
+  })
+
+  it('rejects a cursor preset whose model is not a plain Cursor model name', () => {
+    expect(() => validatePreset({ ...base, agent: 'cursor', model: 'bad model&' })).toThrow(
+      'Invalid preset: model must be a plain Cursor model name'
+    )
+  })
+
   it.each([
     ['a missing id', { ...base, id: '' }],
     ['a blank name', { ...base, name: '   ' }],

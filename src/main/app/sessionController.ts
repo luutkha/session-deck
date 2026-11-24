@@ -20,6 +20,7 @@ import { createAutoStatusApplier } from '../automation/applyAutoStatus'
 import { opencodePluginHealth, isOpencodeUsageLimit, OPENCODE_PLUGIN_HEALTH_GRACE_MS } from '../opencode/health'
 import { listOpencodeSessions, pickSessionToAdopt } from '../opencode/sessions'
 import { isSessionExport, parseImportedSessionId, pickNewSessionId, remapExportIds, writeForkFile } from '../opencode/fork'
+import { isCursorChatId } from '../store/cursorValues'
 
 const MAX_FALLBACK_ATTEMPTS = 1
 /** Session names are at most 100 characters (store rule). */
@@ -177,8 +178,10 @@ export interface SessionController {
   setActiveSession(id: Id | null): void
   getActiveSessionId(): Id | null
   initializeRestoredSessions(): void
-  /** A Claude Code hook event: updates the session's activity and, on a change, its auto status. Never throws. */
+  /** A Claude Code / Cursor hook event: updates the session's activity and, on a change, its auto status. Never throws. */
   handleHookEvent(event: HookEvent): void
+  /** D81: the text of the last Cursor reply (its `afterAgentResponse` hook), or null when none arrived this run. */
+  lastCursorAnswer(id: Id): string | null
   /**
    * D79: where one-line notices go (the app's banner). The wiring sets it; notices are advisory and never errors.
    */
@@ -216,6 +219,9 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   const opencodeHealth = new Map<Id, OpencodeHealthTrack>()
   const opencodeLimitTail = new Map<Id, string>()
   const opencodeLimitSeen = new Map<Id, Set<string>>()
+  // D81: Cursor has no transcript file: its last reply arrives through the afterAgentResponse hook and lives here
+  // (dropped when the session is removed or closed for good).
+  const cursorAnswers = new Map<Id, string>()
   let noticeHandler: ((message: string) => void) | null = null
 
   function notice(message: string): void {
@@ -369,8 +375,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     if (!state) return false
 
     const session = findSession(sessionId)
-    // The "no conversation" fallback and resume args are Claude-only; OpenCode and shell sessions just stay exited.
-    if (!session || session.agent === 'opencode' || session.agent === 'shell' || !session.claudeSessionId) return false
+    // The "no conversation" fallback and resume args are Claude-only; OpenCode, Cursor and shell sessions stay exited.
+    if (!session || session.agent === 'opencode' || session.agent === 'cursor' || session.agent === 'shell' || !session.claudeSessionId) return false
 
     const outputTail = getOutputTail(pty, sessionId)
     if (
@@ -455,6 +461,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       readOpencodeUsageLimit(id, data)
       return
     }
+    // Cursor reports through its own hooks; Claude's screen parser (Remote Control, usage-limit wording) does not apply.
+    if (agent === 'cursor') return
     const signals = detectOutputSignals(data)
     if (signals.usageLimit) reportUsageLimit(id, data)
     if (signals.remoteControl && runtime.get(id)?.remoteControl !== true) {
@@ -592,13 +600,23 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
   }
 
   function ensureClaudeSessionId(session: Session): Session {
-    // The Claude `--session-id` bookkeeping never applies to OpenCode or shell sessions.
-    if (session.agent === 'opencode' || session.agent === 'shell' || session.claudeSessionId) {
+    // The Claude `--session-id` bookkeeping never applies to OpenCode, Cursor or shell sessions.
+    if (session.agent === 'opencode' || session.agent === 'cursor' || session.agent === 'shell' || session.claudeSessionId) {
       return session
     }
     const newId = randomUUID()
     store.setClaudeSessionId(session.id, newId)
     return { ...session, claudeSessionId: newId }
+  }
+
+  /** D81: stores a Cursor chat id a hook reported (never throws; a rejected id is only logged). */
+  function syncCursorChatId(session: Session, chatId: string | undefined): void {
+    if (chatId === undefined || !isCursorChatId(chatId) || session.cursorChatId === chatId) return
+    try {
+      store.setCursorChatId(session.id, chatId)
+    } catch (error) {
+      logMainError(userDataDir, `cursor chat id ${session.id}`, error)
+    }
   }
 
   /** Stores the OpenCode conversation id the plugin reported; nothing else (no activity, no auto status). */
@@ -617,6 +635,15 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     forgetTrustPrompt(sessionWithId.id)
     try {
       validateCwd(sessionWithId.cwd)
+      // D81: install/refresh the Cursor hook bridge before the process starts. A failure (a broken hooks.json, a
+      // read-only config folder) is logged and the session still starts: the hooks are a convenience, not a launch need.
+      if (sessionWithId.agent === 'cursor') {
+        try {
+          attention.prepareCursor()
+        } catch (error) {
+          logMainError(userDataDir, 'cursor hooks', error)
+        }
+      }
       const state: SessionStartState = {
         everStartedThisRun: true,
         fallbackAttempts: 0,
@@ -650,7 +677,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
 
     const sessions = store.get().sessions
     for (const session of sessions) {
-      if (session.agent === 'opencode' || session.agent === 'shell') {
+      if (session.agent === 'opencode' || session.agent === 'cursor' || session.agent === 'shell') {
         continue
       }
       if (!session.claudeSessionId) {
@@ -698,6 +725,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     store.removeSession(id)
     startState.delete(id)
     clearOpencodeHealth(id)
+    cursorAnswers.delete(id)
     if (activeId === id) {
       activeId = null
     }
@@ -860,6 +888,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       const parent = findSession(id)
       if (!parent) throw new Error(`Unknown session: ${id}`)
       if (parent.agent === 'shell') throw new Error('Shell sessions cannot be forked.')
+      // D81: Cursor has no fork/export of a conversation that we can drive yet.
+      if (parent.agent === 'cursor') throw new Error('Forking a Cursor session is not supported yet')
       if (parent.agent === 'opencode') return copyOpencodeSession(parent)
       if (parent.claudeSessionId === undefined) {
         throw new Error('Nothing to fork yet: this session has no saved conversation. Send it a prompt first.')
@@ -934,6 +964,7 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       startState.delete(id)
       forgetTrustPrompt(id)
       clearOpencodeHealth(id)
+      cursorAnswers.delete(id)
       if (pty.isRunning(id)) {
         pty.kill(id)
       }
@@ -1056,6 +1087,15 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       try {
         const session = findSession(event.sessionId)
         if (!session) return
+        // D81: a Cursor hook carries its chat id (conversation_id); its answer text is kept for Jarvis and stops here,
+        // so a reply never moves the activity, the auto status or the attention.
+        if (session.agent === 'cursor') {
+          syncCursorChatId(session, event.chatId)
+          if (event.event === 'CursorAnswer') {
+            if (typeof event.answer === 'string') cursorAnswers.set(event.sessionId, event.answer)
+            return
+          }
+        }
         // D79: any hook from the injected plugin proves it loaded.
         if (session.agent === 'opencode') noteOpencodePluginEvent(event.sessionId)
         if (event.event === 'AgentSession') {
@@ -1084,6 +1124,10 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       } catch (error) {
         logMainError(userDataDir, `hook event ${event.event}`, error)
       }
+    },
+
+    lastCursorAnswer(id: Id): string | null {
+      return cursorAnswers.get(id) ?? null
     },
 
     setNoticeHandler(handler: (message: string) => void): void {

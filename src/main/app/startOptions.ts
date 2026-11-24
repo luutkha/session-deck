@@ -4,6 +4,7 @@ import type { StartOptions } from '../pty/PtyManager'
 import type { AttentionService } from '../attention'
 import { chooseClaudeLaunch } from './claudeLaunch'
 import { OPENCODE_PLUGIN_ENV_VAR, applyConfigPatch, opencodeSupportsStandalone } from '../opencode'
+import { CURSOR_INSTALL_HINT, detectCursorCommand } from '../cursor/command'
 
 export const YOLO_FLAG = '--dangerously-skip-permissions'
 
@@ -60,6 +61,10 @@ export function buildStartOptions(
   }
   if (session.agent === 'opencode') {
     return buildOpencodeStartOptions(session, attention, extras.opencodeConfig)
+  }
+  // Cursor has no claudeSessionId: this branch must come before the Claude launch (D81).
+  if (session.agent === 'cursor') {
+    return buildCursorStartOptions(session, attention)
   }
   const chosen = chooseClaudeLaunch({ claudeSessionId: session.claudeSessionId!, everStarted, ...(forkFrom !== undefined ? { forkFrom } : {}) })
   const userArgs = session.claudeArgs ?? []
@@ -140,6 +145,36 @@ export function buildOpencodeStartOptions(
     internalArgs,
     command: 'opencode',
     env,
+    cols: INITIAL_COLS,
+    rows: INITIAL_ROWS
+  }
+}
+
+/**
+ * Builds the pty launch options for Cursor CLI (D81). `--force` is the yolo default (Cursor's alias of `--yolo`).
+ * A new session starts plain `cursor-agent --force [--model m]`; a known chat id resumes with
+ * `--resume <id>`, otherwise a fresh chat starts. The session folder is the pty cwd, so `--workspace` is not used.
+ * Throws when neither `cursor-agent` nor `agent` is on PATH, with the install command for this platform.
+ */
+export function buildCursorStartOptions(session: Session, attention: AttentionService): StartOptions {
+  const command = detectCursorCommand()
+  if (command === null) {
+    throw new Error(`Cursor CLI not found. ${CURSOR_INSTALL_HINT}`)
+  }
+  const internalArgs = [
+    '--force',
+    ...(typeof session.model === 'string' && session.model.length > 0 ? ['--model', session.model] : []),
+    ...(typeof session.cursorChatId === 'string' && session.cursorChatId.length > 0
+      ? ['--resume', session.cursorChatId]
+      : [])
+  ]
+  return {
+    sessionId: session.id,
+    cwd: session.cwd,
+    claudeArgs: [],
+    internalArgs,
+    command,
+    env: attention.envFor(session.id),
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS
   }

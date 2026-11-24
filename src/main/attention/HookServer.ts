@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 import type { HookEvent } from '../../shared/types'
 import { TIMELINE_PROMPT_MAX } from '../../shared/types'
 import { isOpencodeSessionId } from '../opencode/values'
+import { isCursorChatId } from '../store/cursorValues'
 import { isRecord } from '../../shared/guards'
 
 export interface HookServer {
@@ -25,6 +26,8 @@ const MAX_STATUSLINE_BODY_SIZE = 65536
 const MAX_HOOK_BODY_SIZE = 65536
 const MAX_HOOK_MESSAGE_LENGTH = 300
 const MAX_PROC_LENGTH = 64
+/** Cap of a Cursor reply stored for `get_last_answer` (Jarvis): long enough for a real answer, bounded for memory. */
+export const MAX_CURSOR_ANSWER_LENGTH = 20000
 const STATUSLINE_PATH_RE = /^\/statusline\/([^/?#]+)$/
 const HOOK_PATH_RE = /^\/hook\/([^/?#]+)\/([^/?#]+)$/
 const WORKER_PATH_RE = /^\/worker\/([^/?#]+)\/event$/
@@ -36,7 +39,9 @@ export type HookEventName = (typeof HOOK_EVENT_NAMES)[number]
 
 /** Event names the /hook routes additionally accept: 'AgentSession' comes from the OpenCode plugin, not Claude. */
 export const AGENT_SESSION_EVENT = 'AgentSession'
-export const ROUTE_EVENT_NAMES = ['Notification', 'Stop', 'UserPromptSubmit', AGENT_SESSION_EVENT] as const
+/** D81: Cursor's `afterAgentResponse` hook (the agent's reply), posted by our Cursor hook script. */
+export const CURSOR_ANSWER_EVENT = 'CursorAnswer'
+export const ROUTE_EVENT_NAMES = ['Notification', 'Stop', 'UserPromptSubmit', AGENT_SESSION_EVENT, CURSOR_ANSWER_EVENT] as const
 export type RouteEventName = typeof ROUTE_EVENT_NAMES[number]
 
 function isHookEventName(value: unknown): value is RouteEventName {
@@ -120,6 +125,25 @@ export function promptFromHookBody(body: string): string | undefined {
 export function agentSessionIdField(parsed: Record<string, unknown> | null): string | undefined {
   if (parsed === null) return undefined
   return isOpencodeSessionId(parsed.session_id) ? parsed.session_id : undefined
+}
+
+/**
+ * D81: the `conversation_id` of a Cursor hook body (the chat id `cursor-agent --resume` takes). Undefined for a
+ * missing or malformed id, which keeps a foreign hook payload from storing garbage on the session.
+ */
+export function chatIdField(parsed: Record<string, unknown> | null): string | undefined {
+  if (parsed === null) return undefined
+  return isCursorChatId(parsed.conversation_id) ? parsed.conversation_id : undefined
+}
+
+/**
+ * D81: the `text` of a Cursor `afterAgentResponse` body (the agent's reply). Trimmed and capped at
+ * MAX_CURSOR_ANSWER_LENGTH characters; undefined for a missing/empty field.
+ */
+export function cursorAnswerField(parsed: Record<string, unknown> | null): string | undefined {
+  if (parsed === null || typeof parsed.text !== 'string') return undefined
+  const trimmed = parsed.text.trim()
+  return trimmed.length === 0 ? undefined : trimmed.slice(0, MAX_CURSOR_ANSWER_LENGTH)
 }
 
 function parseBody(req: IncomingMessage, limit: number): Promise<string> {
@@ -296,12 +320,17 @@ export function createHookServer(options: CreateHookServerOptions): HookServer {
       return
     }
     const prompt = event === 'UserPromptSubmit' ? promptField(parsed) : undefined
+    // D81: every accepted route may carry Cursor's conversation_id; only CursorAnswer carries the reply text.
+    const chatId = chatIdField(parsed)
+    const answer = event === CURSOR_ANSWER_EVENT ? cursorAnswerField(parsed) : undefined
     onEvent({
       sessionId,
       event,
       ...(message !== undefined ? { message } : {}),
       ...(prompt !== undefined ? { prompt } : {}),
-      ...(proc !== undefined ? { proc } : {})
+      ...(proc !== undefined ? { proc } : {}),
+      ...(chatId !== undefined ? { chatId } : {}),
+      ...(answer !== undefined ? { answer } : {})
     })
     sendResponse(res, 204)
   }

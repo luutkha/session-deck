@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import { AgentPicker } from '../components/AgentPicker'
+import { AgentPicker, JARVIS_AGENT_OPTIONS } from '../components/AgentPicker'
 import { MAX_OPENCODE_MODEL_LENGTH, validateOpenCodeModel } from '../Sidebar/dialogLogic'
 import { errorMessage } from '../../shared/guards'
 import { OpencodeProbeRow } from './OpencodeProbeRow'
@@ -177,7 +177,8 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Empty uses OpenCode&apos;s own default model. Used only for OpenCode sessions.
+            Empty uses OpenCode&apos;s own default model. Used only for OpenCode sessions; Cursor sessions use the
+            model you type in their dialog.
           </p>
         )}
       </div>
@@ -201,6 +202,7 @@ export function AgentsSection({ settings, actions }: AgentsSectionProps): ReactE
             if (agent === 'claude' || agent === 'opencode') void applyPatch({ jarvis: { agent } })
           }}
           ariaLabel="Jarvis engine"
+          options={JARVIS_AGENT_OPTIONS}
         />
         <p className="text-xs text-muted-foreground">
           Which agent runs Jarvis. OpenCode allows cheaper or free models. Changing it starts a new Jarvis conversation

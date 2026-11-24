@@ -46,6 +46,7 @@ import { createLayoutTools } from './layoutTools'
 import { createPanelTools } from './panelTools'
 import type { CodeGitOps } from '../app/codeGitOps'
 import { sessionModelProblem } from '../app/sessionController'
+import { isCursorModel } from '../store/cursorValues'
 
 /** A session counts as ready for typing once it has run this long and its screen has been quiet this long. */
 export const READY_MIN_RUN_MS = 3000
@@ -482,16 +483,16 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'get_last_answer',
-      description: "Returns the session's reply to its last prompt as text, from the saved conversation (complete, not cut by the screen). For shell sessions (and OpenCode ones without a saved conversation) it falls back to the screen.",
+      description: "Returns the session's reply to its last prompt as text, from the saved conversation (complete, not cut by the screen). Cursor replies come from the last reply its hook reported. For shell sessions (and OpenCode ones without a saved conversation) it falls back to the screen.",
       inputSchema: schema({ session: SESSION_PROP, max_chars: { type: 'integer', description: `Default ${ANSWER_DEFAULT_CHARS}, max ${ANSWER_MAX_CHARS}. A longer answer keeps its end.` } }, ['session']),
       run: async (args) => {
         const session = resolveSession(deps.getData(), args.session)
         const max = optionalInt(args, 'max_chars', ANSWER_DEFAULT_CHARS, ANSWER_MAX_CHARS)
         const state = deps.getRuntime(session.id)
-        // D79: an OpenCode session with a conversation id answers from `opencode session export` (the dep reads it,
-        // cached); without one there is nothing saved, so the screen below is the only source, as before.
+        // D79/D81: an OpenCode session with a conversation id answers from `opencode session export`, a Cursor session
+        // from its in-memory last reply (both through deps.lastAnswer); without one the screen below is the only source.
         const agent = agentOf(session)
-        const readable = agent === 'claude' || (agent === 'opencode' && session.opencodeSessionId !== undefined)
+        const readable = agent === 'claude' || agent === 'cursor' || (agent === 'opencode' && session.opencodeSessionId !== undefined)
         const answer = readable ? await deps.lastAnswer(session) : null
         if (answer === null || answer.trim().length === 0) {
           const screen = await deps.screenText(session.id, SCREEN_LINES_DEFAULT)
@@ -561,8 +562,8 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
       inputSchema: schema({
         folder: { type: 'string', description: 'Full folder path. Optional when a preset is given.' },
         name: { type: 'string', description: 'Session name (default: the folder name).' },
-        agent: { type: 'string', enum: ['claude', 'opencode', 'shell'], description: 'Default claude (or the preset\'s).' },
-        model: { type: 'string', description: 'OpenCode only: provider/model.' },
+        agent: { type: 'string', enum: ['claude', 'opencode', 'cursor', 'shell'], description: 'Default claude (or the preset\'s).' },
+        model: { type: 'string', description: 'OpenCode (provider/model) or Cursor (a plain name like gpt-5) only.' },
         group: { type: 'string', description: 'Existing group name.' },
         status: { type: 'string', description: 'Existing status name.' },
         preset: { type: 'string', description: 'Saved preset name: its folder, agent, model, args, group and status are used unless given here.' },
@@ -581,7 +582,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         if (folderArg === undefined && preset === undefined) throw new Error('"folder" is required (or give a preset).')
         const cwd = folderArg !== undefined ? resolveFolder(folderArg) : preset!.cwd
         const agentArg = optionalText(args, 'agent')
-        if (agentArg !== undefined && !['claude', 'opencode', 'shell'].includes(agentArg)) throw new Error('"agent" must be claude, opencode or shell.')
+        if (agentArg !== undefined && !['claude', 'opencode', 'cursor', 'shell'].includes(agentArg)) throw new Error('"agent" must be claude, opencode, cursor or shell.')
         const agent = (agentArg ?? preset?.agent ?? 'claude') as AgentKind
         const groupName = optionalText(args, 'group')
         const statusName = optionalText(args, 'status')
@@ -589,7 +590,12 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const statusId = statusName !== undefined ? resolveStatus(data, statusName).id : preset?.statusId && data.statuses.some((s) => s.id === preset.statusId) ? preset.statusId : null
         const name = optionalText(args, 'name')
         if (name !== undefined && name.trim().length > SESSION_NAME_MAX) throw new Error(`The name is too long (max ${SESSION_NAME_MAX}).`)
-        const model = agent === 'opencode' ? optionalText(args, 'model') ?? preset?.model : undefined
+        const model = agent === 'opencode' || agent === 'cursor'
+          ? optionalText(args, 'model') ?? (preset?.agent === agent ? preset.model : undefined)
+          : undefined
+        if (agent === 'cursor' && model !== undefined && !isCursorModel(model.trim())) {
+          throw new Error(`"${model}" is not a Cursor model: use a plain name like gpt-5 or sonnet-4-thinking.`)
+        }
         const baseArgs = agent === 'claude' ? [...(preset?.agent === 'claude' ? preset.claudeArgs : [])] : []
         const remote = optionalBool(args, 'remote_control')
         const claudeArgs = remote === true && !baseArgs.includes('--remote-control') ? [...baseArgs, '--remote-control']
@@ -631,7 +637,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'broadcast_prompt',
-      description: 'Sends the same prompt to several sessions (same rules as send_prompt when=auto). Give session names/ids, or all_running=true for every running Claude/OpenCode session.',
+      description: 'Sends the same prompt to several sessions (same rules as send_prompt when=auto). Give session names/ids, or all_running=true for every running Claude/OpenCode/Cursor session.',
       inputSchema: schema({
         sessions: { type: 'array', items: { type: 'string' }, description: 'Session names or ids.' },
         all_running: { type: 'boolean' },
@@ -833,8 +839,8 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         existing_branch: { type: 'string', description: 'Open this existing local branch instead of creating one.' },
         repo_folder: { type: 'boolean', description: 'Use the repository folder itself.' },
         base_branch: { type: 'string', description: 'Local branch to start from (default: the branch checked out in the repo).' },
-        agent: { type: 'string', enum: ['claude', 'opencode', 'shell'], description: 'Default claude.' },
-        model: { type: 'string', description: 'OpenCode only: provider/model.' },
+        agent: { type: 'string', enum: ['claude', 'opencode', 'cursor', 'shell'], description: 'Default claude.' },
+        model: { type: 'string', description: 'OpenCode (provider/model) or Cursor (a plain name) only.' },
         prompt: { type: 'string', description: 'First prompt, typed in when the session is ready.' },
         open: { type: 'boolean', description: 'Show the new session (default false).' }
       }, ['repo']),
@@ -847,7 +853,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const name = (optionalText(args, 'name') ?? (repoFolder ? repo.name : existing) ?? '').trim()
         if (name.length === 0) throw new Error('"name" is required for a new branch.')
         const agentArg = optionalText(args, 'agent') ?? 'claude'
-        if (!['claude', 'opencode', 'shell'].includes(agentArg)) throw new Error('"agent" must be claude, opencode or shell.')
+        if (!['claude', 'opencode', 'cursor', 'shell'].includes(agentArg)) throw new Error('"agent" must be claude, opencode, cursor or shell.')
         const branches = await deps.code.branches(repo.id)
         if (existing !== undefined && !branches.branches.includes(existing)) throw new Error(`No local branch "${existing}" in "${repo.name}". Branches: ${branches.branches.join(', ')}`)
         const busy = existing === undefined ? undefined : branches.checkedOut?.find((c) => c.branch === existing)
@@ -856,7 +862,10 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const base = optionalText(args, 'base_branch')?.trim() ?? defaultBase
         if (base === null) throw new Error(`"${repo.name}" has no branch checked out (detached HEAD). Say which base_branch to use: ${branches.branches.join(', ')}`)
         if (!branches.branches.includes(base)) throw new Error(`No local branch "${base}" in "${repo.name}". Branches: ${branches.branches.join(', ')}`)
-        const model = agentArg === 'opencode' ? optionalText(args, 'model') : undefined
+        const model = agentArg === 'opencode' || agentArg === 'cursor' ? optionalText(args, 'model') : undefined
+        if (agentArg === 'cursor' && model !== undefined && !isCursorModel(model.trim())) {
+          throw new Error(`"${model}" is not a Cursor model: use a plain name like gpt-5 or sonnet-4-thinking.`)
+        }
         const { worktree, session } = await deps.code.createWorktree({
           repoId: repo.id, name, baseBranch: base, agent: agentArg as AgentKind,
           ...(repoFolder ? { source: 'main' as const } : existing !== undefined ? { source: 'existing' as const, branch: existing } : {}),

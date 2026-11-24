@@ -17,6 +17,8 @@ import { writeSettingsFile } from './claudeSettings'
 import { writeOpencodePlugin, opencodePluginEnv, OPENCODE_PLUGIN_ENV_VAR } from '../opencode'
 import type { OpencodePermissionPolicy } from '../opencode/pluginEnv'
 import { writeWorkerPlugin, workerPluginEnv } from '../workers/workerPluginEnv'
+import { writeCursorHookScript } from '../cursor/hookScript'
+import { cursorConfigDir, installCursorHooks } from '../cursor/hooksFile'
 import { isRecord } from '../../shared/guards'
 
 export interface AttentionServiceDeps {
@@ -59,6 +61,11 @@ export interface AttentionService {
   opencodeEnv(permissionPolicy?: OpencodePermissionPolicy): Record<string, string>
   /** Env entries for a Claude terminal so OpenCode processes it starts report to the worker tabs. Throws when not started. */
   workerEnv(): Record<string, string>
+  /**
+   * D81: installs the Cursor hook bridge (script in settingsDir, entries merged into <cursorConfigDir>/hooks.json).
+   * Idempotent: our old entries are replaced, foreign ones kept. Throws when not started.
+   */
+  prepareCursor(): void
   /** Where the local hook server listens and its token (diagnostics and tests). Throws when not started. */
   endpoint(): { readonly port: number; readonly token: string }
   noteOutput(id: string): void
@@ -97,6 +104,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
   let settingsFilePath: string | null = null
   let pluginFilePath: string | null = null
   let workerPluginPath: string | null = null
+  let cursorScriptPath: string | null = null
   let port: number | null = null
   let started = false
   let reminderTimer: ReturnType<typeof setInterval> | null = null
@@ -201,6 +209,7 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
       settingsFilePath = null
       pluginFilePath = null
       workerPluginPath = null
+      cursorScriptPath = null
       started = false
     },
 
@@ -236,6 +245,15 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
         throw new Error('AttentionService not started')
       }
       return workerPluginEnv(workerPluginPath)
+    },
+
+    prepareCursor(): void {
+      if (!started) {
+        throw new Error('AttentionService not started')
+      }
+      const scriptPath = cursorScriptPath ?? writeCursorHookScript(settingsDir)
+      cursorScriptPath = scriptPath
+      installCursorHooks({ configDir: cursorConfigDir(), scriptPath })
     },
 
     endpoint(): { readonly port: number; readonly token: string } {

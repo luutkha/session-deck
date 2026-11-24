@@ -624,3 +624,20 @@ describe('SessionStore.updateSettings', () => {
     expect(store.getSettings()).toEqual(DEFAULT_APP_SETTINGS)
   })
 })
+
+describe('settings: cursor agent (D81)', () => {
+  it('accepts cursor as agents.defaultAgent, stored and patched', () => {
+    const parsed = parseStoredSettings({ agents: { defaultAgent: 'cursor' } }, [])
+    expect(parsed?.agents.defaultAgent).toBe('cursor')
+
+    const next = updateSettings(baseData(), { agents: { defaultAgent: 'cursor' } })
+    expect(next.settings?.agents.defaultAgent).toBe('cursor')
+  })
+
+  it('rejects cursor as jarvis.agent: Jarvis stays claude or opencode', () => {
+    expect(parseStoredSettings({ jarvis: { agent: 'cursor' } }, [])).toBeUndefined()
+    expect(() => updateSettings(baseData(), { jarvis: { agent: 'cursor' } } as never)).toThrow(
+      'Invalid settings: jarvis.agent must be "claude" or "opencode"'
+    )
+  })
+})

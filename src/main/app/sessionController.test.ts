@@ -220,6 +220,7 @@ function createFakeAttention(): AttentionService {
     workerEnv(): Record<string, string> {
       return { OPENCODE_CONFIG_CONTENT: '{"plugin":[]}' }
     },
+    prepareCursor(): void {},
     endpoint(): { port: number; token: string } {
       return { port, token }
     },

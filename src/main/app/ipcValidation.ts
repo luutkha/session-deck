@@ -3,6 +3,7 @@ import type { AgentKind, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessi
 import { buildLaunch } from '../pty/launch'
 import { MAX_NOTES_LENGTH, validateChecklist, validatePreset, validateQueue } from '../store'
 import { MAX_OPENCODE_MODEL_LENGTH, OPENCODE_MODEL_RE } from '../opencode/values'
+import { isCursorModel } from '../store/cursorValues'
 import { isGpuPref } from './gpuMode'
 import { errorMessage } from '../../shared/guards'
 
@@ -146,9 +147,13 @@ export function asCreateSessionInput(raw: unknown): CreateSessionInput {
   const statusId = obj.statusId !== undefined && obj.statusId !== null ? assertId(obj.statusId, 'statusId') : null
   const claudeArgs = obj.claudeArgs !== undefined ? assertClaudeArgs(obj.claudeArgs) : undefined
   const agent = obj.agent !== undefined ? assertAgentKind(obj.agent, 'createSession input') : undefined
-  // The model only applies to OpenCode sessions; for claude and shell sessions it is ignored.
+  // The model only applies to OpenCode and Cursor sessions; for claude and shell sessions it is ignored.
   const model =
-    agent === 'opencode' && obj.model !== undefined ? assertOpencodeModel(obj.model, 'createSession input') : undefined
+    agent === 'cursor' && obj.model !== undefined
+      ? assertCursorModel(obj.model, 'createSession input')
+      : agent === 'opencode' && obj.model !== undefined
+        ? assertOpencodeModel(obj.model, 'createSession input')
+        : undefined
   const opencodePermissions =
     agent === 'opencode' && obj.opencodePermissions !== undefined
       ? assertOpencodePermissions(obj.opencodePermissions, 'createSession input')
@@ -224,9 +229,13 @@ export function asCreateWorktreeInput(raw: unknown): CreateWorktreeInput {
   // D57: an existing branch has the same rules as a base branch (a plain local branch name).
   const branch = source === 'existing' ? assertBaseBranch(obj.branch) : undefined
   const agent = assertAgentKind(obj.agent, 'createWorktree input')
-  // The model only applies to OpenCode; for other agents it is dropped.
+  // The model only applies to OpenCode and Cursor; for other agents it is dropped.
   const model =
-    agent === 'opencode' && obj.model !== undefined ? assertOpencodeModel(obj.model, 'createWorktree input') : undefined
+    agent === 'cursor' && obj.model !== undefined
+      ? assertCursorModel(obj.model, 'createWorktree input')
+      : agent === 'opencode' && obj.model !== undefined
+        ? assertOpencodeModel(obj.model, 'createWorktree input')
+        : undefined
 
   return {
     repoId,
@@ -240,10 +249,22 @@ export function asCreateWorktreeInput(raw: unknown): CreateWorktreeInput {
 }
 
 function assertAgentKind(raw: unknown, context: string): AgentKind {
-  if (raw !== 'claude' && raw !== 'opencode' && raw !== 'shell') {
-    throw new Error(`Invalid ${context}: agent must be "claude", "opencode" or "shell"`)
+  if (raw !== 'claude' && raw !== 'opencode' && raw !== 'cursor' && raw !== 'shell') {
+    throw new Error(`Invalid ${context}: agent must be "claude", "opencode", "cursor" or "shell"`)
   }
   return raw
+}
+
+/** A plain Cursor model name (`gpt-5`, `sonnet-4-thinking`); empty = the Cursor CLI's own default. */
+function assertCursorModel(raw: unknown, context: string): string {
+  if (typeof raw !== 'string') {
+    throw new Error(`Invalid ${context}: model must be a plain Cursor model name`)
+  }
+  const trimmed = raw.trim()
+  if (trimmed.length > 0 && !isCursorModel(trimmed)) {
+    throw new Error(`Invalid ${context}: model must be a plain Cursor model name`)
+  }
+  return trimmed
 }
 
 function assertOpencodeModel(raw: unknown, context: string): string {
@@ -334,7 +355,10 @@ export function asQueue(raw: unknown): QueuedPrompt[] {
 export function asPreset(raw: unknown): SessionPreset {
   const preset = validatePreset(raw)
   assertSafeClaudeArgs(preset.claudeArgs)
-  if (preset.model !== undefined) assertOpencodeModel(preset.model, 'preset')
+  if (preset.model !== undefined) {
+    if (preset.agent === 'cursor') assertCursorModel(preset.model, 'preset')
+    else assertOpencodeModel(preset.model, 'preset')
+  }
   return preset
 }
 

@@ -13,7 +13,7 @@ export interface TabModel {
   readonly sleeping?: boolean
   /** What the agent is doing right now (working / needs-input / finished); absent = unknown. */
   readonly activity?: SessionActivity | null
-  /** Which agent the session runs; present only for opencode (claude tabs stay unmarked). */
+  /** Which agent the session runs; present only for opencode or cursor (claude tabs stay unmarked). */
   readonly agent?: AgentKind
   /** True while Remote Control is active for the running session. */
   readonly remote?: boolean
@@ -111,7 +111,7 @@ export function buildTabModels(
       ...(state?.activity === undefined || state.activity === null ? {} : { activity: state.activity }),
       ...(sleeping ? { sleeping: true } : {}),
       ...(state?.remoteControl === true ? { remote: true } : {}),
-      ...(session.agent === 'opencode' ? { agent: 'opencode' as const } : {})
+      ...(session.agent === 'opencode' || session.agent === 'cursor' ? { agent: session.agent } : {})
     })
   }
   return models

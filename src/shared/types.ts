@@ -34,7 +34,7 @@ export interface Group {
 export type SessionRun = 'running' | 'exited'
 
 /** Which coding agent a session runs. Absent on a stored session = 'claude'. */
-export type AgentKind = 'claude' | 'opencode' | 'shell'
+export type AgentKind = 'claude' | 'opencode' | 'cursor' | 'shell'
 
 /**
  * OpenCode tool-permission policy (D79, D10): 'yolo' merges `permission: {"*": "allow"}` into the session's own
@@ -60,6 +60,8 @@ export interface Session {
   readonly agent?: AgentKind
   /** OpenCode conversation id (ses_...), reported by the injected plugin after the first start; resume uses `opencode -s <id>`. */
   readonly opencodeSessionId?: string
+  /** Cursor only (D81): the chat id (`conversation_id` of Cursor's hook payloads), learned after the first turn; resume uses `agent --resume <id>`. */
+  readonly cursorChatId?: string
   /** OpenCode only: "provider/model", injected via the config content `model` key (the TUI CLI has no --model flag). Absent or empty = OpenCode's own default. */
   readonly model?: string
   /** OpenCode only (D79): how tool permissions are handled. Absent = 'yolo' (D10 default); 'ask' keeps the user's own OpenCode rules. */
@@ -511,13 +513,17 @@ export type WindowRole = 'main' | 'code'
 
 export interface HookEvent {
   readonly sessionId: Id
-  readonly event: 'Notification' | 'Stop' | 'UserPromptSubmit' | 'AgentSession'
+  readonly event: 'Notification' | 'Stop' | 'UserPromptSubmit' | 'AgentSession' | 'CursorAnswer'
   /** Notification text; for 'AgentSession' it is the OpenCode session id the plugin reports. */
   readonly message?: string
   /** UserPromptSubmit only: the start of the user's prompt (trimmed, max TIMELINE_PROMPT_MAX chars). Absent = unknown. */
   readonly prompt?: string
   /** Per-process id the OpenCode plugins report (the owner process vs its child workers). Absent for Claude hooks. */
   readonly proc?: string
+  /** Cursor hooks only (D81): the `conversation_id` of the hook payload (the chat id `agent --resume` takes). */
+  readonly chatId?: string
+  /** 'CursorAnswer' only: the agent's final reply text (Cursor's `afterAgentResponse` hook), capped. */
+  readonly answer?: string
 }
 
 export const DEFAULT_STATUSES: readonly StatusDef[] = [

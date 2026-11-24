@@ -47,6 +47,7 @@ import {
   reorderGroups as reorderGroupsReducer,
   reorderStatuses as reorderStatusesReducer,
   setClaudeSessionId as setClaudeSessionIdReducer,
+  setCursorChatId as setCursorChatIdReducer,
   setOpencodeSessionId as setOpencodeSessionIdReducer,
   setSessionModel as setSessionModelReducer,
   setKeepAwake as setKeepAwakeReducer,
@@ -201,6 +202,15 @@ export class SessionStore {
   setOpencodeSessionId(id: Id, opencodeSessionId: string): void {
     if (this.data.sessions.find((session) => session.id === id)?.opencodeSessionId === opencodeSessionId) return
     const next = setOpencodeSessionIdReducer(this.data, id, opencodeSessionId)
+    this.data = next
+    this.saver.schedule(next)
+    this.emit(next)
+  }
+
+  /** Stores the Cursor chat id a hook reported (persisted). No-op when identical. */
+  setCursorChatId(id: Id, chatId: string): void {
+    if (this.data.sessions.find((session) => session.id === id)?.cursorChatId === chatId) return
+    const next = setCursorChatIdReducer(this.data, id, chatId)
     this.data = next
     this.saver.schedule(next)
     this.emit(next)

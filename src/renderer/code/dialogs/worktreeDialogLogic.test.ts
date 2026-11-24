@@ -99,6 +99,7 @@ describe('sessionNamePlaceholder', () => {
   it('names the agent the session will run', () => {
     expect(sessionNamePlaceholder('claude')).toBe('Claude Code')
     expect(sessionNamePlaceholder('opencode')).toBe('OpenCode')
+    expect(sessionNamePlaceholder('cursor')).toBe('Cursor')
     expect(sessionNamePlaceholder('shell')).toBe('Shell')
   })
 })
@@ -126,6 +127,15 @@ describe('worktreeSessionInput', () => {
       model: 'opencode/deepseek-v4'
     })
   })
+
+  it('passes the Cursor model through', () => {
+    expect(worktreeSessionInput(worktree, 'cursor', 'gpt-5')).toEqual({
+      cwd: worktree.path,
+      worktreeId: 'wt-1',
+      agent: 'cursor',
+      model: 'gpt-5'
+    })
+  })
 })
 
 describe('checkModel', () => {
@@ -148,6 +158,23 @@ describe('checkModel', () => {
   it('rejects an OpenCode model with unsupported characters', () => {
     const result = checkModel('opencode', 'bad model!')
     expect(result.ok).toBe(false)
+  })
+
+  it('leaves the model out for Cursor when it is empty', () => {
+    expect(checkModel('cursor', '   ')).toEqual({ ok: true, model: undefined })
+  })
+
+  it('passes a valid Cursor model through trimmed', () => {
+    expect(checkModel('cursor', ' gpt-5 ')).toEqual({ ok: true, model: 'gpt-5' })
+  })
+
+  it('rejects a Cursor model with unsupported characters', () => {
+    expect(checkModel('cursor', 'bad model!').ok).toBe(false)
+  })
+
+  it('keeps OpenCode accepting a model Cursor rejects', () => {
+    expect(checkModel('opencode', 'a+b')).toEqual({ ok: true, model: 'a+b' })
+    expect(checkModel('cursor', 'a+b').ok).toBe(false)
   })
 })
 

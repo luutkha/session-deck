@@ -423,6 +423,19 @@ describe('jarvis tools', () => {
     expect(await call('get_last_answer', { session: 'OC Agent' })).toBe('Last reply of "OC Agent":\nDeploy finished on port 8080')
   })
 
+  it('returns a Cursor session\'s last reply from the hook answer (D81)', async () => {
+    const { call, answers } = setup([session('c', 'Cursor Agent', { agent: 'cursor', cursorChatId: 'chat_12345678' })], [running('c', { activity: 'finished' })])
+    answers.set('c', 'All 42 tests passed.')
+    expect(await call('get_last_answer', { session: 'Cursor Agent' })).toBe('Last reply of "Cursor Agent":\nAll 42 tests passed.')
+  })
+
+  it('accepts a Cursor model when creating a session (D81)', async () => {
+    const { call, controller } = setup([])
+    await call('create_session', { folder: tmpdir(), name: 'cur', agent: 'cursor', model: 'gpt-5' })
+    expect(controller.createSession).toHaveBeenCalledWith(expect.objectContaining({ agent: 'cursor', model: 'gpt-5' }))
+    await expect(call('create_session', { folder: tmpdir(), name: 'bad', agent: 'cursor', model: 'not a model!' })).rejects.toThrow('not a Cursor model')
+  })
+
   it('falls back to the screen for an OpenCode session without a conversation id (D79)', async () => {
     const { call } = setup([session('o', 'OC Agent', { agent: 'opencode' })], [running('o')])
     const text = await call('get_last_answer', { session: 'OC Agent' })

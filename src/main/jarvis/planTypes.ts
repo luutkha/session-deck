@@ -18,7 +18,7 @@ export type PlanStatus = 'running' | 'done' | 'failed' | 'cancelled'
 /** Where a step runs: an existing session (name or id), or a new one the plan creates. */
 export type PlanStepTarget =
   | { readonly kind: 'existing'; readonly session: string }
-  | { readonly kind: 'new'; readonly name: string; readonly cwd?: string; readonly agent?: 'claude' | 'opencode'; readonly model?: string }
+  | { readonly kind: 'new'; readonly name: string; readonly cwd?: string; readonly agent?: 'claude' | 'opencode' | 'cursor'; readonly model?: string }
 
 export interface PlanStepInput {
   /** Short id other steps refer to in dependsOn and {{id}} (letters, digits, - and _; max 20). */

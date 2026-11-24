@@ -7,6 +7,7 @@ import { validateChecklist, validateNotes, validateQueue } from './sessionNotes'
 import { parseStoredSettings } from './settings'
 import { hasUnknownWorktreeRef, parseRepos, parseWorktrees } from './codePersistence'
 import { isOpencodeSessionId, isOpencodeModel } from '../opencode/values'
+import { isCursorChatId, isCursorModel } from './cursorValues'
 import { parsePresets } from './presets'
 import { errorMessage, isRecord } from '../../shared/guards'
 
@@ -81,7 +82,7 @@ function parseSession(raw: unknown, index: number): Session {
   }
 
   // Agent fields (absent on every session saved before OpenCode support = a claude session).
-  const opencode = parseAgentFields(raw, index)
+  const agentFields = parseAgentFields(raw, index)
   // Notes and checklist are optional extras: an invalid value is dropped, never failing the whole file.
   const notes = parseOptionalNotes(raw.notes)
   const checklist = parseOptionalChecklist(raw.checklist)
@@ -99,10 +100,11 @@ function parseSession(raw: unknown, index: number): Session {
     ...(raw.claudeSessionId !== undefined
       ? { claudeSessionId: raw.claudeSessionId as string }
       : {}),
-    ...(opencode.agent ? { agent: opencode.agent } : {}),
-    ...(opencode.opencodeSessionId ? { opencodeSessionId: opencode.opencodeSessionId } : {}),
-    ...(opencode.model ? { model: opencode.model } : {}),
-    ...(opencode.opencodePermissions ? { opencodePermissions: opencode.opencodePermissions } : {}),
+    ...(agentFields.agent ? { agent: agentFields.agent } : {}),
+    ...(agentFields.opencodeSessionId ? { opencodeSessionId: agentFields.opencodeSessionId } : {}),
+    ...(agentFields.cursorChatId ? { cursorChatId: agentFields.cursorChatId } : {}),
+    ...(agentFields.model ? { model: agentFields.model } : {}),
+    ...(agentFields.opencodePermissions ? { opencodePermissions: agentFields.opencodePermissions } : {}),
     ...(raw.closedAt !== undefined ? { closedAt: raw.closedAt as number } : {}),
     ...(raw.keepAwake === true ? { keepAwake: true } : {}),
     ...(notes !== undefined ? { notes } : {}),
@@ -120,29 +122,56 @@ function parseSession(raw: unknown, index: number): Session {
 }
 
 interface AgentFields {
-  readonly agent: 'opencode' | 'shell' | undefined
+  readonly agent: 'opencode' | 'cursor' | 'shell' | undefined
   readonly opencodeSessionId: string | undefined
+  readonly cursorChatId: string | undefined
   readonly model: string | undefined
   readonly opencodePermissions: 'yolo' | 'ask' | undefined
 }
 
-const NO_AGENT_FIELDS: AgentFields = { agent: undefined, opencodeSessionId: undefined, model: undefined, opencodePermissions: undefined }
+const NO_AGENT_FIELDS: AgentFields = {
+  agent: undefined,
+  opencodeSessionId: undefined,
+  cursorChatId: undefined,
+  model: undefined,
+  opencodePermissions: undefined
+}
 
 /**
  * The optional agent fields of one session. Absent = a claude session (no agent field stored). An invalid
  * present value fails the file like an invalid claudeSessionId would. A shell session stores only its agent.
- * Other fields are only read for opencode sessions; an empty stored model means "OpenCode's own default".
+ * Other fields are only read for opencode or cursor sessions; an empty stored model means the agent's own default.
  */
 function parseAgentFields(raw: Record<string, unknown>, index: number): AgentFields {
   const agent = raw.agent
   if (agent === undefined) {
     return NO_AGENT_FIELDS
   }
-  if (agent !== 'claude' && agent !== 'opencode' && agent !== 'shell') {
-    throw new Error(`Invalid store: sessions[${index}].agent must be "claude", "opencode" or "shell"`)
+  if (agent !== 'claude' && agent !== 'opencode' && agent !== 'cursor' && agent !== 'shell') {
+    throw new Error(`Invalid store: sessions[${index}].agent must be "claude", "opencode", "cursor" or "shell"`)
   }
   if (agent === 'shell') {
-    return { agent: 'shell', opencodeSessionId: undefined, model: undefined, opencodePermissions: undefined }
+    return { agent: 'shell', opencodeSessionId: undefined, cursorChatId: undefined, model: undefined, opencodePermissions: undefined }
+  }
+  if (agent === 'cursor') {
+    let cursorChatId: string | undefined
+    if (raw.cursorChatId !== undefined) {
+      if (!isCursorChatId(raw.cursorChatId)) {
+        throw new Error(`Invalid store: sessions[${index}].cursorChatId`)
+      }
+      cursorChatId = raw.cursorChatId
+    }
+
+    let model: string | undefined
+    if (raw.model !== undefined) {
+      if (!isCursorModel(raw.model)) {
+        throw new Error(`Invalid store: sessions[${index}].model`)
+      }
+      model = raw.model
+    }
+
+    // Cursor sessions never carry OpenCode fields.
+    return { agent: 'cursor', opencodeSessionId: undefined, cursorChatId, model, opencodePermissions: undefined }
   }
   if (agent !== 'opencode') {
     return NO_AGENT_FIELDS
@@ -168,7 +197,7 @@ function parseAgentFields(raw: Record<string, unknown>, index: number): AgentFie
   const opencodePermissions =
     raw.opencodePermissions === 'yolo' || raw.opencodePermissions === 'ask' ? raw.opencodePermissions : undefined
 
-  return { agent: 'opencode', opencodeSessionId, model, opencodePermissions }
+  return { agent: 'opencode', opencodeSessionId, cursorChatId: undefined, model, opencodePermissions }
 }
 
 /** Valid notes are kept; invalid notes and the empty string yield undefined (field absent). */

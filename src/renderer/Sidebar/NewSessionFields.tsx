@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { AgentPicker } from '../components/AgentPicker'
 import type { AgentKind, Group, StatusDef } from '../../shared/types'
-import { defaultNameFromFolder, MAX_OPENCODE_MODEL_LENGTH } from './dialogLogic'
+import { defaultNameFromFolder, MAX_CURSOR_MODEL_LENGTH, MAX_OPENCODE_MODEL_LENGTH } from './dialogLogic'
 
 /** Internal choice values. The empty string means "no value" in dialog state. */
 export const NEW_GROUP_CHOICE = '__new_group__'
@@ -218,7 +218,7 @@ export function NewSessionFields({
         </Select>
       </div>
 
-      {agent === 'opencode' ? (
+      {agent === 'opencode' || agent === 'cursor' ? (
         <div className="space-y-1">
           <Label htmlFor="new-session-model" className={LABEL_CLASS}>
             Model (optional)
@@ -228,8 +228,12 @@ export function NewSessionFields({
             type="text"
             value={modelRaw}
             onChange={(event) => onModelChange(event.target.value)}
-            placeholder="provider/model, e.g. opencode/deepseek-v4.1-flash-free"
-            maxLength={MAX_OPENCODE_MODEL_LENGTH}
+            placeholder={
+              agent === 'cursor'
+                ? 'model, e.g. gpt-5'
+                : 'provider/model, e.g. opencode/deepseek-v4.1-flash-free'
+            }
+            maxLength={agent === 'cursor' ? MAX_CURSOR_MODEL_LENGTH : MAX_OPENCODE_MODEL_LENGTH}
             aria-invalid={modelError !== null}
             className={INPUT_CLASS}
           />
@@ -239,26 +243,30 @@ export function NewSessionFields({
             </p>
           ) : (
             <p className="text-[11px] text-muted-foreground">
-              Empty uses OpenCode&apos;s own default model
+              {agent === 'cursor'
+                ? 'Empty uses Cursor\u2019s own default model'
+                : 'Empty uses OpenCode\u2019s own default model'}
             </p>
           )}
-          <div className="flex items-start gap-2 pt-1">
-            <Checkbox
-              id="new-session-opencode-ask"
-              checked={askPermissions}
-              onCheckedChange={(checked) => onAskPermissionsChange(checked === true)}
-              data-opencode-ask-permissions=""
-              className="mt-0.5"
-            />
-            <div className="space-y-0.5">
-              <Label htmlFor="new-session-opencode-ask" className="text-xs">
-                Ask before running tools (use my own OpenCode permission rules)
-              </Label>
-              <p className="text-[11px] text-muted-foreground">
-                Off: tools run without asking (the default). On: your own OpenCode permission rules apply.
-              </p>
+          {agent === 'opencode' ? (
+            <div className="flex items-start gap-2 pt-1">
+              <Checkbox
+                id="new-session-opencode-ask"
+                checked={askPermissions}
+                onCheckedChange={(checked) => onAskPermissionsChange(checked === true)}
+                data-opencode-ask-permissions=""
+                className="mt-0.5"
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="new-session-opencode-ask" className="text-xs">
+                  Ask before running tools (use my own OpenCode permission rules)
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Off: tools run without asking (the default). On: your own OpenCode permission rules apply.
+                </p>
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       ) : (
         <div className="space-y-1">

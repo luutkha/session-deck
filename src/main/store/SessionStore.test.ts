@@ -248,4 +248,35 @@ describe('SessionStore', () => {
       expect(saved).toHaveLength(0)
     })
   })
+
+  describe('setCursorChatId (D81)', () => {
+    it('persists and notifies; a duplicate id saves nothing', () => {
+      const { store, saved } = makeStore()
+      store.createSession({ cwd: '/x', agent: 'cursor' })
+      const calls: StoreData[] = []
+      store.subscribe((d) => calls.push(d))
+      const savesBefore = saved.length
+
+      store.setCursorChatId('id-1', 'chat_ABCDEF12')
+      expect(saved).toHaveLength(savesBefore + 1)
+      expect(calls).toHaveLength(1)
+      expect(store.get().sessions[0].cursorChatId).toBe('chat_ABCDEF12')
+
+      store.setCursorChatId('id-1', 'chat_ABCDEF12')
+      expect(saved).toHaveLength(savesBefore + 1)
+      expect(calls).toHaveLength(1)
+    })
+
+    it('invalid ids throw and neither save nor notify', () => {
+      const { store, saved } = makeStore()
+      store.createSession({ cwd: '/x', agent: 'cursor' })
+      const calls: StoreData[] = []
+      store.subscribe((d) => calls.push(d))
+      const savesBefore = saved.length
+
+      expect(() => store.setCursorChatId('id-1', 'bad id')).toThrow('Invalid cursorChatId')
+      expect(saved).toHaveLength(savesBefore)
+      expect(calls).toHaveLength(0)
+    })
+  })
 })

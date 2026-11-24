@@ -139,6 +139,15 @@ describe('plan tools (D80)', () => {
     expect(answer).toContain('Plan p1: running')
   })
 
+  it('accepts a Cursor step target (D81)', async () => {
+    const t = setup()
+    await t.run('plan_create', {
+      goal: 'use cursor',
+      steps: [{ id: 'a', title: 'A', prompt: 'p', new_session: { name: 'Cur', agent: 'cursor', model: 'gpt-5' } }]
+    })
+    expect(t.plans.created[0].steps[0].target).toEqual({ kind: 'new', name: 'Cur', agent: 'cursor', model: 'gpt-5' })
+  })
+
   it('clips the goal in the log line to 80 characters', async () => {
     const t = setup()
     await t.run('plan_create', {

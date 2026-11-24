@@ -33,12 +33,14 @@ describe('buildTabModels', () => {
     expect(buildTabModels(['ghost'], [sessionNamed('a', 'Alpha')], new Map())).toEqual([])
   })
 
-  it('marks only opencode tabs with their agent', () => {
+  it('marks only opencode and cursor tabs with their agent', () => {
     const claude = sessionNamed('a', 'Alpha')
     const opencode: Session = { ...sessionNamed('b', 'Beta'), agent: 'opencode' }
-    expect(buildTabModels(['a', 'b'], [claude, opencode], new Map())).toEqual([
+    const cursor: Session = { ...sessionNamed('c', 'Gamma'), agent: 'cursor' }
+    expect(buildTabModels(['a', 'b', 'c'], [claude, opencode, cursor], new Map())).toEqual([
       { id: 'a', title: 'Alpha', run: null, attention: null },
-      { id: 'b', title: 'Beta', run: null, attention: null, agent: 'opencode' }
+      { id: 'b', title: 'Beta', run: null, attention: null, agent: 'opencode' },
+      { id: 'c', title: 'Gamma', run: null, attention: null, agent: 'cursor' }
     ])
   })
 

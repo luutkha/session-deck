@@ -312,6 +312,7 @@ export function createControlTools(deps: JarvisToolDeps, ctx: ToolContext): McpT
         if (optionalBool(args, 'image_via_clipboard') === true) {
           if (paths.length !== 1 || !IMAGE_EXTENSIONS.test(paths[0])) throw new Error('image_via_clipboard takes exactly one image file (png, jpg, gif, webp, bmp).')
           if (!control.copyImage(paths[0])) throw new Error(`Could not read ${paths[0]} as an image.`)
+          // OpenCode pastes an image with Ctrl+V; Claude and Cursor (D81) use Alt+V.
           deps.controller.writeToPty(session.id, session.agent === 'opencode' ? '\x16' : '\x1bv')
           deps.log('attach_files', `${session.name}: image ${paths[0]}`)
           return `Pasted the image into "${session.name}" (not sent yet).`

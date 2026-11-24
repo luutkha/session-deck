@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '../../components/ui/dialog'
+import { initialModelForAgent, modelAfterAgentChange } from '../../Sidebar/dialogLogic'
 import { cleanErrorMessage } from '../sidebar/errorText'
 import { SessionAgentFields } from './SessionAgentFields'
 import { checkModel, worktreeSessionInput } from './worktreeDialogLogic'
@@ -29,12 +30,19 @@ const ID_PREFIX = 'new-worktree-session'
 export function NewWorktreeSessionDialog(props: NewWorktreeSessionDialogProps): ReactElement {
   const { worktree, settings, actions, onClose, onCreated } = props
   const [agent, setAgent] = useState<AgentKind>(settings.agents.defaultAgent)
-  const [model, setModel] = useState(settings.agents.opencodeModel)
+  const [model, setModel] = useState(
+    (): string => initialModelForAgent(settings.agents.defaultAgent, settings.agents.opencodeModel)
+  )
   const [creating, setCreating] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const modelCheck = checkModel(agent, model)
   const canCreate = modelCheck.ok && !creating
+
+  function changeAgent(next: AgentKind): void {
+    setModel((current) => modelAfterAgentChange(agent, next, current, settings.agents.opencodeModel))
+    setAgent(next)
+  }
 
   async function submit(): Promise<void> {
     if (!canCreate || !modelCheck.ok) return
@@ -82,7 +90,7 @@ export function NewWorktreeSessionDialog(props: NewWorktreeSessionDialogProps): 
           <SessionAgentFields
             idPrefix={ID_PREFIX}
             agent={agent}
-            onAgentChange={setAgent}
+            onAgentChange={changeAgent}
             model={model}
             onModelChange={setModel}
             modelError={modelCheck.ok ? null : modelCheck.error}

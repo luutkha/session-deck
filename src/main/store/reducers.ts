@@ -1,6 +1,7 @@
 import type { CreateSessionInput, Group, Id, Session, StatusDef, StoreData } from '../../shared/types'
 import { DEFAULT_STATUSES } from '../../shared/types'
 import { isOpencodeSessionId } from '../opencode/values'
+import { isCursorChatId } from './cursorValues'
 import { clearAutoStatusReference } from './settings'
 import { findWorktree } from './codeReducers'
 
@@ -90,13 +91,20 @@ export function emptyStore(): StoreData {
 
 const SHELL_SESSION_NAME = 'Shell'
 
-/** The agent-specific fields of a new session. Claude gets its conversation id now; OpenCode reports its own later; a shell has none. */
+/** The agent-specific fields of a new session. Claude gets its conversation id now; OpenCode and Cursor report their own later; a shell has none. */
 function agentFieldsFor(
   input: CreateSessionInput,
   id: Id
 ): Partial<Pick<Session, 'agent' | 'model' | 'claudeSessionId' | 'opencodePermissions'>> {
   if (input.agent === 'shell') {
     return { agent: 'shell' }
+  }
+  if (input.agent === 'cursor') {
+    const model = input.model?.trim() ?? ''
+    return {
+      agent: 'cursor',
+      ...(model.length > 0 ? { model } : {})
+    }
   }
   if (input.agent === 'opencode') {
     const model = input.model !== undefined && input.model.trim().length > 0 ? input.model : undefined
@@ -303,6 +311,21 @@ export function setOpencodeSessionId(data: StoreData, id: Id, opencodeSessionId:
   }
   const sessions = data.sessions.map((s, i) =>
     i === index ? { ...s, opencodeSessionId } : s
+  )
+  return { ...data, sessions }
+}
+
+/** Stores the Cursor chat id a hook reported. Same value again = same data back. */
+export function setCursorChatId(data: StoreData, id: Id, cursorChatId: string): StoreData {
+  if (!isCursorChatId(cursorChatId)) {
+    throw new Error('Invalid cursorChatId')
+  }
+  const index = findSessionIndex(data, id)
+  if (data.sessions[index].cursorChatId === cursorChatId) {
+    return data
+  }
+  const sessions = data.sessions.map((s, i) =>
+    i === index ? { ...s, cursorChatId } : s
   )
   return { ...data, sessions }
 }

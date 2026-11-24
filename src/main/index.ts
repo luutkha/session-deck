@@ -515,6 +515,8 @@ if (!gotTheLock) {
         timeline: (id) => features.timeline.get(id),
         search: (query) => conversationSearch.search(store.get().sessions, query),
         lastAnswer: async (session) => {
+          // D81: Cursor keeps its last reply in memory (its afterAgentResponse hook), not in a transcript file.
+          if (session.agent === 'cursor') return controller.lastCursorAnswer(session.id)
           const messages = await conversationSearch.messagesOfSession(session)
           return messages === null ? null : lastAnswer(messages)
         },

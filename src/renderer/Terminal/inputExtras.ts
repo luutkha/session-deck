@@ -8,7 +8,7 @@ export const CLAUDE_PASTE_IMAGE_KEYS = '\x1bv'
 /** OpenCode reads an image from the system clipboard on Ctrl+V (it ignores Alt+V). */
 export const OPENCODE_PASTE_IMAGE_KEYS = '\x16'
 
-/** The keys that make the session's agent attach the clipboard image. */
+/** The keys that make the session's agent attach the clipboard image (D81: Cursor uses Claude's keys). */
 export function pasteImageKeysFor(agent: AgentKind | undefined): string {
   return agent === 'opencode' ? OPENCODE_PASTE_IMAGE_KEYS : CLAUDE_PASTE_IMAGE_KEYS
 }

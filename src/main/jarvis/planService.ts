@@ -3,6 +3,7 @@
 // memory: a restart of the app forgets every plan. A timer calls tick() every 5 s; create() runs one tick right away.
 // All side effects (sessions, prompts, Jarvis, errors) are injected so unit tests use fakes.
 import { QUEUE_TEXT_MAX } from '../../shared/types'
+import { isCursorModel } from '../store/cursorValues'
 import {
   PLAN_ACTIVE_MAX,
   PLAN_ANSWER_MAX,
@@ -132,6 +133,10 @@ export function validatePlanInput(input: PlanInput, findSession: PlanServiceDeps
       const name = step.target.name.trim()
       if (name.length === 0 || name.length > PLAN_NEW_SESSION_NAME_MAX) {
         throw new Error(`Step "${step.id}": a new session needs a name of 1 to ${PLAN_NEW_SESSION_NAME_MAX} characters.`)
+      }
+      // D81: a Cursor model goes on the command line, so only a plain name is accepted.
+      if (step.target.agent === 'cursor' && step.target.model !== undefined && !isCursorModel(step.target.model.trim())) {
+        throw new Error(`Step "${step.id}": "${step.target.model}" is not a Cursor model (use a plain name like gpt-5).`)
       }
     }
   }

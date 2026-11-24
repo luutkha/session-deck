@@ -1,6 +1,7 @@
 // Session presets (D49): saved New Session forms. Pure: shape checks and immutable store updates.
 import { PRESET_MAX, PRESET_NAME_MAX, type AgentKind, type Id, type SessionPreset, type StoreData } from '../../shared/types'
 import { isRecord } from '../../shared/guards'
+import { isCursorModel } from './cursorValues'
 
 const MAX_ID_LENGTH = 256
 const MAX_CWD_LENGTH = 4096
@@ -13,7 +14,7 @@ function invalid(reason: string): Error {
 }
 
 function isAgent(value: unknown): value is AgentKind {
-  return value === 'claude' || value === 'opencode' || value === 'shell'
+  return value === 'claude' || value === 'opencode' || value === 'cursor' || value === 'shell'
 }
 
 function optionalId(value: unknown, field: string): Id | null {
@@ -34,7 +35,7 @@ export function validatePreset(raw: unknown): SessionPreset {
     throw invalid(`name must be 1 to ${PRESET_NAME_MAX} characters`)
   }
   if (typeof cwd !== 'string' || cwd.trim().length === 0 || cwd.length > MAX_CWD_LENGTH) throw invalid('folder is required')
-  if (!isAgent(agent)) throw invalid('agent must be "claude", "opencode" or "shell"')
+  if (!isAgent(agent)) throw invalid('agent must be "claude", "opencode", "cursor" or "shell"')
   if (model !== undefined && (typeof model !== 'string' || model.length > MAX_MODEL_LENGTH)) throw invalid('model must be a string')
   if (
     !Array.isArray(claudeArgs) ||
@@ -46,12 +47,15 @@ export function validatePreset(raw: unknown): SessionPreset {
   const groupId = optionalId(raw.groupId, 'groupId')
   const statusId = optionalId(raw.statusId, 'statusId')
   const trimmedModel = typeof model === 'string' ? model.trim() : ''
+  if (agent === 'cursor' && trimmedModel.length > 0 && !isCursorModel(trimmedModel)) {
+    throw invalid('model must be a plain Cursor model name')
+  }
   return {
     id,
     name: name.trim(),
     cwd: cwd.trim(),
     agent,
-    ...(agent === 'opencode' && trimmedModel.length > 0 ? { model: trimmedModel } : {}),
+    ...((agent === 'opencode' || agent === 'cursor') && trimmedModel.length > 0 ? { model: trimmedModel } : {}),
     claudeArgs: agent === 'claude' ? [...claudeArgs] : [],
     groupId,
     statusId

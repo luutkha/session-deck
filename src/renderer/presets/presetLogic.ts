@@ -22,7 +22,7 @@ export function presetFromInput(input: CreateSessionInput, name: string, id: str
     name: name.trim().slice(0, PRESET_NAME_MAX),
     cwd: input.cwd,
     agent,
-    ...(agent === 'opencode' && input.model !== undefined && input.model.length > 0 ? { model: input.model } : {}),
+    ...(takesModel(agent) && input.model !== undefined && input.model.length > 0 ? { model: input.model } : {}),
     claudeArgs: agent === 'claude' ? [...(input.claudeArgs ?? [])] : [],
     groupId: input.groupId ?? null,
     statusId: input.statusId ?? null
@@ -52,7 +52,7 @@ export function createInputFromPreset(preset: SessionPreset, data: Pick<StoreDat
     statusId,
     agent: preset.agent,
     ...(preset.agent === 'claude' ? { claudeArgs: [...preset.claudeArgs] } : {}),
-    ...(preset.agent === 'opencode' && preset.model !== undefined ? { model: preset.model } : {})
+    ...(takesModel(preset.agent) && preset.model !== undefined ? { model: preset.model } : {})
   }
 }
 
@@ -68,8 +68,14 @@ export function suggestedPresetName(sessionName: string, folder: string): string
   return (typed.length > 0 ? typed : defaultNameFromFolder(folder)).slice(0, PRESET_NAME_MAX)
 }
 
+/** OpenCode and Cursor take a model; Claude and Shell never do. */
+function takesModel(agent: AgentKind): boolean {
+  return agent === 'opencode' || agent === 'cursor'
+}
+
 /** One-line description for menus: folder name and agent (plus model). */
 export function presetDetail(preset: SessionPreset): string {
-  const agent = preset.agent === 'opencode' ? `OpenCode${preset.model !== undefined ? ` ${preset.model}` : ''}` : preset.agent === 'shell' ? 'Shell' : 'Claude'
+  const name = preset.agent === 'opencode' ? 'OpenCode' : preset.agent === 'cursor' ? 'Cursor' : preset.agent === 'shell' ? 'Shell' : 'Claude'
+  const agent = takesModel(preset.agent) && preset.model !== undefined ? `${name} ${preset.model}` : name
   return `${defaultNameFromFolder(preset.cwd)} · ${agent}`
 }

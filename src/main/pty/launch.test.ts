@@ -19,6 +19,27 @@ describe('buildCommandLaunch shells', () => {
   })
 })
 
+// D81: Cursor's binaries are .cmd files on Windows, so they go through cmd.exe /d /c like claude and opencode.
+describe('buildCommandLaunch cursor', () => {
+  it('wraps cursor-agent and agent in cmd.exe /d /c on win32', () => {
+    expect(buildCommandLaunch('win32', 'cursor-agent', [], ['--force'])).toEqual({
+      file: 'cmd.exe',
+      args: ['/d', '/c', 'cursor-agent', '--force']
+    })
+    expect(buildCommandLaunch('win32', 'agent', [], ['--force', '--model', 'gpt-5'])).toEqual({
+      file: 'cmd.exe',
+      args: ['/d', '/c', 'agent', '--force', '--model', 'gpt-5']
+    })
+  })
+
+  it('starts them directly on non-win32 platforms', () => {
+    expect(buildCommandLaunch('linux', 'cursor-agent', [], ['--force', '--resume', 'abcdefgh-1234'])).toEqual({
+      file: 'cursor-agent',
+      args: ['--force', '--resume', 'abcdefgh-1234']
+    })
+  })
+})
+
 describe('buildLaunch', () => {
   it('wraps claude in cmd.exe /d /c on win32', () => {
     expect(buildLaunch('win32', ['--continue'])).toEqual({

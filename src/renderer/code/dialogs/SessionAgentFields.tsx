@@ -3,7 +3,7 @@ import type { AgentKind } from '../../../shared/types'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
-import { MAX_OPENCODE_MODEL_LENGTH } from '../../Sidebar/dialogLogic'
+import { MAX_CURSOR_MODEL_LENGTH, MAX_OPENCODE_MODEL_LENGTH } from '../../Sidebar/dialogLogic'
 import { AGENT_CHOICES } from './worktreeDialogLogic'
 
 export const LABEL_CLASS = 'text-[11px] text-muted-foreground'
@@ -21,12 +21,12 @@ export interface SessionAgentFieldsProps {
   readonly onAgentChange: (agent: AgentKind) => void
   readonly model: string
   readonly onModelChange: (value: string) => void
-  /** Why the OpenCode model is not valid (shown under the field), or null. */
+  /** Why the OpenCode or Cursor model is not valid (shown under the field), or null. */
   readonly modelError: string | null
   readonly disabled: boolean
 }
 
-/** Agent (Claude Code / OpenCode / Shell) and, for OpenCode only, the model. */
+/** Agent (Claude Code / OpenCode / Cursor / Shell) and, for OpenCode and Cursor, the model. */
 export function SessionAgentFields(props: SessionAgentFieldsProps): ReactElement {
   const { idPrefix, agent, disabled } = props
   return (
@@ -52,13 +52,14 @@ export function SessionAgentFields(props: SessionAgentFieldsProps): ReactElement
           </SelectContent>
         </Select>
       </div>
-      {agent === 'opencode' && <ModelField {...props} />}
+      {(agent === 'opencode' || agent === 'cursor') && <ModelField {...props} />}
     </>
   )
 }
 
-function ModelField({ idPrefix, model, onModelChange, modelError, disabled }: SessionAgentFieldsProps): ReactElement {
+function ModelField({ idPrefix, agent, model, onModelChange, modelError, disabled }: SessionAgentFieldsProps): ReactElement {
   const id = `${idPrefix}-model`
+  const cursor = agent === 'cursor'
   return (
     <div className="space-y-1">
       <Label htmlFor={id} className={LABEL_CLASS}>Model (optional)</Label>
@@ -68,15 +69,17 @@ function ModelField({ idPrefix, model, onModelChange, modelError, disabled }: Se
         value={model}
         disabled={disabled}
         onChange={(event): void => onModelChange(event.target.value)}
-        placeholder="provider/model, e.g. opencode/deepseek-v4.1-flash-free"
-        maxLength={MAX_OPENCODE_MODEL_LENGTH}
+        placeholder={cursor ? 'model, e.g. gpt-5' : 'provider/model, e.g. opencode/deepseek-v4.1-flash-free'}
+        maxLength={cursor ? MAX_CURSOR_MODEL_LENGTH : MAX_OPENCODE_MODEL_LENGTH}
         aria-invalid={modelError !== null}
         className={INPUT_CLASS}
       />
       {modelError !== null ? (
         <p role="alert" className="text-[11px] text-destructive">{modelError}</p>
       ) : (
-        <p className="text-[11px] text-muted-foreground">Empty uses OpenCode&apos;s own default model</p>
+        <p className="text-[11px] text-muted-foreground">
+          Empty uses {cursor ? 'Cursor' : 'OpenCode'}&apos;s own default model
+        </p>
       )}
     </div>
   )

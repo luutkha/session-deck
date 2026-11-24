@@ -15,6 +15,15 @@ describe('presetFromInput', () => {
       id: 'id2', name: 'O', cwd: 'C:/a', agent: 'opencode', model: 'a/b', claudeArgs: [], groupId: 'g', statusId: null
     })
   })
+
+  it('keeps the model for a Cursor preset and never its Claude args (D81)', () => {
+    expect(presetFromInput({ cwd: 'C:/a', agent: 'cursor', model: 'gpt-5', claudeArgs: ['--x'], groupId: null, statusId: null }, 'C', 'id3')).toEqual({
+      id: 'id3', name: 'C', cwd: 'C:/a', agent: 'cursor', model: 'gpt-5', claudeArgs: [], groupId: null, statusId: null
+    })
+    expect(presetFromInput({ cwd: 'C:/a', agent: 'cursor', model: '', groupId: null, statusId: null }, 'C', 'id4')).toEqual({
+      id: 'id4', name: 'C', cwd: 'C:/a', agent: 'cursor', claudeArgs: [], groupId: null, statusId: null
+    })
+  })
 })
 
 describe('formFromPreset', () => {
@@ -35,6 +44,15 @@ describe('createInputFromPreset', () => {
       cwd: 'C:/work/api', groupId: null, statusId: null, agent: 'opencode', model: 'x/y'
     })
   })
+
+  it('passes a Cursor preset model through and never its Claude args (D81)', () => {
+    expect(createInputFromPreset({ ...claude, agent: 'cursor', model: 'gpt-5', claudeArgs: ['--x'] }, { groups: [], statuses: [] })).toEqual({
+      cwd: 'C:/work/api', groupId: null, statusId: null, agent: 'cursor', model: 'gpt-5'
+    })
+    expect(createInputFromPreset({ ...claude, agent: 'cursor', model: undefined, claudeArgs: [] }, { groups: [], statuses: [] })).toEqual({
+      cwd: 'C:/work/api', groupId: null, statusId: null, agent: 'cursor'
+    })
+  })
 })
 
 describe('naming helpers', () => {
@@ -51,6 +69,8 @@ describe('naming helpers', () => {
   it('describes a preset by folder and agent', () => {
     expect(presetDetail(claude)).toBe('api · Claude')
     expect(presetDetail({ ...claude, agent: 'opencode', model: 'a/b' })).toBe('api · OpenCode a/b')
+    expect(presetDetail({ ...claude, agent: 'cursor', model: 'gpt-5' })).toBe('api · Cursor gpt-5')
+    expect(presetDetail({ ...claude, agent: 'cursor' })).toBe('api · Cursor')
     expect(presetDetail({ ...claude, agent: 'shell' })).toBe('api · Shell')
   })
 })

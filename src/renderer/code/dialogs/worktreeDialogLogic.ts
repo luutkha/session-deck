@@ -1,6 +1,6 @@
 // Pure rules for the Code mode dialogs (name checks, base branch default, path hint, agent and model). No React.
 import { WORKTREE_NAME_MAX, type AgentKind, type CreateSessionInput, type Id, type Worktree } from '../../../shared/types'
-import { validateOpenCodeModel } from '../../Sidebar/dialogLogic'
+import { validateCursorModel, validateOpenCodeModel } from '../../Sidebar/dialogLogic'
 
 /** Session names follow the Ops rule (validateName in Sidebar/inlineEditValidation). */
 export const SESSION_NAME_MAX = 100
@@ -19,6 +19,7 @@ export interface AgentChoice {
 export const AGENT_CHOICES: readonly AgentChoice[] = [
   { value: 'claude', label: 'Claude Code' },
   { value: 'opencode', label: 'OpenCode' },
+  { value: 'cursor', label: 'Cursor' },
   { value: 'shell', label: 'Shell' }
 ]
 
@@ -79,7 +80,7 @@ export function sessionNamePlaceholder(agent: AgentKind): string {
 /**
  * The createSession input for a session in an existing worktree: it always runs inside the worktree folder
  * (main ignores `cwd` anyway) and is bound to the worktree. `model` is the checked value from checkModel,
- * undefined for anything but OpenCode.
+ * undefined for anything but OpenCode and Cursor.
  */
 export function worktreeSessionInput(
   worktree: Pick<Worktree, 'id' | 'path'>,
@@ -99,14 +100,14 @@ export type ModelCheck =
   | { readonly ok: false; readonly error: string }
 
 /**
- * The model to send. Only OpenCode takes one; an empty model means OpenCode's own default (undefined).
- * Claude and Shell never send a model.
+ * The model to send. Only OpenCode and Cursor take one; an empty model means the agent's own default
+ * (undefined). Claude and Shell never send a model.
  */
 export function checkModel(agent: AgentKind, modelRaw: string): ModelCheck {
-  if (agent !== 'opencode') {
+  if (agent !== 'opencode' && agent !== 'cursor') {
     return { ok: true, model: undefined }
   }
-  const result = validateOpenCodeModel(modelRaw)
+  const result = agent === 'cursor' ? validateCursorModel(modelRaw) : validateOpenCodeModel(modelRaw)
   if (!result.ok) {
     return { ok: false, error: result.error }
   }

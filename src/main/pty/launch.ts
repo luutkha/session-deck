@@ -10,7 +10,7 @@ const WIN_LAUNCHER = 'cmd.exe'
 const WIN_LAUNCHER_ARGS: readonly string[] = ['/d', '/c']
 
 /** Which program a session launches: an agent binary, or a plain shell (Code mode Shell sessions). */
-export type LaunchCommand = 'claude' | 'opencode' | ShellKind
+export type LaunchCommand = 'claude' | 'opencode' | 'cursor-agent' | 'agent' | ShellKind
 
 export interface LaunchSpec {
   readonly file: string

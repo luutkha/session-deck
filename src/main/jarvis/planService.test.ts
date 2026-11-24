@@ -218,6 +218,12 @@ describe('validatePlanInput', () => {
     expect(() =>
       validatePlanInput(planInput([step('a', { target: { kind: 'new', name: 'x'.repeat(61) } })]), find)
     ).toThrow(/1 to 60/)
+    expect(() =>
+      validatePlanInput(planInput([step('a', { target: { kind: 'new', name: 'cur', agent: 'cursor', model: 'gpt-5' } })]), find)
+    ).not.toThrow()
+    expect(() =>
+      validatePlanInput(planInput([step('a', { target: { kind: 'new', name: 'cur', agent: 'cursor', model: 'not a model!' } })]), find)
+    ).toThrow(/not a Cursor model/)
   })
 })
 

@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
+  MAX_CURSOR_MODEL_LENGTH,
   MAX_OPENCODE_MODEL_LENGTH,
   parseClaudeArgs,
   defaultNameFromFolder,
   buildCreateInput,
+  initialModelForAgent,
+  modelAfterAgentChange,
+  validateCursorModel,
   validateOpenCodeModel,
   validateStatusDraft,
   initialFolder,
@@ -266,6 +270,56 @@ describe('validateOpenCodeModel', () => {
   })
 })
 
+describe('validateCursorModel', () => {
+  it('accepts an empty string (Cursor uses its own default)', () => {
+    expect(validateCursorModel('')).toEqual({ ok: true, value: '' })
+  })
+
+  it('accepts a whitespace-only string as empty', () => {
+    expect(validateCursorModel('   ')).toEqual({ ok: true, value: '' })
+  })
+
+  it('accepts plain model names such as gpt-5 and sonnet-4-thinking', () => {
+    expect(validateCursorModel('gpt-5')).toEqual({ ok: true, value: 'gpt-5' })
+    expect(validateCursorModel('sonnet-4-thinking')).toEqual({ ok: true, value: 'sonnet-4-thinking' })
+  })
+
+  it('accepts the . _ : / @ - punctuation set', () => {
+    const model = 'a.b_c:d/e@f-g'
+    expect(validateCursorModel(model)).toEqual({ ok: true, value: model })
+  })
+
+  it('trims surrounding whitespace before validating', () => {
+    expect(validateCursorModel('  gpt-5  ')).toEqual({ ok: true, value: 'gpt-5' })
+  })
+
+  it('accepts a model of exactly the maximum length', () => {
+    const value = 'a'.repeat(MAX_CURSOR_MODEL_LENGTH)
+    expect(validateCursorModel(value)).toEqual({ ok: true, value })
+  })
+
+  it('rejects a model longer than the maximum', () => {
+    const result = validateCursorModel('a'.repeat(MAX_CURSOR_MODEL_LENGTH + 1))
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error).toContain('too long')
+  })
+
+  it('rejects a model containing spaces', () => {
+    const result = validateCursorModel('bad model')
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error).toContain('only contain')
+  })
+
+  it('rejects a plus sign, which OpenCode allows but Cursor does not', () => {
+    expect(validateCursorModel('a+b').ok).toBe(false)
+  })
+
+  it('rejects non-ascii characters and a semicolon', () => {
+    expect(validateCursorModel('modèle').ok).toBe(false)
+    expect(validateCursorModel('a;b').ok).toBe(false)
+  })
+})
+
 describe('buildCreateInput (agent)', () => {
   it('defaults to claude and keeps the parsed claude args', () => {
     const result = buildCreateInput(form({ argsRaw: '--model opus' }))
@@ -307,6 +361,62 @@ describe('buildCreateInput (agent)', () => {
     const result = buildCreateInput(form({ agent: 'claude', argsRaw: 'a&b' }))
     expect(result.ok).toBe(false)
     expect(result.ok === false && result.error).toContain('Unsupported characters')
+  })
+
+  it('sends agent cursor and the trimmed plain model, and omits claude args', () => {
+    const result = buildCreateInput(form({ agent: 'cursor', modelRaw: '  gpt-5  ' }))
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.input.agent).toBe('cursor')
+    expect(result.ok && result.input.model).toBe('gpt-5')
+    expect(result.ok && 'claudeArgs' in result.input).toBe(false)
+  })
+
+  it('omits the model when the cursor model is empty', () => {
+    const result = buildCreateInput(form({ agent: 'cursor', modelRaw: '   ' }))
+    expect(result.ok).toBe(true)
+    expect(result.ok && 'model' in result.input).toBe(false)
+  })
+
+  it('rejects a bad cursor model even when claude args would also be invalid', () => {
+    const result = buildCreateInput(form({ agent: 'cursor', modelRaw: 'bad model', argsRaw: 'a&b' }))
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error).toContain('only contain')
+  })
+
+  it('ignores claude args for cursor sessions', () => {
+    const result = buildCreateInput(form({ agent: 'cursor', argsRaw: 'a&b', modelRaw: 'gpt-5' }))
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.input.model).toBe('gpt-5')
+  })
+
+  it('never sends Remote Control for a cursor session', () => {
+    const result = buildCreateInput(form({ agent: 'cursor', remoteControl: true }))
+    expect(result.ok && 'claudeArgs' in result.input).toBe(false)
+  })
+})
+
+describe('the model field when the agent changes (D81)', () => {
+  it('opens OpenCode with its saved default and Cursor with its own (empty)', () => {
+    expect(initialModelForAgent('opencode', 'opencode/deepseek-v4')).toBe('opencode/deepseek-v4')
+    expect(initialModelForAgent('cursor', 'opencode/deepseek-v4')).toBe('')
+    expect(initialModelForAgent('claude', 'opencode/deepseek-v4')).toBe('opencode/deepseek-v4')
+    expect(initialModelForAgent(undefined, 'opencode/deepseek-v4')).toBe('opencode/deepseek-v4')
+  })
+
+  it('never carries an OpenCode model into Cursor', () => {
+    expect(modelAfterAgentChange('opencode', 'cursor', 'opencode/deepseek-v4', 'default')).toBe('')
+    expect(modelAfterAgentChange('claude', 'cursor', 'typed', 'default')).toBe('')
+  })
+
+  it('restores the OpenCode default when leaving Cursor', () => {
+    expect(modelAfterAgentChange('cursor', 'opencode', '', 'default')).toBe('default')
+    expect(modelAfterAgentChange('cursor', 'claude', '', 'default')).toBe('default')
+  })
+
+  it('keeps typed text on every other agent switch', () => {
+    expect(modelAfterAgentChange('claude', 'opencode', 'typed', 'default')).toBe('typed')
+    expect(modelAfterAgentChange('opencode', 'claude', 'typed', 'default')).toBe('typed')
+    expect(modelAfterAgentChange('claude', 'shell', 'typed', 'default')).toBe('typed')
   })
 })
 

@@ -39,7 +39,9 @@ const isBoolean: FieldCheck = (value) => typeof value === 'boolean'
 const isInteger: FieldCheck = (value) => typeof value === 'number' && Number.isInteger(value)
 /** A status id (non-empty string) or null = no mapping. */
 const isIdOrNull: FieldCheck = (value) => value === null || (typeof value === 'string' && value.length > 0)
-const isAgentKind: FieldCheck = (value) => value === 'claude' || value === 'opencode'
+const isAgentKind: FieldCheck = (value) => value === 'claude' || value === 'opencode' || value === 'cursor'
+/** Jarvis can only drive a Claude or OpenCode session, never Cursor. */
+const isJarvisAgent: FieldCheck = (value) => value === 'claude' || value === 'opencode'
 const SHELL_KINDS: readonly unknown[] = ['powershell', 'pwsh', 'cmd']
 const isShellKind: FieldCheck = (value) => SHELL_KINDS.includes(value)
 const isString: FieldCheck = (value) => typeof value === 'string'
@@ -109,7 +111,7 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
   },
   jarvis: {
     model: isJarvisModel,
-    agent: isAgentKind,
+    agent: isJarvisAgent,
     opencodeModel: isOpencodeModelString,
     watchEnabled: isBoolean,
     watchEveryMinutes: isInteger,
@@ -272,8 +274,8 @@ export function settingsProblem(settings: AppSettings): string | null {
   }
 
   const agents = settings.agents
-  if (agents.defaultAgent !== 'claude' && agents.defaultAgent !== 'opencode') {
-    return 'agents.defaultAgent must be "claude" or "opencode"'
+  if (agents.defaultAgent !== 'claude' && agents.defaultAgent !== 'opencode' && agents.defaultAgent !== 'cursor') {
+    return 'agents.defaultAgent must be "claude", "opencode" or "cursor"'
   }
   if (
     typeof agents.opencodeModel !== 'string' ||

@@ -99,3 +99,35 @@ describe('asCreateSessionInput shell and worktree', () => {
     expect(() => asCreateSessionInput({ cwd: 'C:\\x', agent: 'bash' })).toThrow('"shell"')
   })
 })
+
+describe('cursor agent (D81)', () => {
+  it('accepts cursor for createSession with a plain model', () => {
+    expect(asCreateSessionInput({ cwd: 'C:\\x', agent: 'cursor' }).agent).toBe('cursor')
+    expect(asCreateSessionInput({ cwd: 'C:\\x', agent: 'cursor', model: ' gpt-5 ' }).model).toBe('gpt-5')
+    expect(asCreateSessionInput({ cwd: 'C:\\x', agent: 'cursor' }).model).toBeUndefined()
+  })
+
+  it('rejects a model that is not a plain Cursor model name, and still drops it for claude/shell', () => {
+    expect(() => asCreateSessionInput({ cwd: 'C:\\x', agent: 'cursor', model: 'bad model&' })).toThrow(
+      'createSession input: model must be a plain Cursor model name'
+    )
+    expect(asCreateSessionInput({ cwd: 'C:\\x', agent: 'claude', model: 'bad model&' }).model).toBeUndefined()
+    expect(asCreateSessionInput({ cwd: 'C:\\x', agent: 'shell', model: 'bad model&' }).model).toBeUndefined()
+  })
+
+  it('keeps opencodePermissions OpenCode-only', () => {
+    expect(
+      asCreateSessionInput({ cwd: 'C:\\x', agent: 'cursor', opencodePermissions: 'ask' }).opencodePermissions
+    ).toBeUndefined()
+  })
+
+  it('accepts cursor for createWorktree with a plain model and rejects a bad one', () => {
+    const input = asCreateWorktreeInput({ ...base, agent: 'cursor', model: 'sonnet-4-thinking' })
+    expect(input.agent).toBe('cursor')
+    expect(input.model).toBe('sonnet-4-thinking')
+    expect(() => asCreateWorktreeInput({ ...base, agent: 'cursor', model: 'a&b' })).toThrow(
+      'model must be a plain Cursor model name'
+    )
+    expect(asCreateWorktreeInput({ ...base, agent: 'cursor' })).not.toHaveProperty('model')
+  })
+})

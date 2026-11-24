@@ -14,7 +14,7 @@ export const PLAN_TEXT_MAX = 3500
 const ANSWER_PREVIEW_MAX = 200
 const PROBLEM_MAX = 200
 const LIST_GOAL_MAX = 80
-const AGENTS = ['claude', 'opencode'] as const
+const AGENTS = ['claude', 'opencode', 'cursor'] as const
 
 /** A non-empty string field, with an error that names the field. */
 function requiredText(source: Readonly<Record<string, unknown>>, key: string, where: string): string {
@@ -62,10 +62,10 @@ function targetOf(step: Readonly<Record<string, unknown>>, where: string): PlanS
   const cwd = optionalFieldText(raw, 'cwd', `${where}.new_session`)?.trim()
   const model = optionalFieldText(raw, 'model', `${where}.new_session`)?.trim()
   const agentValue = raw.agent
-  if (agentValue !== undefined && agentValue !== null && agentValue !== 'claude' && agentValue !== 'opencode') {
-    throw new Error(`${where}: "agent" must be claude or opencode.`)
+  if (agentValue !== undefined && agentValue !== null && agentValue !== 'claude' && agentValue !== 'opencode' && agentValue !== 'cursor') {
+    throw new Error(`${where}: "agent" must be claude, opencode or cursor.`)
   }
-  const agent = agentValue === 'claude' || agentValue === 'opencode' ? agentValue : undefined
+  const agent = agentValue === 'claude' || agentValue === 'opencode' || agentValue === 'cursor' ? agentValue : undefined
   return {
     kind: 'new',
     name,
@@ -163,7 +163,7 @@ export function createPlanTools(plans: PlanService, log: (tool: string, detail: 
   return [
     {
       name: 'plan_create',
-      description: `Splits a goal into steps that run in sessions. A step starts when its depends_on steps are done and can use their answers with {{stepId}} in its prompt. Up to ${PLAN_STEPS_MAX} steps, ${PLAN_RUNNING_STEPS_MAX} running at once. Every step needs either "session" (an existing session name or id) or "new_session" (a new session: name, optional cwd, agent claude|opencode, model). When the plan ends you are given a "[Plan finished]" message to report. Use it for work that needs several sessions in order or in parallel; plans must be turned on in Settings (Jarvis > Task plans).`,
+      description: `Splits a goal into steps that run in sessions. A step starts when its depends_on steps are done and can use their answers with {{stepId}} in its prompt. Up to ${PLAN_STEPS_MAX} steps, ${PLAN_RUNNING_STEPS_MAX} running at once. Every step needs either "session" (an existing session name or id) or "new_session" (a new session: name, optional cwd, agent claude|opencode|cursor, model). When the plan ends you are given a "[Plan finished]" message to report. Use it for work that needs several sessions in order or in parallel; plans must be turned on in Settings (Jarvis > Task plans).`,
       inputSchema: schema({
         goal: { type: 'string', description: 'What the plan should achieve (up to 300 characters).' },
         steps: {

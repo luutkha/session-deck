@@ -16,7 +16,14 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { buildCreateInput, initialFolder, validateOpenCodeModel } from './dialogLogic'
+import {
+  buildCreateInput,
+  initialFolder,
+  initialModelForAgent,
+  modelAfterAgentChange,
+  validateCursorModel,
+  validateOpenCodeModel
+} from './dialogLogic'
 import { NEW_GROUP_CHOICE, NO_VALUE_CHOICE, NewSessionFields } from './NewSessionFields'
 import { errorMessage } from '../../shared/guards'
 import { Input } from '@/components/ui/input'
@@ -60,13 +67,16 @@ export function NewSessionDialog({
   onClose,
   onCreated
 }: NewSessionDialogProps): ReactElement {
-  const [agent, setAgent] = useState<AgentKind>(defaultAgent ?? 'claude')
+  const initialAgent = defaultAgent ?? 'claude'
+  const [agent, setAgent] = useState<AgentKind>(initialAgent)
   const [folder, setFolder] = useState((): string => initialFolder(defaultFolder, data.sessions))
   const [name, setName] = useState('')
   const [groupChoice, setGroupChoice] = useState<string>(defaultGroupId ?? NO_VALUE_CHOICE)
   const [statusChoice, setStatusChoice] = useState<string>(NO_VALUE_CHOICE)
   const [argsRaw, setArgsRaw] = useState('')
-  const [modelRaw, setModelRaw] = useState(defaultOpenCodeModel ?? '')
+  const [modelRaw, setModelRaw] = useState(
+    (): string => initialModelForAgent(initialAgent, defaultOpenCodeModel ?? '')
+  )
   // D79: OpenCode only, off by default (yolo, D10). Never sent for Claude/Shell.
   const [askPermissions, setAskPermissions] = useState(false)
   const [remoteControl, setRemoteControl] = useState(false)
@@ -80,8 +90,13 @@ export function NewSessionDialog({
   const presets = data.presets ?? []
 
   const creatingGroup = groupChoice === NEW_GROUP_CHOICE
-  const modelResult = validateOpenCodeModel(modelRaw)
-  const modelError = agent === 'opencode' && !modelResult.ok ? modelResult.error : null
+  const modelResult = agent === 'cursor' ? validateCursorModel(modelRaw) : validateOpenCodeModel(modelRaw)
+  const modelError = (agent === 'opencode' || agent === 'cursor') && !modelResult.ok ? modelResult.error : null
+
+  function changeAgent(next: AgentKind): void {
+    setModelRaw((current) => modelAfterAgentChange(agent, next, current, defaultOpenCodeModel ?? ''))
+    setAgent(next)
+  }
 
   async function handleBrowse(): Promise<void> {
     setError(null)
@@ -218,7 +233,7 @@ export function NewSessionDialog({
         <DialogHeader>
           <DialogTitle className="text-sm">New session</DialogTitle>
           <DialogDescription className="text-xs">
-            Start a Claude Code or OpenCode session in a folder.
+            Start a Claude Code, OpenCode or Cursor session in a folder.
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit} onKeyDown={handleFormKeyDown}>
@@ -249,7 +264,7 @@ export function NewSessionDialog({
             statuses={data.statuses}
             busy={busy}
             folderInputRef={folderInputRef}
-            onAgentChange={setAgent}
+            onAgentChange={changeAgent}
             onFolderChange={setFolder}
             onBrowse={() => void handleBrowse()}
             onNameChange={setName}

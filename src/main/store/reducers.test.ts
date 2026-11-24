@@ -15,6 +15,7 @@ import {
   reorderGroups,
   reorderStatuses,
   setClaudeSessionId,
+  setCursorChatId,
   setGroupCollapsed,
   setLastActiveAt,
   setSessionStatus,
@@ -630,5 +631,34 @@ describe('setLastActiveAt (D61)', () => {
     expect(next.sessions[0].lastActiveAt).toBe(50)
     expect(setLastActiveAt(next, 's1', 50)).toBe(next)
     expect(setLastActiveAt(next, 'gone', 60)).toBe(next)
+  })
+})
+
+describe('cursor sessions (D81)', () => {
+  it('createSession stores agent cursor, a trimmed model and no Claude conversation id', () => {
+    const { data, session } = createSession(
+      emptyStore(),
+      { cwd: '/x', agent: 'cursor', model: '  gpt-5  ' },
+      { id: 's1', now: 1 }
+    )
+    expect(session.agent).toBe('cursor')
+    expect(session.model).toBe('gpt-5')
+    expect(session.claudeSessionId).toBeUndefined()
+    expect(data.sessions[0]).toBe(session)
+  })
+
+  it('an empty or missing model is stored as none', () => {
+    const empty = createSession(emptyStore(), { cwd: '/x', agent: 'cursor', model: '   ' }, { id: 's1', now: 1 })
+    expect(empty.session.model).toBeUndefined()
+    const missing = createSession(emptyStore(), { cwd: '/x', agent: 'cursor' }, { id: 's2', now: 1 })
+    expect(missing.session.model).toBeUndefined()
+  })
+
+  it('setCursorChatId stores the chat id, is a no-op for the same value, and rejects a bad id', () => {
+    const { data } = createSession(emptyStore(), { cwd: '/x', agent: 'cursor' }, { id: 's1', now: 1 })
+    const next = setCursorChatId(data, 's1', 'chat_ABCDEF12')
+    expect(next.sessions[0].cursorChatId).toBe('chat_ABCDEF12')
+    expect(setCursorChatId(next, 's1', 'chat_ABCDEF12')).toBe(next)
+    expect(() => setCursorChatId(data, 's1', 'bad id')).toThrow('Invalid cursorChatId')
   })
 })

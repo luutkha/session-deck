@@ -258,7 +258,7 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
         name: target.name.trim(),
         claudeArgs: [],
         agent,
-        ...(agent === 'opencode' && target.model !== undefined ? { model: target.model } : {})
+        ...(agent === 'opencode' || agent === 'cursor' ? (target.model !== undefined ? { model: target.model } : {}) : {})
       })
       log('plan_session', `"${created.name}" in ${cwd}`)
       return { id: created.id, name: created.name }
@@ -382,7 +382,8 @@ export function createJarvisWiring(deps: JarvisWiringDeps): JarvisWiring {
       // D79: an OpenCode Jarvis reads its reply from `opencode session export` like Claude reads its transcript; the
       // injected lastAnswer does that (and returns null when the export has nothing), so no id and no reply = nothing.
       const agent = session.agent ?? 'claude'
-      if (agent !== 'claude' && (agent !== 'opencode' || session.opencodeSessionId === undefined)) return
+      // D81: Cursor's reply is the in-memory last answer its hook reported, through the same injected lastAnswer.
+      if (agent !== 'claude' && agent !== 'cursor' && (agent !== 'opencode' || session.opencodeSessionId === undefined)) return
       deps.tools.lastAnswer(session).then((text) => {
         if (text !== null && text.trim().length > 0) deps.broadcast(IPC.evJarvisReply, text)
       }).catch((error: unknown) => deps.onError('jarvis reply', error))

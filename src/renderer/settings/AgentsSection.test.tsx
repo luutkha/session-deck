@@ -64,6 +64,12 @@ describe('AgentsSection opt-in Jarvis rows', () => {
     expect(markup).not.toContain(`aria-label="${WATCH_MINUTES_LABEL}"`)
   })
 
+  it('says the default OpenCode model does not apply to Cursor sessions (D81)', () => {
+    const markup = renderSection({})
+
+    expect(visibleText(markup)).toContain('Cursor sessions use the')
+  })
+
   it('sends the exact patch for each switch', () => {
     expect(watchEnabledPatch(true)).toStrictEqual({ jarvis: { watchEnabled: true } })
     expect(watchEnabledPatch(false)).toStrictEqual({ jarvis: { watchEnabled: false } })

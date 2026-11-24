@@ -23,6 +23,7 @@ import type { McpTool } from './mcpProtocol'
 import { resolveGroup, resolveRepo, resolveSession, resolveStatus, resolveWorktree, targetSessions } from './targets'
 import { clip, optionalBool, optionalInt, optionalText, schema, SESSION_PROP, text } from './toolArgs'
 import type { JarvisToolDeps } from './jarvisTools'
+import { isCursorModel } from '../store/cursorValues'
 
 const DIFF_DEFAULT_CHARS = 20_000
 const DIFF_MAX_CHARS = 100_000
@@ -468,12 +469,12 @@ export function createAppTools(deps: JarvisToolDeps, ctx: ToolContext): McpTool[
     // ---------- presets (D49)
     {
       name: 'preset_change',
-      description: 'Saved New Session forms ("presets"): list, save (name, folder, agent, optional model for OpenCode, remote_control for Claude, group, status; a preset with the same name is replaced), or remove (name; the user is asked). Start one with create_session preset=<name>.',
+      description: 'Saved New Session forms ("presets"): list, save (name, folder, agent, optional model for OpenCode or Cursor, remote_control for Claude, group, status; a preset with the same name is replaced), or remove (name; the user is asked). Start one with create_session preset=<name>.',
       inputSchema: schema({
         action: { type: 'string', enum: ['list', 'save', 'remove'] },
         name: { type: 'string' },
         folder: { type: 'string' },
-        agent: { type: 'string', enum: ['claude', 'opencode', 'shell'] },
+        agent: { type: 'string', enum: ['claude', 'opencode', 'cursor', 'shell'] },
         model: { type: 'string' },
         remote_control: { type: 'boolean' },
         group: { type: 'string' },
@@ -508,12 +509,15 @@ export function createAppTools(deps: JarvisToolDeps, ctx: ToolContext): McpTool[
         const statusRef = optionalText(args, 'status')
         const remote = optionalBool(args, 'remote_control') ?? existing?.claudeArgs.includes('--remote-control') ?? false
         const model = optionalText(args, 'model') ?? (agent === existing?.agent ? existing?.model : undefined)
+        if (agent === 'cursor' && model !== undefined && !isCursorModel(model.trim())) {
+          throw new Error(`"${model}" is not a Cursor model: use a plain name like gpt-5 or sonnet-4-thinking.`)
+        }
         const raw = {
           id: existing?.id ?? deps.newId(),
           name,
           cwd: optionalText(args, 'folder')?.trim() ?? existing?.cwd ?? (() => { throw new Error('"folder" is required for a new preset.') })(),
           agent,
-          ...(agent === 'opencode' && model !== undefined ? { model } : {}),
+          ...((agent === 'opencode' || agent === 'cursor') && model !== undefined ? { model } : {}),
           claudeArgs: agent === 'claude' && remote ? ['--remote-control'] : [],
           groupId: groupRef !== undefined ? resolveGroup(data, groupRef).id : existing?.groupId ?? null,
           statusId: statusRef !== undefined ? resolveStatus(data, statusRef).id : existing?.statusId ?? null
