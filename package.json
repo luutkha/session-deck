@@ -46,6 +46,7 @@
     "e2e:codemode": "node scripts/e2e-codemode.cjs",
     "e2e:tab-changes": "node scripts/e2e-tab-changes.cjs",
     "e2e:changes-detach": "node scripts/e2e-changes-detach.cjs",
+    "e2e:changes-files": "node scripts/e2e-changes-files.cjs",
     "e2e:workspaces": "node scripts/e2e-workspaces.cjs",
     "e2e:sort": "node scripts/e2e-sort.cjs",
     "e2e:code-git": "node scripts/e2e-code-git.cjs",

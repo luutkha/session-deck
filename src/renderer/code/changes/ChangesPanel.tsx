@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { subscribeChangesFileRequest, takeChangesFileRequest } from './changesRequest'
-import { ArrowLeft, LoaderCircle, MessageSquare, PictureInPicture2, RefreshCw, SendHorizontal, X } from 'lucide-react'
-import type { AgentKind, ChangedFile, Id, WorktreeChanges } from '../../../shared/types'
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Columns2,
+  ListTree,
+  LoaderCircle,
+  MessageSquare,
+  PictureInPicture2,
+  RefreshCw,
+  SendHorizontal,
+  X
+} from 'lucide-react'
+import type { AgentKind, Id, WorktreeChanges } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import { ScrollArea } from '../../components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
@@ -28,6 +41,7 @@ import { PreviewView } from './PreviewView'
 import { GitSection } from './GitSection'
 import { useGitActions } from './useGitActions'
 import { isPreviewable } from './preview'
+import { buildTree, flattenVisible, stepFile, toggleCollapsed, visibleFilePaths } from './changesTree'
 
 export interface ChangesPanelProps {
   readonly worktreeId: Id
@@ -68,6 +82,29 @@ const REFRESH_LABEL = 'Refresh changes'
 const DETACH_LABEL = 'Open changes in a separate window'
 const DETACH_TITLE = 'Open in separate window'
 const BACK_LABEL = 'All files'
+const PREV_FILE_LABEL = 'Previous file (Alt+Up)'
+const NEXT_FILE_LABEL = 'Next file (Alt+Down)'
+const SIDE_BY_SIDE_LABEL = 'Show the diff side by side'
+const INLINE_LABEL = 'Show the diff inline'
+const TREE_LABEL = 'Group the files by folder'
+const FLAT_LABEL = 'Show a flat file list'
+const TREE_PREF_KEY = 'sessiondeck.changes.tree'
+
+function readTreePref(): boolean {
+  try {
+    return localStorage.getItem(TREE_PREF_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeTreePref(on: boolean): void {
+  try {
+    localStorage.setItem(TREE_PREF_KEY, on ? '1' : '0')
+  } catch {
+    // Storage can be blocked; the choice then lasts for this window only.
+  }
+}
 const NO_CHANGES_YET = 'No changes yet.'
 const SEND_LABEL = 'Send comments to the agent'
 const SHELL_NOTICE = 'Comments only work for Claude and OpenCode sessions.'
@@ -144,6 +181,13 @@ interface PanelHeaderProps {
   readonly onBack: () => void
   readonly onRefresh: () => void
   readonly onDetach?: (() => void) | undefined
+  /** Prev/next file buttons (shown while a file is selected); absent = none. */
+  readonly onStep?: ((delta: 1 | -1) => void) | undefined
+  /** Flat list <-> folder tree. */
+  readonly treeView: boolean
+  readonly onTreeView: (on: boolean) => void
+  /** Side-by-side diff toggle; only the wide (split) layout offers it. */
+  readonly sideBySide?: { readonly on: boolean; readonly set: (on: boolean) => void } | undefined
 }
 
 const DIFF_TOGGLE_LABEL = 'Show the diff'
@@ -181,6 +225,36 @@ function ViewModeToggle({
   )
 }
 
+function HeaderIconButton({
+  label,
+  dataAttr,
+  onClick,
+  icon,
+  pressed
+}: {
+  readonly label: string
+  readonly dataAttr: string
+  readonly onClick: () => void
+  readonly icon: ReactElement
+  readonly pressed?: boolean
+}): ReactElement {
+  const marker = { [dataAttr]: '' }
+  return (
+    <Button
+      type="button"
+      variant={pressed === true ? 'secondary' : 'ghost'}
+      size="icon-xs"
+      aria-label={label}
+      title={label}
+      {...(pressed !== undefined ? { 'aria-pressed': pressed } : {})}
+      {...marker}
+      onClick={onClick}
+    >
+      {icon}
+    </Button>
+  )
+}
+
 function PanelHeader({
   title,
   selectedPath,
@@ -192,7 +266,11 @@ function PanelHeader({
   onViewMode,
   onBack,
   onRefresh,
-  onDetach
+  onDetach,
+  onStep,
+  treeView,
+  onTreeView,
+  sideBySide
 }: PanelHeaderProps): ReactElement {
   // The split layout shows list and diff together: there is no "back to the list" step, only the title.
   const showBack = layout === 'stack' && selectedPath !== null
@@ -219,6 +297,30 @@ function PanelHeader({
       )}
       <div className="flex shrink-0 items-center gap-1">
         {selectedPath !== null && previewable ? <ViewModeToggle viewMode={viewMode} onViewMode={onViewMode} /> : null}
+        {selectedPath !== null && onStep !== undefined ? (
+          <>
+            <HeaderIconButton label={PREV_FILE_LABEL} dataAttr="data-changes-prev" onClick={(): void => onStep(-1)} icon={<ChevronUp aria-hidden="true" />} />
+            <HeaderIconButton label={NEXT_FILE_LABEL} dataAttr="data-changes-next" onClick={(): void => onStep(1)} icon={<ChevronDown aria-hidden="true" />} />
+          </>
+        ) : null}
+        {sideBySide !== undefined && selectedPath !== null ? (
+          <HeaderIconButton
+            label={sideBySide.on ? INLINE_LABEL : SIDE_BY_SIDE_LABEL}
+            dataAttr="data-changes-sidebyside"
+            pressed={sideBySide.on}
+            onClick={(): void => sideBySide.set(!sideBySide.on)}
+            icon={<Columns2 aria-hidden="true" />}
+          />
+        ) : null}
+        {showBack ? null : (
+          <HeaderIconButton
+            label={treeView ? FLAT_LABEL : TREE_LABEL}
+            dataAttr="data-changes-tree"
+            pressed={treeView}
+            onClick={(): void => onTreeView(!treeView)}
+            icon={<ListTree aria-hidden="true" />}
+          />
+        )}
         {onDetach !== undefined ? <DetachButton onDetach={onDetach} /> : null}
         <RefreshButton loading={loading} onRefresh={onRefresh} />
       </div>
@@ -240,6 +342,8 @@ interface ChangesBodyProps {
   readonly openInViewer: ((path: string) => void) | null
   /** D83: the file highlighted in the split layout's list; null in the stacked layout (the diff replaces it). */
   readonly selectedPath: string | null
+  /** Folder tree instead of the flat list; collapsed folders and their toggle. */
+  readonly tree: { readonly on: boolean; readonly collapsed: ReadonlySet<string>; readonly toggle: (dir: string) => void }
 }
 
 function fileRows(
@@ -247,21 +351,49 @@ function fileRows(
   onSelect: (path: string) => void,
   ticks: Ticks,
   openInViewer: ((path: string) => void) | null,
-  selectedPath: string | null
+  selectedPath: string | null,
+  tree: ChangesBodyProps['tree']
 ): ReactElement {
   const anyUncommitted = changes.files.some((file): boolean => file.uncommitted === true)
+  const rows = tree.on
+    ? flattenVisible(buildTree(changes.files), tree.collapsed)
+    : changes.files.map((file) => ({ node: { kind: 'file' as const, path: file.path, name: file.path, file }, depth: 0 }))
   return (
     <ul role="listbox" aria-label="Changed files" className="flex flex-col gap-0.5 p-1">
-      {changes.files.map((file: ChangedFile): ReactElement => (
-        <ChangeRow
-          key={file.path}
-          file={file}
-          selected={file.path === selectedPath}
-          onSelect={onSelect}
-          {...(anyUncommitted ? { ticked: !ticks.unticked.has(file.path), onToggleTick: ticks.toggle } : {})}
-          {...(openInViewer !== null && canOpenInViewer(file) ? { onOpenViewer: openInViewer } : {})}
-        />
-      ))}
+      {rows.map((row): ReactElement => {
+        if (row.node.kind === 'dir') {
+          const dir = row.node
+          const open = !tree.collapsed.has(dir.path)
+          return (
+            <li key={'dir:' + dir.path} role="presentation">
+              <button
+                type="button"
+                data-changes-dir={dir.path}
+                aria-expanded={open}
+                className="flex w-full items-center gap-1 rounded-md py-1 text-left text-xs text-muted-foreground hover:bg-accent/40"
+                style={{ paddingLeft: String(4 + row.depth * 14) + 'px' }}
+                onClick={(): void => tree.toggle(dir.path)}
+              >
+                {open ? <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" /> : <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />}
+                <span className="min-w-0 truncate font-medium">{dir.name}</span>
+                <span className="shrink-0 tabular-nums">{String(dir.fileCount)}</span>
+              </button>
+            </li>
+          )
+        }
+        const file = row.node.file
+        return (
+          <ChangeRow
+            key={file.path}
+            file={file}
+            selected={file.path === selectedPath}
+            onSelect={onSelect}
+            {...(tree.on ? { depth: row.depth } : {})}
+            {...(anyUncommitted ? { ticked: !ticks.unticked.has(file.path), onToggleTick: ticks.toggle } : {})}
+            {...(openInViewer !== null && canOpenInViewer(file) ? { onOpenViewer: openInViewer } : {})}
+          />
+        )
+      })}
     </ul>
   )
 }
@@ -272,7 +404,7 @@ function headerTitle(list: WorktreeChangesResult): string {
 }
 
 /** The file list, or the message that replaces it (IPC failure, git problem, no files). */
-function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath }: ChangesBodyProps): ReactElement {
+function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath, tree }: ChangesBodyProps): ReactElement {
   const { changes } = list
   if (changes === null) {
     return list.error !== null ? (
@@ -290,7 +422,7 @@ function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath }: Chan
   return (
     <ScrollArea className="min-h-0 flex-1">
       {list.error !== null ? <PanelMessage text={list.error} failed /> : null}
-      {fileRows(changes, onSelect, ticks, openInViewer, selectedPath)}
+      {fileRows(changes, onSelect, ticks, openInViewer, selectedPath, tree)}
     </ScrollArea>
   )
 }
@@ -373,6 +505,9 @@ export function ChangesPanel({
   const [viewMode, setViewMode] = useState<'diff' | 'preview'>('diff')
   const storedPath = selection !== null && selection.worktreeId === worktreeId ? selection.path : null
   const split = layout === 'split'
+  const [treeView, setTreeView] = useState<boolean>(readTreePref)
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set<string>())
+  const [sideBySide, setSideBySide] = useState(false)
   // The split layout always shows a diff: the selected file while it is changed, otherwise the first one.
   const selectedPath = split
     ? splitSelection(list.changes, storedPath)
@@ -419,6 +554,31 @@ export function ChangesPanel({
     return subscribeChangesFileRequest(apply)
   }, [worktreeId, storedPath])
 
+  // Next/previous file follows the order the list is drawn in (tree order hides collapsed folders).
+  const orderedPaths = list.changes === null
+    ? []
+    : treeView
+      ? visibleFilePaths(buildTree(list.changes.files), collapsed)
+      : list.changes.files.map((file) => file.path)
+  function step(delta: 1 | -1): void {
+    const next = stepFile(orderedPaths, selectedPath, delta)
+    if (next !== null) setSelection({ worktreeId, path: next })
+  }
+  const stepRef = useRef(step)
+  stepRef.current = step
+  useEffect((): (() => void) => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      const target = event.target
+      if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
+      event.preventDefault()
+      stepRef.current(event.key === 'ArrowDown' ? 1 : -1)
+    }
+    document.addEventListener('keydown', onKey)
+    return (): void => document.removeEventListener('keydown', onKey)
+  }, [])
+
   function update(next: readonly DiffAnnotation[]): void {
     setAnnotations(next)
     storeAnnotations(worktreeId, next)
@@ -449,6 +609,7 @@ export function ChangesPanel({
       ticks={{ unticked: git.unticked, toggle: git.toggleFile }}
       openInViewer={openInViewer}
       selectedPath={split ? selectedPath : null}
+      tree={{ on: treeView, collapsed, toggle: (dir: string): void => setCollapsed((current) => toggleCollapsed(current, dir)) }}
     />
   )
   const fileView = selectedPath === null ? null : viewMode === 'preview' && previewable ? (
@@ -463,6 +624,7 @@ export function ChangesPanel({
       diff={diff.diff}
       loading={diff.loading}
       error={diff.error}
+      layout={split && sideBySide ? 'split' : 'inline'}
       annotations={annotateOn ? annotations : []}
       onAddComment={annotateOn
         ? (input): void => {
@@ -488,6 +650,13 @@ export function ChangesPanel({
           onViewMode={setViewMode}
           onBack={(): void => setSelection(null)}
           onRefresh={list.refresh}
+          onStep={step}
+          treeView={treeView}
+          onTreeView={(on: boolean): void => {
+            setTreeView(on)
+            writeTreePref(on)
+          }}
+          {...(split ? { sideBySide: { on: sideBySide, set: setSideBySide } } : {})}
           {...(onDetach !== undefined ? { onDetach } : {})}
         />
         {split ? (

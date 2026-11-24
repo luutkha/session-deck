@@ -137,7 +137,9 @@ async function main() {
     app = await launchApp({ port: PORT, userData })
     await sleep(1500)
     const restored = await waitFor(() => ev('!!document.querySelector(\'[data-testid="grid-view"][data-grid-preset="2x2"]\')'), 8000, 300)
-    t.check('the restart restores the grid preset and assignments', !!restored && (await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')) >= 2)
+    // The panes mount one React commit after the grid element: wait for them instead of counting once.
+    const restoredPanes = await waitFor(async () => (await ev('document.querySelectorAll(\'[data-testid="grid-view"] [data-grid-cell] .terminal-pane__viewport\').length')) >= 2, 5000, 200)
+    t.check('the restart restores the grid preset and assignments', !!restored && !!restoredPanes)
 
     // ---- D55: leave the grid with the X button, then with the menu item; the layout is kept
     const gridGone = () => waitFor(() => ev('!document.querySelector(\'[data-testid="grid-view"]\')'), 5000, 200)

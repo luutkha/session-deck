@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, nativeImage, Notification, screen, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, nativeImage, Notification, screen, session, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir, cpus, totalmem, freemem, platform as osPlatform, release as osRelease, arch as osArch } from 'node:os'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -900,6 +900,8 @@ if (!gotTheLock) {
       await runShutdownStep('last active', () => lastActive.flush())
       await runShutdownStep('close Code window', () => windows.closeCode())
       await runShutdownStep('flush store', () => saver.flush())
+      // Chromium commits localStorage in batches (~3 s); a slow quit that is cut short would lose the last UI prefs.
+      await runShutdownStep('flush renderer storage', () => session.defaultSession.flushStorageData())
       await runShutdownStep('kill sessions', () => pty.killAll())
       await runShutdownStep('dispose pty', () => pty.dispose())
       await runShutdownStep('stop attention', () => attention.stop())

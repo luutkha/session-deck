@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button'
 import { diffLineClass, diffLineMarker, limitDiffLines, MAX_RENDERED_DIFF_LINES } from './changesFormat'
 import { annotationForLine, annotationText, type DiffAnnotation } from './annotations'
 import { parseUnifiedDiff, type DiffLine } from './parseUnifiedDiff'
+import { pairLines, type SplitRow } from './sideBySide'
 
 export interface DiffViewProps {
   readonly diff: FileDiff | null
@@ -15,6 +16,8 @@ export interface DiffViewProps {
   readonly annotations?: readonly DiffAnnotation[]
   /** Provided = line annotation is on (Code mode only): the hover "+" opens the inline editor. */
   readonly onAddComment?: (input: { readonly side: 'new' | 'old'; readonly line: number | null; readonly text: string }) => void
+  /** 'split' shows old and new text in two columns; annotation stays inline-only. */
+  readonly layout?: 'inline' | 'split'
 }
 
 const BINARY_MESSAGE = 'Binary file, no text diff.'
@@ -127,6 +130,34 @@ function DiffRow({
   )
 }
 
+/** One column of a split row: line number, marker and text with the line's own style. */
+function SplitCell({ line, side }: { readonly line: DiffLine | null; readonly side: 'old' | 'new' }): ReactElement {
+  if (line === null) {
+    return <div aria-hidden="true" className="min-h-[18px] bg-muted/20" />
+  }
+  const number = side === 'old' ? line.oldNo : line.newNo
+  return (
+    <div className={cn('flex', diffLineClass(line.kind))}>
+      <span className="w-12 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/60">{number ?? ''}</span>
+      <span className="w-4 shrink-0 select-none text-center">{diffLineMarker(line)}</span>
+      <span className="whitespace-pre pr-3">{line.text}</span>
+    </div>
+  )
+}
+
+/** A split row is either two grid cells or one cell spanning both columns. */
+function SplitRowView({ row }: { readonly row: SplitRow }): ReactElement {
+  if (row.kind === 'full') {
+    return <div className={cn('col-span-2 whitespace-pre px-3', diffLineClass(row.line.kind))}>{row.line.text}</div>
+  }
+  return (
+    <>
+      <SplitCell line={row.left} side="old" />
+      <SplitCell line={row.right} side="new" />
+    </>
+  )
+}
+
 /** Text lines only: git's meta lines are replaced by the file path header. */
 function isBodyLine(line: DiffLine): boolean {
   return line.kind !== 'meta'
@@ -139,14 +170,17 @@ function annotationEnabled(line: DiffLine): boolean {
 function DiffText({
   diff,
   annotations,
-  onAddComment
+  onAddComment,
+  layout
 }: {
   readonly diff: FileDiff
   readonly annotations: readonly DiffAnnotation[]
   readonly onAddComment?: DiffViewProps['onAddComment']
+  readonly layout: 'inline' | 'split'
 }): ReactElement {
   const parsed = useMemo((): readonly DiffLine[] => parseUnifiedDiff(diff.diff).filter(isBodyLine), [diff.diff])
   const limited = useMemo(() => limitDiffLines(parsed), [parsed])
+  const splitRows = useMemo((): readonly SplitRow[] => (layout === 'split' ? pairLines(limited.rows) : []), [layout, limited])
   const [editor, setEditor] = useState<EditorState | null>(null)
 
   function add(): void {
@@ -157,28 +191,40 @@ function DiffText({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto py-1 font-mono text-[12px] leading-[18px] text-foreground">
+    <div
+      data-diff-layout={layout}
+      className="min-h-0 flex-1 overflow-auto py-1 font-mono text-[12px] leading-[18px] text-foreground"
+    >
       <div className="w-max min-w-full">
         <div className="px-3 py-1 font-semibold">{diff.path}</div>
-        {limited.rows.map((line: DiffLine, index: number): ReactElement => (
-          <Fragment key={index}>
-            <DiffRow
-              line={line}
-              annotation={annotationForLine(annotations, diff.path, line)}
-              canAnnotate={onAddComment !== undefined && annotationEnabled(line)}
-              onOpenEditor={(): void => setEditor({ line, draft: '' })}
-            />
-            {editor !== null && editor.line === line ? (
-              <CommentEditor
-                draft={editor.draft}
-                busy={false}
-                onDraft={(text) => setEditor((current) => (current === null ? current : { ...current, draft: text }))}
-                onAdd={add}
-                onCancel={(): void => setEditor(null)}
+        {layout === 'split' ? (
+          // Split layout is annotation-free (no comment button, no dots): annotations are inline-only.
+          <div className="grid grid-cols-2">
+            {splitRows.map((row: SplitRow, index: number): ReactElement => (
+              <SplitRowView key={index} row={row} />
+            ))}
+          </div>
+        ) : (
+          limited.rows.map((line: DiffLine, index: number): ReactElement => (
+            <Fragment key={index}>
+              <DiffRow
+                line={line}
+                annotation={annotationForLine(annotations, diff.path, line)}
+                canAnnotate={onAddComment !== undefined && annotationEnabled(line)}
+                onOpenEditor={(): void => setEditor({ line, draft: '' })}
               />
-            ) : null}
-          </Fragment>
-        ))}
+              {editor !== null && editor.line === line ? (
+                <CommentEditor
+                  draft={editor.draft}
+                  busy={false}
+                  onDraft={(text) => setEditor((current) => (current === null ? current : { ...current, draft: text }))}
+                  onAdd={add}
+                  onCancel={(): void => setEditor(null)}
+                />
+              ) : null}
+            </Fragment>
+          ))
+        )}
         {parsed.length === 0 ? <Notice text={EMPTY_MESSAGE} /> : null}
         {limited.limited ? <Notice text={LIMIT_MESSAGE} /> : null}
         {diff.truncated ? <Notice text={TRUNCATED_MESSAGE} /> : null}
@@ -188,7 +234,14 @@ function DiffText({
 }
 
 /** Read-only unified diff of one file, with per-line comments when annotation is on (Code mode). Long lines scroll sideways inside the view. */
-export function DiffView({ diff, loading, error, annotations = [], onAddComment }: DiffViewProps): ReactElement {
+export function DiffView({
+  diff,
+  loading,
+  error,
+  annotations = [],
+  onAddComment,
+  layout = 'inline'
+}: DiffViewProps): ReactElement {
   if (error !== null) {
     return (
       <p role="alert" className="px-3 py-3 text-xs text-destructive">
@@ -202,5 +255,5 @@ export function DiffView({ diff, loading, error, annotations = [], onAddComment 
   if (diff.binary) {
     return <Notice text={BINARY_MESSAGE} />
   }
-  return <DiffText diff={diff} annotations={annotations} onAddComment={onAddComment} />
+  return <DiffText diff={diff} annotations={annotations} onAddComment={onAddComment} layout={layout} />
 }
