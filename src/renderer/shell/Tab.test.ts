@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tabPropsEqual, type TabProps } from './Tab'
+import { showViewChanges, tabPropsEqual, type TabProps } from './Tab'
 
 const noop = (): void => undefined
 const base: TabProps = {
@@ -18,9 +18,14 @@ describe('tabPropsEqual', () => {
 
   it('differs when anything the tab shows changes', () => {
     for (const change of [{ title: 'B' }, { run: 'exited' as const }, { attention: 'permission' as const }, { exitCode: 1 }, { sleeping: true },
-      { activity: 'working' as const }, { agent: 'opencode' as const }, { remote: true }]) {
+      { activity: 'working' as const }, { agent: 'opencode' as const }, { remote: true }, { worktree: true }]) {
       expect(tabPropsEqual(base, { ...base, tab: { ...base.tab, ...change } })).toBe(false)
     }
+  })
+
+  it('differs when the view-changes callback changes', () => {
+    expect(tabPropsEqual(base, { ...base, onViewChanges: noop })).toBe(false)
+    expect(tabPropsEqual({ ...base, onViewChanges: noop }, { ...base, onViewChanges: noop })).toBe(true)
   })
 
   it('differs when the active flag or a callback changes', () => {
@@ -38,5 +43,20 @@ describe('tabPropsEqual', () => {
     expect(tabPropsEqual({ ...base, split }, { ...base, split: { ...split, onOpenToSide: () => undefined } })).toBe(false)
     expect(tabPropsEqual({ ...base, split }, base)).toBe(false)
     expect(tabPropsEqual(base, { ...base })).toBe(true)
+  })
+})
+
+describe('showViewChanges', () => {
+  it('shows the item only for a tab whose session is in a worktree', () => {
+    expect(showViewChanges({ ...base.tab }, noop)).toBe(false)
+    expect(showViewChanges({ ...base.tab, worktree: true }, noop)).toBe(true)
+  })
+
+  it('hides the item when the workspace offers no action (Ops mode)', () => {
+    expect(showViewChanges({ ...base.tab, worktree: true }, undefined)).toBe(false)
+  })
+
+  it('stays available for a sleeping worktree session (Changes reads git, not the process)', () => {
+    expect(showViewChanges({ ...base.tab, worktree: true, sleeping: true }, noop)).toBe(true)
   })
 })

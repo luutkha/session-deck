@@ -61,6 +61,8 @@ export interface TabBarProps {
   readonly grid?: TabBarGrid
   /** Read-only tabs for the OpenCode workers of the active session (hidden when undefined or empty). */
   readonly workers?: WorkerTabsProps
+  /** Code mode: opens a worktree session's Changes tab in the side panel (hidden when undefined). */
+  readonly onViewChanges?: (id: Id) => void
 }
 
 function findTabElement(strip: HTMLElement | null, id: Id): HTMLElement | null {
@@ -133,6 +135,7 @@ export function TabBar(props: TabBarProps): ReactElement {
             onClose={props.onClose}
             onCloseOthers={props.onCloseOthers}
             onCloseAll={props.onCloseAll}
+            onViewChanges={props.onViewChanges}
             split={
               props.split === undefined
                 ? undefined

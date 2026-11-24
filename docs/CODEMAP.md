@@ -68,6 +68,7 @@ Where things live. One line per folder, plus the files you usually need. Feature
 
 - Performance round (D62): `renderer/terminal/webglPolicy.ts` (which panes hold a WebGL context), `hiddenQueue.ts` (output queued while a pane is hidden), `renderer/state/useClock.ts` (one shared interval for the 30 s ticks), `scripts/bench-sessions.cjs` (benchmark: `node scripts/bench-sessions.cjs 20 15 [churn]`), `scripts/e2e-hiddenpane.cjs`.
 - Jarvis tuning tools (D71): `main/jarvis/systemTools.ts` (PC specs + hints + GPU), `prefsTools.ts`, `layoutTools.ts`, `panelTools.ts`; window side `renderer/jarvis/terminalPrefsUi.ts`, `jarvisPrefsUi.ts`, `windowUi.ts`; registered in `jarvisTools.ts`; `scripts/e2e-jarvis-tuning.cjs`.
+- View changes in the tab menu (D82): `renderer/shell/Tab.tsx` (`showViewChanges`), `tabStatus.ts` (`TabModel.worktree`), `mode/viewChangesLogic.ts`, `viewChanges` in `mode/ModeWorkspace.tsx`, `scripts/e2e-tab-changes.cjs`.
 - Sidebar width (D70): `renderer/shell/sidebarWidth.ts`, `useSidebarWidth.ts`, `SidebarResizeHandle.tsx`, wired in `mode/ModeWorkspace.tsx`, `scripts/e2e-sidebarwidth.cjs`.
 - Keyboard triage (D69): `renderer/attention/attentionNav.ts`, `useAttentionShortcuts.ts`, `stepAttention` in `mode/useWorkspaceCommands.ts`, palette `step-attention`, `scripts/e2e-attentionnav.cjs`.
 - Auto effects vs busy fleet (D68): `renderer/Terminal/effectsLoad.ts`, `resolveReducedEffects(..., fleetBusy)`, `GraphicsEffects` in `App.tsx`.

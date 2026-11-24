@@ -44,6 +44,14 @@ describe('buildTabModels', () => {
     ])
   })
 
+  it('marks a worktree session so its tab can offer View changes', () => {
+    const worktree: Session = { ...sessionNamed('b', 'Beta'), worktreeId: 'w1' }
+    expect(buildTabModels(['a', 'b'], [sessionNamed('a', 'Alpha'), worktree], new Map())).toEqual([
+      { id: 'a', title: 'Alpha', run: null, attention: null },
+      { id: 'b', title: 'Beta', run: null, attention: null, worktree: true }
+    ])
+  })
+
   it('carries the runtime activity through to the tab model', () => {
     const states = new Map<string, RuntimeState>([
       ['a', { sessionId: 'a', run: 'running', exitCode: null, attention: null, activity: 'working' }]

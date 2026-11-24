@@ -44,6 +44,7 @@
     "e2e:away": "node scripts/e2e-away.cjs",
     "e2e:autopilot": "node scripts/e2e-autopilot.cjs",
     "e2e:codemode": "node scripts/e2e-codemode.cjs",
+    "e2e:tab-changes": "node scripts/e2e-tab-changes.cjs",
     "e2e:workspaces": "node scripts/e2e-workspaces.cjs",
     "e2e:sort": "node scripts/e2e-sort.cjs",
     "e2e:code-git": "node scripts/e2e-code-git.cjs",

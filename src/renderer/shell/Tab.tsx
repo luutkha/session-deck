@@ -1,5 +1,5 @@
 import { memo, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react'
-import { Columns2, LoaderCircle, Moon, Sun, X } from 'lucide-react'
+import { Columns2, GitCompare, LoaderCircle, Moon, Sun, X } from 'lucide-react'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -26,9 +26,11 @@ export interface TabProps {
   readonly onActivate: (id: Id) => void
   readonly onClose: (id: Id) => void
   readonly onCloseOthers: (id: Id) => void
-  readonly onCloseAll: () => void
-  /** Present only when split view is available. */
-  readonly split?: TabSplitInfo
+  readonly onCloseAll: () => void
+  /** Opens the session's Changes tab in the side panel (Code mode; present only where the workspace can do it). */
+  readonly onViewChanges?: (id: Id) => void
+  /** Present only when split view is available. */
+  readonly split?: TabSplitInfo
 }
 
 // Orca's tab surface classes (getTabRootStateClasses in tab-bar/drop-indicator.ts).
@@ -47,14 +49,23 @@ function preventMiddleButtonScroll(event: MouseEvent<HTMLElement>): void {
   }
 }
 
+/**
+ * "View changes" shows the worktree session's Changes tab in the side panel. It needs a worktree (other sessions have
+ * no Changes tab) and a workspace that offers the action; it stays enabled for a sleeping session (Changes reads git).
+ */
+export function showViewChanges(tab: TabModel, onViewChanges: ((id: Id) => void) | undefined): boolean {
+  return tab.worktree === true && onViewChanges !== undefined
+}
+
 function TabView({
   tab,
   active,
   onActivate,
   onClose,
-  onCloseOthers,
-  onCloseAll,
-  split
+  onCloseOthers,
+  onCloseAll,
+  onViewChanges,
+  split
 }: TabProps): ReactElement {
   const visual = tabVisualFor(tab)
   const activate = (): void => onActivate(tab.id)
@@ -183,7 +194,13 @@ function TabView({
             <Moon aria-hidden="true" />
             Sleep
           </ContextMenuItem>
-        ) : null}
+        ) : null}
+        {showViewChanges(tab, onViewChanges) ? (
+          <ContextMenuItem data-view-changes="" onSelect={(): void => onViewChanges?.(tab.id)}>
+            <GitCompare aria-hidden="true" />
+            View changes
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuItem onSelect={close}>Close session</ContextMenuItem>
         {split !== undefined ? (
           <ContextMenuItem
@@ -205,7 +222,8 @@ function TabView({
 function sameTabModel(a: TabModel, b: TabModel): boolean {
   return a === b ||
     (a.id === b.id && a.title === b.title && a.run === b.run && a.attention === b.attention && a.exitCode === b.exitCode &&
-      a.sleeping === b.sleeping && a.activity === b.activity && a.agent === b.agent && a.remote === b.remote)
+      a.sleeping === b.sleeping && a.activity === b.activity && a.agent === b.agent && a.remote === b.remote &&
+      a.worktree === b.worktree)
 }
 
 function sameSplit(a: TabSplitInfo | undefined, b: TabSplitInfo | undefined): boolean {
@@ -218,7 +236,7 @@ function sameSplit(a: TabSplitInfo | undefined, b: TabSplitInfo | undefined): bo
 export function tabPropsEqual(prev: TabProps, next: TabProps): boolean {
   return sameTabModel(prev.tab, next.tab) && prev.active === next.active && prev.onActivate === next.onActivate &&
     prev.onClose === next.onClose && prev.onCloseOthers === next.onCloseOthers && prev.onCloseAll === next.onCloseAll &&
-    sameSplit(prev.split, next.split)
+    prev.onViewChanges === next.onViewChanges && sameSplit(prev.split, next.split)
 }
 
 export const Tab = memo(TabView, tabPropsEqual)

@@ -17,6 +17,8 @@ export interface TabModel {
   readonly agent?: AgentKind
   /** True while Remote Control is active for the running session. */
   readonly remote?: boolean
+  /** True when the session lives in a git worktree, so its side panel offers the Changes tab. */
+  readonly worktree?: boolean
 }
 
 export interface TabIndicator {
@@ -111,6 +113,7 @@ export function buildTabModels(
       ...(state?.activity === undefined || state.activity === null ? {} : { activity: state.activity }),
       ...(sleeping ? { sleeping: true } : {}),
       ...(state?.remoteControl === true ? { remote: true } : {}),
+      ...(session.worktreeId !== undefined ? { worktree: true } : {}),
       ...(session.agent === 'opencode' || session.agent === 'cursor' ? { agent: session.agent } : {})
     })
   }

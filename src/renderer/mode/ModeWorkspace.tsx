@@ -48,6 +48,7 @@ import { useSessionSort } from '../state/useSessionSort'
 import { ModeTitleBar, type ModeChrome } from './ModeTitleBar'
 import { useWorkspaceCommands } from './useWorkspaceCommands'
 import { useWorkspaceNav, type FocusRequest } from './useWorkspaceNav'
+import { planViewChangesPanel } from './viewChangesLogic'
 import { WorkspaceDialogs } from './WorkspaceDialogs'
 import { registerWorkspaceUi } from '../jarvis/jarvisUiBridge'
 import { runWorkspaceAction, type WorkspaceUiContext } from '../jarvis/workspaceUi'
@@ -204,6 +205,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null)
   const previewNonce = useRef(0)
   const previewWidened = useRef(false)
+  // "View changes" widens the panel once too (a diff is unreadable at the default width).
+  const changesWidened = useRef(false)
   useEffect((): (() => void) => onFileViewRequest((request): void => {
     previewNonce.current += 1
     setPreviewRequest({ sessionId: request.sessionId, text: request.text, nonce: previewNonce.current })
@@ -222,6 +225,19 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
     storeSidePanelTab('notes', keys.sidePanel)
     setSidePanelEpoch((n: number): number => n + 1)
   }, [keys.sidePanel])
+  // The tab menu's "View changes" (Code mode): show that session in the terminal view with the panel on Changes.
+  const viewChanges = useCallback((id: Id): void => {
+    // The panel exists only in the terminal view, and in the grid activating a tab only focuses a cell: leave first.
+    if (view !== 'terminal') nav.setView('terminal')
+    nav.activateTab(id)
+    const plan = planViewChangesPanel({ notesOpen: nav.notesOpen, width: sidePanelWidth.width, widened: changesWidened.current })
+    changesWidened.current = true
+    if (plan.open) nav.toggleNotes()
+    // The panel mounts (or remounts, via the epoch) on a tab it reads from storage, so the stored tab is set first.
+    storeSidePanelTab('changes', keys.sidePanel)
+    setSidePanelEpoch((n: number): number => n + 1)
+    if (plan.width !== null) sidePanelWidth.commit(plan.width)
+  }, [view, nav.setView, nav.activateTab, nav.notesOpen, nav.toggleNotes, keys.sidePanel, sidePanelWidth.width, sidePanelWidth.commit])
   // A preview belongs to the session whose folder resolved it: once that session is removed the request can only fail
   // (Reload keeps erroring), so it is dropped. `sessions` is null until the store arrives: nothing to decide yet.
   const previewSessionId = previewRequest?.sessionId ?? null
@@ -389,6 +405,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
             onClose={tabs.close}
             onCloseOthers={closeOtherTabs}
             onCloseAll={closeAllTabs}
+            onViewChanges={viewChanges}
             onNewSession={(): void => commands.openNew()}
             hubActive={view === 'hub'}
             onOpenHub={(): void => nav.setView('hub')}
