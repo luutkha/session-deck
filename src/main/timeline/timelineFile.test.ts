@@ -126,6 +126,14 @@ describe('serializeTimelineFile', () => {
   it('writes the version field', () => {
     expect(JSON.parse(serializeTimelineFile([]))).toEqual({ version: 1, turns: [] })
   })
+
+  it('writes compact JSON without indentation or line breaks', () => {
+    const turns = [turn({ id: 'a' })]
+    const text = serializeTimelineFile(turns)
+    expect(text).toBe(JSON.stringify({ version: 1, turns }))
+    expect(text).not.toContain('\n')
+    expect(text).not.toContain('  "version"')
+  })
 })
 
 describe('sleep records in the timeline file', () => {
@@ -220,6 +228,26 @@ describe('loadTimelineFile', () => {
     writeFileSync(file, serializeTimelineFile([turn({ id: 'x' })]), 'utf-8')
     const turns = await loadTimelineFile(file, NOW, onError)
     expect(turns.map((t) => t.id)).toEqual(['x'])
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('loads a compact file', async () => {
+    const onError = vi.fn()
+    const dir = tempDir()
+    const file = path.join(dir, 'timeline.json')
+    writeFileSync(file, JSON.stringify({ version: 1, turns: [turn({ id: 'compact' })] }), 'utf-8')
+    const turns = await loadTimelineFile(file, NOW, onError)
+    expect(turns.map((t) => t.id)).toEqual(['compact'])
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('still loads a legacy pretty-printed file', async () => {
+    const onError = vi.fn()
+    const dir = tempDir()
+    const file = path.join(dir, 'timeline.json')
+    writeFileSync(file, JSON.stringify({ version: 1, turns: [turn({ id: 'pretty' })] }, null, 2), 'utf-8')
+    const turns = await loadTimelineFile(file, NOW, onError)
+    expect(turns.map((t) => t.id)).toEqual(['pretty'])
     expect(onError).not.toHaveBeenCalled()
   })
 })

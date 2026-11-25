@@ -23,6 +23,8 @@ export default defineConfig({
     root: '.',
     build: {
       outDir: 'out/renderer',
+      // D87: electron-vite leaves the renderer unminified; minifying cuts the 3.15 MB chunk every window parses at launch.
+      minify: 'esbuild',
       rollupOptions: {
         input: {
           index: resolve('index.html')

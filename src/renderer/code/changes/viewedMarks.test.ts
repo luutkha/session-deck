@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChangedFile } from '../../../shared/types'
 import {
   VIEWED_MAX_ENTRIES,
+  __resetViewedCacheForTests,
   fileSignature,
   isViewed,
   markAllViewed,
   markViewed,
+  onViewedStorageEvent,
   pruneViewed,
   readViewed,
   subscribeViewed,
@@ -13,6 +15,7 @@ import {
   unviewedCount,
   unviewedFiles,
   viewedStorageKey,
+  watchViewedStorage,
   writeViewed
 } from './viewedMarks'
 
@@ -101,6 +104,7 @@ describe('localStorage and pub/sub helpers', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    __resetViewedCacheForTests()
     storage.clear()
   })
 
@@ -178,5 +182,80 @@ describe('localStorage and pub/sub helpers', () => {
     } finally {
       off()
     }
+  })
+
+  function installCountingStorage(): ReturnType<typeof vi.fn> {
+    const getItem = vi.fn((key: string): string | null => storage.get(key) ?? null)
+    vi.stubGlobal('localStorage', {
+      getItem,
+      setItem: (key: string, value: string): void => void storage.set(key, value)
+    })
+    return getItem
+  }
+
+  it('readViewed parses storage only once per worktree', () => {
+    const getItem = installCountingStorage()
+    storage.set(viewedStorageKey('wt1'), JSON.stringify({ 'a.ts': 'sig' }))
+    expect(readViewed('wt1')).toEqual({ 'a.ts': 'sig' })
+    expect(readViewed('wt1')).toEqual({ 'a.ts': 'sig' })
+    expect(getItem).toHaveBeenCalledTimes(1)
+    expect(getItem).toHaveBeenCalledWith(viewedStorageKey('wt1'))
+    expect(readViewed('wt2')).toEqual({})
+    expect(getItem).toHaveBeenCalledTimes(2)
+  })
+
+  it('writeViewed updates the cache and storage together without a read', () => {
+    const getItem = installCountingStorage()
+    const map = { 'a.ts': 'sig' }
+    writeViewed('wt1', map)
+    expect(readViewed('wt1')).toEqual(map)
+    expect(storage.get(viewedStorageKey('wt1'))).toBe(JSON.stringify(map))
+    expect(getItem).not.toHaveBeenCalled()
+  })
+
+  it('a storage event invalidates only that worktree, so the next read sees the new value', () => {
+    const getItem = installCountingStorage()
+    storage.set(viewedStorageKey('wt1'), JSON.stringify({ 'a.ts': 'old' }))
+    storage.set(viewedStorageKey('wt2'), JSON.stringify({ 'b.ts': 'keep' }))
+    expect(readViewed('wt1')).toEqual({ 'a.ts': 'old' })
+    expect(readViewed('wt2')).toEqual({ 'b.ts': 'keep' })
+    storage.set(viewedStorageKey('wt1'), JSON.stringify({ 'a.ts': 'new' }))
+    expect(readViewed('wt1')).toEqual({ 'a.ts': 'old' })
+
+    onViewedStorageEvent({ key: viewedStorageKey('wt1') })
+    expect(readViewed('wt1')).toEqual({ 'a.ts': 'new' })
+    expect(readViewed('wt2')).toEqual({ 'b.ts': 'keep' })
+    expect(getItem).toHaveBeenCalledTimes(3)
+
+    onViewedStorageEvent({ key: null })
+    onViewedStorageEvent({ key: 'sessiondeck.split.v1' })
+    expect(readViewed('wt1')).toEqual({ 'a.ts': 'new' })
+    expect(getItem).toHaveBeenCalledTimes(3)
+  })
+
+  it('corrupt JSON caches an empty map (still degraded, no re-parse per badge)', () => {
+    const getItem = installCountingStorage()
+    storage.set(viewedStorageKey('wt1'), 'not json')
+    expect(readViewed('wt1')).toEqual({})
+    storage.set(viewedStorageKey('wt1'), JSON.stringify({ 'a.ts': 'sig' }))
+    expect(readViewed('wt1')).toEqual({})
+    expect(getItem).toHaveBeenCalledTimes(1)
+  })
+
+  it('watches window storage events when a window exists', () => {
+    const addEventListener = vi.fn(
+      (_type: string, _listener: (event: { readonly key: string | null }) => void): void => {}
+    )
+    vi.stubGlobal('window', { addEventListener })
+    watchViewedStorage()
+    expect(addEventListener).toHaveBeenCalledWith('storage', expect.any(Function))
+
+    installCountingStorage()
+    storage.set(viewedStorageKey('wt1'), JSON.stringify({ 'a.ts': 'first' }))
+    expect(readViewed('wt1')).toEqual({ 'a.ts': 'first' })
+    storage.set(viewedStorageKey('wt1'), JSON.stringify({ 'a.ts': 'second' }))
+    const listener = addEventListener.mock.calls[0]?.[1]
+    listener?.({ key: viewedStorageKey('wt1') })
+    expect(readViewed('wt1')).toEqual({ 'a.ts': 'second' })
   })
 })

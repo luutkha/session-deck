@@ -720,6 +720,8 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     if (pty.isRunning(id)) {
       pty.kill(id)
     }
+    // The session is gone for good: free its replay buffer (an exited-but-still-listed session keeps its own).
+    pty.forget(id)
     forgetTrustPrompt(id)
     attention.forget(id)
     runtime.forget(id)

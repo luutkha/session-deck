@@ -786,7 +786,7 @@ if (!gotTheLock) {
     windows.setMain(win)
 
     // D83: the title comes from the store, never from the renderer; one window per worktree, capped.
-    // D87: the open ones are remembered (not forgotten when the app itself quits) and reopened at the next start.
+    // D86: the open ones are remembered (not forgotten when the app itself quits) and reopened at the next start.
     function showChangesWindow(worktreeId: string): void {
       const worktree = store.getWorktree(worktreeId)
       if (worktree === undefined) return

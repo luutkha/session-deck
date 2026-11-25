@@ -739,4 +739,57 @@ describe('PtyManager output batching', () => {
     defaults.ptys[0].fireData('d')
     expect([...defaults.timers.timers.values()].map((timer) => timer.ms)).toEqual([DEFAULT_FLUSH_DELAY_MS])
   })
+
+  it('forget frees the replay buffer; a second forget is harmless', () => {
+    const { manager, ptys } = setup()
+    manager.start(startOpts())
+    ptys[0].fireData('to forget')
+    expect(manager.replay('s1')).toEqual({ data: 'to forget', seq: 1 })
+
+    manager.forget('s1')
+
+    expect(manager.replay('s1')).toEqual({ data: '', seq: 0 })
+    expect(() => manager.forget('s1')).not.toThrow()
+    expect(manager.replay('s1')).toEqual({ data: '', seq: 0 })
+  })
+
+  it('forget drops pending output and its timer, so late data cannot rebuild the buffer', () => {
+    const { manager, ptys, timers } = setup()
+    manager.start(startOpts())
+    ptys[0].fireData('pending')
+    expect(timers.timers.size).toBe(1)
+
+    manager.forget('s1')
+
+    expect(timers.timers.size).toBe(0)
+    expect(manager.replay('s1')).toEqual({ data: '', seq: 0 })
+    ptys[0].fireData('late')
+    timers.runAll()
+    expect(manager.replay('s1')).toEqual({ data: '', seq: 0 })
+  })
+
+  it('forget does not kill a live process or touch other sessions', () => {
+    const { manager, ptys } = setup()
+    manager.start(startOpts({ sessionId: 'a' }))
+    manager.start(startOpts({ sessionId: 'b' }))
+    ptys[0].fireData('aaaa')
+    ptys[1].fireData('bbbb')
+
+    manager.forget('a')
+
+    expect(ptys[0].killed).toBe(false)
+    expect(manager.isRunning('a')).toBe(true)
+    expect(manager.replay('a')).toEqual({ data: '', seq: 0 })
+    expect(manager.replay('b')).toEqual({ data: 'bbbb', seq: 1 })
+  })
+
+  it('an exited session that was not forgotten keeps its replay', () => {
+    const { manager, ptys } = setup()
+    manager.start(startOpts())
+    ptys[0].fireData('last words')
+    ptys[0].fireExit(0)
+
+    expect(manager.isRunning('s1')).toBe(false)
+    expect(manager.replay('s1')).toEqual({ data: 'last words', seq: 1 })
+  })
 })

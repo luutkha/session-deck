@@ -28,11 +28,13 @@ async function tempDir(): Promise<string> {
 function fakePty() {
   const starts: StartOptions[] = []
   const killed: Id[] = []
+  const forgetCalls: Id[] = []
   const running = new Map<Id, boolean>()
   const exitListeners = new Set<(id: Id, code: number | null) => void>()
   const pty = {
     starts,
     killed,
+    forgetCalls,
     start(opts: StartOptions): void {
       if (running.get(opts.sessionId)) throw new Error(`Session already running: ${opts.sessionId}`)
       running.set(opts.sessionId, true)
@@ -45,6 +47,10 @@ function fakePty() {
     kill(id: Id): void {
       running.set(id, false)
       killed.push(id)
+    },
+    forget(id: Id): void {
+      forgetCalls.push(id)
+      running.delete(id)
     },
     isRunning(id: Id): boolean {
       return running.get(id) === true

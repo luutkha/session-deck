@@ -104,6 +104,8 @@ export class PtyManager {
   private readonly processes = new Map<Id, IPty>()
   private readonly buffers = new Map<Id, RingBuffer>()
   private readonly pending = new Map<Id, PendingOutput>()
+  // Ids whose replay state was freed by forget(): late output from a dying, already-removed process is ignored.
+  private readonly forgotten = new Set<Id>()
   private readonly dataListeners = new Set<DataListener>()
   private readonly exitListeners = new Set<ExitListener>()
   private readonly startListeners = new Set<StartListener>()
@@ -122,11 +124,13 @@ export class PtyManager {
     if (this.processes.has(opts.sessionId)) {
       throw new Error(`Session already running: ${opts.sessionId}`)
     }
+    this.forgotten.delete(opts.sessionId)
     this.getOrCreateBuffer(opts.sessionId)
     this.launch(opts)
   }
 
   restart(opts: StartOptions): void {
+    this.forgotten.delete(opts.sessionId)
     // Emit what the old process already printed before the buffer is cleared.
     this.flush(opts.sessionId)
     const previous = this.processes.get(opts.sessionId)
@@ -204,6 +208,9 @@ export class PtyManager {
   }
 
   replay(id: Id): PtyReplay {
+    if (this.forgotten.has(id)) {
+      return { data: '', seq: 0 }
+    }
     // A hydration must never miss output that is still sitting in the batch.
     this.flush(id)
     const buffer = this.buffers.get(id)
@@ -213,8 +220,27 @@ export class PtyManager {
     return buffer.snapshot()
   }
 
+  /**
+   * Frees the replay state of a session that was REMOVED (not merely exited). Does not kill a process: the caller
+   * stops it first; the forgotten guard keeps its dying process from rebuilding the buffer via late output.
+   */
+  forget(id: Id): void {
+    this.forgotten.add(id)
+    const pending = this.pending.get(id)
+    if (pending) {
+      if (pending.timer !== null) {
+        this.clearTimer(pending.timer)
+      }
+      this.pending.delete(id)
+    }
+    this.buffers.delete(id)
+  }
+
   /** Appends + emits this session's batched output now (one append, one emitData). No-op when nothing is pending. */
   flush(id: Id): void {
+    if (this.forgotten.has(id)) {
+      return
+    }
     const pending = this.pending.get(id)
     if (!pending) {
       return
@@ -248,6 +274,7 @@ export class PtyManager {
     this.pending.clear()
     this.processes.clear()
     this.buffers.clear()
+    this.forgotten.clear()
     this.dataListeners.clear()
     this.exitListeners.clear()
     this.startListeners.clear()
@@ -312,6 +339,9 @@ export class PtyManager {
   }
 
   private queueOutput(id: Id, data: string): void {
+    if (this.forgotten.has(id)) {
+      return
+    }
     let pending = this.pending.get(id)
     if (!pending) {
       pending = { chunks: [], chars: 0, timer: null }

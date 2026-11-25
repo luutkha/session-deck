@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { detectOutputSignals, findUsageLimitLine, stripAnsi, USAGE_LIMIT_LINE_MAX, USAGE_LIMIT_PATTERNS } from './outputSignals'
+import type { OutputSignals } from './outputSignals'
 
 describe('stripAnsi', () => {
   it('removes colour, cursor and OSC sequences', () => {
@@ -78,5 +79,27 @@ describe('detectOutputSignals', () => {
     for (const pattern of USAGE_LIMIT_PATTERNS) {
       expect(pattern).toBeInstanceOf(RegExp)
     }
+  })
+})
+
+describe('detectOutputSignals prefilter parity', () => {
+  const NONE: OutputSignals = { remoteControl: false, working: false, usageLimit: false }
+  const only = (signal: Partial<OutputSignals>): OutputSignals => ({ ...NONE, ...signal })
+  const cases: ReadonlyArray<{ name: string; chunk: string; expected: OutputSignals }> = [
+    { name: 'plain text without a signal', chunk: 'Reading src/app.ts\r\nDone.', expected: NONE },
+    { name: 'Remote Control in plain text', chunk: '/rc active · Continue here', expected: only({ remoteControl: true }) },
+    { name: 'spinner in plain text', chunk: 'Kerfuffling… (3s · ↓ 25 tokens)', expected: only({ working: true }) },
+    { name: 'usage limit in plain text', chunk: '5-hour limit reached ∙ resets 3pm', expected: only({ usageLimit: true }) },
+    { name: 'Remote Control with ANSI colour codes inside a word', chunk: '/r\x1b[33mc\x1b[0m\x1b[2mactive', expected: only({ remoteControl: true }) },
+    { name: 'spinner with ANSI colour codes inside the words', chunk: '\x1b[33m↓\x1b[0m 25 \x1b[33mto\x1b[0mk\x1b[0mens', expected: only({ working: true }) },
+    { name: 'usage limit with ANSI colour codes inside the words', chunk: '\x1b[33mUSA\x1b[0mGE\x1b[1CLIM\x1b[0mIT REACHED', expected: only({ usageLimit: true }) },
+    { name: 'empty chunk', chunk: '', expected: NONE },
+    { name: '64 KB chunk without signals', chunk: 'x'.repeat(64 * 1024), expected: NONE },
+    { name: '64 KB chunk containing / but no signal', chunk: `/${'x'.repeat(64 * 1024 - 1)}`, expected: NONE },
+    { name: 'first half of a signal split across two chunks', chunk: 'Claude usage limit rea', expected: NONE }
+  ]
+
+  it.each(cases)('$name', ({ chunk, expected }) => {
+    expect(detectOutputSignals(chunk)).toEqual(expected)
   })
 })

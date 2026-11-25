@@ -7,6 +7,14 @@ directories:
 files:
   - out/**
   - package.json
+  # D87: node-pty ships build leftovers and other platforms/architectures; only the win32-x64 runtime files are needed.
+  - "!**/node_modules/node-pty/build/**/*.{iobj,ipdb,pdb,exp,lib,obj,tlog}"
+  - "!**/node_modules/node-pty/build/deps/**"
+  - "!**/node_modules/node-pty/build/Release/obj/**"
+  - "!**/node_modules/node-pty/{src,deps,scripts}/**"
+  - "!**/node_modules/node-pty/prebuilds/{darwin-arm64,darwin-x64,win32-arm64}/**"
+  - "!**/node_modules/node-pty/third_party/**/win10-arm64/**"
+  - "!**/node_modules/node-addon-api/**"
 # node-pty is a native module: its .node binaries and conpty/winpty helpers must be real files on disk.
 asar: true
 asarUnpack:

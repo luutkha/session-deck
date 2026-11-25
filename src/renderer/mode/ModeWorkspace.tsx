@@ -451,6 +451,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   onFocusPane={nav.activateTab}
                   onClosePane={split.removePane}
                   onResize={split.resize}
+                  onResizeEnd={split.commitLayout}
                   onEqualize={split.equalize}
                 />
               ) : (

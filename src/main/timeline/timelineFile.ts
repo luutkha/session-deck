@@ -123,7 +123,8 @@ export function serializeTimelineDocument(document: TimelineDocument): string {
   const body: Record<string, unknown> = { version: TIMELINE_FILE_VERSION, turns: document.turns }
   // Older readers and the shape test expect the field to be absent when there is nothing to remember.
   if (document.sleeps.length > 0) body.sleeps = document.sleeps
-  return JSON.stringify(body, null, 2)
+  // Compact JSON: the timeline grows with every turn. JSON.parse reads legacy pretty files unchanged.
+  return JSON.stringify(body)
 }
 
 export function serializeTimelineFile(turns: readonly TimelineTurn[]): string {

@@ -21,6 +21,11 @@ export const USAGE_LIMIT_PATTERNS: readonly RegExp[] = [
   /you(?:['’]ve|\s+have)\s*hit\s*your\s*(?:usage\s*)?limit/i
 ]
 
+// Every signal needs one of these literal fragments after ANSI stripping: "/" (both Remote Control variants),
+// "↓"/"↑" (the spinner) or "limit" (all three usage-limit wordings). Stripping can only remove characters, never
+// add them, so a chunk with none of them cannot match: the cheap scan skips the replace and the detailed regexes.
+const SIGNAL_FRAGMENT_PATTERN = /\/|[↓↑]|limit/i
+
 export interface OutputSignals {
   /** The screen says Remote Control is active for this process. */
   readonly remoteControl: boolean
@@ -61,7 +66,11 @@ export function findUsageLimitLine(chunk: string): string | null {
 }
 
 export function detectOutputSignals(chunk: string): OutputSignals {
-  const text = stripAnsi(chunk)
+  // stripAnsi is the identity when there is no ESC byte: skip the 64KB global replace on plain output entirely.
+  const text = chunk.indexOf('\x1b') === -1 ? chunk : stripAnsi(chunk)
+  if (!SIGNAL_FRAGMENT_PATTERN.test(text)) {
+    return { remoteControl: false, working: false, usageLimit: false }
+  }
   return {
     remoteControl: REMOTE_ACTIVE_PATTERN.test(text),
     working: WORKING_SPINNER_PATTERN.test(text),

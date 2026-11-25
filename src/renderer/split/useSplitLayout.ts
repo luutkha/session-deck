@@ -1,6 +1,6 @@
 // Split-pane state hook. The reducer is pure (exported for tests); the hook
 // only persists the layout and translates prop changes into actions.
-import { useCallback, useEffect, useReducer } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import type { Id } from '../../shared/types'
 import { readStorageItem, writeStorageItem } from '../shell/shellPrefs'
 import {
@@ -23,6 +23,53 @@ import {
 } from './splitLogic'
 
 const RECENT_LIMIT = 20
+
+/**
+ * Write policy for the layout. A divider drag fires ~60 pointermoves a second: the live layout stays in
+ * React state, but storage gets one write when the drag ends (same idea as useSidebarWidth's commit).
+ * Dedupe on the last written value so a layout effect flushed after commit cannot write the value twice.
+ */
+export interface LayoutPersistence {
+  /** Layout effect: writes immediately unless a drag is in progress. */
+  readonly changed: (storageKey: string, value: string) => void
+  /** Defer writes until commit (pointer drag). */
+  readonly defer: () => void
+  /** A non-drag resize (arrow key): writes flow again from the next change. */
+  readonly resume: () => void
+  /** End the drag with one write of the final layout; a no-op when no drag is pending. */
+  readonly commit: (storageKey: string, value: string) => void
+}
+
+export function createLayoutPersistence(
+  write: (storageKey: string, value: string) => void
+): LayoutPersistence {
+  let dragging = false
+  let last: { readonly storageKey: string; readonly value: string } | null = null
+  return {
+    defer: (): void => {
+      dragging = true
+    },
+    resume: (): void => {
+      dragging = false
+    },
+    changed: (storageKey: string, value: string): void => {
+      if (dragging || (last !== null && last.storageKey === storageKey && last.value === value)) return
+      last = { storageKey, value }
+      write(storageKey, value)
+    },
+    commit: (storageKey: string, value: string): void => {
+      if (!dragging) return
+      dragging = false
+      last = { storageKey, value }
+      write(storageKey, value)
+    }
+  }
+}
+
+/** Extra argument used by the divider; callers that omit it keep the old "write immediately" behaviour. */
+export interface ResizeOptions {
+  readonly commit?: boolean
+}
 
 export interface SplitState {
   readonly layout: SplitLayout
@@ -156,7 +203,9 @@ export interface SplitLayoutApi {
   readonly removePane: (id: Id) => void
   readonly showInPane: (id: Id) => void
   readonly setSizes: (sizes: readonly number[]) => void
-  readonly resize: (dividerIndex: number, delta: number) => void
+  readonly resize: (dividerIndex: number, delta: number, options?: ResizeOptions) => void
+  /** Flush the deferred write when a pointer drag ends (also used on pagehide/beforeunload). */
+  readonly commitLayout: () => void
   readonly equalize: () => void
 }
 
@@ -172,9 +221,15 @@ export function useSplitLayout(
     (): SplitState => initSplitState(openIds, activeId, loadLayout(activeId, storageKey))
   )
 
+  const writerRef = useRef<LayoutPersistence | null>(null)
+  if (writerRef.current === null) writerRef.current = createLayoutPersistence(writeStorageItem)
+  const writer = writerRef.current
+  const liveRef = useRef<SplitLayout>(state.layout)
+  liveRef.current = state.layout
+
   useEffect((): void => {
-    writeStorageItem(storageKey, serializeLayout(state.layout))
-  }, [state.layout, storageKey])
+    writer.changed(storageKey, serializeLayout(state.layout))
+  }, [writer, state.layout, storageKey])
 
   useEffect((): void => {
     dispatch({ type: 'sync', openIds, activeId })
@@ -201,9 +256,30 @@ export function useSplitLayout(
   const setSizes = useCallback((sizes: readonly number[]): void => {
     dispatch({ type: 'setSizes', sizes })
   }, [])
-  const resize = useCallback((dividerIndex: number, delta: number): void => {
-    dispatch({ type: 'resize', dividerIndex, delta })
-  }, [])
+  const resize = useCallback(
+    (dividerIndex: number, delta: number, options?: ResizeOptions): void => {
+      if (options?.commit === false) writer.defer()
+      else writer.resume()
+      // Keep the ref ahead of React: a pointerup can land before the last pointermove has rendered.
+      const next = resizeBetween(liveRef.current, dividerIndex, delta)
+      if (next !== liveRef.current) liveRef.current = next
+      dispatch({ type: 'resize', dividerIndex, delta })
+    },
+    [writer]
+  )
+  const commitLayout = useCallback((): void => {
+    writer.commit(storageKey, serializeLayout(liveRef.current))
+  }, [writer, storageKey])
+  // Quitting mid-drag must not lose the layout (Chromium flushes localStorage on graceful unload only).
+  useEffect((): (() => void) | undefined => {
+    if (typeof window === 'undefined') return undefined
+    window.addEventListener('pagehide', commitLayout)
+    window.addEventListener('beforeunload', commitLayout)
+    return (): void => {
+      window.removeEventListener('pagehide', commitLayout)
+      window.removeEventListener('beforeunload', commitLayout)
+    }
+  }, [commitLayout])
   const equalizeLayout = useCallback((): void => {
     dispatch({ type: 'equalize' })
   }, [])
@@ -222,6 +298,7 @@ export function useSplitLayout(
     showInPane,
     setSizes,
     resize,
+    commitLayout,
     equalize: equalizeLayout
   }
 }

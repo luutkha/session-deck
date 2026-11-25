@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Id } from '../../shared/types'
 import {
+  createLayoutPersistence,
   initSplitState,
   splitReducer,
   type SplitAction,
   type SplitState
 } from './useSplitLayout'
-import { equalSizes, singleLayout, type SplitLayout } from './splitLogic'
+import { equalSizes, resizeBetween, serializeLayout, singleLayout, type SplitLayout } from './splitLogic'
 
 function layout(
   direction: 'row' | 'column',
@@ -169,5 +170,66 @@ describe('splitReducer sizes', () => {
     expect(resized.layout.sizes).toEqual([0.7, 0.3])
     const equalized = run(resized, { type: 'equalize' })
     expect(equalized.layout.sizes).toEqual(equalSizes(2))
+  })
+})
+
+describe('layout write policy (deferred drag)', () => {
+  const key = 'sessiondeck.split.v1'
+
+  it('N drag moves cause 0 writes and the drag end writes the final layout exactly once', () => {
+    const writes: Array<{ readonly key: string; readonly value: string }> = []
+    const writer = createLayoutPersistence((storageKey, value) => void writes.push({ key: storageKey, value }))
+    let live = layout('row', ['a', 'b'], [0.5, 0.5])
+    writer.changed(key, serializeLayout(live))
+    expect(writes).toHaveLength(1)
+
+    writer.defer()
+    for (let frame = 0; frame < 60; frame += 1) {
+      live = resizeBetween(live, 0, 0.005)
+      writer.changed(key, serializeLayout(live))
+    }
+    expect(writes).toHaveLength(1)
+
+    writer.commit(key, serializeLayout(live))
+    expect(writes).toHaveLength(2)
+    expect(writes[1]).toEqual({ key, value: serializeLayout(live) })
+    // An effect flushed after the commit, or a lostpointercapture echo, must not write again.
+    writer.changed(key, serializeLayout(live))
+    writer.commit(key, serializeLayout(live))
+    expect(writes).toHaveLength(2)
+  })
+
+  it('keyboard resize writes immediately, even if a drag was in progress', () => {
+    const writes: string[] = []
+    const writer = createLayoutPersistence((_key, value) => void writes.push(value))
+    const start = layout('row', ['a', 'b'], [0.5, 0.5])
+    writer.changed(key, serializeLayout(start))
+    writer.defer()
+    const dragged = resizeBetween(start, 0, 0.1)
+    writer.changed(key, serializeLayout(dragged))
+    expect(writes).toHaveLength(1)
+
+    writer.resume()
+    const nudged = resizeBetween(dragged, 0, 0.02)
+    writer.changed(key, serializeLayout(nudged))
+    expect(writes).toHaveLength(2)
+    expect(writes[1]).toBe(serializeLayout(nudged))
+    writer.commit(key, serializeLayout(nudged))
+    expect(writes).toHaveLength(2)
+  })
+
+  it('a write with no pending drag is a no-op, and a new storage key still writes', () => {
+    const writes: Array<{ readonly key: string; readonly value: string }> = []
+    const writer = createLayoutPersistence((storageKey, value) => void writes.push({ key: storageKey, value }))
+    writer.commit(key, 'value')
+    expect(writes).toEqual([])
+    writer.changed(key, 'value')
+    writer.changed(key, 'value')
+    expect(writes).toEqual([{ key, value: 'value' }])
+    writer.changed('other.key', 'value')
+    expect(writes).toEqual([
+      { key, value: 'value' },
+      { key: 'other.key', value: 'value' }
+    ])
   })
 })

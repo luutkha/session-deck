@@ -403,7 +403,9 @@ export async function saveStoreFile(path: string, data: StoreData): Promise<void
     // A unique temp name per write: a save that overlaps another one (timer + flush) must not share a file.
     const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`
     try {
-      await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
+      // Compact JSON: the store grows with sessions/notes/queues and indentation is reformatted on every save.
+      // JSON.parse reads both compact and legacy pretty files, so the reader needs no change.
+      await writeFile(tmpPath, JSON.stringify(data), 'utf-8')
       await renameWithRetry(tmpPath, path)
     } catch (error) {
       await rm(tmpPath, { force: true }).catch(() => undefined)

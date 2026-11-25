@@ -65,6 +65,9 @@ function createFakePty(): FakePty {
       kills.set(id, (kills.get(id) ?? 0) + 1)
       running.delete(id)
     },
+    forget(id: Id): void {
+      running.delete(id)
+    },
     isRunning: (id: Id): boolean => running.has(id),
     replay: (): { data: string; seq: number } => ({ data: '', seq: 0 }),
     onData: (): (() => void) => () => {},

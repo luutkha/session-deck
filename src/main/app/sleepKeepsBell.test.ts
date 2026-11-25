@@ -50,6 +50,9 @@ function createFakePty(): PtyManager {
     kill(id: Id): void {
       running.delete(id)
     },
+    forget(id: Id): void {
+      running.delete(id)
+    },
     isRunning: (id: Id): boolean => running.has(id),
     replay: (): { data: string; seq: number } => ({ data: '', seq: 0 }),
     onData: (): (() => void) => () => {},

@@ -52,6 +52,7 @@ interface MockProcess {
 }
 
 interface TestPtyManager extends PtyManager {
+  forgetCalls: Id[]
   fireData: (id: Id, data: string) => void
   fireExit: (id: Id, code: number | null) => void
   getLastStartOpts: (id: Id) => StartOptions | undefined
@@ -62,11 +63,13 @@ function createMockPtyManager(): TestPtyManager {
   const processes = new Map<Id, MockProcess>()
   const dataListeners = new Set<(id: Id, data: string, seq: number) => void>()
   const exitListeners = new Set<(id: Id, code: number | null) => void>()
+  const forgetCalls: Id[] = []
 
   const mockPty = {
     processes,
     dataListeners,
     exitListeners,
+    forgetCalls,
 
     start(opts: StartOptions): void {
       const previous = processes.get(opts.sessionId)
@@ -120,6 +123,11 @@ function createMockPtyManager(): TestPtyManager {
       for (const proc of processes.values()) {
         proc.killed = true
       }
+    },
+
+    forget(id: Id): void {
+      forgetCalls.push(id)
+      processes.delete(id)
     },
 
     replay(id: Id): { data: string; seq: number } {
@@ -308,6 +316,17 @@ describe('sessionController', () => {
 
     expect(activeSessions.get('main')).toBeNull()
     expect(activeSessions.get('code')).toBe(two.id)
+  })
+
+  it('removeSession frees the removed session replay state', () => {
+    const { controller, pty } = setupController()
+    const session = controller.createSession({ cwd: tempDir() })
+    pty.fireData(session.id, 'last output')
+
+    controller.removeSession(session.id)
+
+    expect(pty.forgetCalls).toEqual([session.id])
+    expect(pty.replay(session.id)).toEqual({ data: '', seq: 0 })
   })
 
   it('createSession uses --session-id for new sessions', () => {

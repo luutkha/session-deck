@@ -68,6 +68,9 @@ function createMockPty(): PtyManager & { getLastStartOpts: (id: Id) => StartOpti
     killAll(): void {
       for (const proc of processes.values()) proc.killed = true
     },
+    forget(id: Id): void {
+      processes.delete(id)
+    },
     replay(id: Id): { data: string; seq: number } {
       const proc = processes.get(id)
       return { data: proc?.buffer ?? '', seq: 0 }

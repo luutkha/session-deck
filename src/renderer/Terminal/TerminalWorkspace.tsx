@@ -20,7 +20,9 @@ export interface TerminalWorkspaceProps {
   readonly names: ReadonlyMap<Id, string>
   readonly onFocusPane: (id: Id) => void
   readonly onClosePane: (id: Id) => void
-  readonly onResize: (dividerIndex: number, delta: number) => void
+  readonly onResize: (dividerIndex: number, delta: number, options?: { readonly commit?: boolean }) => void
+  /** D87: the divider drag ended: the layout is written to storage once (not on every pointer move). */
+  readonly onResizeEnd?: () => void
   readonly onEqualize: () => void
   /**
    * A pane registry owned UP the tree (D32: the grid and the split layout share one xterm per session).
@@ -35,7 +37,7 @@ export interface TerminalWorkspaceProps {
 }
 
 export function TerminalWorkspace(props: TerminalWorkspaceProps): ReactElement {
-  const { sessionIds, layout, activeId, runtime, names, onFocusPane, onClosePane, onResize, onEqualize } =
+  const { sessionIds, layout, activeId, runtime, names, onFocusPane, onClosePane, onResize, onEqualize, onResizeEnd } =
     props
   const { grid } = props
   const gridIds = useMemo(
@@ -161,6 +163,7 @@ export function TerminalWorkspace(props: TerminalWorkspaceProps): ReactElement {
               order={dividerIndex * 2 + 1}
               onResize={onResize}
               onEqualize={onEqualize}
+              {...(onResizeEnd !== undefined ? { onResizeEnd } : {})}
             />
           ))
         : null}

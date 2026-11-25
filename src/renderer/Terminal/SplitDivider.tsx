@@ -2,6 +2,7 @@
 // is 6px. Drag converts pixels to a fraction of the container; arrows nudge by 2%.
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactElement } from 'react'
 import type { SplitDirection } from '../split/splitLogic'
+import type { ResizeOptions } from '../split/useSplitLayout'
 import { cn } from '@/lib/utils'
 
 const KEYBOARD_STEP = 0.02
@@ -12,8 +13,10 @@ export interface SplitDividerProps {
   readonly index: number
   readonly direction: SplitDirection
   readonly order: number
-  readonly onResize: (dividerIndex: number, delta: number) => void
+  readonly onResize: (dividerIndex: number, delta: number, options?: ResizeOptions) => void
   readonly onEqualize: () => void
+  /** Optional: flushes the deferred storage write at the end of a drag. */
+  readonly onResizeEnd?: () => void
 }
 
 interface DragState {
@@ -23,7 +26,7 @@ interface DragState {
 }
 
 export function SplitDivider(props: SplitDividerProps): ReactElement {
-  const { index, direction, order, onResize, onEqualize } = props
+  const { index, direction, order, onResize, onEqualize, onResizeEnd } = props
   const vertical = direction === 'row'
   const drag = useRef<DragState>({ active: false, last: 0, size: 1 })
 
@@ -57,7 +60,8 @@ export function SplitDivider(props: SplitDividerProps): ReactElement {
     const delta = (position - drag.current.last) / drag.current.size
     if (delta !== 0) {
       drag.current.last = position
-      onResize(index, delta)
+      // Live update only: writing localStorage on every pointer frame would block the xterm resize.
+      onResize(index, delta, { commit: false })
     }
   }
 
@@ -69,6 +73,7 @@ export function SplitDivider(props: SplitDividerProps): ReactElement {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
+    onResizeEnd?.()
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -101,6 +106,7 @@ export function SplitDivider(props: SplitDividerProps): ReactElement {
       onPointerMove={handlePointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       onDoubleClick={onEqualize}
       onKeyDown={handleKeyDown}
     >

@@ -11,6 +11,12 @@ export const VIEWED_MAX_ENTRIES = CHANGES_MAX_FILES
 
 const STORAGE_PREFIX = 'sessiondeck.changes.viewed.'
 
+/**
+ * One parse per worktree, not one per mounted badge: every publish wakes every badge listener, so
+ * re-reading storage in each getSnapshot did 30-50 getItem + JSON.parse calls per update.
+ */
+const viewedCache = new Map<string, ViewedMap>()
+
 /** localStorage key of one worktree's viewed marks. */
 export function viewedStorageKey(worktreeId: string): string {
   return STORAGE_PREFIX + worktreeId
@@ -70,7 +76,7 @@ export function unviewedCount(files: readonly ChangedFile[], map: ViewedMap): nu
 }
 
 /** Malformed stored JSON / non-string values / oversized maps degrade to an empty map. */
-export function readViewed(worktreeId: string): ViewedMap {
+function loadViewed(worktreeId: string): ViewedMap {
   if (typeof localStorage === 'undefined') return {}
   let raw: string | null = null
   try {
@@ -92,6 +98,35 @@ export function readViewed(worktreeId: string): ViewedMap {
   return Object.fromEntries(entries)
 }
 
+/** Serves the cached map after the first load; storage failures and corrupt JSON cache as an empty map. */
+export function readViewed(worktreeId: string): ViewedMap {
+  const cached = viewedCache.get(worktreeId)
+  if (cached !== undefined) return cached
+  const loaded = loadViewed(worktreeId)
+  viewedCache.set(worktreeId, loaded)
+  return loaded
+}
+
+/** A storage event from another window makes our cached copy stale: drop just that worktree. */
+export function onViewedStorageEvent(event: { readonly key: string | null }): void {
+  const key = event.key
+  if (key !== null && key.startsWith(STORAGE_PREFIX)) {
+    viewedCache.delete(key.slice(STORAGE_PREFIX.length))
+  }
+}
+
+/** Installed once at module load in the renderer; window is absent in node tests. */
+export function watchViewedStorage(): void {
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
+  window.addEventListener('storage', (event: StorageEvent): void => onViewedStorageEvent(event))
+}
+watchViewedStorage()
+
+/** Test seam: each case starts with an empty cache. */
+export function __resetViewedCacheForTests(): void {
+  viewedCache.clear()
+}
+
 type ViewedListener = (worktreeId: string) => void
 
 const listeners = new Set<ViewedListener>()
@@ -106,9 +141,11 @@ export function subscribeViewed(listener: ViewedListener): () => void {
 
 /** Persists one worktree's marks and notifies subscribers; storage failures never escape. */
 export function writeViewed(worktreeId: string, map: ViewedMap): void {
+  const capped: ViewedMap = Object.fromEntries(Object.entries(map).slice(0, VIEWED_MAX_ENTRIES))
+  // Cache and storage change together so the badge that just got notified reads the new marks.
+  viewedCache.set(worktreeId, capped)
   if (typeof localStorage !== 'undefined') {
     try {
-      const capped = Object.fromEntries(Object.entries(map).slice(0, VIEWED_MAX_ENTRIES))
       localStorage.setItem(viewedStorageKey(worktreeId), JSON.stringify(capped))
     } catch {
       // Ignore: marks are a convenience, never a source of truth. Subscribers still refresh.

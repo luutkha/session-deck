@@ -232,6 +232,35 @@ describe('loadStoreFile', () => {
     await expect(readFile(`${path}.bak`, 'utf-8')).resolves.toBe(JSON.stringify(store))
   })
 
+  it('loads a compact file written by saveStoreFile', async () => {
+    const store: StoreData = {
+      ...emptyStore(),
+      sessions: [{ id: 's1', name: 'A', cwd: '/x', groupId: null, statusId: null, order: 0, createdAt: 1, claudeArgs: [] }]
+    }
+    await saveStoreFile(path, store)
+    const text = await readFile(path, 'utf-8')
+    expect(text).toBe(JSON.stringify(store))
+
+    const { data, warning } = await loadStoreFile(path)
+    expect(data).toEqual(store)
+    expect(warning).toBeUndefined()
+  })
+
+  it('still loads a legacy pretty-printed file', async () => {
+    const store: StoreData = {
+      ...emptyStore(),
+      sessions: [{ id: 'old', name: 'Legacy', cwd: '/x', groupId: null, statusId: null, order: 0, createdAt: 1, claudeArgs: [] }]
+    }
+    const pretty = JSON.stringify(store, null, 2)
+    await writeFile(path, pretty, 'utf-8')
+
+    const { data, warning } = await loadStoreFile(path)
+    expect(data).toEqual(store)
+    expect(warning).toBeUndefined()
+    // The backup is a byte-for-byte copy, so the old formatting survives there too.
+    await expect(readFile(`${path}.bak`, 'utf-8')).resolves.toBe(pretty)
+  })
+
   it('throws for a read error that is not corruption and leaves the file in place', async () => {
     // A directory is readable on neither Windows nor POSIX: the store was never parsed, so it must not be renamed.
     await mkdir(path)
@@ -272,11 +301,12 @@ describe('saveStoreFile', () => {
     await rm(dirname(path), { recursive: true, force: true })
   })
 
-  it('writes pretty JSON and creates parent dir', async () => {
+  it('writes compact JSON and creates parent dir', async () => {
     const store = emptyStore()
     await saveStoreFile(path, store)
     const text = await readFile(path, 'utf-8')
-    expect(text).toContain('  "version": 1')
+    expect(text).toBe(JSON.stringify(store))
+    expect(text).not.toContain('\n')
     expect(JSON.parse(text)).toEqual(store)
   })
 
