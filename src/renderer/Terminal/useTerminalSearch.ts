@@ -33,6 +33,15 @@ interface SearchResult {
 
 const NO_RESULT: SearchResult = { index: -1, count: 0 }
 
+/**
+ * Pure guard for the query effect: only a NEW non-empty query starts a search pass. Terminal
+ * output alone must not call findNext here — the addon already re-highlights onWriteParsed,
+ * so a second call would repeat the whole highlight scan for the unchanged query.
+ */
+export function shouldRunSearch(previousQuery: string | null, query: string): boolean {
+  return query.length > 0 && query !== previousQuery
+}
+
 export interface TerminalSearchApi {
   /** The bar is on screen (and its input owns the keyboard). */
   readonly active: boolean
@@ -66,6 +75,8 @@ export function useTerminalSearch(
   const openedIdRef = useRef<Id | null>(null)
   const resultsSubRef = useRef<{ dispose(): void } | null>(null)
   const previousActiveIdRef = useRef<Id | null>(activeId)
+  // The query the addon was last told to search for; clearing the bar forgets it.
+  const searchedQueryRef = useRef<string | null>(null)
 
   const paneFor = useCallback(
     (id: Id | null) => (id === null ? undefined : panes.panesRef.current.get(id)),
@@ -76,6 +87,7 @@ export function useTerminalSearch(
     setActive(false)
     setQueryState('')
     setResult(NO_RESULT)
+    searchedQueryRef.current = null
     resultsSubRef.current?.dispose()
     resultsSubRef.current = null
     const pane = paneFor(openedIdRef.current)
@@ -97,6 +109,7 @@ export function useTerminalSearch(
     setActive(true)
     setQueryState('')
     setResult(NO_RESULT)
+    searchedQueryRef.current = null
     openedIdRef.current = activeId
     // One subscription per opening; the addon reports the active index and the total for the label.
     resultsSubRef.current?.dispose()
@@ -119,10 +132,15 @@ export function useTerminalSearch(
       return
     }
     if (query.length === 0) {
+      searchedQueryRef.current = null
       pane.view.searchAddon.clearDecorations()
       setResult(NO_RESULT)
       return
     }
+    if (!shouldRunSearch(searchedQueryRef.current, query)) {
+      return
+    }
+    searchedQueryRef.current = query
     pane.view.searchAddon.findNext(query, SEARCH_OPTIONS)
   }, [active, query, paneFor, close])
 

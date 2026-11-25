@@ -19,6 +19,12 @@ import {
   type KeyInfo
 } from './keymap'
 
+/**
+ * Max decorated matches per pane. The search addon re-runs a full highlight pass after every
+ * write batch while decorations are on; its default of 1000 is far too costly on a chatty pane.
+ */
+export const SEARCH_HIGHLIGHT_LIMIT = 200
+
 /** What a pane asks the workspace to do on Ctrl+= / Ctrl+- / Ctrl+0 or Ctrl+wheel (terminal comfort). */
 export type ZoomAction = 'in' | 'out' | 'reset'
 
@@ -166,17 +172,25 @@ export function buildTerminalView(
   id: Id,
   options: {
     readonly termView?: TermView
+    /** Reduced effects (software GPU): lower the default scrollback at construction (W4-H). */
+    readonly reducedEffects?: boolean
+    /** True when the user saved `sessiondeck.termview.v1`; their scrollback must be kept. */
+    readonly explicitTermView?: boolean
     readonly onZoom?: (action: ZoomAction) => void
     readonly onSearch?: () => void
     readonly onContextMenu?: (point: ContextMenuPoint) => void
   } = {}
 ): TerminalView {
-  const term = new Terminal(terminalOptionsFor(options.termView ?? DEFAULT_TERM_VIEW))
+  const term = new Terminal(terminalOptionsFor(options.termView ?? DEFAULT_TERM_VIEW, {
+    reducedEffects: options.reducedEffects ?? false,
+    explicit: options.explicitTermView ?? false
+  }))
 
   const fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
 
-  const searchAddon = new SearchAddon()
+  // 0.16 takes the highlight cap as a constructor option, not in ISearchOptions.
+  const searchAddon = new SearchAddon({ highlightLimit: SEARCH_HIGHLIGHT_LIMIT })
   term.loadAddon(searchAddon)
 
   term.loadAddon(new Unicode11Addon())

@@ -43,6 +43,7 @@ import { DEFAULT_GROUP_NAME, toggleStatusFilter } from './uiLogic'
 import { ignoreRejection } from './ignoreRejection'
 import { useGlobalNewSessionShortcut, useSidebarListKeyDown } from './useSidebarKeyboard'
 import { useLastRuntimeChange } from './useLastRuntimeChange'
+import { useDebouncedValue, SEARCH_FILTER_DEBOUNCE_MS } from './useDebouncedValue'
 import {
   RELATIVE_TIME_INTERVAL_MS,
   readClosedCollapsed,
@@ -93,6 +94,15 @@ function isReorderOnly(action: { readonly sessionId: Id; readonly groupId: Id | 
 /** Stable empties for the grouping that is not on screen, so only the active grouping is ever computed. */
 const NO_GROUP_SECTIONS: readonly Section[] = []
 const NO_STATUS_SECTIONS: readonly StatusSectionData[] = []
+/** sortSessions reads the runtime map only for the attention rank; other sorts keep a stable empty map. */
+const NO_SORT_RUNTIME: ReadonlyMap<Id, RuntimeState> = new Map()
+
+export function sortRuntimeFor(
+  sort: SessionSort,
+  runtime: ReadonlyMap<Id, RuntimeState>
+): ReadonlyMap<Id, RuntimeState> {
+  return sort === 'attention' ? runtime : NO_SORT_RUNTIME
+}
 
 interface PendingRemove {
   readonly kind: 'session' | 'group'
@@ -114,6 +124,8 @@ export function Sidebar(props: SidebarProps): ReactElement {
   )
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
+  // Typing stays instant in the input; only the grouping/filtering work waits for a pause.
+  const filterSearchValue = useDebouncedValue(searchValue, SEARCH_FILTER_DEBOUNCE_MS)
   const [renamingSessionId, setRenamingSessionId] = useState<Id | null>(null)
   const [renamingGroupId, setRenamingGroupId] = useState<Id | null>(null)
   const [drag, setDrag] = useState<DragItem | null>(null)
@@ -145,10 +157,13 @@ export function Sidebar(props: SidebarProps): ReactElement {
     (): ReadonlySet<Id | null> => pruneStatusFilter(selectedStatuses, data.statuses),
     [selectedStatuses, data.statuses]
   )
-  const filterActive = searchValue.trim().length > 0 || effectiveStatuses.size > 0
+  const filterActive = filterSearchValue.trim().length > 0 || effectiveStatuses.size > 0
+  // A new runtime Map 10x/s must not invalidate the grouping memo unless the sort actually reads runtime
+  // (only "Needs attention" does; the hover freeze still uses the exact same frozen map as before).
+  const sortRuntime = sortRuntimeFor(sort, runtime)
   const sortOrder = useCallback(
-    (sessions: readonly Session[]): readonly Session[] => sortSessions(sessions, sort, runtime, sortFreeze.frozen),
-    [sort, runtime, sortFreeze.frozen]
+    (sessions: readonly Session[]): readonly Session[] => sortSessions(sessions, sort, sortRuntime, sortFreeze.frozen),
+    [sort, sortRuntime, sortFreeze.frozen]
   )
   const groupSections = useMemo(
     (): readonly Section[] => {
@@ -157,13 +172,13 @@ export function Sidebar(props: SidebarProps): ReactElement {
       if (groupBy !== 'groups') return NO_GROUP_SECTIONS
       return orderSectionSessions(
         dropEmptySections(
-          filterBySearch(filterByStatus(groupedSessions(data), effectiveStatuses), searchValue),
+          filterBySearch(filterByStatus(groupedSessions(data), effectiveStatuses), filterSearchValue),
           filterActive
         ),
         sortOrder
       )
     },
-    [groupBy, data, effectiveStatuses, searchValue, filterActive, sortOrder]
+    [groupBy, data, effectiveStatuses, filterSearchValue, filterActive, sortOrder]
   )
   const statusSections = useMemo(
     (): readonly StatusSectionData[] => {
@@ -172,14 +187,14 @@ export function Sidebar(props: SidebarProps): ReactElement {
         dropEmptySections(
           filterStatusSectionsBySearch(
             filterStatusSectionsByStatus(groupByStatus(data), effectiveStatuses),
-            searchValue
+            filterSearchValue
           ),
           filterActive
         ),
         sortOrder
       )
     },
-    [groupBy, data, effectiveStatuses, searchValue, filterActive, sortOrder]
+    [groupBy, data, effectiveStatuses, filterSearchValue, filterActive, sortOrder]
   )
   const counts = useMemo(() => countByStatus(data), [data])
   const { open: openSessions, closed: closedSessions } = useMemo(() => splitClosed(data), [data])

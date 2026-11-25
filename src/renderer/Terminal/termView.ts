@@ -20,6 +20,8 @@ export const ZOOM_STEP = 10
 export const SCROLLBACK_MIN = 1_000
 export const SCROLLBACK_MAX = 100_000
 export const DEFAULT_TERM_VIEW: TermView = { zoomPercent: 100, scrollbackLines: 10_000 }
+/** W4-H: scrollback for NEW panes on a software GPU (no saved terminal profile). */
+export const REDUCED_SCROLLBACK_LINES = 2_000
 
 function clampInt(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min
@@ -72,6 +74,27 @@ export function serializeTermView(view: TermView): string {
 /** The app-wide terminal profile (both windows read the same key). Missing/garbage → defaults. */
 export function readTermView(): TermView {
   return parseTermView(readStorageItem(TERM_VIEW_STORAGE_KEY)) ?? DEFAULT_TERM_VIEW
+}
+
+/** True only for a valid saved profile; a missing or garbage key means "no user choice". */
+export function hasStoredTermView(): boolean {
+  return parseTermView(readStorageItem(TERM_VIEW_STORAGE_KEY)) !== null
+}
+
+/**
+ * Scrollback a NEW pane is constructed with. On a software GPU every buffer row is painted on
+ * the CPU, so without a saved profile the default shrinks; a user-chosen value always wins.
+ * Existing panes are untouched: xterm applies scrollback only at construction time.
+ */
+export function effectiveScrollback(input: {
+  readonly reducedEffects: boolean
+  readonly view: TermView
+  readonly explicit: boolean
+}): number {
+  if (input.reducedEffects && !input.explicit) {
+    return Math.min(input.view.scrollbackLines, REDUCED_SCROLLBACK_LINES)
+  }
+  return input.view.scrollbackLines
 }
 
 export function storeTermView(view: TermView): void {

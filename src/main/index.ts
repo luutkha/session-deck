@@ -55,7 +55,7 @@ import { asSettingsPatch } from './app/settingsValidation'
 import { classifyGpu, parseGpuDevices, type GpuDevice, type GpuInfo } from './app/gpuInfo'
 import { createGpuModeStore, decideAcceleration, gpuModeFilePath, shouldRestartForSoftware, type GpuModeFile, type GpuModeStore } from './app/gpuMode'
 import type { GpuPref } from '../shared/types'
-import { warmOpencodeProbe } from './opencode'
+import { warmOpencodeProbe, whenOpencodeProbeSettled } from './opencode'
 import { createOpencodeExportRunner } from './opencode/exportRunner'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -422,13 +422,14 @@ if (!gotTheLock) {
       isOpencodeSession: (id: string) => store.get().sessions.some((s) => s.id === id && s.agent === 'opencode'),
       onChange: (list) => sendToWindow(IPC.evWorkers, list)
     })
+    // D87: this runs on EVERY store write (about once a second fleet-wide); only a session that disappeared can orphan a worker,
+    // so look at the workers only then instead of rebuilding their snapshot each time.
+    let knownSessionIds = new Set<string>(store.get().sessions.map((s) => s.id))
     store.subscribe((data) => {
       const live = new Set(data.sessions.map((s) => s.id))
-      for (const worker of workers.getWorkers()) {
-        for (const owner of worker.ownerSessionIds) {
-          if (!live.has(owner)) workers.forgetSession(owner)
-        }
-      }
+      const removed = [...knownSessionIds].filter((id) => !live.has(id))
+      knownSessionIds = live
+      for (const id of removed) workers.forgetSession(id)
     })
     const workerSweep = setInterval(() => workers.sweep(), 5000)
 
@@ -753,20 +754,25 @@ if (!gotTheLock) {
       clearTimeout: (timer) => clearTimeout(timer),
       onError
     })
-    const resumeIds = await launchResume.loadSaved()
+    // D87: these startup steps do not depend on each other (files read, hook server listening, Jarvis launch files written),
+    // so they run together instead of one after the other before the window can be created. Every one of them must be done
+    // before any session starts (resumed sessions need the hook server's env and Jarvis's launch files).
+    const [resumeIds] = await Promise.all([
+      launchResume.loadSaved(),
+      features.loadTimeline(),
+      attention.start(),
+      jarvis.start().catch((error: unknown) => onError('jarvis start', error))
+    ])
     launchResume.startTracking()
-
-    await features.loadTimeline()
-    await attention.start()
-    // Before any session starts: Jarvis's launch files must exist when it is resumed below.
-    await jarvis.start().catch((error: unknown) => onError('jarvis start', error))
     // Test seam: lets an end-to-end script reach the hook server of this run. Does nothing unless the variable is set.
     if (process.env.SESSIONDECK_E2E_ENDPOINT_FILE) {
       writeFile(process.env.SESSIONDECK_E2E_ENDPOINT_FILE, JSON.stringify(attention.endpoint()), 'utf-8').catch((error: unknown) => onError('e2e endpoint file', error))
     }
     sleepScheduler.start()
     // After the hook server is up: a resumed session needs its env (port, token) to report attention and status.
-    launchResume.resumeSaved(resumeIds)
+    // D87: wait (at most 3 s, off the startup path) for the OpenCode probe, so a resumed OpenCode session never falls back to the
+    // synchronous probe that blocks this thread. The window below does not wait for it.
+    void whenOpencodeProbeSettled(3000).then((): void => launchResume.resumeSaved(resumeIds))
 
     // Desktop notification for permission requests and finished turns (the attention manager raises each once).
     wireAttentionNotices({
@@ -802,8 +808,13 @@ if (!gotTheLock) {
         return changesWin
       })
     }
-    for (const worktreeId of restorableIds(openChangesStore.load(), new Set((store.get().worktrees ?? []).map((worktree) => worktree.id)))) {
-      showChangesWindow(worktreeId)
+    // D87: restored Changes windows each load a full renderer; start them after the main window has loaded, so they do not
+    // compete with it (and the IPC handlers registered below exist by then).
+    const restoredWindowIds = restorableIds(openChangesStore.load(), new Set((store.get().worktrees ?? []).map((worktree) => worktree.id)))
+    if (restoredWindowIds.length > 0) {
+      win.webContents.once('did-finish-load', (): void => {
+        for (const worktreeId of restoredWindowIds) showChangesWindow(worktreeId)
+      })
     }
 
     // No-GPU support: classify once the first window exists (Chromium has reported its GPU by then) and remember the

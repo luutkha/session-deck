@@ -8,15 +8,23 @@ import { asCreateWorktreeInput, assertBoolean, assertId, assertNonEmptyString } 
 import type { SessionController } from './sessionController'
 import { createCodeGitOps, type CodeGitOps } from './codeGitOps'
 import { asCommitInput, asPullRequestInput, asWorktreeRemoveOptions } from './codeGitValidation'
-import { errorMessage } from '../../shared/guards'
+import { errorMessage, isRecord } from '../../shared/guards'
 
 /** A turn that just ended has usually written its files; give the file system a moment before diffing. */
-const CHANGES_AFTER_TURN_MS = 1500
+export const CHANGES_AFTER_TURN_MS = 1500
 const MAX_PATH_LENGTH = 4096
+
+/** Pollers read this IPC repeatedly (10 s per Changes panel, 30 s per sidebar badge); reuse a recent scan. */
+export const CHANGES_CACHE_TTL_MS = 4000
 
 /** What makes two results different for the windows (the time they were computed does not). */
 function changesKey(changes: WorktreeChanges): string {
   return JSON.stringify([changes.files, changes.truncated, changes.error ?? null])
+}
+
+interface CachedChanges {
+  readonly at: number
+  readonly result: WorktreeChanges
 }
 
 export interface CodeWiringDeps {
@@ -42,7 +50,7 @@ export interface CodeWiring {
   createWorktree(raw: unknown): Promise<CreateWorktreeResult>
   /** D54 (Jarvis): local branches of a repo, a worktree's changes, and worktree removal (same paths as the IPC). */
   branches(repoId: Id): Promise<RepoBranches>
-  changes(worktreeId: Id): Promise<WorktreeChanges>
+  changes(worktreeId: Id, allowCached?: boolean): Promise<WorktreeChanges>
   removeWorktree(worktreeId: Id): void
   /** D55 (Jarvis): removes a repo with its worktrees and sessions; one file's diff (same paths as the IPC). */
   removeRepo(repoId: Id): void
@@ -58,6 +66,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
   const { store, controller, broadcast, onError } = deps
   /** Last computed changes per worktree: a diff request is only answered for a path in this list. */
   const latest = new Map<Id, WorktreeChanges>()
+  const changesCache = new Map<Id, CachedChanges>()
   const inFlight = new Map<Id, Promise<WorktreeChanges>>()
   const timers = new Map<Id, ReturnType<typeof setTimeout>>()
 
@@ -78,9 +87,10 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
 
   /**
    * One git run per worktree at a time. A background caller arriving meanwhile shares the running one. A `fresh` caller
-   * (it just changed files, or must see them: Jarvis commit, the refresh after a commit/push, an explicit read) never gets
-   * a result older than its request: it gets the next run, which starts after the running one ends. Git slots are limited
-   * (gitRunner), so a run can stay in flight for a while; without this, such a caller read a snapshot from before its write.
+   * (an internal change just happened: Stop hook, commit/push/merge refresh, discard) never gets a result older than its
+   * request: it gets the next run, which starts after the running one ends. Git slots are limited (gitRunner), so a run
+   * can stay in flight for a while; without this, such a caller read a snapshot from before its write. IPC reads are not
+   * fresh: they use the short TTL cache in `changes()` instead.
    */
   function computeChanges(worktree: Worktree, fresh = false): Promise<WorktreeChanges> {
     const running = inFlight.get(worktree.id)
@@ -98,6 +108,8 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     const next = readWorktreeChanges(worktree, deps.now).then((changes) => {
       const previous = latest.get(worktree.id)
       latest.set(worktree.id, changes)
+      // A forced run that finished after its worktree was removed must not bring its cache entry back.
+      if (store.getWorktree(worktree.id) !== undefined) changesCache.set(worktree.id, { at: deps.now(), result: changes })
       // Every window (sidebar counts, an open Changes tab) learns about a different result, whoever asked for it.
       if (previous === undefined || changesKey(previous) !== changesKey(changes)) broadcast(IPC.evWorktreeChanges, changes)
       return changes
@@ -113,13 +125,14 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
       timers.delete(worktreeId)
       const worktree = store.getWorktree(worktreeId)
       if (worktree === undefined) return
-      computeChanges(worktree)
+      computeChanges(worktree, true)
         .catch((error: unknown) => onError('worktree changes refresh', error))
     }, CHANGES_AFTER_TURN_MS))
   }
 
   function forget(worktreeId: Id): void {
     latest.delete(worktreeId)
+    changesCache.delete(worktreeId)
     const pending = timers.get(worktreeId)
     if (pending !== undefined) clearTimeout(pending)
     timers.delete(worktreeId)
@@ -212,8 +225,22 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     return listBranches(repoOrThrow(repoId).path)
   }
 
-  function changes(worktreeId: Id): Promise<WorktreeChanges> {
-    return computeChanges(worktreeOrThrow(worktreeId), true)
+  /** `allowCached`: a background poll may take a result younger than CHANGES_CACHE_TTL_MS; every other caller gets a fresh scan. */
+  function changes(worktreeId: Id, allowCached = false): Promise<WorktreeChanges> {
+    const worktree = worktreeOrThrow(worktreeId)
+    if (!allowCached) return computeChanges(worktree, true)
+    // A run already in flight (or queued behind a forced one) is newer than the cache: share it, never start another.
+    const queued = trailing.get(worktreeId)
+    if (queued !== undefined) return queued
+    const running = inFlight.get(worktreeId)
+    if (running !== undefined) return running
+    const cached = changesCache.get(worktreeId)
+    if (cached !== undefined) {
+      const age = deps.now() - cached.at
+      if (age >= 0 && age < CHANGES_CACHE_TTL_MS) return Promise.resolve(cached.result)
+    }
+    // G2/G5: pollers and panels share a recent result instead of each starting its own git scan.
+    return computeChanges(worktree)
   }
 
   function removeWorktree(worktreeId: Id): void {
@@ -256,7 +283,11 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     ipcMain.handle(IPC.worktreeSetCollapsed, (_event, rawId: unknown, rawCollapsed: unknown): void => {
       store.setWorktreeCollapsed(assertId(rawId, 'worktree id'), assertBoolean(rawCollapsed, 'collapsed'))
     })
-    ipcMain.handle(IPC.worktreeChanges, (_event, rawId: unknown): Promise<WorktreeChanges> => changes(assertId(rawId, 'worktree id')))
+    ipcMain.handle(
+      IPC.worktreeChanges,
+      (_event, rawId: unknown, rawOptions?: unknown): Promise<WorktreeChanges> =>
+        changes(assertId(rawId, 'worktree id'), isRecord(rawOptions) && rawOptions.allowCached === true)
+    )
     ipcMain.handle(IPC.worktreeFileDiff, (_event, rawId: unknown, rawPath: unknown) => fileDiff(rawId, rawPath))
     ipcMain.handle(IPC.worktreeDiscardFile, (_event, rawId: unknown, rawPath: unknown) => discardOneFile(rawId, rawPath))
     ipcMain.handle(IPC.worktreeDiscardHunk, (_event, rawId: unknown, rawPath: unknown, rawIndex: unknown, rawHeader: unknown) => discardOneHunk(rawId, rawPath, rawIndex, rawHeader))

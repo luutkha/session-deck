@@ -41,6 +41,13 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const PDF_MIME = 'application/pdf'
 
+/**
+ * W4-E: a whole-file base64 string makes main block while serialising it and the renderer block while copying it
+ * byte by byte. From 8 MB on, PDFs use the existing range path instead (8 MB is main's per-range cap; the first
+ * request is only 64 KB). Local, so the shared IPC contract stays untouched.
+ */
+const PDF_WHOLE_MAX_BYTES = 8 * 1024 * 1024
+
 /** D75: pdf.js needs the header, and a renamed file must not reach it. Every real PDF starts with `%PDF-` near the start (some writers prepend junk). */
 const PDF_MAGIC = '%PDF-'
 const PDF_MAGIC_SEARCH_BYTES = 1024
@@ -62,6 +69,12 @@ export type PathCheck = { readonly ok: true; readonly kind: FileViewKind } | { r
 
 function fail(error: string): FileViewResult {
   return { ok: false, error }
+}
+
+/** W4-E: the PDF delivery decision used by both the refusal check and the read below. */
+export function pdfViewDelivery(size: number): 'whole' | 'streamed' | 'refused' {
+  if (pdfDeliveryFor(size) === 'refused') return 'refused'
+  return size <= PDF_WHOLE_MAX_BYTES ? 'whole' : 'streamed'
 }
 
 function extensionOf(name: string): string {
@@ -171,7 +184,7 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
     if (kind === 'image' && size > FILE_VIEW_IMAGE_MAX_BYTES) return fail('Image is too large to show')
     if ((kind === 'sheet' || kind === 'docx') && size > FILE_VIEW_DOC_MAX_BYTES) return fail('File is too large to show')
     // D75: a PDF over the whole-file cap is streamed in ranges; only one beyond the stream cap is refused.
-    if (kind === 'pdf' && pdfDeliveryFor(size) === 'refused') return fail('PDF is too large to show (over 1 GB)')
+    if (kind === 'pdf' && pdfViewDelivery(size) === 'refused') return fail('PDF is too large to show (over 1 GB)')
 
     const name = basename(absPath)
     const extension = extensionOf(name)
@@ -216,7 +229,7 @@ export async function readFileView(absPath: string): Promise<FileViewResult> {
     }
 
     if (kind === 'pdf') {
-      if (pdfDeliveryFor(size) === 'streamed') {
+      if (pdfViewDelivery(size) === 'streamed') {
         // D75: a big PDF is never loaded whole. Only the head is read, to refuse a renamed file before the
         // renderer starts asking pdf.js to fetch byte ranges of it.
         const { bytes } = await readCapped(absPath, size, PDF_MAGIC_SEARCH_BYTES)

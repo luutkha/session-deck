@@ -5,13 +5,11 @@ import { isDirectory } from './fsCheck'
 import { GIT_FATAL_EXIT_CODE, type GitRun, runGit } from './gitRunner'
 import { countUntrackedAdditions } from './untrackedCount'
 import { mapLimit } from './limiter'
-import { parseStatusZ } from './commit'
 import {
   type LineCounts,
   type NameStatusEntry,
   parseNameStatusZ,
-  parseNumstatZ,
-  parseUntrackedZ
+  parseNumstatZ
 } from './worktreeParse'
 import { errorMessage } from '../../shared/guards'
 
@@ -51,15 +49,42 @@ function trackedFiles(numstatOutput: string, nameStatusOutput: string): ChangedF
   return parseNameStatusZ(nameStatusOutput).map((entry) => toChangedFile(entry, counts.get(entry.path) ?? NO_COUNTS))
 }
 
+/**
+ * One `status --porcelain=v1 -z --untracked-files=all` walks the untracked tree once: its `??` entries are the same
+ * files `ls-files --others --exclude-standard` listed, and every path it prints still differs from HEAD (D60).
+ * Skipping that second full walk halved the git work of a Changes scan.
+ */
+function parseStatusForChanges(output: string): { readonly untracked: string[]; readonly uncommitted: ReadonlySet<string> } {
+  const fields = output.split('\0')
+  if (fields[fields.length - 1] === '') fields.pop()
+  const untracked: string[] = []
+  const uncommitted = new Set<string>()
+  for (let i = 0; i < fields.length; i += 1) {
+    const entry = fields[i]
+    if (entry === undefined || entry.length < 4) continue
+    const xy = entry.slice(0, 2)
+    const filePath = entry.slice(3)
+    uncommitted.add(filePath)
+    if (xy === '??') untracked.push(filePath)
+    // A rename or copy is followed by its source path as the next field.
+    if (xy[0] === 'R' || xy[0] === 'C' || xy[1] === 'R' || xy[1] === 'C') {
+      const source = fields[i + 1]
+      if (source !== undefined && source.length > 0) uncommitted.add(source)
+      i += 1
+    }
+  }
+  return { untracked, uncommitted }
+}
+
 /** Untracked files only add lines; when their count is unknown (binary, huge) the deletions are unknown too. */
 async function untrackedFile(worktreePath: string, filePath: string): Promise<ChangedFile> {
   const additions = await countUntrackedAdditions(path.join(worktreePath, filePath))
   return { path: filePath, kind: 'untracked', additions, deletions: additions === null ? null : 0 }
 }
 
-async function untrackedFiles(worktreePath: string, lsFilesOutput: string): Promise<ChangedFile[]> {
+async function untrackedFiles(worktreePath: string, paths: readonly string[]): Promise<ChangedFile[]> {
   // Bounded: a worktree without a .gitignore can list thousands of untracked files (one lstat + read each).
-  return mapLimit(parseUntrackedZ(lsFilesOutput), UNTRACKED_READ_CONCURRENCY, (filePath) => untrackedFile(worktreePath, filePath))
+  return mapLimit(paths, UNTRACKED_READ_CONCURRENCY, (filePath) => untrackedFile(worktreePath, filePath))
 }
 
 function compareByPath(a: ChangedFile, b: ChangedFile): number {
@@ -88,17 +113,16 @@ async function collectChanges(wt: WorktreeRef, now: () => number, run: GitRun): 
   if (!(await isDirectory(wt.path))) throw new Error(`Worktree folder not found: ${wt.path}`)
   const base = await diffBase(wt, run)
   const options = { cwd: wt.path }
-  const [numstat, nameStatus, untracked, status] = await Promise.all([
+  const [numstat, nameStatus, status] = await Promise.all([
     run(['diff', '--numstat', '-z', '-M', base], options),
     run(['diff', '--name-status', '-z', '-M', base], options),
-    run(['ls-files', '--others', '--exclude-standard', '-z'], options),
     run(['status', '--porcelain=v1', '-z', '--untracked-files=all'], options)
   ])
-  // D60: which listed files still differ from HEAD (Commit can take only those).
-  const uncommitted = parseStatusZ(status.stdout)
+  // D60: which listed files still differ from HEAD (Commit can take only those), plus the untracked paths.
+  const { untracked, uncommitted } = parseStatusForChanges(status.stdout)
   const files = [
     ...trackedFiles(numstat.stdout, nameStatus.stdout),
-    ...(await untrackedFiles(wt.path, untracked.stdout))
+    ...(await untrackedFiles(wt.path, untracked))
   ].map((file): ChangedFile => (uncommitted.has(file.path) || (file.oldPath !== undefined && uncommitted.has(file.oldPath)) ? { ...file, uncommitted: true } : file))
   return buildChanges(wt.id, files, now())
 }

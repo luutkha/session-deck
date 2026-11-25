@@ -1,4 +1,4 @@
-import { type DragEvent as ReactDragEvent, type ReactElement } from 'react'
+import { useMemo, useRef, type DragEvent as ReactDragEvent, type ReactElement } from 'react'
 import { Plus } from 'lucide-react'
 import type { Id, RuntimeState, Session, SessionUsage, StatusDef, StoreData } from '../../shared/types'
 import type { SelectClickModifiers } from '../state/multiSelect'
@@ -133,42 +133,25 @@ export function HubColumn(props: HubColumnProps): ReactElement {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex min-h-full flex-col gap-1 p-2">
-          {sessions.map((session) => {
-            const state = runtime.get(session.id)
-            return (
-              <HubCardMenu
-                key={session.id}
-                statuses={data.statuses}
-                currentStatusId={effectiveStatusIdOf(session, data)}
-                sleeping={state?.sleeping === true}
-                canSleep={state?.run === 'running' && state?.sleeping !== true}
-                keepAwake={session.keepAwake === true}
-                onToggleKeepAwake={(): void => {
-                  void window.api.setKeepAwake(session.id, session.keepAwake !== true).catch((): void => undefined)
-                }}
-                onSleep={(): void => {
-                  void window.api.sleepSession(session.id).catch((): void => undefined)
-                }}
-                onOpen={(): void => onOpen(session.id)}
-                onSetStatus={(next): void => onSetStatus(session.id, next)}
-              >
-                <HubCard
-                  session={session}
-                  active={activeId === session.id}
-                  runtime={state}
-                  lastChange={lastChange.get(session.id) ?? session.createdAt}
-                  usage={sessionUsage.get(session.id)}
-                  now={now}
-                  groupName={groupNameFor(session.groupId, data)}
-                  draggable={true}
-                  selected={selectedIds.has(session.id)}
-                  onOpen={onOpen}
-                  onDragStart={onDragStartSession}
-                  onDragEnd={onDragEndSession}
-                />
-              </HubCardMenu>
-            )
-          })}
+          {sessions.map((session) => (
+            <HubCardRow
+              key={session.id}
+              session={session}
+              statuses={data.statuses}
+              currentStatusId={effectiveStatusIdOf(session, data)}
+              state={runtime.get(session.id)}
+              lastChangeValue={lastChange.get(session.id) ?? session.createdAt}
+              usage={sessionUsage.get(session.id)}
+              now={now}
+              groupName={groupNameFor(session.groupId, data)}
+              active={activeId === session.id}
+              selected={selectedIds.has(session.id)}
+              onOpen={onOpen}
+              onSetStatus={onSetStatus}
+              onDragStartSession={onDragStartSession}
+              onDragEndSession={onDragEndSession}
+            />
+          ))}
           {sessions.length === 0 && (
             <div className="flex min-h-16 flex-1 items-center justify-center rounded-lg border border-dashed border-border px-2 py-4 text-[11px] italic text-muted-foreground/60">
               Drop sessions here
@@ -183,4 +166,85 @@ export function HubColumn(props: HubColumnProps): ReactElement {
 function groupNameFor(groupId: Id | null, data: StoreData): string | null {
   if (groupId === null) return null
   return data.groups.find((group) => group.id === groupId)?.name ?? null
+}
+
+interface HubCardRowProps {
+  readonly session: Session
+  readonly statuses: readonly StatusDef[]
+  readonly currentStatusId: Id | null
+  readonly state: RuntimeState | undefined
+  readonly lastChangeValue: number
+  readonly usage: SessionUsage | undefined
+  readonly now: number
+  readonly groupName: string | null
+  readonly active: boolean
+  readonly selected: boolean
+  readonly onOpen: (id: Id, modifiers?: SelectClickModifiers) => void
+  readonly onSetStatus: (id: Id, statusId: Id | null) => void
+  readonly onDragStartSession: (id: Id) => void
+  readonly onDragEndSession: () => void
+}
+
+/**
+ * One row of the board. This component is deliberately NOT memoized: it re-renders on every store publish and
+ * refreshes the ref below, while the memoized card and menu keep their callback identities. Without the ref a
+ * bailed-out card would call the closure from its first render (stale session id / keep-awake flag).
+ */
+function HubCardRow(props: HubCardRowProps): ReactElement {
+  const {
+    session, statuses, currentStatusId, state, lastChangeValue, usage, now, groupName,
+    active, selected, onOpen, onSetStatus, onDragStartSession, onDragEndSession
+  } = props
+
+  const latest = useRef({ session, onOpen, onSetStatus, onDragStartSession, onDragEndSession })
+  latest.current = { session, onOpen, onSetStatus, onDragStartSession, onDragEndSession }
+  const handlers = useMemo(() => ({
+    onSelect: (id: Id, modifiers?: SelectClickModifiers): void => latest.current.onOpen(id, modifiers),
+    onDragStart: (id: Id): void => latest.current.onDragStartSession(id),
+    onDragEnd: (): void => latest.current.onDragEndSession(),
+    menuOpen: (): void => {
+      const current = latest.current
+      current.onOpen(current.session.id)
+    },
+    menuSetStatus: (statusId: Id | null): void => {
+      const current = latest.current
+      current.onSetStatus(current.session.id, statusId)
+    },
+    menuSleep: (): void => {
+      void window.api.sleepSession(latest.current.session.id).catch((): void => undefined)
+    },
+    menuToggleKeepAwake: (): void => {
+      const current = latest.current.session
+      void window.api.setKeepAwake(current.id, current.keepAwake !== true).catch((): void => undefined)
+    }
+  }), [])
+
+  return (
+    <HubCardMenu
+      statuses={statuses}
+      currentStatusId={currentStatusId}
+      sleeping={state?.sleeping === true}
+      canSleep={state?.run === 'running' && state?.sleeping !== true}
+      keepAwake={session.keepAwake === true}
+      onOpen={handlers.menuOpen}
+      onSetStatus={handlers.menuSetStatus}
+      onSleep={handlers.menuSleep}
+      onToggleKeepAwake={handlers.menuToggleKeepAwake}
+    >
+      <HubCard
+        session={session}
+        active={active}
+        runtime={state}
+        lastChange={lastChangeValue}
+        usage={usage}
+        now={now}
+        groupName={groupName}
+        draggable={true}
+        selected={selected}
+        onOpen={handlers.onSelect}
+        onDragStart={handlers.onDragStart}
+        onDragEnd={handlers.onDragEnd}
+      />
+    </HubCardMenu>
+  )
 }

@@ -1,17 +1,220 @@
-import { type DragEvent as ReactDragEvent, type ReactElement } from 'react'
-import type { Group, Id, RuntimeState, Session, StatusDef, StoreData } from '../../shared/types'
+import { memo, useMemo, useRef, type DragEvent as ReactDragEvent, type ReactElement } from 'react'
+import type { AttentionReason, Group, Id, RuntimeState, Session, StatusDef, StoreData } from '../../shared/types'
 import type { DragItem, DropOver } from '../state/dropTarget'
 import type { SelectClickModifiers } from '../state/multiSelect'
 import { relativeTime } from '../state/formatTime'
 import { attentionClass, resolveDropPosition } from './uiLogic'
 import { DropHereHint, SectionHeader } from './SectionHeader'
 import { GroupContextMenu } from './GroupContextMenu'
-import { SessionCard, useSessionCardHandlers } from './SessionCard'
+import { SessionCard, useSessionCardHandlers, type SessionCardHandlers } from './SessionCard'
 import { SessionContextMenu } from './SessionContextMenu'
 import { toggleRead } from '../attention/needsYou'
 import { InlineEdit } from './InlineEdit'
 import { WorkspaceSection } from './WorkspaceSection'
 import { workspaceBuckets, workspaceCollapseKey } from '../state/selectors'
+import { sessionAgent } from '../components/AgentBadge'
+import { progress } from '../notes/checklistLogic'
+
+/** One session row, shared by the group and status sections so both skip unchanged cards on a runtime batch. */
+export interface SidebarSessionRowProps {
+  readonly session: Session
+  readonly status: StatusDef | null
+  readonly runtime: RuntimeState | undefined
+  /** Pre-formatted by the section, so a clock tick only re-renders rows whose own label changed. */
+  readonly relative: string
+  readonly active: boolean
+  readonly renaming: boolean
+  readonly groupBadge: string | null
+  readonly showGroupBadge: boolean
+  readonly attention: AttentionReason | null
+  readonly dragOver: 'before' | 'after' | null
+  readonly selected: boolean
+  readonly draggable: boolean
+  readonly statuses: readonly StatusDef[]
+  readonly groups: readonly Group[]
+  /** Stable forwarding object from useSessionCardHandlers (the memoized card compares callback identity). */
+  readonly handlers: SessionCardHandlers
+  readonly onSelect: (id: Id, modifiers?: SelectClickModifiers) => void
+  readonly onStartRenameSession: (id: Id) => void
+  readonly onCloseSession: (id: Id) => void
+  readonly onSetSessionStatus: (id: Id, statusId: Id | null) => void
+  readonly onMoveSession: (id: Id, groupId: Id | null) => void
+  readonly onCreateGroupAndMove: (id: Id) => void
+  readonly onRequestRemoveSession: (id: Id) => void
+  readonly onForkSession?: (id: Id) => void
+}
+
+function sameSession(a: Session, b: Session): boolean {
+  if (a === b) return true
+  if (a.id !== b.id || a.name !== b.name || a.cwd !== b.cwd) return false
+  if (sessionAgent(a) !== sessionAgent(b)) return false
+  if ((a.keepAwake === true) !== (b.keepAwake === true)) return false
+  if ((a.notes ?? '').trim() !== (b.notes ?? '').trim()) return false
+  if ((a.queue?.length ?? 0) !== (b.queue?.length ?? 0)) return false
+  const tagsA = a.tags ?? []
+  const tagsB = b.tags ?? []
+  if (tagsA.length !== tagsB.length || tagsA.some((tag, index): boolean => tag !== tagsB[index])) return false
+  const doneA = progress(a.checklist ?? [])
+  const doneB = progress(b.checklist ?? [])
+  return doneA.done === doneB.done && doneA.total === doneB.total
+}
+
+function sameStatus(a: StatusDef | null, b: StatusDef | null): boolean {
+  if (a === b) return true
+  return a !== null && b !== null && a.id === b.id && a.name === b.name && a.color === b.color
+}
+
+function sameRuntime(a: RuntimeState | undefined, b: RuntimeState | undefined): boolean {
+  if (a === b) return true
+  if (a === undefined || b === undefined) return false
+  return (
+    a.run === b.run &&
+    a.exitCode === b.exitCode &&
+    a.attention === b.attention &&
+    (a.activity ?? null) === (b.activity ?? null) &&
+    (a.activityMessage ?? null) === (b.activityMessage ?? null) &&
+    (a.activityAt ?? null) === (b.activityAt ?? null) &&
+    (a.sleeping === true) === (b.sleeping === true) &&
+    (a.remoteControl === true) === (b.remoteControl === true) &&
+    (a.opencodePlugin ?? null) === (b.opencodePlugin ?? null)
+  )
+}
+
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a === b || (a.length === b.length && a.every((item, index): boolean => item === b[index]))
+}
+
+/** Value comparison: a runtime batch passes a new Map, but a row whose own data is unchanged keeps its DOM. */
+export function sidebarSessionRowPropsEqual(prev: SidebarSessionRowProps, next: SidebarSessionRowProps): boolean {
+  return (
+    sameSession(prev.session, next.session) &&
+    sameStatus(prev.status, next.status) &&
+    sameRuntime(prev.runtime, next.runtime) &&
+    prev.relative === next.relative &&
+    prev.active === next.active &&
+    prev.renaming === next.renaming &&
+    prev.groupBadge === next.groupBadge &&
+    prev.showGroupBadge === next.showGroupBadge &&
+    prev.attention === next.attention &&
+    prev.dragOver === next.dragOver &&
+    prev.selected === next.selected &&
+    prev.draggable === next.draggable &&
+    sameList(prev.statuses, next.statuses) &&
+    sameList(prev.groups, next.groups) &&
+    // Fork is the one raw (unwrapped) callback: compare it so a replaced handler cannot leave a stale menu item.
+    prev.onForkSession === next.onForkSession
+  )
+  // Callback identity is deliberately ignored: the sections pass stable ref-forwarding wrappers
+  // (useStableSidebarRowCallbacks and useSessionCardHandlers), so a skipped row never calls a stale closure.
+}
+
+export function SidebarSessionRowView(props: SidebarSessionRowProps): ReactElement {
+  // Latest props for the inline menu callbacks; memo ignores their identity, including section-level closures
+  // that change when the store or drag state changes.
+  const latest = useRef(props)
+  latest.current = props
+  const {
+    session, status, runtime, relative, active, renaming,
+    groupBadge, showGroupBadge, attention, dragOver, selected, draggable, statuses, groups, handlers
+  } = props
+
+  return (
+    <SessionContextMenu
+      statuses={statuses}
+      groups={groups}
+      sleeping={runtime?.sleeping === true}
+      canSleep={runtime !== undefined && runtime.run === 'running' && runtime.sleeping !== true}
+      keepAwake={session.keepAwake === true}
+      attention={attention}
+      onToggleRead={(): void => toggleRead(latest.current.session.id, latest.current.runtime?.attention ?? null)}
+      onToggleKeepAwake={(): void => {
+        const current = latest.current.session
+        void window.api.setKeepAwake(current.id, current.keepAwake !== true).catch((): void => undefined)
+      }}
+      onSleep={(): void => {
+        void window.api.sleepSession(latest.current.session.id).catch((): void => undefined)
+      }}
+      onWake={(): void => latest.current.onSelect(latest.current.session.id)}
+      onRename={(): void => latest.current.onStartRenameSession(latest.current.session.id)}
+      onSetStatus={(statusId): void => latest.current.onSetSessionStatus(latest.current.session.id, statusId)}
+      onMoveToGroup={(groupId): void => latest.current.onMoveSession(latest.current.session.id, groupId)}
+      onNewGroupAndMove={(): void => latest.current.onCreateGroupAndMove(latest.current.session.id)}
+      onCloseSession={(): void => latest.current.onCloseSession(latest.current.session.id)}
+      onFork={
+        latest.current.onForkSession !== undefined && (session.agent ?? 'claude') !== 'shell'
+          ? (): void => latest.current.onForkSession?.(latest.current.session.id)
+          : undefined
+      }
+      onRemoveSession={(): void => latest.current.onRequestRemoveSession(latest.current.session.id)}
+    >
+      <SessionCard
+        session={session}
+        status={status}
+        active={active}
+        runtime={runtime}
+        relative={relative}
+        renaming={renaming}
+        groupBadge={groupBadge}
+        showGroupBadge={showGroupBadge}
+        attention={attention}
+        showIndicator={true}
+        indicatorAriaLabel={
+          runtime === undefined ? 'No runtime data' : runtime.run === 'running' ? 'Running' : 'Exited'
+        }
+        indicatorClass={
+          runtime !== undefined && runtime.attention !== null
+            ? attentionClass(runtime.attention)
+            : runtime === undefined
+              ? 'bg-muted-foreground/40'
+              : runtime.run === 'running'
+                ? 'bg-status-success'
+                : 'bg-destructive'
+        }
+        draggable={draggable}
+        dragOver={dragOver}
+        selected={selected}
+        {...handlers}
+      />
+    </SessionContextMenu>
+  )
+}
+
+/** Memoized row: only sessions whose displayed data changed re-render on a runtime publish. */
+export const SidebarSessionRow = memo(SidebarSessionRowView, sidebarSessionRowPropsEqual)
+
+/** The section-level callbacks a row forwards to (everything except the card handlers, which are stable too). */
+export type SidebarRowCallbacks = Pick<
+  SidebarSessionRowProps,
+  | 'onSelect'
+  | 'onStartRenameSession'
+  | 'onCloseSession'
+  | 'onSetSessionStatus'
+  | 'onMoveSession'
+  | 'onCreateGroupAndMove'
+  | 'onRequestRemoveSession'
+>
+
+/**
+ * Stable wrappers for the row callbacks. A section rebuilds these closures on every store/runtime event; the memo
+ * ignores their identity, so they must always call the section's latest closure rather than the one from the
+ * render that last created the row.
+ */
+export function useStableSidebarRowCallbacks(callbacks: SidebarRowCallbacks): SidebarRowCallbacks {
+  const latest = useRef(callbacks)
+  latest.current = callbacks
+  return useMemo(
+    (): SidebarRowCallbacks => ({
+      onSelect: (id, modifiers): void => latest.current.onSelect(id, modifiers),
+      onStartRenameSession: (id): void => latest.current.onStartRenameSession(id),
+      onCloseSession: (id): void => latest.current.onCloseSession(id),
+      onSetSessionStatus: (id, statusId): void => latest.current.onSetSessionStatus(id, statusId),
+      onMoveSession: (id, groupId): void => latest.current.onMoveSession(id, groupId),
+      onCreateGroupAndMove: (id): void => latest.current.onCreateGroupAndMove(id),
+      onRequestRemoveSession: (id): void => latest.current.onRequestRemoveSession(id)
+    }),
+    []
+  )
+}
 
 export interface GroupSectionProps {
   readonly group: Group | null
@@ -86,6 +289,15 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     onDragOverItem: (id, position): void => onDragOverSession({ kind: 'session', id, position }),
     onDropItem,
     onDragEnd
+  })
+  const rowCallbacks = useStableSidebarRowCallbacks({
+    onSelect,
+    onStartRenameSession,
+    onCloseSession,
+    onSetSessionStatus,
+    onMoveSession,
+    onCreateGroupAndMove,
+    onRequestRemoveSession
   })
 
   const sectionId = group === null ? 'section-ungrouped' : `section-group-${group.id}`
@@ -216,9 +428,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
 
   function renderSession(session: Session): ReactElement {
     const state = runtime.get(session.id)
-    const attention = state?.attention ?? null
     const groupBadge = group === null ? null : group.name
-    const showGroupBadge = groupBy === 'status' && groupBadge !== null
     const dropOverForSession =
       drag !== null && drag.kind === 'session' && dropOver !== null &&
       dropOver.kind === 'session' && dropOver.id === session.id &&
@@ -226,68 +436,27 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         ? dropOver.position
         : null
 
-    const card = (
-      <SessionCard
+    return (
+      <SidebarSessionRow
+        key={session.id}
         session={session}
         status={session.statusId === null ? null : (statusById.get(session.statusId) ?? null)}
-        active={activeId === session.id}
         runtime={state}
         relative={relativeTime(now, state?.activityAt ?? (lastChange.get(session.id) ?? session.createdAt))}
+        active={activeId === session.id}
         renaming={renamingSessionId === session.id}
         groupBadge={groupBadge}
-        showGroupBadge={showGroupBadge}
-        attention={attention}
-        showIndicator={true}
-        indicatorAriaLabel={
-          state === undefined
-            ? 'No runtime data'
-            : state.run === 'running'
-              ? 'Running'
-              : 'Exited'
-        }
-        indicatorClass={
-          state !== undefined && state.attention !== null
-            ? attentionClass(state.attention)
-            : state === undefined
-              ? 'bg-muted-foreground/40'
-              : state.run === 'running'
-                ? 'bg-status-success'
-                : 'bg-destructive'
-        }
-        draggable={draggableSessions}
+        showGroupBadge={groupBy === 'status' && groupBadge !== null}
+        attention={state?.attention ?? null}
         dragOver={dropOverForSession}
         selected={selectedIds.has(session.id)}
-        {...handlers}
-      />
-    )
-
-    return (
-      <SessionContextMenu
-        key={session.id}
+        draggable={draggableSessions}
         statuses={data.statuses}
         groups={data.groups}
-        sleeping={state?.sleeping === true}
-        canSleep={state !== undefined && state.run === 'running' && state.sleeping !== true}
-        keepAwake={session.keepAwake === true}
-        attention={state?.attention ?? null}
-        onToggleRead={(): void => toggleRead(session.id, state?.attention ?? null)}
-        onToggleKeepAwake={(): void => {
-          void window.api.setKeepAwake(session.id, session.keepAwake !== true).catch((): void => undefined)
-        }}
-        onSleep={(): void => {
-          void window.api.sleepSession(session.id).catch((): void => undefined)
-        }}
-        onWake={(): void => onSelect(session.id)}
-        onRename={(): void => onStartRenameSession(session.id)}
-        onSetStatus={(statusId): void => onSetSessionStatus(session.id, statusId)}
-        onMoveToGroup={(groupId): void => onMoveSession(session.id, groupId)}
-        onNewGroupAndMove={(): void => onCreateGroupAndMove(session.id)}
-        onCloseSession={(): void => onCloseSession(session.id)}
-        onFork={onForkSession !== undefined && (session.agent ?? 'claude') !== 'shell' ? (): void => onForkSession(session.id) : undefined}
-        onRemoveSession={(): void => onRequestRemoveSession(session.id)}
-      >
-        {card}
-      </SessionContextMenu>
+        handlers={handlers}
+        {...rowCallbacks}
+        onForkSession={onForkSession}
+      />
     )
   }
 

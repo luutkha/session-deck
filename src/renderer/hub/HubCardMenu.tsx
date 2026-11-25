@@ -1,6 +1,7 @@
-import { type ReactElement, type ReactNode } from 'react'
+import { isValidElement, memo, type ReactElement, type ReactNode } from 'react'
 import { Coffee, Moon, Sun } from 'lucide-react'
 import type { Id, StatusDef } from '../../shared/types'
+import { HubCard, hubCardPropsEqual, type HubCardProps } from './HubCard'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -28,7 +29,7 @@ export interface HubCardMenuProps {
   readonly onToggleKeepAwake?: () => void
 }
 
-export function HubCardMenu(props: HubCardMenuProps): ReactElement {
+export function HubCardMenuView(props: HubCardMenuProps): ReactElement {
   const {
     children,
     statuses,
@@ -97,3 +98,46 @@ export function HubCardMenu(props: HubCardMenuProps): ReactElement {
     </ContextMenu>
   )
 }
+
+function sameStatuses(prev: readonly StatusDef[], next: readonly StatusDef[]): boolean {
+  if (prev === next) return true
+  if (prev.length !== next.length) return false
+  return prev.every((status: StatusDef, index: number): boolean => {
+    const other = next[index]
+    return status.id === other.id && status.name === other.name && status.color === other.color
+  })
+}
+
+/** The card is the menu's child, so its displayed values must be compared here too: a bailed-out menu never
+ * passes fresh children to the memoized card, which would freeze the card at its last render. */
+function sameCardChild(prev: ReactNode, next: ReactNode): boolean {
+  if (prev === next) return true
+  if (
+    isValidElement<HubCardProps>(prev) &&
+    isValidElement<HubCardProps>(next) &&
+    prev.type === HubCard &&
+    next.type === HubCard
+  ) {
+    return hubCardPropsEqual(prev.props, next.props)
+  }
+  return false
+}
+
+/**
+ * Value comparison for a card's context menu: statuses by value (a store broadcast copies the array), the flags
+ * the menu renders, and the child card's displayed props. Callbacks are ignored — HubColumn passes stable
+ * wrappers that read the latest closures through a ref — so a publish with unchanged data does not re-render
+ * either the menu or the card.
+ */
+export function hubCardMenuPropsEqual(prev: HubCardMenuProps, next: HubCardMenuProps): boolean {
+  return (
+    sameStatuses(prev.statuses, next.statuses) &&
+    prev.currentStatusId === next.currentStatusId &&
+    (prev.sleeping ?? false) === (next.sleeping ?? false) &&
+    (prev.canSleep ?? false) === (next.canSleep ?? false) &&
+    (prev.keepAwake ?? false) === (next.keepAwake ?? false) &&
+    sameCardChild(prev.children, next.children)
+  )
+}
+
+export const HubCardMenu = memo(HubCardMenuView, hubCardMenuPropsEqual)

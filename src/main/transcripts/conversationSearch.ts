@@ -4,6 +4,7 @@
 // turns come from the injected `opencode session export` runner (opencodeTranscript.ts), cached per session and
 // capped at a few processes at once. Nothing here writes a transcript.
 import { join } from 'node:path'
+import { open } from 'node:fs/promises'
 import type { ConversationHit, ConversationSearchResult, Id, Session } from '../../shared/types'
 import { isRecord } from '../../shared/guards'
 import { exportOpencodeSession } from './opencodeTranscript'
@@ -15,6 +16,19 @@ export const MAX_HITS_PER_SESSION = 20
 /** A transcript larger than this is skipped (it would block the main process for too long). */
 export const MAX_TRANSCRIPT_BYTES = 50 * 1024 * 1024
 const SNIPPET_RADIUS = 60
+/** Bounds the parsed-transcript caches: an unbounded Map kept whole transcripts (up to MAX_TRANSCRIPT_BYTES) forever. */
+export const MAX_CACHE_ENTRIES = 24
+export const MAX_CACHE_BYTES = 200 * 1024 * 1024
+/** A located path is reused briefly; a "not found" answer is only trusted for a few seconds. */
+export const LOCATE_TTL_MS = 30_000
+export const LOCATE_MISS_TTL_MS = 5_000
+
+/** Injectable bounds (tests use small ones); both caches default to 24 entries / ~200 MB. */
+export interface CacheLimits {
+  readonly maxEntries: number
+  readonly maxBytes: number
+}
+export const DEFAULT_CACHE_LIMITS: CacheLimits = { maxEntries: MAX_CACHE_ENTRIES, maxBytes: MAX_CACHE_BYTES }
 
 export interface TranscriptMessage {
   readonly role: 'user' | 'assistant'
@@ -87,6 +101,8 @@ export interface ConversationSearchDeps {
   readonly readdir: (dir: string) => Promise<readonly string[]>
   readonly stat: (file: string) => Promise<{ readonly size: number; readonly mtimeMs: number } | null>
   readonly readFile: (file: string) => Promise<string>
+  /** Byte-range read for append-only growth; the default opens the file with fs.promises. */
+  readonly readRange?: (path: string, start: number, length: number) => Promise<string>
   /** D79: the injected `opencode session export` runner (see main/opencode/exportRunner.ts); absent = no OpenCode search. */
   readonly runOpencodeExport?: (args: string[]) => Promise<string>
   /** Clock for the OpenCode cache (tests); Date.now otherwise. */
@@ -118,6 +134,32 @@ interface CacheEntry {
   readonly size: number
   readonly mtimeMs: number
   readonly messages: readonly TranscriptMessage[]
+  /** Byte offset after the last complete line; a trailing line without '\n' is re-read when the file grows. */
+  readonly parsedBytes: number
+  /** Messages from the unfinished line at `parsedBytes`, so an appended tail can replace them exactly. */
+  readonly partialMessages: readonly TranscriptMessage[]
+}
+
+/** Byte-range read: ranges always start at a line boundary, so UTF-8 decoding cannot split a character. */
+async function defaultReadRange(path: string, start: number, length: number): Promise<string> {
+  const handle = await open(path, 'r')
+  try {
+    const buffer = Buffer.alloc(length)
+    const { bytesRead } = await handle.read(buffer, 0, length, start)
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Splits off an unfinished last line; `text` is the newly read region and `fromByte` its absolute start. */
+function completePrefix(text: string, fromByte = 0): { readonly parsedBytes: number; readonly partialLine: string } {
+  const lastNewline = text.lastIndexOf('\n')
+  if (lastNewline < 0) return { parsedBytes: fromByte, partialLine: text }
+  return {
+    parsedBytes: fromByte + Buffer.byteLength(text.slice(0, lastNewline + 1), 'utf8'),
+    partialLine: text.slice(lastNewline + 1)
+  }
 }
 
 /**
@@ -137,13 +179,83 @@ interface OpencodeEntry {
   readonly messages: readonly TranscriptMessage[] | null
 }
 
-export function createConversationSearch(deps: ConversationSearchDeps): ConversationSearch {
-  const cache = new Map<string, CacheEntry>()
-  const opencodeCache = new Map<string, OpencodeEntry>()
+/**
+ * An LRU over a Map: a hit moves the entry to the end, an insert evicts the least-recently-used first until both the
+ * entry count and the approximate byte budget are met. `sizeOf` is the file size for transcripts and the text length
+ * for OpenCode exports.
+ */
+function createLru<V>(limits: CacheLimits, sizeOf: (value: V) => number) {
+  const entries = new Map<string, { readonly value: V; readonly size: number }>()
+  let bytes = 0
+  return {
+    get(key: string): V | undefined {
+      const hit = entries.get(key)
+      if (hit === undefined) return undefined
+      entries.delete(key)
+      entries.set(key, hit)
+      return hit.value
+    },
+    set(key: string, value: V): void {
+      const previous = entries.get(key)
+      if (previous !== undefined) bytes -= previous.size
+      const size = sizeOf(value)
+      entries.delete(key)
+      entries.set(key, { value, size })
+      bytes += size
+      while (entries.size > limits.maxEntries || bytes > limits.maxBytes) {
+        const oldest = entries.keys().next()
+        if (oldest.done === true) break
+        const entry = entries.get(oldest.value)
+        if (entry === undefined) break
+        bytes -= entry.size
+        entries.delete(oldest.value)
+      }
+    }
+  }
+}
+
+export function createConversationSearch(
+  deps: ConversationSearchDeps,
+  limits: CacheLimits = DEFAULT_CACHE_LIMITS,
+  opencodeLimits: CacheLimits = DEFAULT_CACHE_LIMITS
+): ConversationSearch {
+  const cache = createLru(limits, (entry: CacheEntry) => entry.size)
+  const opencodeCache = createLru(opencodeLimits, (entry: OpencodeEntry) =>
+    (entry.messages ?? []).reduce((sum, message) => sum + message.text.length, 0))
   const opencodeFlights = new Map<string, Promise<readonly TranscriptMessage[] | null>>()
+  /** id -> last located path; `null` is a recent "not found", with its own shorter TTL. */
+  const located = new Map<string, { readonly path: string | null; readonly at: number }>()
+  let scanFlight: Promise<Map<string, string>> | null = null
   let opencodeActive = 0
   const opencodeWaiting: Array<() => void> = []
   const now = (): number => (deps.now ?? Date.now)()
+  const readRange = deps.readRange ?? defaultReadRange
+
+  /**
+   * A transcript only grows: parse the appended bytes instead of the whole (up to 50 MB) file. Returns null if the
+   * cached offset is not a trustworthy line boundary, so the caller falls back to the old full read + parse.
+   */
+  async function appendedEntry(path: string, cached: CacheEntry, size: number, mtimeMs: number): Promise<CacheEntry | null> {
+    if (cached.parsedBytes > cached.size || cached.parsedBytes > size) return null
+    try {
+      if (cached.parsedBytes > 0 && await readRange(path, cached.parsedBytes - 1, 1) !== '\n') return null
+      // The offset stops before the unfinished line, so the range read already contains it: replace the messages
+      // that line contributed instead of prepending it again. Lines are independent JSON, so this equals a full parse.
+      const tail = await readRange(path, cached.parsedBytes, size - cached.parsedBytes)
+      const messages = [
+        ...cached.messages.slice(0, cached.messages.length - cached.partialMessages.length),
+        ...parseTranscript(tail)
+      ]
+      const prefix = completePrefix(tail, cached.parsedBytes)
+      return {
+        size, mtimeMs, messages,
+        parsedBytes: prefix.parsedBytes,
+        partialMessages: parseTranscript(prefix.partialLine)
+      }
+    } catch {
+      return null
+    }
+  }
 
   /** Runs one export when a slot is free (first in, first out); the caller waits otherwise. */
   async function withOpencodeSlot<T>(task: () => Promise<T>): Promise<T> {
@@ -195,39 +307,97 @@ export function createConversationSearch(deps: ConversationSearchDeps): Conversa
     return flight
   }
 
-  /** conversation id -> transcript path, from one listing of the projects folder. */
+  /** One listing of the projects tree; concurrent callers share the same in-flight scan. */
+  function scanProjects(): Promise<Map<string, string>> {
+    if (scanFlight !== null) return scanFlight
+    scanFlight = (async (): Promise<Map<string, string>> => {
+      const found = new Map<string, string>()
+      const projects = join(deps.configDir(), 'projects')
+      let dirs: readonly string[]
+      try {
+        dirs = await deps.readdir(projects)
+      } catch {
+        return found // nothing saved yet
+      }
+      for (const dir of dirs) {
+        let files: readonly string[]
+        try {
+          files = await deps.readdir(join(projects, dir))
+        } catch {
+          continue
+        }
+        for (const file of files) {
+          if (!file.endsWith('.jsonl')) continue
+          const id = file.slice(0, -'.jsonl'.length)
+          if (!found.has(id)) found.set(id, join(projects, dir, file))
+        }
+      }
+      return found
+    })().finally((): void => {
+      scanFlight = null
+    })
+    return scanFlight
+  }
+
+  /**
+   * conversation id -> transcript path. A located path is reused for LOCATE_TTL_MS (checked with a cheap stat so a
+   * moved file is found again); a "not found" answer is reused for LOCATE_MISS_TTL_MS only. Without this a digest of
+   * N sessions rescanned every project directory N times.
+   */
   async function locate(ids: ReadonlySet<string>): Promise<Map<string, string>> {
     const found = new Map<string, string>()
-    const projects = join(deps.configDir(), 'projects')
-    let dirs: readonly string[]
-    try {
-      dirs = await deps.readdir(projects)
-    } catch {
-      return found // nothing saved yet
+    const missing = new Set<string>()
+    const at = now()
+    for (const id of ids) {
+      const entry = located.get(id)
+      if (entry !== undefined && at - entry.at < (entry.path === null ? LOCATE_MISS_TTL_MS : LOCATE_TTL_MS)) {
+        if (entry.path === null) continue
+        if (await deps.stat(entry.path) !== null) {
+          found.set(id, entry.path)
+          continue
+        }
+      }
+      missing.add(id)
     }
-    for (const dir of dirs) {
-      let files: readonly string[]
-      try {
-        files = await deps.readdir(join(projects, dir))
-      } catch {
-        continue
-      }
-      for (const file of files) {
-        if (!file.endsWith('.jsonl')) continue
-        const id = file.slice(0, -'.jsonl'.length)
-        if (ids.has(id) && !found.has(id)) found.set(id, join(projects, dir, file))
-      }
+    if (missing.size === 0) return found
+    const scanned = await scanProjects()
+    for (const id of missing) {
+      const path = scanned.get(id) ?? null
+      located.set(id, { path, at: now() })
+      if (path !== null) found.set(id, path)
     }
     return found
   }
 
-  async function messagesOf(path: string): Promise<readonly TranscriptMessage[]> {
+  async function messagesOf(path: string, id: string): Promise<readonly TranscriptMessage[]> {
     const info = await deps.stat(path)
-    if (info === null || info.size > MAX_TRANSCRIPT_BYTES) return []
-    const cached = cache.get(path)
+    if (info === null || info.size > MAX_TRANSCRIPT_BYTES) {
+      located.delete(id) // the cached path is gone or unusable: look it up again next time
+      return []
+    }
+    const cached = cache.get(path) // LRU hit: move the entry to the most-recent end
     if (cached !== undefined && cached.size === info.size && cached.mtimeMs === info.mtimeMs) return cached.messages
-    const messages = parseTranscript(await deps.readFile(path))
-    cache.set(path, { size: info.size, mtimeMs: info.mtimeMs, messages })
+    if (cached !== undefined && info.size > cached.size) {
+      const grown = await appendedEntry(path, cached, info.size, info.mtimeMs)
+      if (grown !== null) {
+        cache.set(path, grown)
+        return grown.messages
+      }
+    }
+    let messages: readonly TranscriptMessage[]
+    try {
+      const text = await deps.readFile(path)
+      messages = parseTranscript(text)
+      const prefix = completePrefix(text)
+      cache.set(path, {
+        size: info.size, mtimeMs: info.mtimeMs, messages,
+        parsedBytes: prefix.parsedBytes,
+        partialMessages: parseTranscript(prefix.partialLine)
+      })
+    } catch (error) {
+      located.delete(id) // the file may have moved; force a fresh scan on the next lookup
+      throw error
+    }
     return messages
   }
 
@@ -240,7 +410,7 @@ export function createConversationSearch(deps: ConversationSearchDeps): Conversa
       }
       if (agent !== 'claude' || session.claudeSessionId === undefined) return null
       const path = (await locate(new Set([session.claudeSessionId]))).get(session.claudeSessionId)
-      return path === undefined ? null : messagesOf(path)
+      return path === undefined ? null : messagesOf(path, session.claudeSessionId as string)
     },
 
     async search(sessions: readonly Session[], rawQuery: string): Promise<ConversationSearchResult> {
@@ -260,7 +430,7 @@ export function createConversationSearch(deps: ConversationSearchDeps): Conversa
         if (path === undefined) continue
         let messages: readonly TranscriptMessage[]
         try {
-          messages = await messagesOf(path)
+          messages = await messagesOf(path, session.claudeSessionId as string)
         } catch {
           continue // an unreadable transcript is skipped
         }

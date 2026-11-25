@@ -48,3 +48,13 @@ The user asked ("Notes others feature to plan, to implement in feature") to keep
 
 ## Larger bets (all need the user)
 35 Task board (cards linked to sessions/worktrees), 36 PR + CI status per worktree (GitHub auth, `gh`), 37 Remote/mobile read-only status page (security design first), 38 Plugin/extension API.
+
+## Performance leftovers (D87)
+| Idea | Size | Plan |
+|------|------|------|
+| Render slicing (R2) | L | `useSessionStore` hands out one snapshot; give components per-slice subscriptions (per session runtime) so a runtime batch re-renders only the changed rows; measure with `bench-sessions.cjs ... agents=16 rprofile` (3 runs each, results are noisy). |
+| Store delta messages (M4) | L | Send per-session patches instead of the whole store on each change; needs a contract change in `shared/ipc.ts` and a reducer in the renderer. |
+| pty output only to the owner window (M6) | M | Needs each window to tell main which sessions it shows (a pane subscription), otherwise a split/grid in the other window goes stale. |
+| Virtualize the 500-file Changes list | M | Rows are memoized now; add windowing if a profile shows the list as hot. |
+| Transcript parsing in a worker thread (M7) | M | Reuse the officeRunner worker pattern; the incremental parse already removed most of the cost. |
+| Lazy `marked` / `dompurify` (R7) | S | About 60 KB minified; keep sanitising before `dangerouslySetInnerHTML`. |

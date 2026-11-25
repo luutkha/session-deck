@@ -1,5 +1,5 @@
 import type { ITerminalOptions, ITheme } from '@xterm/xterm'
-import { fontSizeFor, type TermView } from './termView'
+import { effectiveScrollback, fontSizeFor, type TermView } from './termView'
 
 const FONT_FAMILY = "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace"
 const FONT_SIZE = 14
@@ -51,11 +51,24 @@ export const TERMINAL_OPTIONS: ITerminalOptions = {
   theme: TERMINAL_THEME
 }
 
+/** Whether reduced effects are on and whether the profile came from a saved user value. */
+export interface ScrollbackContext {
+  readonly reducedEffects: boolean
+  readonly explicit: boolean
+}
+
 /**
  * The options a NEW pane is constructed with for a terminal profile (zoom + scrollback, D-Bar):
  * the base options with the profile's font size and scrollback. Live zoom changes fontSize on
- * mounted panes (paneFactory.applyTerminalFontSize); scrollback is a construction option.
+ * mounted panes (paneFactory.applyTerminalFontSize); scrollback is a construction option, so
+ * reduced effects can only lower it here (W4-H). Without a context the profile is used as-is.
  */
-export function terminalOptionsFor(view: TermView): ITerminalOptions {
-  return { ...TERMINAL_OPTIONS, fontSize: fontSizeFor(view.zoomPercent), scrollback: view.scrollbackLines }
+export function terminalOptionsFor(view: TermView, scrollback?: ScrollbackContext): ITerminalOptions {
+  return {
+    ...TERMINAL_OPTIONS,
+    fontSize: fontSizeFor(view.zoomPercent),
+    scrollback: scrollback === undefined
+      ? view.scrollbackLines
+      : effectiveScrollback({ reducedEffects: scrollback.reducedEffects, view, explicit: scrollback.explicit })
+  }
 }

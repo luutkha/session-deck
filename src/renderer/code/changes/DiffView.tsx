@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment, type ReactElement } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef, Fragment, type ReactElement } from 'react'
 import { MessageSquarePlus, Undo2, X } from 'lucide-react'
 import { DIFF_MAX_BYTES, type FileDiff } from '../../../shared/types'
 import { cn } from '../../lib/utils'
@@ -7,6 +7,14 @@ import { diffLineClass, diffLineMarker, limitDiffLines, MAX_RENDERED_DIFF_LINES 
 import { annotationForLine, annotationText, type DiffAnnotation } from './annotations'
 import { parseUnifiedDiff, type DiffLine } from './parseUnifiedDiff'
 import { pairLines, type SplitRow } from './sideBySide'
+import {
+  DIFF_CHUNK_ROOT_MARGIN_PX,
+  DIFF_ROW_HEIGHT_PX,
+  chunkRows,
+  initialMountedChunks,
+  nextMountedChunks,
+  type DiffChunk
+} from './diffChunks'
 
 export interface DiffViewProps {
   readonly diff: FileDiff | null
@@ -38,6 +46,11 @@ function Notice({ text }: { readonly text: string }): ReactElement {
 interface EditorState {
   readonly line: DiffLine
   readonly draft: string
+}
+
+interface MountState {
+  readonly chunks: readonly DiffChunk[]
+  readonly mounted: ReadonlySet<number>
 }
 
 function CommentEditor({
@@ -204,6 +217,20 @@ function DiffText({
   const parsed = useMemo((): readonly DiffLine[] => parseUnifiedDiff(diff.diff).filter(isBodyLine), [diff.diff])
   const limited = useMemo(() => limitDiffLines(parsed), [parsed])
   const splitRows = useMemo((): readonly SplitRow[] => (layout === 'split' ? pairLines(limited.rows) : []), [layout, limited])
+  // A long diff mounts rows chunk by chunk; a small diff keeps one chunk and never creates an observer.
+  const chunks = useMemo(
+    () => chunkRows(layout === 'split' ? splitRows.length : limited.rows.length),
+    [layout, splitRows, limited]
+  )
+  const chunked = chunks.length > 1
+  // Keep the set tied to its chunk list: a file switch starts fresh without a stale extra frame.
+  const [mountState, setMountState] = useState<MountState>(
+    (): MountState => ({ chunks, mounted: initialMountedChunks(chunks.length) })
+  )
+  const mounted = mountState.chunks === chunks ? mountState.mounted : initialMountedChunks(chunks.length)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const chunkElements = useRef(new Map<number, HTMLDivElement>())
   const [editor, setEditor] = useState<EditorState | null>(null)
   // Hunk headers in file order: the index main needs to find the same hunk again.
   const hunkIndexes = useMemo((): ReadonlyMap<DiffLine, number> => {
@@ -211,6 +238,101 @@ function DiffText({
     for (const line of parsed) if (line.kind === 'hunk') indexes.set(line, indexes.size)
     return indexes
   }, [parsed])
+
+  const observeChunk = useCallback((index: number, element: HTMLDivElement | null): void => {
+    const previous = chunkElements.current.get(index)
+    if (previous !== undefined && previous !== element) {
+      observerRef.current?.unobserve(previous)
+      chunkElements.current.delete(index)
+    }
+    if (element === null) return
+    chunkElements.current.set(index, element)
+    observerRef.current?.observe(element)
+  }, [])
+
+  useEffect((): (() => void) => {
+    const root = rootRef.current
+    if (!chunked || root === null || typeof IntersectionObserver === 'undefined') return (): void => undefined
+    // One observer for every placeholder; the large margin mounts a chunk before it scrolls into view.
+    const observer = new IntersectionObserver(
+      (entries: readonly IntersectionObserverEntry[]): void => {
+        const visible: number[] = []
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          const index = Number((entry.target as HTMLElement).dataset.diffChunk)
+          if (!Number.isInteger(index)) continue
+          visible.push(index)
+          const element = chunkElements.current.get(index)
+          if (element !== undefined) observer.unobserve(element)
+        }
+        if (visible.length === 0) return
+        setMountState((current) => {
+          const base = current.chunks === chunks ? current.mounted : initialMountedChunks(chunks.length)
+          const next = nextMountedChunks(base, visible, chunks.length)
+          return next === base && current.chunks === chunks ? current : { chunks, mounted: next }
+        })
+      },
+      { root, rootMargin: `${String(DIFF_CHUNK_ROOT_MARGIN_PX)}px 0px`, threshold: 0 }
+    )
+    observerRef.current = observer
+    for (const element of chunkElements.current.values()) observer.observe(element)
+    return (): void => {
+      observer.disconnect()
+      if (observerRef.current === observer) observerRef.current = null
+    }
+  }, [chunked, chunks])
+
+  /** One inline row plus its inline comment editor, keyed by the row's index in the whole diff. */
+  function inlineRow(line: DiffLine, index: number): ReactElement {
+    return (
+      <Fragment key={index}>
+        <DiffRow
+          line={line}
+          annotation={annotationForLine(annotations, diff.path, line)}
+          canAnnotate={onAddComment !== undefined && annotationEnabled(line)}
+          onOpenEditor={(): void => setEditor({ line, draft: '' })}
+          {...(onDiscardHunk !== undefined && line.kind === 'hunk' && hunkIndexes.has(line)
+            ? { onDiscard: (): void => onDiscardHunk(hunkIndexes.get(line) ?? 0, line.text) }
+            : {})}
+        />
+        {editor !== null && editor.line === line ? (
+          <CommentEditor
+            draft={editor.draft}
+            busy={false}
+            onDraft={(text) => setEditor((current) => (current === null ? current : { ...current, draft: text }))}
+            onAdd={add}
+            onCancel={(): void => setEditor(null)}
+          />
+        ) : null}
+      </Fragment>
+    )
+  }
+
+  function chunkView(chunk: DiffChunk): ReactElement {
+    if (!mounted.has(chunk.index)) {
+      // Rows are one unwrapped 18px line each, so this placeholder holds the scroll position until mount.
+      return (
+        <div
+          key={chunk.index}
+          ref={(element): void => observeChunk(chunk.index, element)}
+          data-diff-chunk={chunk.index}
+          data-diff-chunk-rows={chunk.rows}
+          className={layout === 'split' ? 'col-span-2' : undefined}
+          style={{ height: chunk.rows * DIFF_ROW_HEIGHT_PX }}
+          aria-hidden="true"
+        />
+      )
+    }
+    return (
+      <Fragment key={chunk.index}>
+        {layout === 'split'
+          ? splitRows.slice(chunk.start, chunk.end).map((row, offset) => (
+              <SplitRowView key={chunk.start + offset} row={row} />
+            ))
+          : limited.rows.slice(chunk.start, chunk.end).map((line, offset) => inlineRow(line, chunk.start + offset))}
+      </Fragment>
+    )
+  }
 
   function add(): void {
     if (editor === null || onAddComment === undefined) return
@@ -221,6 +343,7 @@ function DiffText({
 
   return (
     <div
+      ref={rootRef}
       data-diff-layout={layout}
       className="min-h-0 flex-1 overflow-auto py-1 font-mono text-[12px] leading-[18px] text-foreground"
     >
@@ -229,33 +352,10 @@ function DiffText({
         {layout === 'split' ? (
           // Split layout is annotation-free (no comment button, no dots): annotations are inline-only.
           <div className="grid grid-cols-2">
-            {splitRows.map((row: SplitRow, index: number): ReactElement => (
-              <SplitRowView key={index} row={row} />
-            ))}
+            {chunks.map(chunkView)}
           </div>
         ) : (
-          limited.rows.map((line: DiffLine, index: number): ReactElement => (
-            <Fragment key={index}>
-              <DiffRow
-                line={line}
-                annotation={annotationForLine(annotations, diff.path, line)}
-                canAnnotate={onAddComment !== undefined && annotationEnabled(line)}
-                onOpenEditor={(): void => setEditor({ line, draft: '' })}
-                {...(onDiscardHunk !== undefined && line.kind === 'hunk' && hunkIndexes.has(line)
-                  ? { onDiscard: (): void => onDiscardHunk(hunkIndexes.get(line) ?? 0, line.text) }
-                  : {})}
-              />
-              {editor !== null && editor.line === line ? (
-                <CommentEditor
-                  draft={editor.draft}
-                  busy={false}
-                  onDraft={(text) => setEditor((current) => (current === null ? current : { ...current, draft: text }))}
-                  onAdd={add}
-                  onCancel={(): void => setEditor(null)}
-                />
-              ) : null}
-            </Fragment>
-          ))
+          chunks.map(chunkView)
         )}
         {parsed.length === 0 ? <Notice text={EMPTY_MESSAGE} /> : null}
         {limited.limited ? <Notice text={LIMIT_MESSAGE} /> : null}

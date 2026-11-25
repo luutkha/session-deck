@@ -1,17 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   BASE_FONT_SIZE,
   DEFAULT_TERM_VIEW,
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
+  REDUCED_SCROLLBACK_LINES,
   SCROLLBACK_MAX,
   SCROLLBACK_MIN,
+  TERM_VIEW_STORAGE_KEY,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
   clampScrollback,
   clampZoom,
+  effectiveScrollback,
   fontSizeFor,
+  hasStoredTermView,
   nextZoom,
   normalizeTermView,
   parseTermView,
@@ -74,5 +78,47 @@ describe('parseTermView', () => {
   it('roundtrips through serialize', () => {
     const view = normalizeTermView({ zoomPercent: 120, scrollbackLines: 5_000 })
     expect(parseTermView(serializeTermView(view))).toEqual(view)
+  })
+})
+
+describe('effectiveScrollback', () => {
+  it('lowers only the default when reduced effects are on (all four combinations)', () => {
+    const saved = { zoomPercent: 120, scrollbackLines: 50_000 }
+    // reduced + no saved profile → the smaller construction default.
+    expect(effectiveScrollback({ reducedEffects: true, view: DEFAULT_TERM_VIEW, explicit: false }))
+      .toBe(REDUCED_SCROLLBACK_LINES)
+    // reduced + saved profile → the user's scrollback is kept.
+    expect(effectiveScrollback({ reducedEffects: true, view: saved, explicit: true })).toBe(50_000)
+    // normal + no saved profile → the normal default is unchanged.
+    expect(effectiveScrollback({ reducedEffects: false, view: DEFAULT_TERM_VIEW, explicit: false })).toBe(10_000)
+    // normal + saved profile → the user's scrollback is kept.
+    expect(effectiveScrollback({ reducedEffects: false, view: saved, explicit: true })).toBe(50_000)
+  })
+
+  it('never grows a profile already below the reduced cap', () => {
+    const view = { zoomPercent: 100, scrollbackLines: 1_000 }
+    expect(effectiveScrollback({ reducedEffects: true, view, explicit: false })).toBe(1_000)
+  })
+})
+
+describe('hasStoredTermView', () => {
+  afterEach((): void => { vi.unstubAllGlobals() })
+
+  function stubStorage(entries: ReadonlyMap<string, string>): void {
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string): string | null => entries.get(key) ?? null
+    })
+  }
+
+  it('a missing key means no explicit profile', () => {
+    stubStorage(new Map())
+    expect(hasStoredTermView()).toBe(false)
+  })
+
+  it('a valid saved key means an explicit profile; garbage does not', () => {
+    stubStorage(new Map([[TERM_VIEW_STORAGE_KEY, serializeTermView(DEFAULT_TERM_VIEW)]]))
+    expect(hasStoredTermView()).toBe(true)
+    stubStorage(new Map([[TERM_VIEW_STORAGE_KEY, 'not json']]))
+    expect(hasStoredTermView()).toBe(false)
   })
 })

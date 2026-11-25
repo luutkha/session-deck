@@ -1,11 +1,13 @@
 import './styles/orca-theme.css'
 import './styles/primitives.css'
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
-import { ChangesWindow } from './code/changes/ChangesWindow'
-import { ViewerWindow } from './viewer/ViewerWindow'
 import './styles.css'
+
+// D87: the two detached windows are separate chunks, so the main window does not parse their code at launch.
+const ChangesWindow = lazy(() => import('./code/changes/ChangesWindow').then((m) => ({ default: m.ChangesWindow })))
+const ViewerWindow = lazy(() => import('./viewer/ViewerWindow').then((m) => ({ default: m.ViewerWindow })))
 
 const container = document.getElementById('root')
 if (container === null) {
@@ -20,6 +22,16 @@ const isChangesWindow = window.api?.changesWindowRequest != null
 
 createRoot(container).render(
   <StrictMode>
-    {isViewerWindow ? <ViewerWindow /> : isChangesWindow ? <ChangesWindow /> : <App />}
+    {isViewerWindow ? (
+      <Suspense fallback={null}>
+        <ViewerWindow />
+      </Suspense>
+    ) : isChangesWindow ? (
+      <Suspense fallback={null}>
+        <ChangesWindow />
+      </Suspense>
+    ) : (
+      <App />
+    )}
   </StrictMode>
 )

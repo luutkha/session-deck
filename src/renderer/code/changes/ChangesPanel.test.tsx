@@ -2,12 +2,32 @@
 // repo, so rendering is checked with react-dom/server (no effects run: the IPC hooks stay in their loading state).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { ChangesPanel } from './ChangesPanel'
+import type { ChangedFile } from '../../../shared/types'
+import { ChangesPanel, flatFileRows } from './ChangesPanel'
 import { CHANGES_WINDOW_FALLBACK_TITLE, ChangesWindow, attachErrorText } from './ChangesWindow'
 
 const DETACH_ATTR = 'data-changes-detach'
 const ATTACH_ATTR = 'data-changes-attach'
 const LIST_ATTR = 'data-changes-list'
+
+function changed(path: string): ChangedFile {
+  return { path, kind: 'modified', additions: 1, deletions: 0 }
+}
+
+describe('flatFileRows', () => {
+  it('draws one top-level file row per file, in the order main sent them', () => {
+    const first = changed('src/b.ts')
+    const second = changed('a.ts')
+    const rows = flatFileRows([first, second])
+    expect(rows.map((row) => row.depth)).toEqual([0, 0])
+    expect(rows.map((row) => row.node.kind === 'file' ? row.node.path : null)).toEqual(['src/b.ts', 'a.ts'])
+    expect(rows[0]?.node.kind === 'file' ? rows[0].node.file : null).toBe(first)
+  })
+
+  it('is empty for an empty list', () => {
+    expect(flatFileRows([])).toEqual([])
+  })
+})
 
 function panel(props: { readonly onDetach?: () => void; readonly layout?: 'stack' | 'split' } = {}): string {
   return renderToStaticMarkup(<ChangesPanel worktreeId="w1" {...props} />)

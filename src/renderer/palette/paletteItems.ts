@@ -521,3 +521,18 @@ export function buildPaletteItems(input: PaletteInput): readonly PaletteItem[] {
     active === null ? [] : thisSessionItems(active, runtime.get(active.id), statuses)
   return [...sessionItems, ...tagItems(sessions), ...thisItems, ...actionItems(input)]
 }
+
+/**
+ * The palette is mounted even while closed, and runtime publishes rebuild the store ~10 times a second.
+ * Sharing one frozen empty array keeps the closed palette out of the localeCompare/build path entirely;
+ * this seam also lets a unit test spy on the builder without rendering React.
+ */
+export const EMPTY_PALETTE_ITEMS: readonly PaletteItem[] = Object.freeze([])
+
+/** Builds items only while the palette is open; opening re-runs the builder with the then-current runtime. */
+export function paletteItemsWhenOpen(
+  open: boolean,
+  build: () => readonly PaletteItem[]
+): readonly PaletteItem[] {
+  return open ? build() : EMPTY_PALETTE_ITEMS
+}

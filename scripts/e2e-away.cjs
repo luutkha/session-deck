@@ -126,8 +126,9 @@ async function main() {
     await waitFor(() => app.evaluate('!document.querySelector("[role=dialog]")'), 3000, 100)
     await key('K', 'KeyK', 75, CTRL | SHIFT)
     await waitFor(() => app.evaluate('!!document.querySelector("[cmdk-input]")'), 3000, 100)
-    await app.send('Input.insertText', { text: 'away' })
-    await sleep(300)
+    // The full label matches only the action: 'away' alone also matches the sessions named away-*, and the first match is selected.
+    await app.send('Input.insertText', { text: 'While you were away' })
+    await waitFor(() => app.evaluate('[...document.querySelectorAll("[cmdk-item][data-selected=true]")].some((n) => n.innerText.includes("While you were away"))'), 3000, 100)
     await key('Enter', 'Enter', 13)
     const again = await waitFor(() => app.evaluate('[...document.querySelectorAll("[role=dialog]")].some((d) => d.innerText.includes("While you were away"))'), 4000, 200)
     t.check('the palette action shows the last summary again', !!again)

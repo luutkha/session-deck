@@ -1,7 +1,7 @@
 // New-session dialogs, Settings, the command palette and the Ctrl+Shift+N shortcut for one mode's workspace.
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { Id, RuntimeState, Session, StoreData, UiMode, WindowRole } from '../../shared/types'
-import { buildPaletteItems, type PaletteCommand, type PaletteItem } from '../palette/paletteItems'
+import { buildPaletteItems, paletteItemsWhenOpen, type PaletteCommand, type PaletteItem } from '../palette/paletteItems'
 import { runPaletteCommand } from '../palette/runCommand'
 import { openJarvisPanel } from '../jarvis/jarvisPanelStore'
 import { needsYouItems } from '../attention/needsYou'
@@ -91,7 +91,9 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
   usePaletteShortcut(useCallback((): void => setPaletteOpen(true), []))
 
   const activeId = nav.view === 'hub' ? null : nav.tabs.activeId
-  const paletteItems = useMemo(() => buildPaletteItems({
+  // Palette-open state lives here (the shortcut and CommandPalette both call setPaletteOpen), so no wiring in
+  // ModeWorkspace is needed. Sorting/regrouping ~70 items on every runtime publish while closed was the hot path.
+  const paletteItems = useMemo(() => paletteItemsWhenOpen(paletteOpen, () => buildPaletteItems({
     sessions: data?.sessions ?? [],
     statuses: data?.statuses ?? [],
     runtime: input.runtime,
@@ -101,7 +103,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
     windowRole: input.role,
     codePoppedOut: input.codePoppedOut,
     presets: data?.presets
-  }), [data?.sessions, data?.statuses, data?.presets, input.runtime, activeId, nav.view, mode, input.role, input.codePoppedOut])
+  })), [paletteOpen, data?.sessions, data?.statuses, data?.presets, input.runtime, activeId, nav.view, mode, input.role, input.codePoppedOut])
 
   // D69: keyboard triage. Reads the latest sessions / runtime / active tab at call time, so the callback never changes.
   const triageRef = useRef({ sessions: data?.sessions ?? [], runtime: input.runtime, activeId })

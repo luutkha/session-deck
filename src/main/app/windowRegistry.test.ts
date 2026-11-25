@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
+import type { BrowserWindow } from 'electron'
+import { IPC } from '../../shared/ipc'
 import type { WindowRole, WindowState } from '../../shared/types'
+import { createChangesWindowSet } from './changesWindows'
 import { createWindowRegistry, type WindowLike, type WindowRegistry } from './windowRegistry'
 
 /** Fake window: records calls, can be destroyed, minimized, focused, and can fail on send. */
@@ -49,6 +52,10 @@ class FakeWindow implements WindowLike {
     this.emitClosed()
   }
   on(_event: 'closed', cb: () => void): unknown {
+    this.closedListeners.push(cb)
+    return this
+  }
+  once(_event: 'closed', cb: () => void): unknown {
     this.closedListeners.push(cb)
     return this
   }
@@ -315,5 +322,51 @@ describe('windowRegistry: broadcast', () => {
     const { registry, errors } = setup()
     registry.broadcast('ev:store', 1)
     expect(errors).toEqual([])
+  })
+})
+
+describe('windowRegistry: detached Changes windows', () => {
+  it('receives worktree-changes pushes but no other channel', () => {
+    const { registry } = setup()
+    const main = FakeWindow.create(1)
+    registry.setMain(main)
+    const detached = FakeWindow.create(200)
+    const changes = createChangesWindowSet()
+    expect(changes.request('wt-1', () => detached as unknown as BrowserWindow)).toBe(true)
+    const push = { worktreeId: 'wt-1', computedAt: 5 }
+
+    registry.broadcast(IPC.evWorktreeChanges, push)
+    registry.broadcast('ev:pty:data', 'chunk')
+    registry.broadcast(IPC.evWindowState, { codePoppedOut: false })
+
+    expect(detached.sent).toEqual([{ channel: IPC.evWorktreeChanges, args: [push] }])
+    expect(main.sent.map((entry) => entry.channel)).toEqual([
+      IPC.evWorktreeChanges,
+      'ev:pty:data',
+      IPC.evWindowState
+    ])
+    expect(changes.close('wt-1')).toBe(true)
+  })
+
+  it('does not send to a detached window after it is closed', () => {
+    const { registry } = setup()
+    const detached = FakeWindow.create(201)
+    const changes = createChangesWindowSet()
+    expect(changes.request('wt-2', () => detached as unknown as BrowserWindow)).toBe(true)
+    detached.emitClosed()
+
+    registry.broadcast(IPC.evWorktreeChanges, { worktreeId: 'wt-2' })
+    expect(detached.sent).toEqual([])
+  })
+
+  it('does not send twice to a window registered both as Code and as a detached window', () => {
+    const { registry } = setup()
+    const code = registry.popOutCode()
+    const changes = createChangesWindowSet()
+    expect(changes.request('wt-3', () => code as unknown as BrowserWindow)).toBe(true)
+
+    registry.broadcast(IPC.evWorktreeChanges, { worktreeId: 'wt-3' })
+    expect(code.sent).toHaveLength(1)
+    expect(changes.close('wt-3')).toBe(true)
   })
 })

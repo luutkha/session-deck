@@ -2,6 +2,7 @@
 // (shared with the Changes panel) stays untouched: this hooks into the preview's own container.
 // Images go through main (`readFileView`) as a data: URL because the window CSP allows only
 // `img-src 'self' data:`; remote http(s) images stay blocked on purpose (no tracking pixels).
+// W4-E: the cache also has a total byte budget, with least-recently-used eviction.
 import { useEffect, useRef, type RefObject } from 'react'
 import { fileViewKindFor } from '../../shared/fileViewKind'
 import type { FileView, Id } from '../../shared/types'
@@ -11,7 +12,16 @@ import { resolveRelativeAsset } from './markdownAssets'
 
 const MAX_IMAGES = 40
 const MAX_CONCURRENT_LOADS = 4
+/** W4-E: 40 images of up to 10 MB used to pin ~400 MB of base64 in renderer memory. */
+const MAX_IMAGE_BYTES = 64 * 1024 * 1024
 const MISSING_CLASSES: readonly string[] = ['border', 'border-dashed', 'border-border']
+
+export interface AssetCacheLimits {
+  readonly maxImages: number
+  readonly maxBytes: number
+}
+
+export const ASSET_LIMITS: AssetCacheLimits = { maxImages: MAX_IMAGES, maxBytes: MAX_IMAGE_BYTES }
 
 const HTTP_LINK = /^https?:\/\//i
 
@@ -30,6 +40,46 @@ function markAssetMissing(img: HTMLImageElement, path: string): void {
   const name = fileName(path)
   img.title = name === '' ? 'Image not available' : `Image not available: ${name}`
   img.classList.add(...MISSING_CLASSES)
+}
+
+/** A hit moves the entry to the end of the Map, which is the most-recently-used end. */
+export function cachedAsset(entries: Map<string, string>, path: string): string | undefined {
+  const value = entries.get(path)
+  if (value === undefined) return undefined
+  entries.delete(path)
+  entries.set(path, value)
+  return value
+}
+
+/**
+ * W4-E: keeps the count limit AND a total data-URL length budget. Evicted images simply reload when they
+ * are shown again; one image bigger than the budget is used but never cached. Limits are injected so the
+ * eviction rule can be tested without allocating hundreds of megabytes.
+ */
+export function storeAsset(
+  entries: Map<string, string>,
+  path: string,
+  dataUrl: string,
+  limits: AssetCacheLimits = ASSET_LIMITS
+): void {
+  let bytes = 0
+  for (const value of entries.values()) bytes += value.length
+  const previous = entries.get(path)
+  if (previous !== undefined) {
+    entries.delete(path)
+    bytes -= previous.length
+  }
+  if (dataUrl.length <= limits.maxBytes) {
+    entries.set(path, dataUrl)
+    bytes += dataUrl.length
+  }
+  while (entries.size > limits.maxImages || bytes > limits.maxBytes) {
+    const oldest = entries.keys().next()
+    if (oldest.done === true) break
+    const value = entries.get(oldest.value)
+    entries.delete(oldest.value)
+    if (value !== undefined) bytes -= value.length
+  }
 }
 
 /**
@@ -59,7 +109,7 @@ export function useMarkdownImages(
     for (const img of Array.from(root.querySelectorAll('img')).slice(0, MAX_IMAGES)) {
       const path = resolveRelativeAsset(view.path, img.getAttribute('src') ?? '')
       if (path === null || fileViewKindFor(path) !== 'image') continue
-      const cached = cache.get(path)
+      const cached = cachedAsset(cache, path)
       if (cached !== undefined) {
         img.src = cached
         continue
@@ -74,7 +124,7 @@ export function useMarkdownImages(
     const queue = [...jobs.entries()]
 
     function apply(path: string, targets: readonly HTMLImageElement[], dataUrl: string): void {
-      cache.set(path, dataUrl)
+      storeAsset(cache, path, dataUrl)
       for (const img of targets) if (img.isConnected) img.src = dataUrl
     }
 

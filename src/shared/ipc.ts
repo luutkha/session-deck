@@ -99,7 +99,7 @@ export const IPC = {
   worktreeCreatePr: 'worktree:createPr', // (worktreeId, PullRequestInput) -> PullRequestResult: pushes if needed, then gh pr create or opens the host's PR page (D60)
   worktreeMerge: 'worktree:merge', // (worktreeId) -> MergeResult: merges the branch into its base in the repository folder (D60)
   worktreeSetCollapsed: 'worktree:setCollapsed', // (worktreeId, collapsed)
-  worktreeChanges: 'worktree:changes', // (worktreeId) -> WorktreeChanges (recomputed now)
+  worktreeChanges: 'worktree:changes', // (worktreeId, { allowCached? }) -> WorktreeChanges (recomputed now; pollers may take a result up to 4 s old)
   worktreeFileDiff: 'worktree:fileDiff', // (worktreeId, path) -> FileDiff; path must be one of the current changed files
   worktreeDiscardFile: 'worktree:discardFile', // (worktreeId, path) -> DiscardResult: reverts the uncommitted changes of one listed file (untracked file = deleted) (D86)
   worktreeDiscardHunk: 'worktree:discardHunk', // (worktreeId, path, hunkIndex, hunkHeader) -> DiscardResult: reverse-applies one hunk of the listed file's diff (D86)
@@ -261,7 +261,7 @@ export interface Api {
   createWorktreePr(worktreeId: Id, input: PullRequestInput): Promise<PullRequestResult>
   mergeWorktree(worktreeId: Id): Promise<MergeResult>
   setWorktreeCollapsed(worktreeId: Id, collapsed: boolean): Promise<void>
-  getWorktreeChanges(worktreeId: Id): Promise<WorktreeChanges>
+  getWorktreeChanges(worktreeId: Id, options?: { readonly allowCached?: boolean }): Promise<WorktreeChanges>
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff>
   /** D86: reverts the uncommitted changes of one listed file; an untracked file is deleted. The renderer confirms first. */
   discardWorktreeFile(worktreeId: Id, path: string): Promise<DiscardResult>

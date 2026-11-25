@@ -24,6 +24,8 @@ const PROMPT_CHARS = 120
 const REPLY_CHARS = 240
 const QUESTION_CHARS = 160
 const SCREEN_LINES = 15
+/** Git status is a process per folder; its answer is reused briefly across sessions, digests and watch ticks. */
+export const UNCOMMITTED_TTL_MS = 15_000
 
 export interface FleetDigestRow {
   readonly name: string
@@ -229,6 +231,44 @@ async function quietUncommitted(read: UncommittedCounter, folder: string): Promi
   }
 }
 
+interface UncommittedCache {
+  readonly entries: Map<string, { readonly value: number | null; readonly at: number }>
+  readonly flights: Map<string, Promise<number | null>>
+}
+/** Per deps (one per app wiring), so a fresh deps object in a unit test never sees another test's git answers. */
+const uncommittedCaches = new WeakMap<JarvisToolDeps, UncommittedCache>()
+
+/** Folder identity like the renderer's project tabs: slash style, trailing slash and case don't matter. */
+function folderKeyOf(folder: string): string {
+  const BACKSLASH = String.fromCharCode(92)
+  return folder.split(BACKSLASH).join('/').replace(/\/+$/, '').toLowerCase()
+}
+
+/** One git call per fresh folder answer; sessions in the same digest share the in-flight promise. */
+function cachedUncommitted(deps: JarvisToolDeps, read: UncommittedCounter, folder: string): Promise<number | null> {
+  let current = uncommittedCaches.get(deps)
+  if (current === undefined) {
+    current = { entries: new Map(), flights: new Map() }
+    uncommittedCaches.set(deps, current)
+  }
+  const cache = current
+  const key = folderKeyOf(folder)
+  const hit = cache.entries.get(key)
+  if (hit !== undefined && deps.now() - hit.at < UNCOMMITTED_TTL_MS) return Promise.resolve(hit.value)
+  const flying = cache.flights.get(key)
+  if (flying !== undefined) return flying
+  const flight = quietUncommitted(read, folder)
+    .then((value): number | null => {
+      cache.entries.set(key, { value, at: deps.now() })
+      return value
+    })
+    .finally((): void => {
+      cache.flights.delete(key)
+    })
+  cache.flights.set(key, flight)
+  return flight
+}
+
 /**
  * D80: a session that really waits for an answer (a permission or a question). A finished turn, a bell or an unread
  * flag also put a session on the "needs you" list, but they are not urgent and a plan must not read them as "waiting".
@@ -273,8 +313,8 @@ export function planPhaseOf(deps: JarvisToolDeps, id: string): 'working' | 'fini
 
 /**
  * Gathers every session (Jarvis excluded) and formats the digest. `uncommittedOf` is the one filesystem seam, so unit
- * tests never start git. With only_needing_attention the other sessions are not printed, so their reply and git reads
- * are skipped.
+ * tests never start git; its result is cached briefly per folder so a fleet (and a watch tick) shares one git call.
+ * With only_needing_attention the other sessions are not printed, so their reply and git reads are skipped.
  */
 export async function collectFleetDigest(
   deps: JarvisToolDeps,
@@ -311,7 +351,7 @@ export async function collectFleetDigest(
       ...row,
       lastPrompt: last !== undefined && last.prompt.length > 0 ? last.prompt : null,
       reply: await replyOf(session, deps),
-      uncommitted: await quietUncommitted(uncommittedOf, session.cwd)
+      uncommitted: await cachedUncommitted(deps, uncommittedOf, session.cwd)
     }
   }))
   return formatFleetDigest({ now, rows, onlyNeedingAttention: options.onlyNeedingAttention === true, limit: options.limit ?? DIGEST_LIMIT_MAX })

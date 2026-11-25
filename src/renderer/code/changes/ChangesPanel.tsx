@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import {
   subscribeChangesFileRequest,
   subscribeChangesLayoutRequest,
@@ -21,7 +21,7 @@ import {
   SendHorizontal,
   X
 } from 'lucide-react'
-import type { AgentKind, ChangedFile, Id, WorktreeChanges } from '../../../shared/types'
+import type { AgentKind, ChangedFile, Id } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import { ScrollArea } from '../../components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
@@ -41,7 +41,7 @@ import {
   storeAnnotations,
   type DiffAnnotation
 } from './annotations'
-import { useWorktreeChanges, type WorktreeChangesResult } from './useWorktreeChanges'
+import { changesContentKey, useWorktreeChanges, type WorktreeChangesResult } from './useWorktreeChanges'
 import { useWorktreeFileDiff } from './useWorktreeFileDiff'
 import { useWorktreeFilePreview } from './useWorktreeFilePreview'
 import { PreviewView } from './PreviewView'
@@ -59,7 +59,7 @@ import {
   writeViewed,
   type ViewedMap
 } from './viewedMarks'
-import { buildTree, flattenVisible, stepFile, toggleCollapsed, visibleFilePaths } from './changesTree'
+import { buildTree, flattenVisible, stepFile, toggleCollapsed, visibleFilePaths, type TreeRow } from './changesTree'
 
 export interface ChangesPanelProps {
   readonly worktreeId: Id
@@ -352,8 +352,14 @@ interface Ticks {
   readonly toggle: (path: string) => void
 }
 
+interface FileRowsView {
+  readonly rows: readonly TreeRow[]
+  readonly anyUncommitted: boolean
+}
+
 interface ChangesBodyProps {
   readonly list: WorktreeChangesResult
+  readonly filesView: FileRowsView
   readonly onSelect: (path: string) => void
   readonly ticks: Ticks
   /** D74: shows a changed file in the side-panel viewer; null = no viewer target known. */
@@ -368,8 +374,16 @@ interface ChangesBodyProps {
   readonly onDiscard: (file: ChangedFile) => void
 }
 
+/** Flat (non-tree) rows in the order main sent the files: the order keyboard navigation follows. */
+export function flatFileRows(files: readonly ChangedFile[]): readonly TreeRow[] {
+  return files.map((file) => ({
+    node: { kind: 'file' as const, path: file.path, name: file.path, file },
+    depth: 0
+  }))
+}
+
 function fileRows(
-  changes: WorktreeChanges,
+  filesView: FileRowsView,
   onSelect: (path: string) => void,
   ticks: Ticks,
   openInViewer: ((path: string) => void) | null,
@@ -378,10 +392,7 @@ function fileRows(
   viewed: ChangesBodyProps['viewed'],
   onDiscard: ChangesBodyProps['onDiscard']
 ): ReactElement {
-  const anyUncommitted = changes.files.some((file): boolean => file.uncommitted === true)
-  const rows = tree.on
-    ? flattenVisible(buildTree(changes.files), tree.collapsed)
-    : changes.files.map((file) => ({ node: { kind: 'file' as const, path: file.path, name: file.path, file }, depth: 0 }))
+  const { rows, anyUncommitted } = filesView
   return (
     <ul role="listbox" aria-label="Changed files" className="flex flex-col gap-0.5 p-1">
       {rows.map((row): ReactElement => {
@@ -431,7 +442,7 @@ function headerTitle(list: WorktreeChangesResult): string {
 }
 
 /** The file list, or the message that replaces it (IPC failure, git problem, no files). */
-function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath, tree, viewed, onDiscard }: ChangesBodyProps): ReactElement {
+function ChangesBody({ list, filesView, onSelect, ticks, openInViewer, selectedPath, tree, viewed, onDiscard }: ChangesBodyProps): ReactElement {
   const { changes } = list
   if (changes === null) {
     return list.error !== null ? (
@@ -449,7 +460,7 @@ function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath, tree, 
   return (
     <ScrollArea className="min-h-0 flex-1">
       {list.error !== null ? <PanelMessage text={list.error} failed /> : null}
-      {fileRows(changes, onSelect, ticks, openInViewer, selectedPath, tree, viewed, onDiscard)}
+      {fileRows(filesView, onSelect, ticks, openInViewer, selectedPath, tree, viewed, onDiscard)}
     </ScrollArea>
   )
 }
@@ -535,6 +546,14 @@ export function ChangesPanel({
   const [treeView, setTreeView] = useState<boolean>(readTreePref)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set<string>())
   const [sideBySide, setSideBySide] = useState(false)
+  // The tree and the flattened rows are shared by the list and by next/previous navigation. Build them only when
+  // the file list, the tree toggle or a collapsed folder changes — not on every commit-message keystroke.
+  const files = list.changes?.files
+  const treeNodes = useMemo(() => (treeView && files !== undefined ? buildTree(files) : null), [files, treeView])
+  const filesView = useMemo<FileRowsView>(() => ({
+    rows: treeNodes !== null ? flattenVisible(treeNodes, collapsed) : flatFileRows(files ?? []),
+    anyUncommitted: (files ?? []).some((file): boolean => file.uncommitted === true)
+  }), [files, treeNodes, collapsed])
   // D86: "viewed" marks (per worktree, kept in localStorage; a mark vanishes when the file changes again).
   const [viewed, setViewed] = useState<ViewedMap>((): ViewedMap => readViewed(worktreeId))
   useEffect((): (() => void) => {
@@ -548,17 +567,17 @@ export function ChangesPanel({
     const kept = pruneViewed(viewed, list.changes.files)
     if (Object.keys(kept).length !== Object.keys(viewed).length) writeViewed(worktreeId, kept)
   }, [list.changes, viewed, worktreeId])
-  function toggleViewed(file: ChangedFile): void {
+  const toggleViewed = useCallback((file: ChangedFile): void => {
     writeViewed(worktreeId, isViewed(viewed, file) ? unmarkViewed(viewed, file.path) : markViewed(viewed, file))
-  }
+  }, [viewed, worktreeId])
   // D86: discard (asks first; main re-checks everything and answers with a readable error).
   const [discardRequest, setDiscardRequest] = useState<DiscardRequest | null>(null)
   const [discardBusy, setDiscardBusy] = useState(false)
   const [discardError, setDiscardError] = useState<string | null>(null)
-  function askDiscardFile(file: ChangedFile): void {
+  const askDiscardFile = useCallback((file: ChangedFile): void => {
     setDiscardError(null)
     setDiscardRequest({ kind: 'file', path: file.path, untracked: file.kind === 'untracked' })
-  }
+  }, [])
   async function confirmDiscard(): Promise<void> {
     if (discardRequest === null) return
     setDiscardBusy(true)
@@ -585,10 +604,17 @@ export function ChangesPanel({
     : isStillChanged(list.changes, storedPath)
       ? storedPath
       : null
-  const diff = useWorktreeFileDiff(worktreeId, selectedPath, list.changes?.computedAt ?? null)
+  const contentKey = useMemo((): string => changesContentKey(list.changes), [list.changes])
+  const [diffRefresh, setDiffRefresh] = useState(0)
+  const refresh = useCallback((): void => {
+    list.refresh()
+    // A same-size edit leaves the content key unchanged: force the open file's diff to be re-read as well.
+    setDiffRefresh((count: number): number => count + 1)
+  }, [list.refresh])
+  const diff = useWorktreeFileDiff(worktreeId, selectedPath, contentKey, diffRefresh)
   const previewable = selectedPath !== null && isPreviewable(selectedPath)
   const selectedFile = selectedPath === null ? undefined : list.changes?.files.find((file) => file.path === selectedPath)
-  const preview = useWorktreeFilePreview(worktreeId, previewable ? selectedPath : null, viewMode === 'preview', list.changes?.computedAt ?? null)
+  const preview = useWorktreeFilePreview(worktreeId, previewable ? selectedPath : null, viewMode === 'preview', contentKey)
   const stale =
     annotations.length > 0 &&
     list.changes !== null &&
@@ -627,11 +653,10 @@ export function ChangesPanel({
   }, [worktreeId, storedPath])
 
   // Next/previous file follows the order the list is drawn in (tree order hides collapsed folders).
-  const orderedPaths = list.changes === null
-    ? []
-    : treeView
-      ? visibleFilePaths(buildTree(list.changes.files), collapsed)
-      : list.changes.files.map((file) => file.path)
+  const orderedPaths = useMemo(
+    () => (treeNodes !== null ? visibleFilePaths(treeNodes, collapsed) : (files ?? []).map((file) => file.path)),
+    [treeNodes, collapsed, files]
+  )
   function step(delta: 1 | -1): void {
     const next = stepFile(orderedPaths, selectedPath, delta)
     if (next !== null) setSelection({ worktreeId, path: next })
@@ -684,11 +709,13 @@ export function ChangesPanel({
   // D83: without a target (the detached window) the annotation UI stays off, drafts included.
   const showStrip = commentCount > 0 && annotateOn
   // D74: rows open a file in the side-panel viewer when both the session and the worktree folder are known.
-  const openInViewer = viewerSessionId !== undefined && viewerRoot !== undefined && viewerRoot.trim() !== ''
-    ? (path: string): void => {
-        requestFileView({ sessionId: viewerSessionId, text: absoluteChangedPath(viewerRoot, path) })
-      }
-    : null
+  const openInViewer = useMemo<((path: string) => void) | null>(() => (
+    viewerSessionId !== undefined && viewerRoot !== undefined && viewerRoot.trim() !== ''
+      ? (path: string): void => {
+          requestFileView({ sessionId: viewerSessionId, text: absoluteChangedPath(viewerRoot, path) })
+        }
+      : null
+  ), [viewerSessionId, viewerRoot])
 
   const gitSection = (
     <GitSection
@@ -697,10 +724,13 @@ export function ChangesPanel({
       {...(target !== undefined ? { onOpenUrl: (url: string): void => { void window.api.openLink(target.sessionId, url, false) } } : {})}
     />
   )
+  // Stable row callbacks: memo(ChangeRow) only helps when the props it compares do not change on every render.
+  const selectFile = useCallback((path: string): void => setSelection({ worktreeId, path }), [worktreeId])
   const changedFiles = (
     <ChangesBody
       list={list}
-      onSelect={(path: string): void => setSelection({ worktreeId, path })}
+      filesView={filesView}
+      onSelect={selectFile}
       ticks={{ unticked: git.unticked, toggle: git.toggleFile }}
       openInViewer={openInViewer}
       selectedPath={split ? selectedPath : null}
@@ -755,7 +785,7 @@ export function ChangesPanel({
           viewMode={viewMode}
           onViewMode={setViewMode}
           onBack={(): void => setSelection(null)}
-          onRefresh={list.refresh}
+          onRefresh={refresh}
           onStep={step}
           treeView={treeView}
           onTreeView={(on: boolean): void => {

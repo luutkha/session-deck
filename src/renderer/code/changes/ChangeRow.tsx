@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactElement } from 'react'
+import { memo, type KeyboardEvent, type ReactElement } from 'react'
 import { Check, Eye, Undo2 } from 'lucide-react'
 import type { ChangedFile } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
@@ -37,8 +37,9 @@ const OPEN_VIEWER_LABEL = 'Open in viewer'
 const TREE_BASE_PADDING_PX = 8
 const TREE_INDENT_PX = 14
 
-/** One changed file in the list: kind badge, name (bold), folder (muted), line counts. */
-export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick, onOpenViewer, depth, viewed, onToggleViewed, onDiscard }: ChangeRowProps): ReactElement {
+/** One changed file in the list: kind badge, name (bold), folder (muted), line counts.
+ *  Memoized: typing in the commit box re-renders the panel, not the (up to 500) unchanged rows. */
+export const ChangeRow = memo(function ChangeRow({ file, selected, onSelect, ticked, onToggleTick, onOpenViewer, depth, viewed, onToggleViewed, onDiscard }: ChangeRowProps): ReactElement {
   const checkable = file.uncommitted === true && onToggleTick !== undefined
   const { dir, name } = splitPath(file.path)
   const onKeyDown = (event: KeyboardEvent<HTMLLIElement>): void => {
@@ -152,4 +153,4 @@ export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick, onOp
       </TooltipContent>
     </Tooltip>
   )
-}
+})

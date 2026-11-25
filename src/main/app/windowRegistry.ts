@@ -1,4 +1,6 @@
+import { IPC } from '../../shared/ipc'
 import type { WindowRole, WindowState } from '../../shared/types'
+import { liveChangesWindows } from './changesWindows'
 
 /** The part of a BrowserWindow the registry uses. Electron windows satisfy it; tests pass fakes. */
 export interface WindowLike {
@@ -68,7 +70,10 @@ export function createWindowRegistry<W extends WindowLike>(deps: WindowRegistryD
   const state = (): WindowState => ({ codePoppedOut: code() !== null })
 
   const broadcast = (channel: string, ...args: unknown[]): void => {
-    const targets = [live(mainWin), code()].filter((win): win is W => win !== null)
+    type SendTarget = { readonly webContents: { send(channel: string, ...args: unknown[]): void } }
+    const targets: SendTarget[] = [live(mainWin), code()].filter((win): win is W => win !== null)
+    // A detached Changes window follows pushed changes only; pty/store/runtime channels keep their old targets.
+    if (channel === IPC.evWorktreeChanges) targets.push(...liveChangesWindows())
     for (const win of new Set(targets)) {
       try {
         win.webContents.send(channel, ...args)

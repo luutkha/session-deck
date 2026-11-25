@@ -502,8 +502,8 @@ const api: Api = {
     return ipcRenderer.invoke(IPC.worktreeSetCollapsed, worktreeId, collapsed)
   },
 
-  getWorktreeChanges(worktreeId: Id): Promise<WorktreeChanges> {
-    return ipcRenderer.invoke(IPC.worktreeChanges, worktreeId)
+  getWorktreeChanges(worktreeId: Id, options?: { readonly allowCached?: boolean }): Promise<WorktreeChanges> {
+    return ipcRenderer.invoke(IPC.worktreeChanges, worktreeId, options)
   },
 
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff> {

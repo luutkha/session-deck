@@ -12,7 +12,7 @@ import type { Id, RuntimeState, SessionRun } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { HiddenQueue } from './hiddenQueue'
 import { SeqGate } from './seqGate'
-import type { TermView } from './termView'
+import { hasStoredTermView, type TermView } from './termView'
 import type { ContextMenuPoint, ZoomAction } from './paneFactory'
 import {
   applyReducedEffects,
@@ -300,6 +300,10 @@ export function useTerminalPanes(
       panesRef.current.delete(id)
       const view = buildTerminalView(id, {
         termView: optionsRef.current.termView,
+        // W4-H: scrollback is construction-only. Reduced effects get a smaller default buffer;
+        // a saved profile is an explicit user choice and is never shrunk.
+        reducedEffects: reducedRef.current,
+        explicitTermView: hasStoredTermView(),
         onZoom: optionsRef.current.onZoom,
         onSearch: optionsRef.current.onSearch,
         // Read at click time: the owner's callback may change after the pane is built.

@@ -12,6 +12,7 @@ import {
   DIGEST_MAX_CHARS,
   formatFleetDigest,
   timeInState,
+  UNCOMMITTED_TTL_MS,
   type FleetDigestRow
 } from './digestTools'
 
@@ -287,6 +288,34 @@ describe('collectFleetDigest', () => {
     expect(text).not.toContain('"Idle"')
     expect(uncommitted).toHaveBeenCalledTimes(1)
     expect(uncommitted).toHaveBeenCalledWith('C:/a')
+  })
+})
+
+// ---------- git status is one process per folder, not per session (G6/M12)
+
+describe('collectFleetDigest uncommitted cache', () => {
+  it('shares one git call per folder in a digest and across digests inside the TTL, then calls again', async () => {
+    let clock = NOW
+    const folders = ['C:/Work/a', 'C:/Work/b', 'C:/Work/c']
+    const sessions = Array.from({ length: 20 }, (_, i) => session(`s${i}`, `S${i}`, { cwd: folders[i % 3] }))
+    const deps = { ...depsOf({ sessions }), now: () => clock } as JarvisToolDeps
+    const uncommitted = vi.fn(async (folder: string) => folders.indexOf(folder) + 1)
+    await collectFleetDigest(deps, {}, uncommitted)
+    expect(uncommitted).toHaveBeenCalledTimes(3)
+    await collectFleetDigest(deps, {}, uncommitted)
+    expect(uncommitted).toHaveBeenCalledTimes(3)
+    clock += UNCOMMITTED_TTL_MS
+    await collectFleetDigest(deps, {}, uncommitted)
+    expect(uncommitted).toHaveBeenCalledTimes(6)
+  })
+
+  it('normalises case, slashes and a trailing separator before caching a folder', async () => {
+    const uncommitted = vi.fn(async () => 2)
+    const deps = depsOf({
+      sessions: [session('a', 'A', { cwd: 'C:\\Work\\App\\' }), session('b', 'B', { cwd: 'c:/work/app' })]
+    })
+    await collectFleetDigest(deps, {}, uncommitted)
+    expect(uncommitted).toHaveBeenCalledTimes(1)
   })
 })
 

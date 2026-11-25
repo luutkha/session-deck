@@ -1,4 +1,5 @@
 import {
+  memo,
   type HTMLAttributes,
   type MouseEvent,
   type ReactElement,
@@ -13,6 +14,7 @@ import { Badge } from '../components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import { cn } from '../lib/utils'
 import { ChecklistChip } from '../notes/ChecklistChip'
+import { progress } from '../notes/checklistLogic'
 import { AttentionBell } from '../attention/AttentionBell'
 import { lastPathSegment } from '../Sidebar/uiLogic'
 import { formatContext, formatCost, usageLevel, type UsageLevel } from '../usage/usageLogic'
@@ -109,7 +111,7 @@ function UsageChip({ usage }: { readonly usage: SessionUsage }): ReactElement | 
   )
 }
 
-export function HubCard(props: HubCardProps): ReactElement {
+export function HubCardView(props: HubCardProps): ReactElement {
   const {
     session,
     active,
@@ -250,3 +252,80 @@ export function HubCard(props: HubCardProps): ReactElement {
     </div>
   )
 }
+
+function hasNotes(session: Session): boolean {
+  return (session.notes ?? '').trim().length > 0
+}
+
+function sameSession(prev: Session, next: Session): boolean {
+  if (prev === next) return true
+  const before = progress(prev.checklist ?? [])
+  const after = progress(next.checklist ?? [])
+  return (
+    prev.id === next.id &&
+    prev.name === next.name &&
+    prev.cwd === next.cwd &&
+    sessionAgent(prev) === sessionAgent(next) &&
+    (prev.keepAwake === true) === (next.keepAwake === true) &&
+    hasNotes(prev) === hasNotes(next) &&
+    (prev.queue?.length ?? 0) === (next.queue?.length ?? 0) &&
+    before.done === after.done &&
+    before.total === after.total
+  )
+}
+
+function sameRuntime(prev: RuntimeState | undefined, next: RuntimeState | undefined): boolean {
+  if (prev === next) return true
+  if (prev === undefined || next === undefined) return false
+  return (
+    prev.run === next.run &&
+    prev.exitCode === next.exitCode &&
+    prev.attention === next.attention &&
+    (prev.attentionAt ?? null) === (next.attentionAt ?? null) &&
+    (prev.activity ?? null) === (next.activity ?? null) &&
+    (prev.activityMessage ?? null) === (next.activityMessage ?? null) &&
+    (prev.activityAt ?? null) === (next.activityAt ?? null) &&
+    (prev.sleeping === true) === (next.sleeping === true) &&
+    (prev.remoteControl === true) === (next.remoteControl === true) &&
+    (prev.opencodePlugin ?? null) === (next.opencodePlugin ?? null)
+  )
+}
+
+function sameUsage(prev: SessionUsage | undefined, next: SessionUsage | undefined): boolean {
+  if (prev === next) return true
+  if (prev === undefined || next === undefined) return false
+  return (
+    prev.model === next.model &&
+    prev.contextPercent === next.contextPercent &&
+    prev.costUsd === next.costUsd &&
+    prev.effort === next.effort
+  )
+}
+
+/**
+ * Value comparison for one Hub card, mirroring `sessionCardPropsEqual`: a runtime broadcast copies the store
+ * and makes a new runtime Map every publish, so identity checks would re-render all 40 cards ~10 times a second.
+ * Covers everything the card renders: session name/cwd/agent/keepAwake/checklist-notes-queue chips, the runtime
+ * state (dot, bell, activity label/detail, sleeping, remote badge), usage chip, group badge, flags and the
+ * clock-derived `now`/`lastChange` pair. Callbacks are deliberately ignored (their wrappers stay stable and read
+ * the latest closures through a ref in HubColumn); only `data-state`, which Radix flips when the menu opens, is
+ * read from the injected Slot props.
+ */
+export function hubCardPropsEqual(prev: HubCardProps, next: HubCardProps): boolean {
+  return (
+    sameSession(prev.session, next.session) &&
+    sameRuntime(prev.runtime, next.runtime) &&
+    sameUsage(prev.usage, next.usage) &&
+    prev.lastChange === next.lastChange &&
+    prev.now === next.now &&
+    prev.groupName === next.groupName &&
+    prev.active === next.active &&
+    (prev.selected ?? false) === (next.selected ?? false) &&
+    prev.draggable === next.draggable &&
+    (prev as { readonly 'data-state'?: unknown })['data-state'] ===
+      (next as { readonly 'data-state'?: unknown })['data-state']
+  )
+}
+
+/** Memoized card: a publish now re-renders only the cards whose displayed values changed. */
+export const HubCard = memo(HubCardView, hubCardPropsEqual)

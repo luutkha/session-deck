@@ -15,13 +15,13 @@ const NO_FILE: WorktreeFilePreviewResult = { preview: null, loading: false, erro
 
 /**
  * The preview of the selected file, loaded only when the Preview view is shown (`enabled`).
- * `stamp` is the computedAt of the changes list: a fresher list reloads the same file.
+ * `stamp` is the CONTENT key of the changes list: a poll that found the same files does not reload the same file.
  */
 export function useWorktreeFilePreview(
   worktreeId: Id,
   path: string | null,
   enabled: boolean,
-  stamp: number | null
+  stamp: string | null
 ): WorktreeFilePreviewResult {
   const [preview, setPreview] = useState<FilePreview | null>(null)
   const [loading, setLoading] = useState(false)

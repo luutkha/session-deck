@@ -1,10 +1,11 @@
 // Local equivalent of Sidebar/SessionCard for Code mode. Same markup and behaviour, plus a terminal icon for Shell
 // sessions: SessionCard renders AgentBadge, which shows nothing for a shell, so it cannot be reused as-is.
 import { Moon, SquareTerminal, X } from 'lucide-react'
-import { type HTMLAttributes, type MouseEvent, type ReactElement, type Ref } from 'react'
+import { memo, type HTMLAttributes, type MouseEvent, type ReactElement, type Ref } from 'react'
 import type { Id, RuntimeState, Session, SessionActivity, StatusDef } from '../../../shared/types'
 import { activityDetail, activityLabel, isSleeping, relativeTime } from '../../state/formatTime'
 import { AgentBadge, sessionAgent } from '../../components/AgentBadge'
+import { progress } from '../../notes/checklistLogic'
 import { AttentionBell } from '../../attention/AttentionBell'
 import { ChecklistChip } from '../../notes/ChecklistChip'
 import { TagChips } from '../../tags/TagChips'
@@ -114,7 +115,7 @@ function AgentSlot({ session, runtime }: { readonly session: Session; readonly r
   )
 }
 
-export function CodeSessionCard(props: CodeSessionCardProps): ReactElement {
+export function CodeSessionCardView(props: CodeSessionCardProps): ReactElement {
   const {
     session, status, active, runtime, lastChange, now, renaming,
     onSelect, onStartRename, onCommitRename, onCancelRename, onClose, onContextMenu,
@@ -218,3 +219,71 @@ export function CodeSessionCard(props: CodeSessionCardProps): ReactElement {
     </div>
   )
 }
+
+/** Value helpers shared by the memo comparators of all three Code sidebar rows. */
+export function sameCodeSession(a: Session, b: Session): boolean {
+  if (a === b) return true
+  if (a.id !== b.id || a.name !== b.name || a.cwd !== b.cwd) return false
+  if (sessionAgent(a) !== sessionAgent(b)) return false
+  if ((a.keepAwake === true) !== (b.keepAwake === true)) return false
+  if ((a.notes ?? '').trim() !== (b.notes ?? '').trim()) return false
+  if ((a.queue?.length ?? 0) !== (b.queue?.length ?? 0)) return false
+  const tagsA = a.tags ?? []
+  const tagsB = b.tags ?? []
+  if (tagsA.length !== tagsB.length || tagsA.some((tag, index): boolean => tag !== tagsB[index])) return false
+  const doneA = progress(a.checklist ?? [])
+  const doneB = progress(b.checklist ?? [])
+  return doneA.done === doneB.done && doneA.total === doneB.total
+}
+
+export function sameCodeRuntime(a: RuntimeState | undefined, b: RuntimeState | undefined): boolean {
+  if (a === b) return true
+  if (a === undefined || b === undefined) return false
+  return (
+    a.run === b.run &&
+    a.exitCode === b.exitCode &&
+    a.attention === b.attention &&
+    (a.activity ?? null) === (b.activity ?? null) &&
+    (a.activityMessage ?? null) === (b.activityMessage ?? null) &&
+    (a.activityAt ?? null) === (b.activityAt ?? null) &&
+    (a.sleeping === true) === (b.sleeping === true) &&
+    (a.remoteControl === true) === (b.remoteControl === true) &&
+    (a.opencodePlugin ?? null) === (b.opencodePlugin ?? null)
+  )
+}
+
+export function sameCodeStatus(a: StatusDef | null, b: StatusDef | null): boolean {
+  if (a === b) return true
+  return a !== null && b !== null && a.id === b.id && a.name === b.name && a.color === b.color
+}
+
+export function sameCodeList<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a === b || (a.length === b.length && a.every((item, index): boolean => item === b[index]))
+}
+
+/**
+ * Every rendered field is covered. Callbacks are compared by identity here because CodeSessionRow wraps them once
+ * and forwards the latest ones through a ref; slot-injected handlers are ignored, but `data-state` is compared
+ * so the card follows its context menu opening.
+ */
+export function codeSessionCardPropsEqual(prev: CodeSessionCardProps, next: CodeSessionCardProps): boolean {
+  return (
+    sameCodeSession(prev.session, next.session) &&
+    sameCodeStatus(prev.status, next.status) &&
+    sameCodeRuntime(prev.runtime, next.runtime) &&
+    prev.lastChange === next.lastChange &&
+    prev.now === next.now &&
+    prev.active === next.active &&
+    prev.renaming === next.renaming &&
+    prev.onSelect === next.onSelect &&
+    prev.onStartRename === next.onStartRename &&
+    prev.onCommitRename === next.onCommitRename &&
+    prev.onCancelRename === next.onCancelRename &&
+    prev.onClose === next.onClose &&
+    (prev as { readonly 'data-state'?: unknown })['data-state'] ===
+      (next as { readonly 'data-state'?: unknown })['data-state']
+  )
+}
+
+/** Memoized Code session card: a runtime batch no longer reconciles every session in every worktree. */
+export const CodeSessionCard = memo(CodeSessionCardView, codeSessionCardPropsEqual)

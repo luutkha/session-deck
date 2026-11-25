@@ -7,7 +7,8 @@ import {
   parseSupportsStandalone,
   probeOpencode,
   recheckOpencode,
-  warmOpencodeProbe
+  warmOpencodeProbe,
+  whenOpencodeProbeSettled
 } from './capabilities'
 import { writeOpencodePlugin } from './writePlugin'
 
@@ -24,5 +25,6 @@ export {
   probeOpencode,
   recheckOpencode,
   warmOpencodeProbe,
+  whenOpencodeProbeSettled,
   writeOpencodePlugin
 }

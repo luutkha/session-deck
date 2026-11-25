@@ -2,6 +2,7 @@
 // render in this window. Fit-to-width by default, its own page/zoom toolbar, lazy per-page drawing.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { FileView, Id } from '../../shared/types'
 import { Notice } from './Notice'
 import { PdfPageView } from './PdfPage'
@@ -16,7 +17,7 @@ import {
   type PdfPageSize
 } from './pdfLogic'
 import { usePdfContainerWidth } from './usePdfContainerWidth'
-import { usePdfDocument } from './usePdfDocument'
+import { pdfAnchorScrollDelta, usePdfDocument } from './usePdfDocument'
 import { usePdfPageObserver } from './usePdfPageObserver'
 
 export interface PdfBodyProps {
@@ -32,7 +33,7 @@ const EMPTY_NOTICE = 'This PDF has no pages.'
 export function PdfBody({ view, sessionId }: PdfBodyProps): ReactElement {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const { status, doc, pages, savedScroll, clearSavedScroll } = usePdfDocument(view, sessionId, scrollRef)
+  const { status, doc, pages, savedScroll, clearSavedScroll, measurePage } = usePdfDocument(view, sessionId, scrollRef)
   const containerWidth = usePdfContainerWidth(scrollRef)
   const active = status === 'ready' && doc !== null
   const { visible, observe } = usePdfPageObserver(scrollRef, active)
@@ -40,11 +41,10 @@ export function PdfBody({ view, sessionId }: PdfBodyProps): ReactElement {
   const [zoom, setZoom] = useState(100)
   const [current, setCurrent] = useState(0)
 
-  const widestPage = useMemo(
-    (): number => pages.reduce((widest: number, page: PdfPageSize): number => Math.max(widest, page.width), 0),
-    [pages]
-  )
-  const fitScale = fitPdfScale(containerWidth, widestPage)
+  // W4-E: fit to page 1, the only size known before paint. Fitting to a page measured later would rescale
+  // every placeholder mid-scroll; an unusually wide page can still be reached with zoom/horizontal scroll.
+  const fitWidth = pages[0]?.width ?? 0
+  const fitScale = fitPdfScale(containerWidth, fitWidth)
   const scale = fit ? fitScale : zoom / 100
   const boxes = useMemo(() => pdfPageBoxes(pages, scale), [pages, scale])
 
@@ -55,6 +55,19 @@ export function PdfBody({ view, sessionId }: PdfBodyProps): ReactElement {
     if (node !== null) node.scrollTop = savedScroll
     clearSavedScroll()
   }, [savedScroll, clearSavedScroll])
+
+  // W4-E: a lazily measured page above the viewport changes the content above the reader. Keep scrollTop
+  // anchored by exactly that height delta; a new document is handled by savedScroll above instead.
+  const laidOutRef = useRef<{ doc: PDFDocumentProxy | null; pages: readonly PdfPageSize[] }>({ doc: null, pages: [] })
+  useLayoutEffect((): void => {
+    const previous = laidOutRef.current
+    laidOutRef.current = { doc, pages }
+    if (previous.doc !== doc || doc === null || previous.pages.length !== pages.length) return
+    const node = scrollRef.current
+    if (node === null) return
+    const delta = pdfAnchorScrollDelta(previous.pages, pages, node.scrollTop, scale)
+    if (delta !== 0) node.scrollTop = Math.max(0, node.scrollTop + delta)
+  }, [doc, pages, scale])
 
   // A zoom or a re-layout changes the page heights under a fixed scrollTop; keep the label honest.
   useLayoutEffect((): void => {
@@ -67,6 +80,12 @@ export function PdfBody({ view, sessionId }: PdfBodyProps): ReactElement {
     if (node === null || status !== 'ready') return
     setCurrent(pdfCurrentPage(boxes, node.scrollTop, node.clientHeight, node.scrollHeight))
   }
+
+  // W4-E: the observer already tells us which pages are near the viewport; measure them on first sight.
+  useEffect((): void => {
+    if (!active) return
+    for (const index of visible) measurePage(index)
+  }, [active, visible, measurePage])
 
   const zoomBy = useCallback(
     (direction: 1 | -1): void => {

@@ -1,6 +1,6 @@
 // Code mode sidebar (D31): repo > worktree > sessions, in Orca's look. Reuses the Ops nav, error banner, Closed
 // section, confirm dialog and keyboard hook; see CodeSessionCard for the one local equivalent.
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { registerSidebarView, type SidebarViewControl } from '../../jarvis/sidebarView'
 import type { Id, RuntimeState, StoreData } from '../../../shared/types'
 import type { SessionActions } from '../../state/useSessionStore'
@@ -88,21 +88,29 @@ export function CodeSidebar(props: CodeSidebarProps): ReactElement | null {
     onRequestRemove: controller.handlers.onRequestRemoveSession
   })
 
-  const view: CodeTreeView = {
-    data,
-    runtime,
-    lastChange: model.lastChange,
-    now: model.now,
-    activeId,
-    renamingId: controller.renamingId,
-    searching: model.searching,
-    changeCounts: model.changeCounts,
-    actions,
-    commands: controller.commands,
-    handlers: controller.handlers,
-    onForkSession: props.onForkSession,
-    onViewChanges: props.onViewChanges
-  }
+  // One object per real input change: a runtime batch still rebuilds it (rows compare the field they show), but a
+  // parent re-render with unchanged inputs no longer hands every row a fresh view.
+  const view: CodeTreeView = useMemo(
+    (): CodeTreeView => ({
+      data,
+      runtime,
+      lastChange: model.lastChange,
+      now: model.now,
+      activeId,
+      renamingId: controller.renamingId,
+      searching: model.searching,
+      changeCounts: model.changeCounts,
+      actions,
+      commands: controller.commands,
+      handlers: controller.handlers,
+      onForkSession: props.onForkSession,
+      onViewChanges: props.onViewChanges
+    }),
+    [
+      data, runtime, model.lastChange, model.now, activeId, controller.renamingId, model.searching,
+      model.changeCounts, actions, controller.commands, controller.handlers, props.onForkSession, props.onViewChanges
+    ]
+  )
 
   const bannerMessage = controller.localError ?? props.lastError
   const hasRepos = model.tree.repos.length > 0

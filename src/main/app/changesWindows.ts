@@ -4,6 +4,25 @@ import type { BrowserWindow } from 'electron'
 
 export const MAX_CHANGES_WINDOWS = 8
 
+/** The part of a detached window the registry needs to deliver pushed changes to it. */
+interface ChangesBroadcastTarget {
+  isDestroyed(): boolean
+  readonly webContents: { readonly id: number; send(channel: string, ...args: unknown[]): void }
+}
+
+// These windows are created here but broadcasts are sent from windowRegistry; main/index wires neither side.
+const broadcastTargets = new Set<ChangesBroadcastTarget>()
+
+/** Live detached Changes windows. Only the worktree-changes event is broadcast to them. */
+export function liveChangesWindows(): readonly ChangesBroadcastTarget[] {
+  const live: ChangesBroadcastTarget[] = []
+  for (const win of broadcastTargets) {
+    if (win.isDestroyed()) broadcastTargets.delete(win)
+    else live.push(win)
+  }
+  return live
+}
+
 export interface ChangesWindowSet {
   /**
    * Opens the Changes window of `worktreeId` through `create`, or focuses the existing window of that worktree.
@@ -27,10 +46,18 @@ export function createChangesWindowSet(max: number = MAX_CHANGES_WINDOWS): Chang
     win.focus()
   }
 
+  /** A window destroyed without its 'closed' event must not hold a slot or receive pushes either. */
+  const pruneDestroyed = (): void => {
+    for (let i = open.length - 1; i >= 0; i--) {
+      if (!open[i].win.isDestroyed()) continue
+      broadcastTargets.delete(open[i].win)
+      open.splice(i, 1)
+    }
+  }
+
   return {
     request: (worktreeId, create): boolean => {
-      // A window destroyed without its 'closed' event must not hold a slot or block its worktree forever.
-      for (let i = open.length - 1; i >= 0; i--) if (open[i].win.isDestroyed()) open.splice(i, 1)
+      pruneDestroyed()
       const existing = open.find((entry) => entry.worktreeId === worktreeId)
       if (existing !== undefined) {
         focus(existing.win)
@@ -44,7 +71,9 @@ export function createChangesWindowSet(max: number = MAX_CHANGES_WINDOWS): Chang
       const win = create()
       const entry: OpenChangesWindow = { worktreeId, win }
       open.push(entry)
+      broadcastTargets.add(win)
       win.once('closed', (): void => {
+        broadcastTargets.delete(win)
         const at = open.indexOf(entry)
         if (at >= 0) open.splice(at, 1)
       })
@@ -52,11 +81,12 @@ export function createChangesWindowSet(max: number = MAX_CHANGES_WINDOWS): Chang
     },
 
     close: (worktreeId): boolean => {
-      for (let i = open.length - 1; i >= 0; i--) if (open[i].win.isDestroyed()) open.splice(i, 1)
+      pruneDestroyed()
       const entry = open.find((candidate) => candidate.worktreeId === worktreeId)
       if (entry === undefined) return false
       const at = open.indexOf(entry)
       if (at >= 0) open.splice(at, 1)
+      broadcastTargets.delete(entry.win)
       entry.win.close()
       return true
     }

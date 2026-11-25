@@ -10,6 +10,7 @@ import {
   resetOpencodeCapabilitiesForTests,
   setOpencodeRunnerForTests,
   setOpencodeSupportsStandaloneForTests,
+  whenOpencodeProbeSettled,
   warmOpencodeProbe
 } from './capabilities'
 
@@ -234,5 +235,44 @@ describe('warmOpencodeProbe', () => {
 
     expect(info.version).toBe('2.1.4')
     expect(calls).toBe(2)
+  })
+})
+
+describe('whenOpencodeProbeSettled (D87)', () => {
+  it('resolves at once when nothing is probing', async () => {
+    await expect(whenOpencodeProbeSettled(5000)).resolves.toBeUndefined()
+  })
+
+  it('waits for the running probe, then resolves with the cache filled', async () => {
+    let release: (text: string) => void = (): void => undefined
+    setOpencodeRunnerForTests((arg): Promise<string | null> =>
+      arg === '--help' ? new Promise<string | null>((resolve): void => { release = resolve }) : Promise.resolve('opencode 2.1.4\n')
+    )
+    void probeOpencode()
+    let settled = false
+    const waiting = whenOpencodeProbeSettled(5000).then((): void => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    release(HELP_V2)
+    await waiting
+    expect(settled).toBe(true)
+    expect(getOpencodeInfo().checkedAt).toBeGreaterThan(0)
+  })
+
+  it('gives up after maxMs when the probe hangs', async () => {
+    vi.useFakeTimers()
+    try {
+      setOpencodeRunnerForTests((): Promise<string | null> => new Promise<string | null>((): void => undefined))
+      void probeOpencode()
+      let settled = false
+      const waiting = whenOpencodeProbeSettled(3000).then((): void => { settled = true })
+      await vi.advanceTimersByTimeAsync(2999)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(2)
+      await waiting
+      expect(settled).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

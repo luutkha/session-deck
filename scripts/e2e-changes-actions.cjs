@@ -97,6 +97,19 @@ async function evalIn(wsUrl, expression) {
  * detached Changes window by its in-page title strip and split [data-changes-list] column.
  */
 async function changesWindowInfo(target) {
+  const first = await changesWindowInfoNow(target)
+  if (first && first.list) return first
+  const deadline = Date.now() + 12000
+  let last = first
+  while (Date.now() < deadline) {
+    await sleep(300)
+    last = await changesWindowInfoNow(target)
+    if (last && last.list) return last
+  }
+  return last
+}
+
+async function changesWindowInfoNow(target) {
   if (!target || !target.webSocketDebuggerUrl) return null
   try {
     return await evalIn(target.webSocketDebuggerUrl, `(() => {

@@ -1,4 +1,5 @@
-import { TERMINAL_OPTIONS, TERMINAL_THEME } from './terminalOptions'
+import { DEFAULT_TERM_VIEW } from './termView'
+import { TERMINAL_OPTIONS, TERMINAL_THEME, terminalOptionsFor } from './terminalOptions'
 
 const ANSI_COLOR_KEYS = [
   'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
@@ -47,6 +48,18 @@ describe('TERMINAL_OPTIONS', () => {
 
   it('points theme at the exported dark theme', () => {
     expect(TERMINAL_OPTIONS.theme).toBe(TERMINAL_THEME)
+  })
+})
+
+describe('terminalOptionsFor', () => {
+  it('keeps the profile scrollback when no reduced-effects context is given', () => {
+    expect(terminalOptionsFor(DEFAULT_TERM_VIEW).scrollback).toBe(10_000)
+  })
+
+  it('uses the smaller scrollback only for reduced effects without a saved profile', () => {
+    expect(terminalOptionsFor(DEFAULT_TERM_VIEW, { reducedEffects: true, explicit: false }).scrollback).toBe(2_000)
+    expect(terminalOptionsFor(DEFAULT_TERM_VIEW, { reducedEffects: true, explicit: true }).scrollback).toBe(10_000)
+    expect(terminalOptionsFor(DEFAULT_TERM_VIEW, { reducedEffects: false, explicit: false }).scrollback).toBe(10_000)
   })
 })
 

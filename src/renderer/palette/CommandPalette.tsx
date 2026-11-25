@@ -20,6 +20,18 @@ export interface CommandPaletteProps {
 const EMPTY_TEXT = 'No matches.'
 const PLACEHOLDER = 'Search sessions and actions…'
 
+/** Shared result for a closed palette: filtering/grouping it on every render would allocate for nothing. */
+export const EMPTY_PALETTE_GROUPS: readonly PaletteGroupBlock[] = Object.freeze([])
+
+/** Pure seam: group only while open. A reopen starts from an empty query and the items built at that moment. */
+export function paletteGroupsFor(
+  open: boolean,
+  items: readonly PaletteItem[],
+  query: string
+): readonly PaletteGroupBlock[] {
+  return open ? groupPaletteItems(filterPaletteItems(items, query)) : EMPTY_PALETTE_GROUPS
+}
+
 function PaletteRow({ item, onChoose }: { readonly item: PaletteItem; readonly onChoose: (item: PaletteItem) => void }): ReactElement {
   return (
     <CommandItem value={item.id} onSelect={(): void => onChoose(item)} className="gap-3">
@@ -43,8 +55,8 @@ export function CommandPalette({ open, onOpenChange, items, onRun }: CommandPale
   }
 
   const groups = useMemo(
-    (): readonly PaletteGroupBlock[] => groupPaletteItems(filterPaletteItems(items, query)),
-    [items, query]
+    (): readonly PaletteGroupBlock[] => paletteGroupsFor(open, items, query),
+    [open, items, query]
   )
 
   const choose = (item: PaletteItem): void => {

@@ -4,10 +4,8 @@ import type { DragItem, DropOver } from '../state/dropTarget'
 import type { SelectClickModifiers } from '../state/multiSelect'
 import { relativeTime } from '../state/formatTime'
 import { DropHereHint, SectionHeader } from './SectionHeader'
-import { SessionCard, useSessionCardHandlers } from './SessionCard'
-import { SessionContextMenu } from './SessionContextMenu'
-import { toggleRead } from '../attention/needsYou'
-import { attentionClass } from './uiLogic'
+import { useSessionCardHandlers } from './SessionCard'
+import { SidebarSessionRow, useStableSidebarRowCallbacks } from './GroupSection'
 
 export interface StatusSectionProps {
   readonly sectionKey: string
@@ -29,7 +27,7 @@ export interface StatusSectionProps {
   readonly collapsed: boolean
   readonly draggableSessions: boolean
   readonly selectedIds: ReadonlySet<Id>
-  readonly onToggleCollapsed: () => void
+  readonly onToggleCollapsed: (sectionKey: string, collapsed: boolean) => void
   readonly onSelect: (id: Id, modifiers?: SelectClickModifiers) => void
   readonly onStartRenameSession: (id: Id) => void
   readonly onRenameSession: (id: Id, name: string) => void
@@ -70,6 +68,15 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
     onDropItem,
     onDragEnd
   })
+  const rowCallbacks = useStableSidebarRowCallbacks({
+    onSelect,
+    onStartRenameSession,
+    onCloseSession,
+    onSetSessionStatus,
+    onMoveSession,
+    onCreateGroupAndMove,
+    onRequestRemoveSession
+  })
 
   const sectionId = `section-status-${sectionKey}`
 
@@ -95,84 +102,40 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
         count={sessions.length}
         collapsed={collapsed}
         leadingDot={leadingDot}
-        onToggle={onToggleCollapsed}
+        onToggle={(): void => onToggleCollapsed(sectionKey, !collapsed)}
       />
       {!collapsed && (
         <div className="flex flex-col gap-0.5 pl-2" onDragOver={handleBodyDragOver}>
           {sessions.map((session) => {
             const state = runtime.get(session.id)
-            const attention = state?.attention ?? null
+            const groupBadge = groupNameFor(session.groupId, groupById)
             const dropOverForSession =
               drag !== null && drag.kind === 'session' && dropOver !== null &&
               dropOver.kind === 'session' && dropOver.id === session.id &&
               (dropOver.position === 'before' || dropOver.position === 'after')
                 ? dropOver.position
                 : null
-
-            const groupBadge = groupNameFor(session.groupId, groupById)
-            const changedAt = state?.activityAt ?? (lastChange.get(session.id) ?? session.createdAt)
-            const card = (
-              <SessionCard
+            return (
+              <SidebarSessionRow
+                key={session.id}
                 session={session}
                 status={session.statusId === null ? null : (statusById.get(session.statusId) ?? null)}
-                active={activeId === session.id}
                 runtime={state}
-                relative={relativeTime(now, changedAt)}
+                relative={relativeTime(now, state?.activityAt ?? (lastChange.get(session.id) ?? session.createdAt))}
+                active={activeId === session.id}
                 renaming={renamingSessionId === session.id}
                 groupBadge={groupBadge}
                 showGroupBadge={groupBadge !== null}
-                attention={attention}
-                showIndicator={true}
-                indicatorAriaLabel={
-                  state === undefined
-                    ? 'No runtime data'
-                    : state.run === 'running'
-                      ? 'Running'
-                      : 'Exited'
-                }
-                indicatorClass={
-                  state !== undefined && state.attention !== null
-                    ? attentionClass(state.attention)
-                    : state === undefined
-                      ? 'bg-muted-foreground/40'
-                      : state.run === 'running'
-                        ? 'bg-status-success'
-                        : 'bg-destructive'
-                }
-                draggable={draggableSessions}
+                attention={state?.attention ?? null}
                 dragOver={dropOverForSession}
                 selected={selectedIds.has(session.id)}
-                {...handlers}
-              />
-            )
-
-            return (
-              <SessionContextMenu
-                key={session.id}
+                draggable={draggableSessions}
                 statuses={data.statuses}
                 groups={data.groups}
-                sleeping={state?.sleeping === true}
-                canSleep={state !== undefined && state.run === 'running' && state.sleeping !== true}
-                keepAwake={session.keepAwake === true}
-                attention={state?.attention ?? null}
-                onToggleRead={(): void => toggleRead(session.id, state?.attention ?? null)}
-                onToggleKeepAwake={(): void => {
-                  void window.api.setKeepAwake(session.id, session.keepAwake !== true).catch((): void => undefined)
-                }}
-                onSleep={(): void => {
-                  void window.api.sleepSession(session.id).catch((): void => undefined)
-                }}
-                onWake={(): void => onSelect(session.id)}
-                onRename={(): void => onStartRenameSession(session.id)}
-                onSetStatus={(sid): void => onSetSessionStatus(session.id, sid)}
-                onMoveToGroup={(gid): void => onMoveSession(session.id, gid)}
-                onNewGroupAndMove={(): void => onCreateGroupAndMove(session.id)}
-                onCloseSession={(): void => onCloseSession(session.id)}
-                onFork={onForkSession !== undefined && (session.agent ?? 'claude') !== 'shell' ? (): void => onForkSession(session.id) : undefined}
-                onRemoveSession={(): void => onRequestRemoveSession(session.id)}
-              >
-                {card}
-              </SessionContextMenu>
+                handlers={handlers}
+                {...rowCallbacks}
+                onForkSession={onForkSession}
+              />
             )
           })}
           {sessions.length === 0 && <DropHereHint />}

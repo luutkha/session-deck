@@ -1,9 +1,10 @@
 // D60: the Changes panel's git state: branch status, the commit message and ticked files, the action in progress,
 // the confirm step for Push / Create PR / Merge, and the last result line. Every call goes through window.api.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BranchStatus, Id, WorktreeChanges } from '../../../shared/types'
 import { cleanErrorMessage } from '../sidebar/errorText'
 import { chosenPaths, pruneUnticked } from './gitActionsLogic'
+import { changesContentKey } from './useWorktreeChanges'
 
 export type GitAction = 'push' | 'pr' | 'merge'
 
@@ -61,10 +62,11 @@ export function useGitActions(worktreeId: Id, changes: WorktreeChanges | null, r
     setUnticked(new Set())
     setConfirming(null)
   }, [worktreeId])
-  const computedAt = changes?.computedAt ?? null
+  // Branch status is ~7 sequential git commands: only a changed file list warrants re-reading it, not every poll.
+  const contentKey = useMemo((): string => changesContentKey(changes), [changes])
   useEffect((): void => {
     void loadStatus()
-  }, [loadStatus, computedAt])
+  }, [loadStatus, contentKey])
   useEffect((): void => {
     setUnticked((previous) => pruneUnticked(changes, previous))
   }, [changes])

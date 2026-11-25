@@ -109,6 +109,23 @@ export function warmOpencodeProbe(): void {
   void probeOpencode().catch((): void => undefined)
 }
 
+/**
+ * Resolves when the warm-up probe has an answer, or after `maxMs`, whichever comes first; never rejects (D87). The
+ * launch-resume step waits on this so a resumed OpenCode session does not reach the synchronous probe below, which
+ * blocks the main thread for up to 3 s while the async probe is still running.
+ */
+export function whenOpencodeProbeSettled(maxMs: number): Promise<void> {
+  const running = inFlight
+  if (cached.checkedAt > 0 || running === null) return Promise.resolve()
+  return new Promise((resolve): void => {
+    const timer = setTimeout(resolve, maxMs)
+    void running.finally((): void => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
+}
+
 /** The synchronous probe blocks the MAIN thread, so it gets a much shorter leash than the async one (review fix). */
 const SYNC_PROBE_TIMEOUT_MS = 3000
 

@@ -1,6 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { describe, expect, it } from 'vitest'
-import { createChangesWindowSet, pickSessionForChanges } from './changesWindows'
+import { createChangesWindowSet, liveChangesWindows, pickSessionForChanges } from './changesWindows'
 
 interface FakeWindow {
   readonly win: BrowserWindow
@@ -11,6 +11,8 @@ interface FakeWindow {
   restored: () => number
 }
 
+let nextWebContentsId = 300
+
 function fake(): FakeWindow {
   let destroyed = false
   let minimized = false
@@ -20,6 +22,7 @@ function fake(): FakeWindow {
   const win = {
     isDestroyed: (): boolean => destroyed,
     isMinimized: (): boolean => minimized,
+    webContents: { id: nextWebContentsId++, send: (_channel: string, ..._args: unknown[]): void => undefined },
     restore: (): void => { restore++; minimized = false },
     focus: (): void => { focus++ },
     close: (): void => { destroyed = true; onClosed?.() },
@@ -107,6 +110,27 @@ describe('detached Changes windows', () => {
     expect(set.request('wt-a', () => a.win)).toBe(true)
     a.destroy()
     expect(set.close('wt-a')).toBe(false)
+  })
+})
+
+describe('liveChangesWindows', () => {
+  it('includes a newly opened window and drops it when it closes', () => {
+    const set = createChangesWindowSet()
+    const a = fake()
+    const id = a.win.webContents.id
+    expect(set.request('wt-broadcast', () => a.win)).toBe(true)
+    expect(liveChangesWindows().some((win) => win.webContents.id === id)).toBe(true)
+    expect(set.close('wt-broadcast')).toBe(true)
+    expect(liveChangesWindows().some((win) => win.webContents.id === id)).toBe(false)
+  })
+
+  it('drops a window destroyed without a closed event', () => {
+    const set = createChangesWindowSet()
+    const a = fake()
+    const id = a.win.webContents.id
+    expect(set.request('wt-destroyed', () => a.win)).toBe(true)
+    a.destroy()
+    expect(liveChangesWindows().some((win) => win.webContents.id === id)).toBe(false)
   })
 })
 

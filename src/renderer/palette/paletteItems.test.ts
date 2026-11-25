@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { buildPaletteItems, folderLabel, type PaletteItem, type PaletteInput } from './paletteItems'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  buildPaletteItems,
+  EMPTY_PALETTE_ITEMS,
+  folderLabel,
+  paletteItemsWhenOpen,
+  type PaletteItem,
+  type PaletteInput
+} from './paletteItems'
 import { filterPaletteItems } from './paletteFilter'
 import { DEFAULT_STATUSES, type RuntimeState, type Session } from '../../shared/types'
 
@@ -521,5 +528,49 @@ describe('buildPaletteItems: G10 additions', () => {
     const items = buildPaletteItems(input({ sessions: [session({ id: 's1', tags: ['Release'] })] }))
     const matches = filterPaletteItems(items, 'tag release')
     expect(matches.some((item: PaletteItem): boolean => item.id === 'tag:release')).toBe(true)
+  })
+})
+
+describe('paletteItemsWhenOpen', () => {
+  const sessions = [session({ id: 's1', name: 'Alpha' }), session({ id: 's2', name: 'Beta' })]
+
+  it('never calls the builder while closed and returns one stable empty array', () => {
+    const build = vi.fn((): readonly PaletteItem[] => buildPaletteItems(input({ sessions })))
+    const first = paletteItemsWhenOpen(false, build)
+    const second = paletteItemsWhenOpen(false, build)
+    expect(build).not.toHaveBeenCalled()
+    expect(first).toBe(EMPTY_PALETTE_ITEMS)
+    expect(second).toBe(first)
+    expect(first).toEqual([])
+  })
+
+  it('calls the builder while open, with fresh items on each open', () => {
+    const quiet = input({ sessions })
+    const waiting = input({
+      sessions,
+      runtime: new Map([['s1', runtimeOf({ sessionId: 's1', attention: 'done' })]])
+    })
+    const build = vi.fn((): readonly PaletteItem[] => buildPaletteItems(waiting))
+    const opened = paletteItemsWhenOpen(true, build)
+    expect(build).toHaveBeenCalledTimes(1)
+    expect(byId(opened, 'session:s1').detail).toBe('app · Needs you')
+
+    const buildAgain = vi.fn((): readonly PaletteItem[] => buildPaletteItems(quiet))
+    const reopened = paletteItemsWhenOpen(true, buildAgain)
+    expect(buildAgain).toHaveBeenCalledTimes(1)
+    expect(byId(reopened, 'session:s1').detail).toBe('app · No status')
+  })
+
+  it('produces exactly the same items and order as the old always-on builder for a fixture', () => {
+    const fixture = input({
+      sessions: [
+        session({ id: 's1', name: 'Alpha', statusId: 'working', tags: ['Release'] }),
+        session({ id: 's2', name: 'Beta', closedAt: 5 })
+      ],
+      runtime: new Map([['s1', runtimeOf({ sessionId: 's1', attention: 'done' })]]),
+      activeId: 's1',
+      presets: [{ id: 'p1', name: 'Backend', cwd: 'C:/work/api', agent: 'claude', claudeArgs: [], groupId: null, statusId: null }]
+    })
+    expect(paletteItemsWhenOpen(true, () => buildPaletteItems(fixture))).toEqual(buildPaletteItems(fixture))
   })
 })

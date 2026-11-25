@@ -134,12 +134,7 @@ export function SessionList(props: SessionListProps): ReactElement {
               collapsed={props.statusCollapsed.get(section.key) ?? false}
               draggableSessions={true}
               selectedIds={props.selectedIds}
-              onToggleCollapsed={(): void =>
-                props.onToggleStatusCollapsed(
-                  section.key,
-                  !(props.statusCollapsed.get(section.key) ?? false)
-                )
-              }
+              onToggleCollapsed={props.onToggleStatusCollapsed}
               onSelect={props.onSelect}
               onStartRenameSession={props.onStartRenameSession}
               onRenameSession={props.onRenameSession}

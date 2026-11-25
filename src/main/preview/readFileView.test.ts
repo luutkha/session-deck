@@ -8,7 +8,7 @@ import {
   type FileView
 } from '../../shared/types'
 import { tinyPdf } from './fileViewFixtures'
-import { readFileView, statFileView } from './readFileView'
+import { pdfViewDelivery, readFileView, statFileView } from './readFileView'
 
 let dir: string
 
@@ -70,6 +70,23 @@ describe('readFileView text', () => {
 })
 
 
+describe('pdfViewDelivery', () => {
+  const MB = 1024 * 1024
+
+  it('sends files up to 8 MB whole and streams everything above it', () => {
+    expect(pdfViewDelivery(0)).toBe('whole')
+    expect(pdfViewDelivery(8 * MB)).toBe('whole')
+    expect(pdfViewDelivery(8 * MB + 1)).toBe('streamed')
+    expect(pdfViewDelivery(FILE_VIEW_PDF_MAX_BYTES)).toBe('streamed')
+    expect(pdfViewDelivery(FILE_VIEW_PDF_MAX_BYTES - 1)).toBe('streamed')
+  })
+
+  it('still refuses files beyond the 1 GB stream cap', () => {
+    expect(pdfViewDelivery(1024 * MB)).toBe('streamed')
+    expect(pdfViewDelivery(1024 * MB + 1)).toBe('refused')
+  })
+})
+
 describe('readFileView pdf', () => {
   it('returns a whole valid pdf as base64 with the pdf mime', async () => {
     const pdf = tinyPdf()
@@ -120,6 +137,24 @@ describe('readFileView pdf', () => {
     expect(result.view.streamed).toBe(true)
     expect(result.view.base64).toBe('')
     expect(result.view.size).toBe(FILE_VIEW_PDF_MAX_BYTES + 1)
+  })
+
+  it('streams a pdf just over 8 MB instead of serialising ~11 MB of base64', async () => {
+    const target = join(dir, 'mid.pdf')
+    // Sparse file: only the header is read for the magic check, so the test stays fast.
+    const handle = await open(target, 'w')
+    try {
+      await handle.write('%PDF-1.4\n')
+      await handle.truncate(8 * 1024 * 1024 + 1)
+    } finally {
+      await handle.close()
+    }
+    const result = await readFileView(target)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(`expected a streamed view: ${result.error}`)
+    expect(result.view.streamed).toBe(true)
+    expect(result.view.base64).toBe('')
+    expect(result.view.size).toBe(8 * 1024 * 1024 + 1)
   })
 })
 
