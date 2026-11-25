@@ -3,7 +3,7 @@ import { MAX_LINK_TEXTS } from '../links'
 import { createAppLinkService } from '../links/appLinks'
 import { readFileView, readPdfRange, statFileView } from '../preview'
 import { getOpencodeInfo, recheckOpencode } from '../opencode'
-import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref, FileViewResult, FileViewRangeResult, FileViewStat, OpencodeInfo } from '../../shared/types'
+import type { AppSettings, ConversationSearchResult, Id, StoreData, RuntimeState, Session, Group, LoginItemState, UsageRefreshResult, UsageState, WorkerInfo, WindowRole, WindowState, GpuInfo, GpuPref, FileViewResult, FileViewRangeResult, FileViewStat, OpencodeInfo, DiagnosticsReport } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { IPC } from '../../shared/ipc'
 import { FILE_VIEW_PDF_STREAM_MAX_BYTES } from '../../shared/types'
@@ -28,7 +28,7 @@ import {
   asQueue,
   asGpuPref
 } from './ipcValidation'
-import { SessionStore } from '../store'
+import { SessionStore, normalizeTags } from '../store'
 import { PtyManager } from '../pty/PtyManager'
 import type { AttentionService } from '../attention'
 import type { RuntimeRegistry } from './runtimeRegistry'
@@ -79,6 +79,8 @@ export interface IpcHandlersDeps {
   readonly openChangesWindow: (worktreeId: Id) => void
   /** D84: docks a detached Changes window back: focuses a session of the worktree with its Changes tab open, then closes the window. */
   readonly attachChangesWindow: (worktreeId: Id) => Promise<void>
+  /** D86: the diagnostics report for Settings > Diagnostics. */
+  readonly getDiagnostics: () => Promise<DiagnosticsReport>
   /** Directory of main-errors.log. */
   readonly userDataDir: string
   /** Start-on-login state and toggle (packaged app only). */
@@ -115,7 +117,7 @@ function onFireAndForget(channel: string, userDataDir: string, listener: (...arg
 }
 
 export function registerIpcHandlers(deps: IpcHandlersDeps): void {
-  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, conversationSearch, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, openFileViewer, openChangesWindow, attachChangesWindow, userDataDir, loginItem, onUserActivity } = deps
+  const { store, controller, pty, attention, runtime, usage, usageRefresher, workers, promptQueue, conversationSearch, broadcast, windowForSender, roleOfSender, activeSessions, windowState, popOutCode, dockCode, openFileViewer, openChangesWindow, attachChangesWindow, getDiagnostics, userDataDir, loginItem, onUserActivity } = deps
 
   // A burst of store changes (notes, status, rename...) must not send the whole store per change:
   // the first change goes out at once, the rest at most once per interval with the latest state.
@@ -189,6 +191,10 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
   ipcMain.handle(IPC.sessionSetKeepAwake, async (_event, rawId: unknown, raw: unknown): Promise<void> => {
     if (typeof raw !== 'boolean') throw new Error('keepAwake must be a boolean')
     store.setKeepAwake(assertId(rawId, 'session id'), raw)
+  })
+
+  ipcMain.handle(IPC.sessionSetTags, async (_event, rawId: unknown, rawTags: unknown): Promise<void> => {
+    store.setSessionTags(assertId(rawId, 'session id'), normalizeTags(rawTags))
   })
 
   ipcMain.handle(IPC.sessionSetNotes, async (_event, rawId: unknown, rawNotes: unknown): Promise<void> => {
@@ -369,6 +375,8 @@ export function registerIpcHandlers(deps: IpcHandlersDeps): void {
     if (store.getWorktree(worktreeId) === undefined) throw new Error('Unknown worktree.')
     openChangesWindow(worktreeId)
   })
+
+  ipcMain.handle(IPC.appDiagnostics, async (): Promise<DiagnosticsReport> => getDiagnostics())
 
   // D84: dock back. Main picks the session and focuses it before the detached window closes (it stays open on failure).
   ipcMain.handle(IPC.changesAttach, async (_event, rawId: unknown): Promise<void> => {

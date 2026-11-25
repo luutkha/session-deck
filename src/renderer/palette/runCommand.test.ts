@@ -19,6 +19,7 @@ function fakeHandlers(): PaletteHandlers {
     openGrid: vi.fn(),
     exitGrid: vi.fn(),
     openSettings: vi.fn(),
+    openSettingsDiagnostics: vi.fn(),
     showAwaySummary: vi.fn(),
     showCosts: vi.fn(),
     forkSession: vi.fn(),
@@ -31,7 +32,8 @@ function fakeHandlers(): PaletteHandlers {
     switchMode: vi.fn(),
     popOutCode: vi.fn(),
     dockCode: vi.fn(),
-    newWorktree: vi.fn()
+    newWorktree: vi.fn(),
+    viewChanges: vi.fn()
   }
 }
 
@@ -40,7 +42,8 @@ function fakeApi(): PaletteApi {
     sleepSession: vi.fn((): Promise<void> => Promise.resolve()),
     setKeepAwake: vi.fn((): Promise<void> => Promise.resolve()),
     clearAttention: vi.fn(),
-    markUnread: vi.fn()
+    markUnread: vi.fn(),
+    detachChanges: vi.fn((): Promise<void> => Promise.resolve())
   }
 }
 
@@ -117,6 +120,23 @@ describe('runPaletteCommand: session and view commands', () => {
   it('opens Settings for open-settings', () => {
     runPaletteCommand({ kind: 'open-settings' }, handlers, api)
     expect(handlers.openSettings).toHaveBeenCalledTimes(1)
+    expect(handlers.openSettingsDiagnostics).not.toHaveBeenCalled()
+  })
+
+  it('opens the diagnostics section for open-settings-diagnostics (G10)', () => {
+    runPaletteCommand({ kind: 'open-settings-diagnostics' }, handlers, api)
+    expect(handlers.openSettingsDiagnostics).toHaveBeenCalledTimes(1)
+    expect(handlers.openSettings).not.toHaveBeenCalled()
+  })
+
+  it('opens the Changes tab for the given session for view-changes (G10)', () => {
+    runPaletteCommand({ kind: 'view-changes', id: 's1' }, handlers, api)
+    expect(handlers.viewChanges).toHaveBeenCalledWith('s1')
+  })
+
+  it('jumps to a tag\'s first session through the normal open-session command (G10)', () => {
+    runPaletteCommand({ kind: 'open-session', id: 's1' }, handlers, api)
+    expect(handlers.openSession).toHaveBeenCalledWith('s1')
   })
 
   it('shows the away summary for show-away-summary', () => {
@@ -137,6 +157,7 @@ describe('runPaletteCommand: session and view commands', () => {
     expect(api.setKeepAwake).not.toHaveBeenCalled()
     expect(api.clearAttention).not.toHaveBeenCalled()
     expect(api.markUnread).not.toHaveBeenCalled()
+    expect(api.detachChanges).not.toHaveBeenCalled()
   })
 })
 
@@ -174,6 +195,11 @@ describe('runPaletteCommand: preload API commands', () => {
     runPaletteCommand({ kind: 'mark-unread', id: 's1' }, handlers, api)
     expect(api.markUnread).toHaveBeenCalledWith('s1')
     expect(api.clearAttention).not.toHaveBeenCalled()
+  })
+
+  it('detaches the changes window for the worktree for detach-changes (G10)', () => {
+    runPaletteCommand({ kind: 'detach-changes', worktreeId: 'w1' }, handlers, api)
+    expect(api.detachChanges).toHaveBeenCalledWith('w1')
   })
 })
 

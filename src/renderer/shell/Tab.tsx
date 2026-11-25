@@ -1,4 +1,6 @@
 import { memo, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react'
+import { useChangeSummary } from '../code/changes/changeSummaryStore'
+import { ChangeCountPill } from '../code/changes/ChangeCountPill'
 import { Columns2, GitCompare, LoaderCircle, Moon, Sun, X } from 'lucide-react'
 import {
   ContextMenu,
@@ -153,6 +155,7 @@ function TabView({
             </>
           )}
           <span className="min-w-0 flex-1 truncate">{tab.title}</span>
+          <TabChangeBadge worktreeId={tab.worktreeId} />
           <AgentBadge agent={tab.agent} remote={tab.remote === true} />
           {split?.visible === true ? (
             <span
@@ -219,11 +222,17 @@ function TabView({
   )
 }
 
+/** D86: changed-files pill of a worktree session's tab (amber while files are not reviewed yet). */
+function TabChangeBadge({ worktreeId }: { readonly worktreeId: string | undefined }): ReactElement | null {
+  const summary = useChangeSummary(worktreeId)
+  return summary === null ? null : <ChangeCountPill summary={summary} />
+}
+
 function sameTabModel(a: TabModel, b: TabModel): boolean {
   return a === b ||
     (a.id === b.id && a.title === b.title && a.run === b.run && a.attention === b.attention && a.exitCode === b.exitCode &&
       a.sleeping === b.sleeping && a.activity === b.activity && a.agent === b.agent && a.remote === b.remote &&
-      a.worktree === b.worktree)
+      a.worktree === b.worktree && a.worktreeId === b.worktreeId)
 }
 
 function sameSplit(a: TabSplitInfo | undefined, b: TabSplitInfo | undefined): boolean {

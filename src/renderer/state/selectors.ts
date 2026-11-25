@@ -1,5 +1,6 @@
 import type { StoreData, Group, Id, Session, StatusDef } from '../../shared/types'
 import { folderKey } from '../shell/projectTabs'
+import { tagsMatchQuery } from '../tags/tagLogic'
 
 export interface Section {
   readonly group: Group | null
@@ -272,8 +273,8 @@ export function indexById<T extends { readonly id: Id }>(items: readonly T[]): R
 }
 
 /**
- * Case-insensitive search on session name and the final path segment of the
- * working directory. When the query is empty the input sections are returned
+ * Case-insensitive search on session name, the final path segment of the working
+ * directory, and session tags. When the query is empty the input sections are returned
  * unchanged (same reference). Sections that become empty after filtering are
  * preserved so the UI can still show their header.
  */
@@ -289,7 +290,8 @@ export function filterBySearch(
       const name = session.name.toLowerCase()
       if (name.includes(trimmed)) return true
       const lastSegment = lastPathSegment(session.cwd).toLowerCase()
-      return lastSegment.includes(trimmed)
+      if (lastSegment.includes(trimmed)) return true
+      return tagsMatchQuery(session, query)
     })
   }))
 }
@@ -309,7 +311,8 @@ export function filterStatusSectionsBySearch(
       const name = session.name.toLowerCase()
       if (name.includes(trimmed)) return true
       const lastSegment = lastPathSegment(session.cwd).toLowerCase()
-      return lastSegment.includes(trimmed)
+      if (lastSegment.includes(trimmed)) return true
+      return tagsMatchQuery(session, query)
     })
   }))
 }

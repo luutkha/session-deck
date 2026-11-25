@@ -29,6 +29,8 @@ export interface WorkspaceCommandsInput {
   readonly onPopOutCode: () => void
   readonly onDockCode: () => void
   readonly onShowAwaySummary: () => void
+  /** G10: the tab menu's Changes handler, reused by the palette for the active worktree session. */
+  readonly onViewChanges: (id: Id) => void
 }
 
 export interface WorkspaceCommands {
@@ -145,6 +147,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       openGrid: (): void => nav.setView('grid'),
       exitGrid: nav.exitGrid,
       openSettings: (): void => setSettingsSection('general'),
+      openSettingsDiagnostics: (): void => setSettingsSection('diagnostics'),
       showAwaySummary: input.onShowAwaySummary,
       showCosts: (): void => setCostsOpen(true),
       searchConversations: (): void => setSearchOpen(true),
@@ -162,9 +165,10 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       popOutCode: input.onPopOutCode,
       dockCode: input.onDockCode,
       newWorktree: () => openNewWorktree(),
+      viewChanges: input.onViewChanges,
       stepAttention
     })
-  }, [data, forkSession, stepAttention, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions, previewFile])
+  }, [data, forkSession, stepAttention, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onViewChanges, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions, previewFile])
 
   return {
     newDialog, closeNew, openNew, openNewInStatus, openNewWorktree, openNewInWorktree, handleCreated,

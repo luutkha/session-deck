@@ -602,7 +602,7 @@ async function main() {
     })()
     const untouched = realHomeBefore.exists === realHomeAfter.exists && (!realHomeBefore.exists || (realHomeBefore.mtimeMs === realHomeAfter.mtimeMs && realHomeBefore.size === realHomeAfter.size))
     check('the real ~/.cursor/hooks.json was not created or modified', untouched, `${JSON.stringify(realHomeBefore)} -> ${JSON.stringify(realHomeAfter)}`)
-    fs.rmSync(rootDir, { recursive: true, force: true })
+    try { fs.rmSync(rootDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) } catch { /* a shell or the app may still hold the folder: leave it to the OS temp cleanup */ }
     process.exit(t.summary() === 0 ? 0 : 1)
   }
 }

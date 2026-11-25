@@ -48,7 +48,7 @@ describe('buildTabModels', () => {
     const worktree: Session = { ...sessionNamed('b', 'Beta'), worktreeId: 'w1' }
     expect(buildTabModels(['a', 'b'], [sessionNamed('a', 'Alpha'), worktree], new Map())).toEqual([
       { id: 'a', title: 'Alpha', run: null, attention: null },
-      { id: 'b', title: 'Beta', run: null, attention: null, worktree: true }
+      { id: 'b', title: 'Beta', run: null, attention: null, worktree: true, worktreeId: 'w1' }
     ])
   })
 

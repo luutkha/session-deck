@@ -9,6 +9,7 @@ import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SidePanelTab } from '../timeline/sidePanelTab'
 import { applySidebarView, describeSidebarView, type SidebarViewControl } from './sidebarView'
 import type { ChangesFileRequest } from '../code/changes/changesRequest'
+import { requestChangesLayout, requestChangesStep } from '../code/changes/changesRequest'
 import { requestFileView } from '../viewer/previewBus'
 import {
   clampSidebarWidth,
@@ -300,6 +301,17 @@ export function runWorkspaceAction(action: JarvisUiAction, ctx: WorkspaceUiConte
     case 'changesFile': {
       ctx.requestChangesFile({ worktreeId: action.worktreeId, path: action.path, view: action.view })
       return action.path === null ? 'The Changes panel shows the list of changed files.' : `Showing ${action.path} (${action.view}) in the Changes panel.`
+    }
+    case 'changesStep': {
+      // G9: the changesRequest queue waits for the worktree's Changes panel to mount, like changesFile does.
+      requestChangesStep(action.worktreeId, action.delta)
+      return action.delta === 1 ? 'Selected the next changed file in the Changes panel.' : 'Selected the previous changed file in the Changes panel.'
+    }
+    case 'changesLayout': {
+      if (action.tree === undefined && action.sideBySide === undefined) throw new Error('Give tree or sideBySide to change the Changes panel layout.')
+      requestChangesLayout(action.worktreeId, { ...(action.tree !== undefined ? { tree: action.tree } : {}), ...(action.sideBySide !== undefined ? { sideBySide: action.sideBySide } : {}) })
+      const changed = [action.tree !== undefined ? `folder tree ${action.tree ? 'shown' : 'hidden'}` : '', action.sideBySide !== undefined ? `side-by-side diff ${action.sideBySide ? 'on' : 'off'}` : ''].filter((part) => part !== '').join(' and ')
+      return `Changed the Changes panel layout: ${changed}.`
     }
     case 'previewFile': {
       // D74: the workspace's viewer listener opens the side panel on its Preview tab; it needs the terminal view.

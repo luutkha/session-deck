@@ -153,7 +153,7 @@ async function main() {
     t.check('gpu-mode e2e ran without an exception', false, String(error))
   } finally {
     await sleep(500)
-    fs.rmSync(root, { recursive: true, force: true })
+    try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) } catch { /* a shell or the app may still hold the folder: leave it to the OS temp cleanup */ }
   }
   process.exit(t.summary() === 0 ? 0 : 1)
 }

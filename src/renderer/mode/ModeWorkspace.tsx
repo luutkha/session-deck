@@ -98,7 +98,9 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const commands = useWorkspaceCommands({
     mode, role: chrome.role, codePoppedOut: chrome.codePoppedOut, data, runtime, actions, nav, activeSession,
     onSwitchMode: chrome.onSwitch, onPopOutCode: chrome.onPopOutCode, onDockCode: chrome.onDockCode,
-    onShowAwaySummary: props.onShowAwaySummary
+    onShowAwaySummary: props.onShowAwaySummary,
+    // G10: the callback is read when the command runs, after this render has defined it below.
+    onViewChanges: (id: Id): void => viewChanges(id)
   })
   const [sidebarOpen, setSidebarOpen] = usePersistedBoolean(SIDEBAR_STORAGE_KEY, true)
   // D70: the sidebar's edge is draggable; no width transition while the pointer is moving it.

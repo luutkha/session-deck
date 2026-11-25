@@ -248,7 +248,7 @@ async function main() {
     if (app) app.kill()
     stopOpencodeService()
     for (const id of created) { try { require('node:child_process').execFileSync('opencode', ['session', 'delete', id], { shell: true, stdio: 'ignore', timeout: 20000 }) } catch { /* best effort */ } }
-    fs.rmSync(rootDir, { recursive: true, force: true })
+    try { fs.rmSync(rootDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) } catch { /* a shell or the app may still hold the folder: leave it to the OS temp cleanup */ }
     process.exit(t.summary() === 0 ? 0 : 1)
   }
 }

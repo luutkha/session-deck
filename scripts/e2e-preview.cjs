@@ -30,7 +30,7 @@ const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWE
 async function removeTempDir(dir) {
   for (let attempt = 0; attempt < CLEANUP_ATTEMPTS; attempt++) {
     try {
-      fs.rmSync(dir, { recursive: true, force: true })
+      try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) } catch { /* a shell or the app may still hold the folder: leave it to the OS temp cleanup */ }
       return
     } catch (error) {
       if (attempt === CLEANUP_ATTEMPTS - 1) {

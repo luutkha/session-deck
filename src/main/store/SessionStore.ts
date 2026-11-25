@@ -33,6 +33,7 @@ import {
   setSessionQueue as setSessionQueueReducer,
   setSessionNotes as setSessionNotesReducer
 } from './sessionNotes'
+import { setSessionTags as setSessionTagsReducer } from './sessionTags'
 import {
   closeSession as closeSessionReducer,
   reopenSession as reopenSessionReducer,
@@ -241,6 +242,13 @@ export class SessionStore {
 
   setSessionNotes(id: Id, notes: string): void {
     const next = setSessionNotesReducer(this.data, id, notes)
+    this.data = next
+    this.saver.schedule(next)
+    this.emit(next)
+  }
+
+  setSessionTags(id: Id, tags: readonly string[]): void {
+    const next = setSessionTagsReducer(this.data, id, tags)
     this.data = next
     this.saver.schedule(next)
     this.emit(next)

@@ -63,7 +63,8 @@ async function main() {
     // ---------- usage from the REAL claude turn
     const usage = await waitFor(async () => { const u = await app.evaluate('window.api.getUsage()'); return u.account && u.account.fiveHour ? u : null }, 150000, 2000)
     t.check('main received plan usage from Claude Code statusLine (5h window)', !!usage, usage ? `5h=${usage.account.fiveHour.usedPercentage}% week=${usage.account.sevenDay?.usedPercentage}%` : 'no usage within 150s')
-    const sess = usage && usage.sessions.find((x) => x.sessionId === s.id)
+    // The plan usage can arrive before the session's own context percent (it is null until the first answer is counted): wait for the full record.
+    const sess = usage && (await waitFor(async () => { const u = await app.evaluate('window.api.getUsage()'); const x = u.sessions.find((y) => y.sessionId === s.id); return x && typeof x.contextPercent === 'number' ? x : null }, 90000, 2000)) || (usage && usage.sessions.find((x) => x.sessionId === s.id))
     t.check('per-session model, context and cost arrived too', !!sess && !!sess.model && typeof sess.contextPercent === 'number' && typeof sess.costUsd === 'number', sess ? `${sess.model} ctx ${sess.contextPercent}% $${sess.costUsd}` : '')
     await app.evaluate(`window.api.setActiveSession(${sid})`)
     const shown = await waitFor(async () => { const b = await bodyText(app); return /5h\s*\d+%/.test(b) && /Week\s*\d+%/.test(b) ? b : null }, 15000)

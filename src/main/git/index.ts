@@ -8,6 +8,7 @@ export type { CreatedGitWorktree, CreateGitWorktreeInput } from './worktreeCreat
 export { diffBase, readWorktreeChanges } from './worktreeChanges'
 export type { WorktreeRef } from './worktreeChanges'
 export { readFileDiff } from './worktreeFileDiff'
+export { discardFile, discardHunk } from './discard'
 export { previewKindFor, readWorktreePreview } from './previewRead'
 // D60: commit, push, pull requests, merge, delete from disk.
 export { COMMIT_MESSAGE_MAX, commitPaths, parseStatusZ, readUncommittedPaths } from './commit'

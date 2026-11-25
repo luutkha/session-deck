@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Bot, Gauge, GitBranch, Settings2, Tags, TerminalSquare, Volume2, Wand2 } from 'lucide-react'
+import { Bot, Gauge, GitBranch, Settings2, Stethoscope, Tags, TerminalSquare, Volume2, Wand2 } from 'lucide-react'
 import type { AppSettings, StatusDef } from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
 import { cn } from '@/lib/utils'
@@ -19,10 +19,11 @@ import { ReminderBlock } from './ReminderBlock'
 import { AutomationSection } from './AutomationSection'
 import { QuotaSection } from './QuotaSection'
 import { StatusesSection } from './StatusesSection'
+import { DiagnosticsSection } from './DiagnosticsSection'
 import { CodeSection } from './CodeSection'
 import { TerminalSection } from './TerminalSection'
 
-export type SettingsSection = 'general' | 'agents' | 'code' | 'terminal' | 'sound' | 'automation' | 'quota' | 'statuses'
+export type SettingsSection = 'general' | 'agents' | 'code' | 'terminal' | 'sound' | 'automation' | 'quota' | 'statuses' | 'diagnostics'
 
 export type SettingsActions = Pick<
   SessionActions,
@@ -76,7 +77,8 @@ const NAV_ITEMS: readonly {
   { id: 'sound', label: 'Sound', icon: <Volume2 className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'automation', label: 'Automation', icon: <Wand2 className="size-4 shrink-0" aria-hidden="true" /> },
   { id: 'quota', label: 'Quota', icon: <Gauge className="size-4 shrink-0" aria-hidden="true" /> },
-  { id: 'statuses', label: 'Statuses', icon: <Tags className="size-4 shrink-0" aria-hidden="true" /> }
+  { id: 'statuses', label: 'Statuses', icon: <Tags className="size-4 shrink-0" aria-hidden="true" /> },
+  { id: 'diagnostics', label: 'Diagnostics', icon: <Stethoscope className="size-4 shrink-0" aria-hidden="true" /> }
 ]
 
 function SettingsPane({
@@ -118,6 +120,8 @@ function SettingsPane({
       return <QuotaSection settings={settings} actions={actions} />
     case 'statuses':
       return <StatusesSection statuses={statuses} actions={actions} />
+    case 'diagnostics':
+      return <DiagnosticsSection />
   }
 }
 

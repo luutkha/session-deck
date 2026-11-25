@@ -63,6 +63,18 @@ export function createUiTools(deps: JarvisToolDeps): McpTool[] {
     throw new Error('No session is on screen; open one first (open_session) or give a session.')
   }
 
+  /** G9: the worktree behind a Changes panel; defaults to the session on screen. */
+  const changesWorktree = async (args: Readonly<Record<string, unknown>>): Promise<{ readonly session: Session; readonly worktreeId: Id }> => {
+    const named = optionalText(args, 'session') !== undefined ? openSession(args) : undefined
+    const session = named ?? await onScreenSession()
+    if (session.worktreeId === undefined) throw new Error(`"${session.name}" is not in a worktree; only Code mode sessions have a Changes tab.`)
+    if (named !== undefined) {
+      deps.openSession(named.id)
+      await deps.sleep(400)
+    }
+    return { session, worktreeId: session.worktreeId }
+  }
+
   return [
     {
       name: 'get_screen_state',
@@ -179,6 +191,40 @@ export function createUiTools(deps: JarvisToolDeps): McpTool[] {
         }
         const result = await ui(session !== undefined ? modeOf(session) : undefined, { kind: 'sidePanel', open, ...(tab !== undefined ? { tab: tab as 'notes' | 'activity' | 'queue' | 'changes' } : {}) })
         deps.log('side_panel', `${open} ${tab ?? ''}`)
+        return result
+      }
+    },
+    {
+      name: 'changes_step_file',
+      description: 'Selects the next or previous changed file in a worktree session\'s Changes panel (the panel\'s own file navigation). Give session, or leave it out to use the session on screen; the session must be in a worktree. The Changes panel is opened if needed.',
+      inputSchema: schema({ direction: { type: 'string', enum: ['next', 'previous'] }, session: SESSION_PROP }, ['direction']),
+      run: async (args) => {
+        const direction = text(args, 'direction')
+        if (direction !== 'next' && direction !== 'previous') throw new Error('"direction" must be next or previous.')
+        const { session, worktreeId } = await changesWorktree(args)
+        await ui('code', { kind: 'sidePanel', open: true, tab: 'changes' })
+        const result = await ui('code', { kind: 'changesStep', worktreeId, delta: direction === 'next' ? 1 : -1 })
+        deps.log('changes_step_file', `${session.name}: ${direction}`)
+        return result
+      }
+    },
+    {
+      name: 'changes_set_layout',
+      description: 'Switches the Changes panel layout: tree=true shows the folder tree (false flattens it), sideBySide=true shows the diff side by side (false shows one diff). Side-by-side only applies when the Code window is popped out into its own window. Give at least one of tree or sideBySide, and a session or leave it out to use the session on screen; the session must be in a worktree.',
+      inputSchema: schema({ tree: { type: 'boolean' }, sideBySide: { type: 'boolean', description: 'Side-by-side diff (also accepts side_by_side); only in the detached Code window.' }, side_by_side: { type: 'boolean' }, session: SESSION_PROP }),
+      run: async (args) => {
+        const tree = optionalBool(args, 'tree')
+        const sideBySide = optionalBool(args, 'sideBySide') ?? optionalBool(args, 'side_by_side')
+        if (tree === undefined && sideBySide === undefined) throw new Error('Give tree or sideBySide to change the Changes panel layout.')
+        const { session, worktreeId } = await changesWorktree(args)
+        await ui('code', { kind: 'sidePanel', open: true, tab: 'changes' })
+        const result = await ui('code', {
+          kind: 'changesLayout',
+          worktreeId,
+          ...(tree !== undefined ? { tree } : {}),
+          ...(sideBySide !== undefined ? { sideBySide } : {})
+        })
+        deps.log('changes_set_layout', `${session.name}: tree=${String(tree)} sideBySide=${String(sideBySide)}`)
         return result
       }
     },

@@ -86,6 +86,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     setSessionStatus: vi.fn(),
     moveSession: vi.fn(),
     setSessionNotes: vi.fn(),
+    setSessionTags: vi.fn((id: string, tags: readonly string[]) => setSession(id, { tags: tags.length > 0 ? [...tags] : undefined })),
     setKeepAwake: vi.fn(),
     createGroup: vi.fn((name: string) => ({ id: 'g2', name })),
     removeGroup: vi.fn(),
@@ -631,7 +632,7 @@ describe('jarvis tools', () => {
 describe('Jarvis app tools (D55)', () => {
   it('offers every new tool exactly once', () => {
     const t = setup([session('a', 'API')])
-    const names = ['get_settings', 'update_settings', 'queue_list', 'queue_change', 'checklist_get', 'checklist_change', 'group_change', 'status_change', 'preset_change', 'bulk_action', 'needs_you', 'set_read', 'refresh_usage', 'quota_autopilot', 'cost_report', 'remove_repo', 'file_diff', 'send_review_comments', 'list_workers', 'code_window', 'get_screen_state', 'switch_mode', 'set_view', 'set_grid', 'split_view', 'show_sidebar', 'side_panel', 'preview_file', 'open_dialog', 'terminal_zoom', 'worker_tab']
+    const names = ['get_settings', 'update_settings', 'queue_list', 'queue_change', 'checklist_get', 'checklist_change', 'group_change', 'status_change', 'preset_change', 'bulk_action', 'needs_you', 'set_read', 'refresh_usage', 'quota_autopilot', 'cost_report', 'remove_repo', 'file_diff', 'send_review_comments', 'list_workers', 'code_window', 'get_screen_state', 'switch_mode', 'set_view', 'set_grid', 'split_view', 'show_sidebar', 'side_panel', 'changes_step_file', 'changes_set_layout', 'preview_file', 'open_dialog', 'terminal_zoom', 'worker_tab']
     for (const name of names) expect(t.call(name, {}).catch(() => 'ok')).toBeDefined()
     const all = createJarvisTools(t.deps).map((tool) => tool.name)
     expect(new Set(all).size).toBe(all.length)
@@ -1092,5 +1093,74 @@ describe('Jarvis fork_session (D79)', () => {
     expect(await t.call('fork_session', { session: 'api' })).toBe('Forked "API" into "a (fork)" (id fork).')
     t.controller.forkSession.mockRejectedValueOnce(new Error('Nothing to fork yet: this session has no saved conversation.'))
     await expect(t.call('fork_session', { session: 'web' })).rejects.toThrow('Nothing to fork yet')
+  })
+})
+
+describe('G9: tags and Changes panel tools', () => {
+  it('replaces and clears tags, lists them, and undoes back to the old tags', async () => {
+    const t = setup([session('a', 'API', { tags: ['old'] })])
+    expect(await t.call('set_session_tags', { session: 'api', tags: ['#work', 'Urgent'] })).toContain('Set the tags of "API"')
+    expect(t.store.setSessionTags).toHaveBeenCalledWith('a', ['#work', 'Urgent'])
+    expect(t.data().sessions[0].tags).toEqual(['#work', 'Urgent'])
+    expect(await t.call('list_sessions')).toContain('tags "#work", "Urgent"')
+    expect(await t.call('undo_last_action')).toContain('Undone: change the tags of "API"')
+    expect(t.store.setSessionTags).toHaveBeenLastCalledWith('a', ['old'])
+    expect(t.data().sessions[0].tags).toEqual(['old'])
+    await t.call('set_session_tags', { session: 'api', tags: [] })
+    expect(t.data().sessions[0].tags).toBeUndefined()
+  })
+
+  it('rejects an unknown session and bad tags before writing', async () => {
+    const t = setup([session('a', 'API')])
+    await expect(t.call('set_session_tags', { session: 'nope', tags: ['x'] })).rejects.toThrow('No session matches "nope"')
+    await expect(t.call('set_session_tags', { session: 'api', tags: 'x' })).rejects.toThrow('"tags" must be an array of strings')
+    await expect(t.call('set_session_tags', { session: 'api', tags: [1] })).rejects.toThrow('"tags" must be an array of strings')
+    await expect(t.call('set_session_tags', { session: 'api', tags: ['x'.repeat(25)] })).rejects.toThrow('longer than 24 characters')
+    await expect(t.call('set_session_tags', { session: 'api', tags: Array.from({ length: 11 }, (_, i) => `t${i}`) })).rejects.toThrow('At most 10 tags')
+    expect(t.store.setSessionTags).not.toHaveBeenCalled()
+  })
+
+  it('steps the Changes panel of a named worktree session, or the one on screen', async () => {
+    const t = setup([session('w', 'Checkout', { worktreeId: 'w1' }), session('a', 'API')])
+    expect(await t.call('changes_step_file', { session: 'checkout', direction: 'next' })).toBe('ui changesStep')
+    expect(t.deps.openSession).toHaveBeenCalledWith('w')
+    expect(t.uiCalls.slice(-2)).toEqual([
+      { mode: 'code', action: { kind: 'sidePanel', open: true, tab: 'changes' } },
+      { mode: 'code', action: { kind: 'changesStep', worktreeId: 'w1', delta: 1 } }
+    ])
+    vi.mocked(t.deps.ui).mockResolvedValueOnce('Mode: Code\nOn screen: "Checkout"')
+    await t.call('changes_step_file', { direction: 'previous' })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'changesStep', worktreeId: 'w1', delta: -1 } })
+    expect(t.deps.openSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses an unknown session, a non-worktree session and bad step arguments', async () => {
+    const t = setup([session('w', 'Checkout', { worktreeId: 'w1' }), session('a', 'API')])
+    await expect(t.call('changes_step_file', { session: 'nope', direction: 'next' })).rejects.toThrow('No session matches "nope"')
+    await expect(t.call('changes_step_file', { session: 'api', direction: 'next' })).rejects.toThrow('not in a worktree')
+    await expect(t.call('changes_step_file', { session: 'checkout' })).rejects.toThrow('"direction" is required')
+    await expect(t.call('changes_step_file', { session: 'checkout', direction: 'sideways' })).rejects.toThrow('"direction" must be next or previous')
+    expect(t.uiCalls).toHaveLength(0)
+  })
+
+  it('switches the Changes panel tree and side-by-side layout of a worktree session', async () => {
+    const t = setup([session('w', 'Checkout', { worktreeId: 'w1' })])
+    await t.call('changes_set_layout', { session: 'checkout', tree: true })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'changesLayout', worktreeId: 'w1', tree: true } })
+    await t.call('changes_set_layout', { session: 'checkout', sideBySide: false })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'changesLayout', worktreeId: 'w1', sideBySide: false } })
+    vi.mocked(t.deps.ui).mockResolvedValueOnce('Mode: Code\nOn screen: "Checkout"')
+    await t.call('changes_set_layout', { tree: false, side_by_side: true })
+    expect(t.uiCalls.at(-1)).toEqual({ mode: 'code', action: { kind: 'changesLayout', worktreeId: 'w1', tree: false, sideBySide: true } })
+  })
+
+  it('refuses a layout change without a field, with bad fields or on a non-worktree session', async () => {
+    const t = setup([session('w', 'Checkout', { worktreeId: 'w1' }), session('a', 'API')])
+    await expect(t.call('changes_set_layout', { session: 'checkout' })).rejects.toThrow('Give tree or sideBySide')
+    await expect(t.call('changes_set_layout', { session: 'checkout', tree: 'yes' })).rejects.toThrow('"tree" must be true or false')
+    await expect(t.call('changes_set_layout', { session: 'checkout', sideBySide: 1 })).rejects.toThrow('"sideBySide" must be true or false')
+    await expect(t.call('changes_set_layout', { session: 'nope', tree: true })).rejects.toThrow('No session matches "nope"')
+    await expect(t.call('changes_set_layout', { session: 'api', tree: true })).rejects.toThrow('not in a worktree')
+    expect(t.uiCalls).toHaveLength(0)
   })
 })

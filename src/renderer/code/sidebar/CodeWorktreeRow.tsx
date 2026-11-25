@@ -2,6 +2,8 @@ import { ChevronDown, ChevronRight, Copy, FolderOpen, GitBranch, Plus, Trash2 } 
 import type { ReactElement } from 'react'
 import type { WorktreeChanges } from '../../../shared/types'
 import { countsLabel } from '../changes/changesFormat'
+import { useChangeSummary } from '../changes/changeSummaryStore'
+import { ChangeCountPill } from '../changes/ChangeCountPill'
 import { Button } from '../../components/ui/button'
 import {
   ContextMenu,
@@ -25,6 +27,7 @@ export interface CodeWorktreeRowProps {
 
 /** "+12 −3" in green and red. Renders nothing when the worktree is clean or its changes are unknown. */
 function WorktreeCounts({ changes }: { readonly changes: WorktreeChanges | undefined }): ReactElement | null {
+  const summary = useChangeSummary(changes?.worktreeId)
   if (changes === undefined || changes.error !== undefined || changes.files.length === 0) {
     return null
   }
@@ -36,6 +39,7 @@ function WorktreeCounts({ changes }: { readonly changes: WorktreeChanges | undef
     >
       <span className="text-status-success">+{changes.additions}</span>{' '}
       <span className="text-destructive">{MINUS_SIGN}{changes.deletions}</span>
+      {summary !== null ? <ChangeCountPill summary={summary} /> : null}
     </span>
   )
 }

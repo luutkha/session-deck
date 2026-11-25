@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { describe, it, expect } from 'vitest'
 import {
   hookCommand,
@@ -124,6 +125,22 @@ describe('claudeSettings', () => {
 
     it('does not contain the JS-escaped quote sequences used by hookCommand', () => {
       expect(statusLineCommand()).not.toContain('\\"')
+    })
+
+    it('keeps the newest payload of a throttled call and sends it once when the window ends (D86)', () => {
+      const cmd = statusLineCommand()
+      expect(cmd).toContain('"$f.latest"')
+      expect(cmd).toContain('"$f.pending"')
+      expect(cmd).toContain('sleep $((')
+      expect(cmd.trim().endsWith('exit 0')).toBe(true)
+    })
+
+    it('is valid bash', () => {
+      const result = spawnSync('bash', ['-n', '-c', statusLineCommand()], { encoding: 'utf8' })
+      // No bash on this PC: nothing to check here (the e2e covers the real run).
+      if (result.error !== undefined) return
+      expect(result.stderr).toBe('')
+      expect(result.status).toBe(0)
     })
   })
 

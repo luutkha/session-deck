@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildPaletteItems, folderLabel, type PaletteItem, type PaletteInput } from './paletteItems'
+import { filterPaletteItems } from './paletteFilter'
 import { DEFAULT_STATUSES, type RuntimeState, type Session } from '../../shared/types'
 
 function session(overrides: Partial<Session> & { id: string }): Session {
@@ -162,6 +163,7 @@ describe('buildPaletteItems: sessions group', () => {
       'Search conversations',
       'Show cost report',
       'Open Settings',
+      'Settings: Diagnostics',
       'Show "While you were away"',
       'Switch to Code mode',
       'Open Code in its own window'
@@ -183,6 +185,7 @@ describe('buildPaletteItems: actions group', () => {
       'Search conversations',
       'Show cost report',
       'Open Settings',
+      'Settings: Diagnostics',
       'Show "While you were away"',
       'Switch to Code mode',
       'Open Code in its own window'
@@ -441,5 +444,82 @@ describe('buildPaletteItems: mode and window actions', () => {
   it('keeps every item id unique across the mode actions', () => {
     const items = buildPaletteItems(input({ mode: 'code', sessions: [codeSession], activeId: 'c1' }))
     expect(new Set(items.map((item: PaletteItem): string => item.id)).size).toBe(items.length)
+  })
+})
+
+describe('buildPaletteItems: G10 additions', () => {
+  it('offers Settings: Diagnostics as an action next to Open Settings', () => {
+    const items = buildPaletteItems(input())
+    const item = byId(items, 'action:open-settings-diagnostics')
+    expect(item.group).toBe('Actions')
+    expect(item.label).toBe('Settings: Diagnostics')
+    expect(item.detail).toContain('diagnostics')
+    expect(item.run).toEqual({ kind: 'open-settings-diagnostics' })
+    expect(items.findIndex((entry: PaletteItem): boolean => entry.id === 'action:open-settings-diagnostics'))
+      .toBe(items.findIndex((entry: PaletteItem): boolean => entry.id === 'action:open-settings') + 1)
+  })
+
+  it('offers changes commands only when the active session is in a worktree', () => {
+    const plain = buildPaletteItems(input({ sessions: [session({ id: 's1' })], activeId: 's1' }))
+    expect(plain.some((item: PaletteItem): boolean => item.id === 'this:view-changes:s1')).toBe(false)
+    expect(plain.some((item: PaletteItem): boolean => item.id === 'this:detach-changes:s1')).toBe(false)
+
+    const worktree = buildPaletteItems(input({
+      sessions: [session({ id: 's1', worktreeId: 'w1' })],
+      activeId: 's1'
+    }))
+    const view = byId(worktree, 'this:view-changes:s1')
+    const detach = byId(worktree, 'this:detach-changes:s1')
+    expect(view.group).toBe('This session')
+    expect(view.label).toBe('View changes of this session')
+    expect(view.run).toEqual({ kind: 'view-changes', id: 's1' })
+    expect(detach.group).toBe('This session')
+    expect(detach.label).toBe('Detach changes window')
+    expect(detach.run).toEqual({ kind: 'detach-changes', worktreeId: 'w1' })
+  })
+
+  it('omits changes commands in the Hub or for a closed active session', () => {
+    // The workspace sets activeId to null while the Hub is the view.
+    const inHub = buildPaletteItems(input({
+      sessions: [session({ id: 's1', worktreeId: 'w1' })], activeId: null, view: 'hub'
+    }))
+    const closed = buildPaletteItems(input({
+      sessions: [session({ id: 's1', worktreeId: 'w1', closedAt: 1 })], activeId: 's1'
+    }))
+    expect(inHub.some((item: PaletteItem): boolean => item.id.startsWith('this:view-changes'))).toBe(false)
+    expect(closed.some((item: PaletteItem): boolean => item.id.startsWith('this:detach-changes'))).toBe(false)
+  })
+
+  it('offers one Tag item per distinct tag, jumping to the first session carrying it', () => {
+    const sessions = [
+      session({ id: 's1', name: 'First', tags: ['Alpha', 'Beta'] }),
+      session({ id: 's2', name: 'Second', tags: ['alpha'] }),
+      session({ id: 's3', name: 'Third', tags: [] })
+    ]
+    const items = buildPaletteItems(input({ sessions }))
+    const tags = items.filter((item: PaletteItem): boolean => item.id.startsWith('tag:'))
+    expect(tags).toHaveLength(2)
+    // allTags merges case-insensitively (first spelling kept) and orders by count, then name.
+    expect(tags.map((item: PaletteItem): string => item.label)).toEqual(['Tag: Alpha', 'Tag: Beta'])
+    expect(byId(items, 'tag:alpha').detail).toBe('2 sessions')
+    expect(byId(items, 'tag:alpha').run).toEqual({ kind: 'open-session', id: 's1' })
+    expect(byId(items, 'tag:beta').run).toEqual({ kind: 'open-session', id: 's1' })
+    expect(tags.every((item: PaletteItem): boolean => item.group === 'Sessions')).toBe(true)
+  })
+
+  it('caps Tag items at 15 and keeps ids unique', () => {
+    const sessions = Array.from({ length: 16 }, (_unused: number, index: number): Session =>
+      session({ id: `s${index}`, tags: [`tag${index}`] })
+    )
+    const items = buildPaletteItems(input({ sessions }))
+    const tags = items.filter((item: PaletteItem): boolean => item.id.startsWith('tag:'))
+    expect(tags).toHaveLength(15)
+    expect(new Set(items.map((item: PaletteItem): string => item.id)).size).toBe(items.length)
+  })
+
+  it('keeps Tag items searchable by the fuzzy filter', () => {
+    const items = buildPaletteItems(input({ sessions: [session({ id: 's1', tags: ['Release'] })] }))
+    const matches = filterPaletteItems(items, 'tag release')
+    expect(matches.some((item: PaletteItem): boolean => item.id === 'tag:release')).toBe(true)
   })
 })

@@ -39,7 +39,7 @@ async function main() {
     // ---- the tools exist
     const names = (await rpc('tools/list', {})).result.tools.map((x) => x.name)
     const added = ['get_system_info', 'gpu_setting', 'terminal_settings', 'sidebar_width', 'jarvis_panel_settings']
-    t.check('tools/list offers the five tuning tools (91 in all)', names.length === 91 && added.every((n) => names.includes(n)), `${names.length} missing: ${added.filter((n) => !names.includes(n))}`)
+    t.check('tools/list offers the five tuning tools (94 in all)', names.length === 94 && added.every((n) => names.includes(n)), `${names.length} missing: ${added.filter((n) => !names.includes(n))}`)
 
     // ---- Jarvis reads the PC
     const info = await tool('get_system_info')
@@ -104,7 +104,7 @@ async function main() {
   } finally {
     if (app) app.kill()
     await sleep(500)
-    fs.rmSync(root, { recursive: true, force: true })
+    try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) } catch { /* a shell or the app may still hold the folder: leave it to the OS temp cleanup */ }
   }
   process.exit(t.summary() === 0 ? 0 : 1)
 }

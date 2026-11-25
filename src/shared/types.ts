@@ -72,6 +72,8 @@ export interface Session {
   readonly keepAwake?: boolean
   /** Free-text notes for this session (max 20000 chars). Absent = none. */
   readonly notes?: string
+  /** D86: short labels the user put on this session (max SESSION_TAGS_MAX, each up to SESSION_TAG_MAX_LENGTH chars, case-insensitively unique). Absent or empty = none. */
+  readonly tags?: readonly string[]
   /** Work-in-progress checklist (max 100 items). Absent or empty = none. */
   readonly checklist?: readonly ChecklistItem[]
   /** Prompts typed in one by one as turns finish (D47; max QUEUE_MAX_ITEMS). Absent or empty = none. */
@@ -141,6 +143,8 @@ export type JarvisUiAction =
   | { readonly kind: 'search'; readonly op: 'find' | 'next' | 'previous' | 'close'; readonly query?: string }
   | { readonly kind: 'tabs'; readonly op: 'next' | 'previous' | 'closeOthers' | 'closeAll' }
   | { readonly kind: 'changesFile'; readonly worktreeId: Id; readonly path: string | null; readonly view: 'diff' | 'preview' }
+  | { readonly kind: 'changesStep'; readonly worktreeId: Id; readonly delta: 1 | -1 }
+  | { readonly kind: 'changesLayout'; readonly worktreeId: Id; readonly tree?: boolean; readonly sideBySide?: boolean }
   // D71: the terminal / graphics preferences kept by the window (localStorage), and the sidebar width.
   | { readonly kind: 'terminalPrefs'; readonly renderer?: 'auto' | 'webgl' | 'canvas' | 'dom'; readonly effects?: 'auto' | 'full' | 'reduced'; readonly scrollbackLines?: number; readonly zoomPercent?: number; readonly rightClick?: 'menu' | 'copy-paste' }
   | { readonly kind: 'sidebarWidth'; readonly width: number | 'reset' | null }
@@ -1030,3 +1034,46 @@ export interface OpencodeInfo {
 export type FileViewRangeResult =
   | { readonly ok: true; readonly start: number; readonly base64: string }
   | { readonly ok: false; readonly error: string }
+
+/** D86: result of discarding uncommitted changes of one file or one hunk. Nothing is thrown for a refused request. */
+export interface DiscardResult {
+  readonly ok: boolean
+  /** User-readable reason when ok is false (file changed since the diff was shown, git refused...). */
+  readonly error?: string
+}
+
+/** D86: one probed command line tool of the diagnostics report. */
+export interface DiagnosticTool {
+  readonly name: string
+  readonly found: boolean
+  readonly path?: string
+  /** First line of `<tool> --version`; absent when not found or the probe failed. */
+  readonly version?: string
+}
+
+/** D86: a folder the app depends on and whether it exists. */
+export interface DiagnosticDir {
+  readonly name: string
+  readonly path: string
+  readonly exists: boolean
+}
+
+/** D86: the self-diagnostics report (Settings > Diagnostics). Never contains secrets, prompts or file contents. */
+export interface DiagnosticsReport {
+  readonly generatedAt: number
+  readonly app: {
+    readonly version: string
+    readonly electron: string
+    readonly chrome: string
+    readonly node: string
+    readonly platform: string
+    readonly arch: string
+  }
+  readonly tools: readonly DiagnosticTool[]
+  readonly dirs: readonly DiagnosticDir[]
+  /** Last lines of the main-process error log, newest last; [] when there is none. */
+  readonly logTail: readonly string[]
+}
+
+export const SESSION_TAGS_MAX = 10
+export const SESSION_TAG_MAX_LENGTH = 24

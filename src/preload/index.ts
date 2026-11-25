@@ -46,6 +46,8 @@ import type {
   CreateWorktreeResult,
   WorktreeChanges,
   FileDiff,
+  DiscardResult,
+  DiagnosticsReport,
   FilePreview,
   FileViewResult,
   FileViewRangeResult,
@@ -134,6 +136,9 @@ const api: Api = {
   },
   setSessionNotes(id: Id, notes: string): Promise<void> {
     return ipcRenderer.invoke(IPC.sessionSetNotes, id, notes)
+  },
+  setSessionTags(id: Id, tags: readonly string[]): Promise<void> {
+    return ipcRenderer.invoke(IPC.sessionSetTags, id, tags)
   },
 
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): Promise<void> {
@@ -503,6 +508,15 @@ const api: Api = {
 
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff> {
     return ipcRenderer.invoke(IPC.worktreeFileDiff, worktreeId, path)
+  },
+  discardWorktreeFile(worktreeId: Id, path: string): Promise<DiscardResult> {
+    return ipcRenderer.invoke(IPC.worktreeDiscardFile, worktreeId, path)
+  },
+  discardWorktreeHunk(worktreeId: Id, path: string, hunkIndex: number, hunkHeader: string): Promise<DiscardResult> {
+    return ipcRenderer.invoke(IPC.worktreeDiscardHunk, worktreeId, path, hunkIndex, hunkHeader)
+  },
+  getDiagnostics(): Promise<DiagnosticsReport> {
+    return ipcRenderer.invoke(IPC.appDiagnostics)
   },
 
   readFileView(sessionId: Id, text: string): Promise<FileViewResult> {

@@ -23,7 +23,7 @@ import type {
   UsageWindow,
   WorktreeChanges
 } from '../../shared/types'
-import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX, WORKTREE_NAME_MAX } from '../../shared/types'
+import { QUEUE_MAX_ITEMS, QUEUE_TEXT_MAX, SESSION_TAG_MAX_LENGTH, SESSION_TAGS_MAX, WORKTREE_NAME_MAX } from '../../shared/types'
 import { canTypeInto, queuedText, QUEUE_ENTER_DELAY_MS } from '../queue/promptQueue'
 import { isTrustPrompt } from '../app/trustPrompt'
 import { isIdleReminder } from '../app/activity'
@@ -99,6 +99,7 @@ export interface JarvisToolDeps {
     setSessionStatus(id: Id, statusId: Id | null): void
     moveSession(id: Id, groupId: Id | null, index: number): void
     setSessionNotes(id: Id, notes: string): void
+    setSessionTags(id: Id, tags: readonly string[]): void
     setKeepAwake(id: Id, keepAwake: boolean): void
     createGroup(name: string): { readonly id: Id; readonly name: string }
     removeGroup(id: Id): void
@@ -202,6 +203,7 @@ function sessionLine(data: StoreData, session: Session, deps: JarvisToolDeps): s
     parts.push(`Code mode worktree "${worktree?.name ?? '?'}"`)
   }
   if (session.model) parts.push(`model ${session.model}`)
+  if (session.tags !== undefined && session.tags.length > 0) parts.push(`tags ${session.tags.map((tag) => `"${tag}"`).join(', ')}`)
   if (session.keepAwake) parts.push('keep awake')
   if (state?.remoteControl) parts.push('Remote Control on')
   if ((session.queue ?? []).length > 0) parts.push(`${session.queue!.length} queued prompt(s)`)
@@ -397,7 +399,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
   const tools: McpTool[] = [
     {
       name: 'list_sessions',
-      description: 'Lists every session in SessionDeck with its agent, state (running/working/waiting/idle, sleeping, stopped, closed), whether it needs the user, group, status, folder, queued prompts and last prompt. Also lists the groups, statuses and saved presets. Call this first.',
+      description: 'Lists every session in SessionDeck with its agent, state (running/working/waiting/idle, sleeping, stopped, closed), whether it needs the user, group, status, tags, folder, queued prompts and last prompt. Also lists the groups, statuses and saved presets. Call this first.',
       inputSchema: schema({ include_closed: { type: 'boolean', description: 'Also list closed sessions (default true).' } }),
       run: async (args) => {
         const data = deps.getData()
@@ -1102,6 +1104,24 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
       }
     },
     {
+      name: 'set_session_tags',
+      description: `Replaces a session's tags (short labels on its card) with the given list; an empty list clears them. At most ${SESSION_TAGS_MAX} tags, each up to ${SESSION_TAG_MAX_LENGTH} characters; duplicates (case-insensitively, and a leading '#') are ignored by the store. Undoable with undo_last_action.`,
+      inputSchema: schema({ session: SESSION_PROP, tags: { type: 'array', items: { type: 'string' }, description: `Tags to set, max ${SESSION_TAGS_MAX}, each max ${SESSION_TAG_MAX_LENGTH} characters.` } }, ['session', 'tags']),
+      run: async (args) => {
+        const session = resolveSession(deps.getData(), args.session)
+        const raw = args.tags
+        if (!Array.isArray(raw) || raw.some((tag) => typeof tag !== 'string')) throw new Error('"tags" must be an array of strings.')
+        const tags = raw.filter((tag): tag is string => typeof tag === 'string')
+        if (tags.length > SESSION_TAGS_MAX) throw new Error(`At most ${SESSION_TAGS_MAX} tags are allowed.`)
+        if (tags.some((tag) => tag.trim().replace(/^#/, '').length > SESSION_TAG_MAX_LENGTH)) throw new Error(`A tag cannot be longer than ${SESSION_TAG_MAX_LENGTH} characters.`)
+        const previous = session.tags ?? []
+        deps.store.setSessionTags(session.id, tags)
+        pushUndo(`change the tags of "${session.name}" (restore them)`, () => deps.store.setSessionTags(session.id, previous))
+        deps.log('set_session_tags', `${session.name}: ${tags.join(', ')}`)
+        return `Set the tags of "${session.name}" to ${tags.length > 0 ? tags.map((tag) => `"${tag}"`).join(', ') : '(none)'}.`
+      }
+    },
+    {
       name: 'set_keep_awake',
       description: 'Turns "keep awake" on or off for a session (on = the idle timer never puts it to sleep).',
       inputSchema: schema({ session: SESSION_PROP, keep_awake: { type: 'boolean' } }, ['session', 'keep_awake']),
@@ -1117,7 +1137,7 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
     },
     {
       name: 'undo_last_action',
-      description: 'Undoes your last reversible action (sleep, wake, close, create session, rename, status, group, notes, keep awake, model, create group, schedules), one step per call. Removals cannot be undone.',
+      description: 'Undoes your last reversible action (sleep, wake, close, create session, rename, status, group, notes, tags, keep awake, model, create group, schedules), one step per call. Removals cannot be undone.',
       inputSchema: schema({}),
       run: async () => undoLast()
     },

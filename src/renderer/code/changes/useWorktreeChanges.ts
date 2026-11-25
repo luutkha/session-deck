@@ -20,6 +20,7 @@ import {
   viewFor,
   type ChangesViewState
 } from './changesState'
+import { publishChanges } from './changeSummaryStore'
 
 const SECOND_MS = 1000
 export const DEFAULT_POLL_MS = 10 * SECOND_MS
@@ -58,7 +59,10 @@ export function useWorktreeChanges(
     const id: Id = worktreeId
     const ticket = gate.begin()
     setState((previous: ChangesViewState): ChangesViewState => beginChangesLoad(previous, id))
-    void loadChanges(id, (target: Id) => window.api.getWorktreeChanges(target)).then((result): void => {
+    void loadChanges(id, (target: Id) => window.api.getWorktreeChanges(target).then((fresh: WorktreeChanges): WorktreeChanges => {
+        publishChanges(fresh)
+        return fresh
+      })).then((result): void => {
       if (!gate.isCurrent(ticket)) return
       setState((previous: ChangesViewState): ChangesViewState => finishChangesLoad(previous, id, result))
     })
@@ -70,6 +74,7 @@ export function useWorktreeChanges(
     const id: Id = worktreeId
     return subscribeSafely((): (() => void) =>
       window.api.onWorktreeChanges((changes: WorktreeChanges): void => {
+        publishChanges(changes)
         if (changes.worktreeId !== id) return
         // A pushed snapshot is newer than any reply still in flight.
         gate.cancel()
@@ -113,13 +118,17 @@ export function useWorktreeChangeCounts(worktreeIds: readonly Id[]): ReadonlyMap
     setCounts((previous: ReadonlyMap<Id, WorktreeChanges>) => pruneCounts(previous, wanted))
     const stop = subscribeSafely((): (() => void) =>
       window.api.onWorktreeChanges((changes: WorktreeChanges): void => {
+        publishChanges(changes)
         if (!live || !wanted.has(changes.worktreeId)) return
         setCounts((previous: ReadonlyMap<Id, WorktreeChanges>) => putCount(previous, changes))
       })
     )
     const loadAll = (): void => {
       for (const id of ids) {
-        void loadChanges(id, (target: Id) => window.api.getWorktreeChanges(target)).then((result): void => {
+        void loadChanges(id, (target: Id) => window.api.getWorktreeChanges(target).then((fresh: WorktreeChanges): WorktreeChanges => {
+        publishChanges(fresh)
+        return fresh
+      })).then((result): void => {
           if (!live || !result.ok) return
           setCounts((previous: ReadonlyMap<Id, WorktreeChanges>) => putCount(previous, result.value))
         })

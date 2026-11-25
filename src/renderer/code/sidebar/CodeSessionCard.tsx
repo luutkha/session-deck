@@ -7,6 +7,7 @@ import { activityDetail, activityLabel, isSleeping, relativeTime } from '../../s
 import { AgentBadge, sessionAgent } from '../../components/AgentBadge'
 import { AttentionBell } from '../../attention/AttentionBell'
 import { ChecklistChip } from '../../notes/ChecklistChip'
+import { TagChips } from '../../tags/TagChips'
 import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip'
@@ -165,6 +166,7 @@ export function CodeSessionCard(props: CodeSessionCardProps): ReactElement {
         ) : (
           <span className={NAME_CLASS}>{session.name}</span>
         )}
+        <TagChips tags={session.tags ?? []} />
         <AgentSlot session={session} runtime={runtime} />
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/session:opacity-100 group-focus-within/session:opacity-100">
           <Tooltip>

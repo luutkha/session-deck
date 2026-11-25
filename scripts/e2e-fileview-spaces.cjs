@@ -15,7 +15,7 @@ function makeRoot() {
   for (const base of ['C:' + path.sep, os.tmpdir()]) {
     try {
       const dir = path.join(base, 'sd-sp')
-      fs.rmSync(dir, { recursive: true, force: true })
+      try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) } catch { /* a shell or the app may still hold the folder: leave it to the OS temp cleanup */ }
       fs.mkdirSync(dir, { recursive: true })
       return dir
     } catch { /* try the next base */ }

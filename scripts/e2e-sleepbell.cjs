@@ -63,8 +63,9 @@ async function main() {
     t.check('runtime keeps the bell reason while asleep', after?.attention === 'done', String(after?.attention))
     t.check('runtime keeps the bell time while asleep', after?.attentionAt === before?.attentionAt, `${before?.attentionAt} vs ${after?.attentionAt}`)
     t.check('the sidebar card still shows the bell', (await cardBell('sleepy-b')) === 'done', String(await cardBell('sleepy-b')))
-    const tabBell = await app.evaluate(`document.querySelector('[role=tab][data-tab-id=${js(b.id)}] [data-attention-bell]') !== null`)
-    t.check('its tab still shows the bell', tabBell)
+    // D55: a sleeping session that is not on screen has no tab (only awake, running ones do), so the bell lives on its card and in the header count.
+    const tabIds = await app.evaluate(`[...document.querySelectorAll('[role=tab]')].map((x) => x.dataset.tabId)`)
+    t.check('a sleeping session off screen has no tab (D55); the bell stays on its card', !tabIds.includes(b.id), tabIds.join(','))
     t.check('the header count still includes it', (await headerCount()) === 1, String(await headerCount()))
 
     await clickCard('sleepy-b')

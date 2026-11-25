@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
 import path from 'node:path'
-import type { CreateWorktreeResult, FileDiff, FilePreview, HookEvent, Id, Repo, RepoBranches, Worktree, WorktreeChanges } from '../../shared/types'
+import type { CreateWorktreeResult, DiscardResult, FileDiff, FilePreview, HookEvent, Id, Repo, RepoBranches, Worktree, WorktreeChanges } from '../../shared/types'
 import { IPC } from '../../shared/ipc'
 import type { SessionStore } from '../store'
-import { createGitWorktree, defaultWorktreesRoot, listBranches, readFileDiff, resolveCommit, readWorktreeChanges, readWorktreePreview, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
+import { createGitWorktree, defaultWorktreesRoot, discardFile, discardHunk, listBranches, readFileDiff, resolveCommit, readWorktreeChanges, readWorktreePreview, repoFolderName, resolveRepoRoot, validateWorktreeName } from '../git'
 import { asCreateWorktreeInput, assertBoolean, assertId, assertNonEmptyString } from './ipcValidation'
 import type { SessionController } from './sessionController'
 import { createCodeGitOps, type CodeGitOps } from './codeGitOps'
@@ -180,6 +180,28 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     return readFileDiff(worktree, filePath, current)
   }
 
+  // D86: discard always works from a freshly computed list (never the cache), and afterwards recomputes so every
+  // open Changes view (side panel, detached window) shows the new state.
+  async function discardOneFile(rawId: unknown, rawPath: unknown): Promise<DiscardResult> {
+    const worktree = worktreeOrThrow(assertId(rawId, 'worktree id'))
+    const filePath = assertNonEmptyString(rawPath, 'file path', MAX_PATH_LENGTH)
+    const current = await computeChanges(worktree, true)
+    const result = await discardFile(worktree, filePath, current)
+    if (result.ok) await computeChanges(worktree, true)
+    return result
+  }
+
+  async function discardOneHunk(rawId: unknown, rawPath: unknown, rawIndex: unknown, rawHeader: unknown): Promise<DiscardResult> {
+    const worktree = worktreeOrThrow(assertId(rawId, 'worktree id'))
+    const filePath = assertNonEmptyString(rawPath, 'file path', MAX_PATH_LENGTH)
+    if (typeof rawIndex !== 'number' || !Number.isInteger(rawIndex) || rawIndex < 0) throw new Error('hunk index must be a non-negative integer')
+    const header = assertNonEmptyString(rawHeader, 'hunk header', MAX_PATH_LENGTH)
+    const current = await computeChanges(worktree, true)
+    const result = await discardHunk(worktree, filePath, rawIndex, header, current)
+    if (result.ok) await computeChanges(worktree, true)
+    return result
+  }
+
   async function filePreview(rawId: unknown, rawPath: unknown): Promise<FilePreview> {
     const worktree = worktreeOrThrow(assertId(rawId, 'worktree id'))
     const filePath = assertNonEmptyString(rawPath, 'file path', MAX_PATH_LENGTH)
@@ -236,6 +258,8 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     })
     ipcMain.handle(IPC.worktreeChanges, (_event, rawId: unknown): Promise<WorktreeChanges> => changes(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeFileDiff, (_event, rawId: unknown, rawPath: unknown) => fileDiff(rawId, rawPath))
+    ipcMain.handle(IPC.worktreeDiscardFile, (_event, rawId: unknown, rawPath: unknown) => discardOneFile(rawId, rawPath))
+    ipcMain.handle(IPC.worktreeDiscardHunk, (_event, rawId: unknown, rawPath: unknown, rawIndex: unknown, rawHeader: unknown) => discardOneHunk(rawId, rawPath, rawIndex, rawHeader))
     ipcMain.handle(IPC.filePreviewRead, (_event, rawId: unknown, rawPath: unknown) => filePreview(rawId, rawPath))
   }
 

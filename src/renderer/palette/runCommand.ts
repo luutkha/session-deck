@@ -15,6 +15,8 @@ export interface PaletteHandlers {
   /** D55: leaves the grid view. */
   readonly exitGrid: () => void
   readonly openSettings: () => void
+  /** G10: opens Settings on the diagnostics section. */
+  readonly openSettingsDiagnostics: () => void
   readonly showAwaySummary: () => void
   /** D51: opens the cost report. */
   readonly showCosts: () => void
@@ -37,9 +39,11 @@ export interface PaletteHandlers {
   readonly newWorktree: () => void
   /** D69: shows the next (1) / previous (-1) session that needs the user. */
   readonly stepAttention: (delta: 1 | -1) => void
+  /** G10: opens the Changes tab for the given worktree session. */
+  readonly viewChanges: (id: Id) => void
 }
 
-export type PaletteApi = Pick<Api, 'sleepSession' | 'setKeepAwake' | 'clearAttention' | 'markUnread'>
+export type PaletteApi = Pick<Api, 'sleepSession' | 'setKeepAwake' | 'clearAttention' | 'markUnread' | 'detachChanges'>
 
 type MaybePromise = void | Promise<void>
 
@@ -81,6 +85,8 @@ function runSessionCommand(
       return attempt(command, () => handlers.exitGrid())
     case 'open-settings':
       return attempt(command, () => handlers.openSettings())
+    case 'open-settings-diagnostics':
+      return attempt(command, () => handlers.openSettingsDiagnostics())
     case 'show-away-summary':
       return attempt(command, () => handlers.showAwaySummary())
     case 'show-costs':
@@ -105,6 +111,8 @@ function runSessionCommand(
       return attempt(command, () => handlers.dockCode())
     case 'new-worktree':
       return attempt(command, () => handlers.newWorktree())
+    case 'view-changes':
+      return attempt(command, () => handlers.viewChanges(command.id))
     case 'step-attention':
       return attempt(command, () => handlers.stepAttention(command.delta))
     case 'sleep':
@@ -115,6 +123,8 @@ function runSessionCommand(
       return attempt(command, () => api.clearAttention(command.id))
     case 'mark-unread':
       return attempt(command, () => api.markUnread(command.id))
+    case 'detach-changes':
+      return attempt(command, () => api.detachChanges(command.worktreeId))
     default:
       return console.error('Unknown palette command', JSON.stringify(command))
   }

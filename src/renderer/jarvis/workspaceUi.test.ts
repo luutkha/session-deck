@@ -4,6 +4,7 @@ import { describeWorkspace, runWorkspaceAction, type WorkspaceUiContext } from '
 import { registerWorkspaceUi, workspaceUiFor } from './jarvisUiBridge'
 import { modeForCommand } from './useJarvisUi'
 import { requestFileView } from '../viewer/previewBus'
+import { takeChangesLayoutRequest, takeChangesStepRequest } from '../code/changes/changesRequest'
 
 vi.mock('../viewer/previewBus', () => ({ requestFileView: vi.fn(() => true) }))
 
@@ -158,6 +159,26 @@ describe('runWorkspaceAction, D58', () => {
     expect(requestFileView).toHaveBeenCalledWith({ sessionId: 'a', text: 'C:\\p\\README.md' })
     vi.mocked(requestFileView).mockReturnValueOnce(false)
     expect(() => runWorkspaceAction({ kind: 'previewFile', sessionId: 'a', text: 'C:\\p\\README.md' }, ctx())).toThrow('No workspace is ready to show the file.')
+  })
+
+  it('steps the Changes panel through its own request queue (G9)', () => {
+    const c = ctx()
+    expect(runWorkspaceAction({ kind: 'changesStep', worktreeId: 'w1', delta: 1 }, c)).toContain('next changed file')
+    expect(takeChangesStepRequest('w1')).toBe(1)
+    expect(takeChangesStepRequest('w1')).toBeNull()
+    expect(runWorkspaceAction({ kind: 'changesStep', worktreeId: 'w1', delta: -1 }, c)).toContain('previous changed file')
+    expect(takeChangesStepRequest('other')).toBeNull()
+    expect(takeChangesStepRequest('w1')).toBe(-1)
+  })
+
+  it('queues only the layout fields the action gives (G9)', () => {
+    const c = ctx()
+    expect(runWorkspaceAction({ kind: 'changesLayout', worktreeId: 'w1', tree: true }, c)).toContain('folder tree shown')
+    expect(takeChangesLayoutRequest('w1')).toEqual({ worktreeId: 'w1', tree: true })
+    expect(takeChangesLayoutRequest('w1')).toBeNull()
+    runWorkspaceAction({ kind: 'changesLayout', worktreeId: 'w1', sideBySide: false }, c)
+    expect(takeChangesLayoutRequest('w1')).toEqual({ worktreeId: 'w1', sideBySide: false })
+    expect(() => runWorkspaceAction({ kind: 'changesLayout', worktreeId: 'w1' }, c)).toThrow('Give tree or sideBySide')
   })
 
   it('sets the sort through the sidebar control, and refuses a sidebar that cannot sort (D61)', () => {

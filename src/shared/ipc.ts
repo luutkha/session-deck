@@ -1,7 +1,7 @@
 // IPC contract. Renderer -> main via invoke (request/response); main -> renderer via events.
 import type {
   AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisUiCommand, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
-  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, FilePreview, FileViewResult, FileViewRangeResult, FileViewStat, OpencodeInfo, WindowState, WindowRole,
+  Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, DiscardResult, DiagnosticsReport, FilePreview, FileViewResult, FileViewRangeResult, FileViewStat, OpencodeInfo, WindowState, WindowRole,
   BranchStatus, CommitInput, CommitResult, PushResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult,
   GpuInfo, GpuPref
 } from './types'
@@ -29,6 +29,7 @@ export const IPC = {
   sessionClose: 'session:close', // kill process + mark closed (moves to the Closed section)
   sessionReopen: 'session:reopen', // clear closed + start with --resume
   sessionSetKeepAwake: 'session:setKeepAwake', // (id, keepAwake boolean) exempt a session from the idle sleep timer
+  sessionSetTags: 'session:setTags', // (id, tags string[]) -> void; normalised and capped by main (D86)
   sessionSetNotes: 'session:setNotes', // (id, notes string <= 20000 chars)
   sessionSetChecklist: 'session:setChecklist', // (id, items <= 100; ids unique; text 1..300)
   sessionSetQueue: 'session:setQueue', // (id, prompts <= 20; ids unique; text 1..4000) D47 prompt queue
@@ -100,6 +101,9 @@ export const IPC = {
   worktreeSetCollapsed: 'worktree:setCollapsed', // (worktreeId, collapsed)
   worktreeChanges: 'worktree:changes', // (worktreeId) -> WorktreeChanges (recomputed now)
   worktreeFileDiff: 'worktree:fileDiff', // (worktreeId, path) -> FileDiff; path must be one of the current changed files
+  worktreeDiscardFile: 'worktree:discardFile', // (worktreeId, path) -> DiscardResult: reverts the uncommitted changes of one listed file (untracked file = deleted) (D86)
+  worktreeDiscardHunk: 'worktree:discardHunk', // (worktreeId, path, hunkIndex, hunkHeader) -> DiscardResult: reverse-applies one hunk of the listed file's diff (D86)
+  appDiagnostics: 'app:diagnostics', // () -> DiagnosticsReport (D86)
   filePreviewRead: 'file:previewRead', // (worktreeId, path) -> FilePreview; renderable files of the worktree (Code mode)
   windowGetState: 'window:getState', // -> WindowState
   windowPopOutCode: 'window:popOutCode', // opens (or focuses) the separate Code window
@@ -156,6 +160,8 @@ export interface Api {
   removeStatus(id: Id): Promise<void>
   reorderStatuses(order: readonly Id[]): Promise<void>
   setSessionNotes(id: Id, notes: string): Promise<void>
+  /** D86: replaces the session's tags (trimmed, deduped case-insensitively, capped; an empty list clears them). */
+  setSessionTags(id: Id, tags: readonly string[]): Promise<void>
   setKeepAwake(id: Id, keepAwake: boolean): Promise<void>
   setSessionChecklist(id: Id, items: readonly ChecklistItem[]): Promise<void>
   /** D47: replaces the session's prompt queue (the first item is typed in when the current turn finishes). */
@@ -257,6 +263,12 @@ export interface Api {
   setWorktreeCollapsed(worktreeId: Id, collapsed: boolean): Promise<void>
   getWorktreeChanges(worktreeId: Id): Promise<WorktreeChanges>
   getWorktreeFileDiff(worktreeId: Id, path: string): Promise<FileDiff>
+  /** D86: reverts the uncommitted changes of one listed file; an untracked file is deleted. The renderer confirms first. */
+  discardWorktreeFile(worktreeId: Id, path: string): Promise<DiscardResult>
+  /** D86: reverts one hunk (index + its @@ header must match the current diff, else refused). */
+  discardWorktreeHunk(worktreeId: Id, path: string, hunkIndex: number, hunkHeader: string): Promise<DiscardResult>
+  /** D86: versions, tool paths, folders and the error-log tail for Settings > Diagnostics. */
+  getDiagnostics(): Promise<DiagnosticsReport>
   /** Rendered preview of one worktree file (rich previews, Code mode): image base64 or markdown/text. */
   getWorktreeFilePreview(worktreeId: Id, path: string): Promise<FilePreview>
   /** D73: reads the file a terminal link points at for the side-panel viewer (md, image, csv, xlsx, docx, text). */

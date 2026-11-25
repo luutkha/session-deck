@@ -21,6 +21,7 @@ import { cn } from '../lib/utils'
 import { PreviewTab } from '../viewer/PreviewTab'
 import type { PreviewRequest } from '../viewer/fileViewState'
 import { requestFileView } from '../viewer/previewBus'
+import { TagEditor } from '../tags/TagEditor'
 import { ChecklistSection } from './ChecklistSection'
 import { NotesSection } from './NotesSection'
 import { useChecklistDraft } from './checklistDrafts'
@@ -296,6 +297,7 @@ export function NotesPanel(props: NotesPanelProps): ReactElement {
                 onMove={notes.move}
                 onClearDone={notes.clearDone}
               />
+              <TagEditor sessionId={session.id} tags={session.tags ?? []} />
               <NotesSection
                 notes={notes.notes}
                 onChange={notes.setNotes}

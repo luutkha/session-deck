@@ -102,9 +102,10 @@ async function main() {
         if (!(await ev(`!!document.querySelector('[data-slot="context-menu-content"]')`))) return
       }
     }
-    const center = (selector) => ev(`(() => { const n = document.querySelector(${js(selector)}); if (!n) return null; n.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const r = n.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } })()`)
+    const center = (selector) => ev(`(() => { const n = document.querySelector(${js(selector)}); if (!n) return null; n.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const r = n.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: r.width, h: r.height } })()`)
+    /** Waits for a real on-screen box first: a menu item that is still mounting has no clickable centre yet. */
     const clickSel = async (selector) => {
-      const p = await center(selector)
+      const p = await waitFor(async () => { const q = await center(selector); return q && q.w > 0 && q.h > 0 ? q : null }, 12000, 200)
       if (p === null) throw new Error(`not found: ${selector}`)
       await mouse(p.x, p.y, 'left')
       await sleep(300)
@@ -113,7 +114,7 @@ async function main() {
     const menuItems = () => ev(`[...document.querySelectorAll('[data-slot="context-menu-content"] [role=menuitem]')].map((n) => n.innerText.trim())`)
     /** Right-clicks the session tab: the trigger is the tab element itself, like e2e-termmenu does for panes. */
     const rightClickTab = async (id) => {
-      const p = await ev(`(() => { const n = document.querySelector('[role=tab][data-tab-id=${js(id)}]'); if (!n) return null; n.scrollIntoView({ inline: 'nearest' }); const r = n.getBoundingClientRect(); return { x: Math.round(r.left + Math.min(40, r.width / 2)), y: Math.round(r.top + r.height / 2) } })()`)
+      const p = await waitFor(() => ev(`(() => { const n = document.querySelector('[role=tab][data-tab-id=${js(id)}]'); if (!n) return null; n.scrollIntoView({ inline: 'nearest' }); const r = n.getBoundingClientRect(); return r.width > 0 ? { x: Math.round(r.left + Math.min(40, r.width / 2)), y: Math.round(r.top + r.height / 2) } : null })()`), 10000, 200)
       if (p === null) throw new Error(`no tab for ${id}`)
       await mouse(p.x, p.y, 'right')
       return waitFor(menuOpen, 3000, 100)
@@ -248,14 +249,15 @@ async function main() {
     await ev('location.reload()').catch(() => undefined)
     await sleep(2500)
     await waitFor(() => app.evaluate(`document.querySelector('[data-ui-mode]')?.dataset.uiMode === 'code'`), 8000, 200)
-    await openTab(session1.id)
-    // A closed panel makes View changes open it again (the widening rule still sees the stored width).
+    const tabBack = await openTab(session1.id)
+    t.check('8b2: the reload brings the Code mode and the tab back', !!tabBack)
+    // A closed panel makes View changes open it again (the widening rule still sees the stored width). The panel restores
+    // asynchronously: wait for it to mount before pressing its X, or the click lands on nothing.
+    await waitFor(() => app.evaluate('!!document.querySelector("[data-side-tab]")'), 6000, 200)
     await app.evaluate(`document.querySelector('[aria-label="Close notes"]')?.click()`)
     const closedAgain = await waitFor(() => app.evaluate('!document.querySelector("[data-side-tab]")'), 4000, 200)
     t.check('8c: the panel can be closed before the second run', !!closedAgain)
-    const rcTab = await app.evaluate(`(() => { const n = document.querySelector('[role=tab][data-tab-id=${js(session1.id)}]'); if (!n) return null; const r = n.getBoundingClientRect(); return { x: Math.round(r.left + 40), y: Math.round(r.top + r.height / 2) } })()`)
-    if (rcTab !== null) await mouse(rcTab.x, rcTab.y, 'right')
-    await waitFor(() => app.evaluate('!!document.querySelector("[data-slot=\\"context-menu-content\\"]")'), 3000, 100)
+    await rightClickTab(session1.id)
     await clickViewChanges()
     t.check('8d: View changes after a restart opens the panel on Changes', !!(await waitFor(() => app.evaluate('!!document.querySelector("[data-side-tab=\\"changes\\"][aria-selected=\\"true\\"]")'), 6000, 200)))
     const width400 = await waitFor(async () => { const w = await app.evaluate(`(() => { const t = document.querySelector('[data-side-tab]'); const a = t && t.closest('aside'); return a ? Math.round(a.getBoundingClientRect().width) : null })()`); return w === 400 ? w : null }, 4000, 200)

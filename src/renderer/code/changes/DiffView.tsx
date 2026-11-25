@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment, type ReactElement } from 'react'
-import { MessageSquarePlus, X } from 'lucide-react'
+import { MessageSquarePlus, Undo2, X } from 'lucide-react'
 import { DIFF_MAX_BYTES, type FileDiff } from '../../../shared/types'
 import { cn } from '../../lib/utils'
 import { Button } from '../../components/ui/button'
@@ -18,6 +18,8 @@ export interface DiffViewProps {
   readonly onAddComment?: (input: { readonly side: 'new' | 'old'; readonly line: number | null; readonly text: string }) => void
   /** 'split' shows old and new text in two columns; annotation stays inline-only. */
   readonly layout?: 'inline' | 'split'
+  /** D86: provided = every hunk header offers "Discard block" (index among the file's hunks + the @@ header text). */
+  readonly onDiscardHunk?: (index: number, header: string) => void
 }
 
 const BINARY_MESSAGE = 'Binary file, no text diff.'
@@ -27,6 +29,7 @@ const BYTES_PER_KB = 1024
 const TRUNCATED_MESSAGE = `Diff cut at ${String(DIFF_MAX_BYTES / BYTES_PER_KB)} KB.`
 const LIMIT_MESSAGE = `Showing the first ${String(MAX_RENDERED_DIFF_LINES)} lines.`
 const ADD_LABEL = 'Comment on this line'
+const DISCARD_HUNK_LABEL = 'Discard this block of changes'
 
 function Notice({ text }: { readonly text: string }): ReactElement {
   return <p className="px-3 py-2 font-sans text-xs text-muted-foreground">{text}</p>
@@ -88,12 +91,15 @@ function DiffRow({
   line,
   annotation,
   canAnnotate,
-  onOpenEditor
+  onOpenEditor,
+  onDiscard
 }: {
   readonly line: DiffLine
   readonly annotation: DiffAnnotation | null
   readonly canAnnotate: boolean
   readonly onOpenEditor: () => void
+  /** D86: set on a hunk header row only. */
+  readonly onDiscard?: () => void
 }): ReactElement {
   const annotated = annotation !== null
   return (
@@ -113,6 +119,21 @@ function DiffRow({
         />
       ) : null}
       <span className="whitespace-pre pr-12">{line.text}</span>
+      {onDiscard !== undefined ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          aria-label={DISCARD_HUNK_LABEL}
+          title={DISCARD_HUNK_LABEL}
+          data-discard-hunk=""
+          className="absolute right-1 top-1/2 h-5 -translate-y-1/2 px-1.5 font-sans text-[11px] opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-focus-within/dl:opacity-100 group-hover/dl:opacity-100"
+          onClick={onDiscard}
+        >
+          <Undo2 className="size-3" aria-hidden="true" />
+          Discard block
+        </Button>
+      ) : null}
       {canAnnotate ? (
         <Button
           type="button"
@@ -171,17 +192,25 @@ function DiffText({
   diff,
   annotations,
   onAddComment,
+  onDiscardHunk,
   layout
 }: {
   readonly diff: FileDiff
   readonly annotations: readonly DiffAnnotation[]
   readonly onAddComment?: DiffViewProps['onAddComment']
+  readonly onDiscardHunk?: DiffViewProps['onDiscardHunk']
   readonly layout: 'inline' | 'split'
 }): ReactElement {
   const parsed = useMemo((): readonly DiffLine[] => parseUnifiedDiff(diff.diff).filter(isBodyLine), [diff.diff])
   const limited = useMemo(() => limitDiffLines(parsed), [parsed])
   const splitRows = useMemo((): readonly SplitRow[] => (layout === 'split' ? pairLines(limited.rows) : []), [layout, limited])
   const [editor, setEditor] = useState<EditorState | null>(null)
+  // Hunk headers in file order: the index main needs to find the same hunk again.
+  const hunkIndexes = useMemo((): ReadonlyMap<DiffLine, number> => {
+    const indexes = new Map<DiffLine, number>()
+    for (const line of parsed) if (line.kind === 'hunk') indexes.set(line, indexes.size)
+    return indexes
+  }, [parsed])
 
   function add(): void {
     if (editor === null || onAddComment === undefined) return
@@ -212,6 +241,9 @@ function DiffText({
                 annotation={annotationForLine(annotations, diff.path, line)}
                 canAnnotate={onAddComment !== undefined && annotationEnabled(line)}
                 onOpenEditor={(): void => setEditor({ line, draft: '' })}
+                {...(onDiscardHunk !== undefined && line.kind === 'hunk' && hunkIndexes.has(line)
+                  ? { onDiscard: (): void => onDiscardHunk(hunkIndexes.get(line) ?? 0, line.text) }
+                  : {})}
               />
               {editor !== null && editor.line === line ? (
                 <CommentEditor
@@ -240,6 +272,7 @@ export function DiffView({
   error,
   annotations = [],
   onAddComment,
+  onDiscardHunk,
   layout = 'inline'
 }: DiffViewProps): ReactElement {
   if (error !== null) {
@@ -255,5 +288,5 @@ export function DiffView({
   if (diff.binary) {
     return <Notice text={BINARY_MESSAGE} />
   }
-  return <DiffText diff={diff} annotations={annotations} onAddComment={onAddComment} layout={layout} />
+  return <DiffText diff={diff} annotations={annotations} onAddComment={onAddComment} onDiscardHunk={onDiscardHunk} layout={layout} />
 }

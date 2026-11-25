@@ -1,5 +1,6 @@
 // Pure tree model for the Code mode sidebar: repo > worktree > sessions. No React, no IPC.
 import type { Id, Repo, Session, StoreData, Worktree } from '../../../shared/types'
+import { tagsMatchQuery } from '../../tags/tagLogic'
 
 export interface CodeWorktreeNode {
   readonly worktree: Worktree
@@ -79,7 +80,7 @@ function filterWorktree(node: CodeWorktreeNode, query: string): readonly CodeWor
   if (matches(worktree.name, query) || matches(worktree.branch, query)) {
     return [node]
   }
-  const matching = sessions.filter((session): boolean => matches(session.name, query))
+  const matching = sessions.filter((session): boolean => matches(session.name, query) || tagsMatchQuery(session, query))
   return matching.length > 0 ? [{ worktree, sessions: matching }] : []
 }
 
@@ -94,8 +95,8 @@ function filterRepo(node: CodeRepoNode, query: string): readonly CodeRepoNode[] 
 }
 
 /**
- * Search filter (case-insensitive on repo name, worktree name, branch and session name). A matching repo or
- * worktree keeps all of its content; otherwise only the matching sessions stay. Empty query = the tree as is.
+ * Search filter (case-insensitive on repo name, worktree name, branch, session name and session tags). A matching repo
+ * or worktree keeps all of its content; otherwise only the matching sessions stay. Empty query = the tree as is.
  */
 export function filterCodeTree(tree: CodeTree, query: string): CodeTree {
   const normalized = normalizeQuery(query)
@@ -104,7 +105,7 @@ export function filterCodeTree(tree: CodeTree, query: string): CodeTree {
   }
   return {
     repos: tree.repos.flatMap((node): readonly CodeRepoNode[] => filterRepo(node, normalized)),
-    closed: tree.closed.filter((session): boolean => matches(session.name, normalized))
+    closed: tree.closed.filter((session): boolean => matches(session.name, normalized) || tagsMatchQuery(session, normalized))
   }
 }
 

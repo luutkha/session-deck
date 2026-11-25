@@ -110,7 +110,7 @@ async function main() {
     t.check('e2e ran without an exception', false, error && error.stack ? error.stack : String(error))
   } finally {
     if (app) app.kill()
-    fs.rmSync(rootDir, { recursive: true, force: true })
+    try { fs.rmSync(rootDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) } catch { /* a shell or the app may still hold the folder: leave it to the OS temp cleanup */ }
     process.exit(t.summary() === 0 ? 0 : 1)
   }
 }

@@ -19,6 +19,8 @@ export interface TabModel {
   readonly remote?: boolean
   /** True when the session lives in a git worktree, so its side panel offers the Changes tab. */
   readonly worktree?: boolean
+  /** D86: the worktree this session lives in; the tab shows its changed-files badge. */
+  readonly worktreeId?: string
 }
 
 export interface TabIndicator {
@@ -113,7 +115,7 @@ export function buildTabModels(
       ...(state?.activity === undefined || state.activity === null ? {} : { activity: state.activity }),
       ...(sleeping ? { sleeping: true } : {}),
       ...(state?.remoteControl === true ? { remote: true } : {}),
-      ...(session.worktreeId !== undefined ? { worktree: true } : {}),
+      ...(session.worktreeId !== undefined ? { worktree: true, worktreeId: session.worktreeId } : {}),
       ...(session.agent === 'opencode' || session.agent === 'cursor' ? { agent: session.agent } : {})
     })
   }

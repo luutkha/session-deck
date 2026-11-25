@@ -32,6 +32,7 @@ export {
   validateNotes,
   validateQueue
 } from './sessionNotes'
+export { normalizeTags, setSessionTags } from './sessionTags'
 export {
   clearAutoStatusReference,
   parseStoredSettings,

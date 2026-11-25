@@ -177,7 +177,7 @@ async function main() {
   } finally {
     t.summary()
     if (app) app.kill()
-    fs.rmSync(dir, { recursive: true, force: true })
+    try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) } catch { /* a shell or the app may still hold the folder: leave it to the OS temp cleanup */ }
   }
 }
 main()

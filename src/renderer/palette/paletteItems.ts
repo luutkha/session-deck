@@ -3,6 +3,7 @@
 import type { Id, RuntimeState, Session, SessionPreset, StatusDef, UiMode, WindowRole } from '../../shared/types'
 import { presetDetail } from '../presets/presetLogic'
 import { needsYouItems } from '../attention/needsYou'
+import { allTags } from '../tags/tagLogic'
 
 export type PaletteGroup = 'Sessions' | 'Actions' | 'This session'
 export type PaletteView = 'terminal' | 'grid' | 'hub'
@@ -17,6 +18,8 @@ export type PaletteCommand =
   | { readonly kind: 'open-grid' }
   | { readonly kind: 'exit-grid' }
   | { readonly kind: 'open-settings' }
+  /** G10: opens Settings straight on the diagnostics section. */
+  | { readonly kind: 'open-settings-diagnostics' }
   | { readonly kind: 'show-away-summary' }
   | { readonly kind: 'show-costs' }
   | { readonly kind: 'fork-session'; readonly id: Id }
@@ -34,6 +37,10 @@ export type PaletteCommand =
   | { readonly kind: 'pop-out-code' }
   | { readonly kind: 'dock-code' }
   | { readonly kind: 'new-worktree' }
+  /** G10: opens the Changes tab of the active worktree session. */
+  | { readonly kind: 'view-changes'; readonly id: Id }
+  /** G10: pops the active worktree session's changes into their own window. */
+  | { readonly kind: 'detach-changes'; readonly worktreeId: Id }
   /** D69: show the next / previous session that needs you. */
   | { readonly kind: 'step-attention'; readonly delta: 1 | -1 }
 
@@ -70,6 +77,8 @@ const CLOSED = 'Closed'
 const UNTITLED = 'Untitled session'
 const DETAIL_SEPARATOR = ' · '
 const DEFAULT_AGENT = 'claude'
+// Keep the tag jump list short; allTags already orders by count then name.
+const PALETTE_TAG_LIMIT = 15
 
 // Sort ranks for the Sessions group: bell, open, sleeping, closed.
 const RANK_BELL = 0
@@ -240,6 +249,24 @@ function thisSessionItems(
     items.push(sleepItem(session, name, detail))
   }
   items.push(keepAwakeItem(session, name, detail), readItem(session, name, detail, state))
+  // G10: the changes panel belongs to a worktree session; reuse the tab menu's target when there is one.
+  if (session.worktreeId !== undefined) {
+    items.push({
+      id: `this:view-changes:${session.id}`,
+      group: 'This session',
+      label: 'View changes of this session',
+      detail: 'Show this worktree session in the terminal with its Changes panel',
+      keywords: 'changes diff worktree panel tab review',
+      run: { kind: 'view-changes', id: session.id }
+    }, {
+      id: `this:detach-changes:${session.id}`,
+      group: 'This session',
+      label: 'Detach changes window',
+      detail: 'Open this worktree session\'s changes in their own window',
+      keywords: 'detach changes window pop out separate',
+      run: { kind: 'detach-changes', worktreeId: session.worktreeId }
+    })
+  }
   // D52/D79: a Claude conversation forks with Claude's own --fork-session; an OpenCode one is copied (export/import).
   if ((session.agent ?? 'claude') !== 'shell') {
     items.push({
@@ -440,6 +467,15 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
     keywords: 'preferences options config',
     run: { kind: 'open-settings' }
   })
+  // G10: a shortcut to the diagnostics section, which lives behind a tab in Settings.
+  items.push({
+    id: 'action:open-settings-diagnostics',
+    group: 'Actions',
+    label: 'Settings: Diagnostics',
+    detail: 'Open the diagnostics section of Settings directly',
+    keywords: 'settings diagnostics health troubleshooting logs errors',
+    run: { kind: 'open-settings-diagnostics' }
+  })
   // The away summary dialog lives in the main window only (one summary), so the Code window does not offer it.
   if (windowRole === 'main') {
     items.push({
@@ -454,6 +490,26 @@ function actionItems(input: PaletteInput): readonly PaletteItem[] {
   return [...items, ...modeItems(input)]
 }
 
+/** G10: jump items for the most used tags; opening the first tagged session uses the normal session command. */
+function tagItems(sessions: readonly Session[]): readonly PaletteItem[] {
+  return allTags(sessions)
+    .slice(0, PALETTE_TAG_LIMIT)
+    .flatMap(({ tag, count }): readonly PaletteItem[] => {
+      const first = sessions.find((session: Session): boolean =>
+        (session.tags ?? []).some((candidate: string): boolean => candidate.toLowerCase() === tag.toLowerCase())
+      )
+      if (first === undefined) return []
+      return [{
+        id: `tag:${tag.toLowerCase()}`,
+        group: 'Sessions',
+        label: `Tag: ${tag}`,
+        detail: `${count} session${count === 1 ? '' : 's'}`,
+        keywords: `tag label jump goto filter ${tag}`,
+        run: { kind: 'open-session', id: first.id }
+      }]
+    })
+}
+
 /** Every palette item in builder order: Sessions, then This session, then Actions. */
 export function buildPaletteItems(input: PaletteInput): readonly PaletteItem[] {
   const { sessions, statuses, runtime, activeId } = input
@@ -463,5 +519,5 @@ export function buildPaletteItems(input: PaletteInput): readonly PaletteItem[] {
   const active = findOpenSession(sessions, activeId)
   const thisItems =
     active === null ? [] : thisSessionItems(active, runtime.get(active.id), statuses)
-  return [...sessionItems, ...thisItems, ...actionItems(input)]
+  return [...sessionItems, ...tagItems(sessions), ...thisItems, ...actionItems(input)]
 }

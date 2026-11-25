@@ -12,6 +12,7 @@ import { InlineEdit } from './InlineEdit'
 import { lastPathSegment } from './uiLogic'
 import { ChecklistChip } from '../notes/ChecklistChip'
 import { AttentionBell } from '../attention/AttentionBell'
+import { TagChips } from '../tags/TagChips'
 
 function activityDotClass(activity: SessionActivity): string {
   switch (activity) {
@@ -252,6 +253,7 @@ export function SessionCardView(props: SessionCardProps): ReactElement {
             {session.name}
           </span>
         )}
+        <TagChips tags={session.tags ?? []} />
         <AgentBadge agent={sessionAgent(session)} remote={runtime?.remoteControl === true} keepAwake={session.keepAwake === true} />
         {runtime?.opencodePlugin === 'missing' ? (
           // D79: advisory only. The session still runs; its busy/idle status is simply not reported.

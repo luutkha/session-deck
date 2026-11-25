@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactElement } from 'react'
-import { Eye } from 'lucide-react'
+import { Check, Eye, Undo2 } from 'lucide-react'
 import type { ChangedFile } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import { Checkbox } from '../../components/ui/checkbox'
@@ -25,6 +25,11 @@ export interface ChangeRowProps {
   readonly onOpenViewer?: (path: string) => void
   /** Tree view: nesting level (indents the row) and the folder is left out of the row (the tree shows it). */
   readonly depth?: number
+  /** D86: the user marked this file as reviewed; absent = no viewed toggle. */
+  readonly viewed?: boolean
+  readonly onToggleViewed?: (file: ChangedFile) => void
+  /** D86: asks to throw away this file's uncommitted changes; absent = no button (committed already, or not allowed). */
+  readonly onDiscard?: (file: ChangedFile) => void
 }
 
 const SELECT_KEYS: readonly string[] = ['Enter', ' ']
@@ -33,7 +38,7 @@ const TREE_BASE_PADDING_PX = 8
 const TREE_INDENT_PX = 14
 
 /** One changed file in the list: kind badge, name (bold), folder (muted), line counts. */
-export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick, onOpenViewer, depth }: ChangeRowProps): ReactElement {
+export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick, onOpenViewer, depth, viewed, onToggleViewed, onDiscard }: ChangeRowProps): ReactElement {
   const checkable = file.uncommitted === true && onToggleTick !== undefined
   const { dir, name } = splitPath(file.path)
   const onKeyDown = (event: KeyboardEvent<HTMLLIElement>): void => {
@@ -50,10 +55,11 @@ export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick, onOp
           tabIndex={0}
           data-change-path={file.path}
           data-uncommitted={file.uncommitted === true ? 'true' : undefined}
+          data-viewed={viewed === true ? 'true' : undefined}
           onClick={(): void => onSelect(file.path)}
           onKeyDown={onKeyDown}
           style={depth !== undefined ? { paddingLeft: `${String(TREE_BASE_PADDING_PX + depth * TREE_INDENT_PX)}px` } : undefined}
-          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-selected:bg-accent"
+          className={cn('flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-selected:bg-accent', viewed === true && 'opacity-60')}
         >
           {checkable ? (
             <Checkbox
@@ -97,6 +103,43 @@ export function ChangeRow({ file, selected, onSelect, ticked, onToggleTick, onOp
               onKeyDown={(event): void => event.stopPropagation()}
             >
               <Eye aria-hidden="true" />
+            </Button>
+          ) : null}
+          {onToggleViewed !== undefined ? (
+            <Button
+              type="button"
+              variant={viewed === true ? 'secondary' : 'ghost'}
+              size="icon-xs"
+              aria-label={viewed === true ? `Mark ${file.path} as not viewed` : `Mark ${file.path} as viewed`}
+              aria-pressed={viewed === true}
+              title={viewed === true ? 'Viewed (click to unmark)' : 'Mark as viewed'}
+              data-viewed-toggle={file.path}
+              className="shrink-0 text-muted-foreground"
+              onClick={(event): void => {
+                event.stopPropagation()
+                onToggleViewed(file)
+              }}
+              onKeyDown={(event): void => event.stopPropagation()}
+            >
+              <Check aria-hidden="true" />
+            </Button>
+          ) : null}
+          {onDiscard !== undefined ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`Discard changes: ${file.path}`}
+              title="Discard changes"
+              data-discard-file={file.path}
+              className="shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={(event): void => {
+                event.stopPropagation()
+                onDiscard(file)
+              }}
+              onKeyDown={(event): void => event.stopPropagation()}
+            >
+              <Undo2 aria-hidden="true" />
             </Button>
           ) : null}
           <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">

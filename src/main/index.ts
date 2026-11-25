@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir, cpus, totalmem, freemem, platform as osPlatform, release as osRelease, arch as osArch } from 'node:os'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { appendFile, readFile, writeFile } from 'node:fs/promises'
-import { createGhCheck, runGh } from './git'
+import { createGhCheck, defaultWorktreesRoot, runGh } from './git'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { storeFilePath, attentionDir } from './app/paths'
@@ -24,6 +24,8 @@ import { createWindowRegistry } from './app/windowRegistry'
 import { createActiveSessions } from './app/activeSessions'
 import { createCodeWiring } from './app/codeWiring'
 import { logMainError } from './app/errorLog'
+import { createOpenWindowsStore, openChangesWindowsFilePath, restorableIds, shouldForgetOnClose } from './app/openChangesWindows'
+import { createDiagnostics, defaultProbeTool, errorLogPath } from './app/diagnostics'
 import { createLoginItem } from './app/loginItem'
 import { createAppLinkService } from './links/appLinks'
 import { isQuitting, markQuitting } from './app/quitState'
@@ -192,6 +194,7 @@ if (!gotTheLock) {
     const attentionSettingsDir = attentionDir(userData)
     const onError = (where: string, error: unknown): void => logMainError(userData, where, error)
     const changesBounds = createBoundsStore(changesBoundsFilePath(userData), nodeBoundsStoreIo(onError))
+    const openChangesStore = createOpenWindowsStore(openChangesWindowsFilePath(userData), nodeBoundsStoreIo(onError))
 
     // D74: find out what the installed OpenCode supports in the background, so the first OpenCode session never waits on it.
     warmOpencodeProbe()
@@ -273,6 +276,34 @@ if (!gotTheLock) {
      * D84: dock back. Picks an open session of the worktree, shows it in the window focusSession chooses and asks the
      * same renderer for the Changes tab Jarvis opens. The detached window closes only after all of that succeeded.
      */
+    // D86: Settings > Diagnostics. Only versions, tool paths, folder existence and the redacted error-log tail leave main.
+    const buildDiagnostics = createDiagnostics({
+      appInfo: {
+        version: app.getVersion(),
+        electron: process.versions.electron,
+        chrome: process.versions.chrome,
+        node: process.versions.node,
+        platform: osPlatform(),
+        arch: osArch()
+      },
+      probeTool: defaultProbeTool,
+      dirs: [
+        { name: 'App data', path: userData },
+        { name: 'Worktrees', path: store.getSettings().code.worktreesRoot.length > 0 ? store.getSettings().code.worktreesRoot : defaultWorktreesRoot(homedir()) },
+        { name: 'Claude config', path: path.join(homedir(), '.claude') },
+        { name: 'Cursor config', path: path.join(homedir(), '.cursor') }
+      ],
+      pathExists: existsSync,
+      readLogTail: (maxLines: number): readonly string[] => {
+        try {
+          return readFileSync(errorLogPath(userData), 'utf-8').split(/\r?\n/).filter((line) => line.length > 0).slice(-maxLines)
+        } catch {
+          return []
+        }
+      },
+      now: () => Date.now()
+    })
+
     async function attachChangesWindow(worktreeId: string): Promise<void> {
       const activeId = activeSessions.get('code') ?? activeSessions.get('main')
       const session = pickSessionForChanges(store.get().sessions, worktreeId, activeId, (id) => runtime.get(id)?.run === 'running')
@@ -754,6 +785,27 @@ if (!gotTheLock) {
     mainWindow = win
     windows.setMain(win)
 
+    // D83: the title comes from the store, never from the renderer; one window per worktree, capped.
+    // D87: the open ones are remembered (not forgotten when the app itself quits) and reopened at the next start.
+    function showChangesWindow(worktreeId: string): void {
+      const worktree = store.getWorktree(worktreeId)
+      if (worktree === undefined) return
+      const title = `Changes · ${worktree.name} · SessionDeck`
+      const bounds = fitBounds(changesBounds.get(worktreeId), screen.getAllDisplays().map((display) => display.workArea), CHANGES_DEFAULT_SIZE)
+      changesWindows.request(worktreeId, () => {
+        const changesWin = createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, changes: { worktreeId, title, bounds } }).window
+        trackChangesBounds(worktreeId, changesWin)
+        openChangesStore.add(worktreeId)
+        changesWin.on('close', (): void => {
+          if (shouldForgetOnClose(isQuitting())) openChangesStore.remove(worktreeId)
+        })
+        return changesWin
+      })
+    }
+    for (const worktreeId of restorableIds(openChangesStore.load(), new Set((store.get().worktrees ?? []).map((worktree) => worktree.id)))) {
+      showChangesWindow(worktreeId)
+    }
+
     // No-GPU support: classify once the first window exists (Chromium has reported its GPU by then) and remember the
     // result, so the next launch can turn acceleration off on a machine that only renders in software. Every step is
     // guarded: a failure leaves 'unknown' and the renderer keeps its default renderer.
@@ -829,18 +881,9 @@ if (!gotTheLock) {
         viewerWindows.request(() => createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, viewer: request }).window)
       },
       // D83: the title comes from the store, never from the renderer; one window per worktree, capped.
-      openChangesWindow: (worktreeId) => {
-        const worktree = store.getWorktree(worktreeId)
-        if (worktree === undefined) return
-        const title = `Changes · ${worktree.name} · SessionDeck`
-        const bounds = fitBounds(changesBounds.get(worktreeId), screen.getAllDisplays().map((display) => display.workArea), CHANGES_DEFAULT_SIZE)
-        changesWindows.request(worktreeId, () => {
-          const win = createMainWindow({ preloadPath: path.join(__dirname, '../preload/index.mjs'), iconPath: appIconPath, changes: { worktreeId, title, bounds } }).window
-          trackChangesBounds(worktreeId, win)
-          return win
-        })
-      },
+      openChangesWindow: showChangesWindow,
       attachChangesWindow,
+      getDiagnostics: buildDiagnostics,
       userDataDir: userData,
       loginItem: createLoginItem(app),
       getGpuInfo: readGpuWithPref,

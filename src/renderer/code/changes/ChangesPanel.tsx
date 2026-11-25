@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { subscribeChangesFileRequest, takeChangesFileRequest } from './changesRequest'
+import {
+  subscribeChangesFileRequest,
+  subscribeChangesLayoutRequest,
+  subscribeChangesStepRequest,
+  takeChangesFileRequest,
+  takeChangesLayoutRequest,
+  takeChangesStepRequest
+} from './changesRequest'
 import {
   ArrowLeft,
   ChevronDown,
@@ -14,7 +21,7 @@ import {
   SendHorizontal,
   X
 } from 'lucide-react'
-import type { AgentKind, Id, WorktreeChanges } from '../../../shared/types'
+import type { AgentKind, ChangedFile, Id, WorktreeChanges } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import { ScrollArea } from '../../components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip'
@@ -41,6 +48,17 @@ import { PreviewView } from './PreviewView'
 import { GitSection } from './GitSection'
 import { useGitActions } from './useGitActions'
 import { isPreviewable } from './preview'
+import { DiscardConfirm, type DiscardRequest } from './DiscardConfirm'
+import {
+  isViewed,
+  markViewed,
+  pruneViewed,
+  readViewed,
+  subscribeViewed,
+  unmarkViewed,
+  writeViewed,
+  type ViewedMap
+} from './viewedMarks'
 import { buildTree, flattenVisible, stepFile, toggleCollapsed, visibleFilePaths } from './changesTree'
 
 export interface ChangesPanelProps {
@@ -344,6 +362,10 @@ interface ChangesBodyProps {
   readonly selectedPath: string | null
   /** Folder tree instead of the flat list; collapsed folders and their toggle. */
   readonly tree: { readonly on: boolean; readonly collapsed: ReadonlySet<string>; readonly toggle: (dir: string) => void }
+  /** D86: viewed marks of the files + the toggle. */
+  readonly viewed: { readonly map: ViewedMap; readonly toggle: (file: ChangedFile) => void }
+  /** D86: asks to discard a file's uncommitted changes (rows of committed files get no button). */
+  readonly onDiscard: (file: ChangedFile) => void
 }
 
 function fileRows(
@@ -352,7 +374,9 @@ function fileRows(
   ticks: Ticks,
   openInViewer: ((path: string) => void) | null,
   selectedPath: string | null,
-  tree: ChangesBodyProps['tree']
+  tree: ChangesBodyProps['tree'],
+  viewed: ChangesBodyProps['viewed'],
+  onDiscard: ChangesBodyProps['onDiscard']
 ): ReactElement {
   const anyUncommitted = changes.files.some((file): boolean => file.uncommitted === true)
   const rows = tree.on
@@ -389,6 +413,9 @@ function fileRows(
             selected={file.path === selectedPath}
             onSelect={onSelect}
             {...(tree.on ? { depth: row.depth } : {})}
+            viewed={isViewed(viewed.map, file)}
+            onToggleViewed={viewed.toggle}
+            {...(file.uncommitted === true ? { onDiscard } : {})}
             {...(anyUncommitted ? { ticked: !ticks.unticked.has(file.path), onToggleTick: ticks.toggle } : {})}
             {...(openInViewer !== null && canOpenInViewer(file) ? { onOpenViewer: openInViewer } : {})}
           />
@@ -404,7 +431,7 @@ function headerTitle(list: WorktreeChangesResult): string {
 }
 
 /** The file list, or the message that replaces it (IPC failure, git problem, no files). */
-function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath, tree }: ChangesBodyProps): ReactElement {
+function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath, tree, viewed, onDiscard }: ChangesBodyProps): ReactElement {
   const { changes } = list
   if (changes === null) {
     return list.error !== null ? (
@@ -422,7 +449,7 @@ function ChangesBody({ list, onSelect, ticks, openInViewer, selectedPath, tree }
   return (
     <ScrollArea className="min-h-0 flex-1">
       {list.error !== null ? <PanelMessage text={list.error} failed /> : null}
-      {fileRows(changes, onSelect, ticks, openInViewer, selectedPath, tree)}
+      {fileRows(changes, onSelect, ticks, openInViewer, selectedPath, tree, viewed, onDiscard)}
     </ScrollArea>
   )
 }
@@ -508,6 +535,50 @@ export function ChangesPanel({
   const [treeView, setTreeView] = useState<boolean>(readTreePref)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set<string>())
   const [sideBySide, setSideBySide] = useState(false)
+  // D86: "viewed" marks (per worktree, kept in localStorage; a mark vanishes when the file changes again).
+  const [viewed, setViewed] = useState<ViewedMap>((): ViewedMap => readViewed(worktreeId))
+  useEffect((): (() => void) => {
+    setViewed(readViewed(worktreeId))
+    return subscribeViewed((changedId: string): void => {
+      if (changedId === worktreeId) setViewed(readViewed(worktreeId))
+    })
+  }, [worktreeId])
+  useEffect((): void => {
+    if (list.changes === null || list.changes.error !== undefined) return
+    const kept = pruneViewed(viewed, list.changes.files)
+    if (Object.keys(kept).length !== Object.keys(viewed).length) writeViewed(worktreeId, kept)
+  }, [list.changes, viewed, worktreeId])
+  function toggleViewed(file: ChangedFile): void {
+    writeViewed(worktreeId, isViewed(viewed, file) ? unmarkViewed(viewed, file.path) : markViewed(viewed, file))
+  }
+  // D86: discard (asks first; main re-checks everything and answers with a readable error).
+  const [discardRequest, setDiscardRequest] = useState<DiscardRequest | null>(null)
+  const [discardBusy, setDiscardBusy] = useState(false)
+  const [discardError, setDiscardError] = useState<string | null>(null)
+  function askDiscardFile(file: ChangedFile): void {
+    setDiscardError(null)
+    setDiscardRequest({ kind: 'file', path: file.path, untracked: file.kind === 'untracked' })
+  }
+  async function confirmDiscard(): Promise<void> {
+    if (discardRequest === null) return
+    setDiscardBusy(true)
+    try {
+      const result =
+        discardRequest.kind === 'file'
+          ? await window.api.discardWorktreeFile(worktreeId, discardRequest.path)
+          : await window.api.discardWorktreeHunk(worktreeId, discardRequest.path, discardRequest.index, discardRequest.header)
+      if (result.ok) {
+        setDiscardRequest(null)
+        list.refresh()
+      } else {
+        setDiscardError(result.error ?? 'Could not discard these changes.')
+      }
+    } catch (error) {
+      setDiscardError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/, '') : 'Could not discard these changes.')
+    } finally {
+      setDiscardBusy(false)
+    }
+  }
   // The split layout always shows a diff: the selected file while it is changed, otherwise the first one.
   const selectedPath = split
     ? splitSelection(list.changes, storedPath)
@@ -516,6 +587,7 @@ export function ChangesPanel({
       : null
   const diff = useWorktreeFileDiff(worktreeId, selectedPath, list.changes?.computedAt ?? null)
   const previewable = selectedPath !== null && isPreviewable(selectedPath)
+  const selectedFile = selectedPath === null ? undefined : list.changes?.files.find((file) => file.path === selectedPath)
   const preview = useWorktreeFilePreview(worktreeId, previewable ? selectedPath : null, viewMode === 'preview', list.changes?.computedAt ?? null)
   const stale =
     annotations.length > 0 &&
@@ -579,6 +651,29 @@ export function ChangesPanel({
     return (): void => document.removeEventListener('keydown', onKey)
   }, [])
 
+  // Jarvis: step to the next/previous file, or switch the tree / side-by-side layout (side-by-side exists in the wide window only).
+  useEffect((): (() => void) => {
+    const apply = (): void => {
+      const delta = takeChangesStepRequest(worktreeId)
+      if (delta !== null) stepRef.current(delta)
+    }
+    apply()
+    return subscribeChangesStepRequest(apply)
+  }, [worktreeId])
+  useEffect((): (() => void) => {
+    const apply = (): void => {
+      const layoutRequest = takeChangesLayoutRequest(worktreeId)
+      if (layoutRequest === null) return
+      if (layoutRequest.tree !== undefined) {
+        setTreeView(layoutRequest.tree)
+        writeTreePref(layoutRequest.tree)
+      }
+      if (layoutRequest.sideBySide !== undefined && split) setSideBySide(layoutRequest.sideBySide)
+    }
+    apply()
+    return subscribeChangesLayoutRequest(apply)
+  }, [worktreeId, split])
+
   function update(next: readonly DiffAnnotation[]): void {
     setAnnotations(next)
     storeAnnotations(worktreeId, next)
@@ -609,6 +704,8 @@ export function ChangesPanel({
       ticks={{ unticked: git.unticked, toggle: git.toggleFile }}
       openInViewer={openInViewer}
       selectedPath={split ? selectedPath : null}
+      viewed={{ map: viewed, toggle: toggleViewed }}
+      onDiscard={askDiscardFile}
       tree={{ on: treeView, collapsed, toggle: (dir: string): void => setCollapsed((current) => toggleCollapsed(current, dir)) }}
     />
   )
@@ -625,6 +722,14 @@ export function ChangesPanel({
       loading={diff.loading}
       error={diff.error}
       layout={split && sideBySide ? 'split' : 'inline'}
+      {...(selectedFile !== undefined && selectedFile.kind !== 'untracked' && !(split && sideBySide)
+        ? {
+            onDiscardHunk: (index: number, header: string): void => {
+              setDiscardError(null)
+              setDiscardRequest({ kind: 'hunk', path: selectedFile.path, index, header })
+            }
+          }
+        : {})}
       annotations={annotateOn ? annotations : []}
       onAddComment={annotateOn
         ? (input): void => {
@@ -635,12 +740,13 @@ export function ChangesPanel({
     />
   )
   const splitHint = split && selectedPath === null ? splitEmptyText(list.changes) : null
+  const viewedCount = list.changes === null ? 0 : list.changes.files.filter((file) => isViewed(viewed, file)).length
 
   return (
     <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
       <section aria-label="Changes" className={cn('flex min-h-0 flex-col', className)}>
         <PanelHeader
-          title={headerTitle(list)}
+          title={viewedCount > 0 ? `${headerTitle(list)} · ${String(viewedCount)} viewed` : headerTitle(list)}
           selectedPath={selectedPath}
           layout={layout}
           loading={list.loading}
@@ -677,6 +783,15 @@ export function ChangesPanel({
         ) : (
           fileView
         )}
+        <DiscardConfirm
+          request={discardRequest}
+          busy={discardBusy}
+          error={discardError}
+          onConfirm={(): void => {
+            void confirmDiscard()
+          }}
+          onCancel={(): void => setDiscardRequest(null)}
+        />
         {showStrip ? (
           <CommentsStrip
             annotations={annotations}
