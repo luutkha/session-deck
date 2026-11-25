@@ -339,12 +339,20 @@ function hasNotes(session: Session): boolean {
   return (session.notes ?? '').trim().length > 0
 }
 
+/** Tags are shown as chips on the card (D86), compared by value and order. */
+function sameTags(prev: readonly string[] | undefined, next: readonly string[] | undefined): boolean {
+  const a = prev ?? []
+  const b = next ?? []
+  return a.length === b.length && a.every((tag, index) => tag === b[index])
+}
+
 function sameSession(prev: Session, next: Session): boolean {
   if (prev === next) return true
   if (prev.id !== next.id || prev.name !== next.name || prev.cwd !== next.cwd) return false
   if (sessionAgent(prev) !== sessionAgent(next)) return false
   if ((prev.keepAwake === true) !== (next.keepAwake === true)) return false
   if (hasNotes(prev) !== hasNotes(next)) return false
+  if (!sameTags(prev.tags, next.tags)) return false
   if ((prev.queue?.length ?? 0) !== (next.queue?.length ?? 0)) return false
   const before = progress(prev.checklist ?? [])
   const after = progress(next.checklist ?? [])

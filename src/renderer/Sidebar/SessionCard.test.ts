@@ -104,6 +104,15 @@ describe('sessionCardPropsEqual', () => {
       ).toBe(false)
     })
 
+    it('re-renders when the tag chips change, and not for a copy of the same tags (D86)', () => {
+      const base = props({ session: session({ tags: ['alpha', 'beta'] }) })
+      expect(sessionCardPropsEqual(base, props({ session: session({ tags: ['alpha', 'beta'] }) }))).toBe(true)
+      expect(sessionCardPropsEqual(base, props({ session: session({ tags: ['alpha'] }) }))).toBe(false)
+      expect(sessionCardPropsEqual(base, props({ session: session({ tags: ['beta', 'alpha'] }) }))).toBe(false)
+      expect(sessionCardPropsEqual(props(), props({ session: session({ tags: ['alpha'] }) }))).toBe(false)
+      expect(sessionCardPropsEqual(props(), props({ session: session({ tags: [] }) }))).toBe(true)
+    })
+
     it('does not re-render for a checklist change that keeps done/total (the chip only shows those)', () => {
       const before = props({ session: session({ checklist: [{ id: 'c1', text: 'step', done: true }] }) })
       const after = props({ session: session({ checklist: [{ id: 'c1', text: 'other text', done: true }] }) })

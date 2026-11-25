@@ -48,6 +48,7 @@
     "e2e:changes-detach": "node scripts/e2e-changes-detach.cjs",
     "e2e:changes-actions": "node scripts/e2e-changes-actions.cjs",
     "e2e:changes-files": "node scripts/e2e-changes-files.cjs",
+    "e2e:perf-paths": "node scripts/e2e-perf-paths.cjs",
     "e2e:workspaces": "node scripts/e2e-workspaces.cjs",
     "e2e:sort": "node scripts/e2e-sort.cjs",
     "e2e:code-git": "node scripts/e2e-code-git.cjs",
