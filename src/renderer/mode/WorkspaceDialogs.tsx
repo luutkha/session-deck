@@ -14,8 +14,9 @@ export interface WorkspaceDialogsProps {
   readonly actions: SessionActions
   readonly newDialog: NewDialog | null
   readonly onCloseNew: () => void
-  /** A session was created from one of the dialogs: open its tab (and apply the wanted status, Ops only). */
-  readonly onCreated: (sessionId: Id) => void
+  /** A session was created from one of the dialogs: open its tab (and apply the wanted status, Ops only).
+   * D89: a new worktree also passes its id so the caller can move the other selected sessions in. */
+  readonly onCreated: (sessionId: Id, worktreeId?: Id) => void
   readonly settingsSection: SettingsSection | null
   readonly onSettingsSectionChange: (section: SettingsSection) => void
   readonly onCloseSettings: () => void
@@ -40,6 +41,7 @@ function NewDialogView(props: WorkspaceDialogsProps & { readonly data: StoreData
       return (
         <NewWorktreeDialog
           moveSession={newDialog.moveSessionId === undefined ? undefined : data.sessions.find((x) => x.id === newDialog.moveSessionId)}
+          moveSessionIds={newDialog.moveSessionIds}
           repos={data.repos ?? []}
           worktrees={data.worktrees ?? []}
           defaultRepoId={newDialog.repoId}

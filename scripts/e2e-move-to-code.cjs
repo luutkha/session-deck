@@ -183,6 +183,37 @@ async function main() {
     await ev(`document.querySelector('[data-session-card=${js(second.id)}]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))`)
     await sleep(500)
     t.check('a Code session menu has no "Move to Code mode…"', !(await ev('!!document.querySelector("[data-move-to-code]")')))
+
+    // ---- 10. bulk: ctrl-select two Ops sessions, right-click -> "Move 2 sessions to Code mode…", one new worktree takes both
+    await ev(`document.querySelector('[data-mode-switch] [data-mode="ops"]')?.click()`)
+    await waitFor(() => ev('document.querySelector("[data-ui-mode]")?.dataset.uiMode === "ops" || null'), 5000, 200)
+    const b1 = await ev(`window.api.createSession({ cwd: ${js(opsDir)}, name: 'Bulk one', agent: 'shell' })`)
+    const b2 = await ev(`window.api.createSession({ cwd: ${js(opsDir)}, name: 'Bulk two', agent: 'shell' })`)
+    await waitFor(() => ev(`(!!document.querySelector('[data-session-card=${js(b1.id)}]') && !!document.querySelector('[data-session-card=${js(b2.id)}]')) || null`), 5000, 200)
+    const ctrlClick = (id) => ev(`(() => { const el = document.querySelector('[data-session-card=${js(id)}]'); const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true, clientX: r.left + 5, clientY: r.top + 5 })); return true })()`)
+    await ev(`document.querySelector('[data-session-card=${js(b1.id)}]')?.click()`)
+    await sleep(400)
+    await ctrlClick(b2.id)
+    await sleep(400)
+    await rightClick(`[data-session-card=${js(b2.id)}]`)
+    await waitFor(() => ev('!!document.querySelector("[data-move-to-code]") || null'), 3000, 100)
+    t.check('with two selected, the menu says "Move 2 sessions to Code mode…"', (await ev('document.querySelector("[data-move-to-code]")?.innerText ?? ""')).includes('Move 2 sessions'))
+    await ev('document.querySelector("[data-move-to-code]")?.click()')
+    await waitFor(() => ev('!!document.querySelector("[data-testid=new-worktree-move-note]") || null'), 5000, 200)
+    t.check('the dialog says 2 sessions move in', (await ev('document.querySelector("[data-testid=new-worktree-move-note]")?.innerText ?? ""')).includes('2 sessions'))
+    await waitFor(() => ev('!!document.querySelector("input[name=worktree-name]") || null'), 5000, 200)
+    await ev('document.querySelector("input[name=worktree-name]").focus()')
+    await app.send('Input.insertText', { text: 'bulk target' })
+    await waitFor(() => ev('!document.querySelector("[data-testid=new-worktree-dialog] button[type=submit]").disabled || null'), 15000, 200)
+    await ev('document.querySelector("[data-testid=new-worktree-dialog] button[type=submit]").click()')
+    const bulk = await waitFor(async () => {
+      const d = await store()
+      const w = (d.worktrees ?? []).find((x) => x.name === 'bulk target')
+      const s1 = d.sessions.find((x) => x.id === b1.id)
+      const s2 = d.sessions.find((x) => x.id === b2.id)
+      return w && s1?.worktreeId === w.id && s2?.worktreeId === w.id ? { count: d.sessions.length } : null
+    }, 25000, 300)
+    t.check('both selected sessions moved into the new worktree', !!bulk)
   } catch (error) {
     t.check('run completed without exception', false, String(error && error.stack || error))
   } finally {

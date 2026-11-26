@@ -39,6 +39,9 @@ export interface SessionListProps {
   readonly onCloseSession: (id: Id) => void
   readonly onForkSession?: (id: Id) => void
   readonly onMoveToCode?: (id: Id) => void
+  /** D89: eligible selected Ops ids in view order (the first is the dialog's moveSessionId). */
+  readonly moveToCodeIds?: readonly Id[]
+  readonly onMoveSessionsToCode?: (ids: readonly Id[]) => void
   readonly onSetSessionStatus: (id: Id, statusId: Id | null) => void
   readonly onMoveSession: (id: Id, groupId: Id | null) => void
   readonly onCreateGroupAndMove: (id: Id) => void
@@ -101,6 +104,8 @@ export function SessionList(props: SessionListProps): ReactElement {
               onCloseSession={props.onCloseSession}
               onForkSession={props.onForkSession}
               onMoveToCode={props.onMoveToCode}
+              moveToCodeIds={props.moveToCodeIds}
+              onMoveSessionsToCode={props.onMoveSessionsToCode}
               onSetSessionStatus={props.onSetSessionStatus}
               onMoveSession={props.onMoveSession}
               onCreateGroupAndMove={props.onCreateGroupAndMove}
@@ -144,6 +149,8 @@ export function SessionList(props: SessionListProps): ReactElement {
               onCloseSession={props.onCloseSession}
               onForkSession={props.onForkSession}
               onMoveToCode={props.onMoveToCode}
+              moveToCodeIds={props.moveToCodeIds}
+              onMoveSessionsToCode={props.onMoveSessionsToCode}
               onSetSessionStatus={props.onSetSessionStatus}
               onMoveSession={props.onMoveSession}
               onCreateGroupAndMove={props.onCreateGroupAndMove}

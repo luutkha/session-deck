@@ -12,6 +12,7 @@ import {
 } from '../components/ui/context-menu'
 import type { AttentionReason, Group, Id, StatusDef } from '../../shared/types'
 import { readToggleLabel } from '../attention/needsYou'
+import { moveToCodeLabel } from './SessionCard'
 
 export interface SessionContextMenuProps {
   readonly children: ReactNode
@@ -45,6 +46,12 @@ export interface SessionContextMenuProps {
    */
   readonly moveToCodeId?: Id
   readonly onMoveToCode?: (id: Id) => void
+  /**
+   * D89: the eligible selected Ops ids when the card belongs to a multi-selection. With more than one id the item
+   * becomes "Move N sessions…" and hands the whole list to the caller (the first id moves in with the worktree).
+   */
+  readonly moveToCodeIds?: readonly Id[]
+  readonly onMoveSessionsToCode?: (ids: readonly Id[]) => void
 }
 
 export function SessionContextMenu(props: SessionContextMenuProps): ReactElement {
@@ -55,7 +62,7 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
     sleeping = false, canSleep = false, onSleep, onWake,
     keepAwake = false, onToggleKeepAwake,
     attention = null, onToggleRead, onFork, onViewChanges,
-    moveToCodeId, onMoveToCode
+    moveToCodeId, onMoveToCode, moveToCodeIds, onMoveSessionsToCode
   } = props
   return (
     <ContextMenu>
@@ -147,13 +154,22 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
             Fork session
           </ContextMenuItem>
         ) : null}
-        {moveToCodeId !== undefined && onMoveToCode !== undefined ? (
+        {(moveToCodeId !== undefined && onMoveToCode !== undefined) ||
+        (moveToCodeIds !== undefined && onMoveSessionsToCode !== undefined) ? (
           <ContextMenuItem
-            onSelect={(): void => onMoveToCode(moveToCodeId)}
+            onSelect={(): void => {
+              if (moveToCodeIds !== undefined && onMoveSessionsToCode !== undefined) {
+                onMoveSessionsToCode(moveToCodeIds)
+              } else if (moveToCodeId !== undefined) {
+                onMoveToCode?.(moveToCodeId)
+              }
+            }}
             data-move-to-code=""
           >
             <ArrowRightLeft aria-hidden="true" />
-            Move to Code mode…
+            {moveToCodeIds !== undefined && moveToCodeIds.length > 1
+              ? moveToCodeLabel(moveToCodeIds.length)
+              : 'Move to Code mode…'}
           </ContextMenuItem>
         ) : null}
         <ContextMenuItem onSelect={onCloseSession}>Close session</ContextMenuItem>

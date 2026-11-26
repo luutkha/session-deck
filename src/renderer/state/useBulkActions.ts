@@ -31,6 +31,41 @@ export interface BulkActions {
   readonly sendPrompt: (text: string) => void
 }
 
+/** D89: what the renderer-only follow-up moves achieved after a new worktree was created. */
+export interface MoveToCodeOutcome {
+  readonly moved: readonly Id[]
+  readonly failed: readonly Id[]
+}
+
+/**
+ * D89: move the remaining selected Ops sessions into a just-created worktree, one after another, with the existing
+ * `moveSessionToCode` action (no IPC/contract change). A failure is recorded and the loop continues; the caller has
+ * already skipped Jarvis and sessions already in Code.
+ */
+export async function bulkMoveToCode(
+  ids: readonly Id[],
+  worktreeId: Id,
+  moveOne: (id: Id, worktreeId: Id) => Promise<unknown>
+): Promise<MoveToCodeOutcome> {
+  const moved: Id[] = []
+  const failed: Id[] = []
+  for (const id of ids) {
+    try {
+      await moveOne(id, worktreeId)
+      moved.push(id)
+    } catch {
+      failed.push(id)
+    }
+  }
+  return { moved, failed }
+}
+
+/** D89: one-line report (count + failed ids) so a partial bulk move is never silent. */
+export function bulkMoveToCodeSummary(outcome: MoveToCodeOutcome): string {
+  const count = `Moved ${outcome.moved.length} session${outcome.moved.length === 1 ? '' : 's'} to Code mode`
+  return outcome.failed.length === 0 ? count : `${count}; failed: ${outcome.failed.join(', ')}`
+}
+
 /** Splits a selection into the sessions Sleep and Wake apply to; any other state (exited, unknown) is in neither. */
 export function partitionSleepWake(
   ids: readonly Id[],

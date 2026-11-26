@@ -123,4 +123,11 @@ describe('sidebarSessionRowPropsEqual', () => {
     expect(sidebarSessionRowPropsEqual(base, props({ groups: [] }))).toBe(false)
     expect(sidebarSessionRowPropsEqual(base, props({ onForkSession: handler }))).toBe(false)
   })
+
+  it('re-renders when the D89 bulk-move ids change but not for a same-value copy', (): void => {
+    const base = props({ moveToCodeIds: ['a', 'b'] })
+    expect(sidebarSessionRowPropsEqual(base, props({ moveToCodeIds: ['a', 'b'] }))).toBe(true)
+    expect(sidebarSessionRowPropsEqual(base, props({ moveToCodeIds: ['b', 'a'] }))).toBe(false)
+    expect(sidebarSessionRowPropsEqual(base, props({ moveToCodeIds: undefined }))).toBe(false)
+  })
 })

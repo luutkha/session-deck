@@ -44,6 +44,29 @@ export function canMoveToCode(session: Pick<Session, 'worktreeId' | 'role'>): bo
   return session.worktreeId === undefined && session.role !== 'jarvis'
 }
 
+/**
+ * D89: the selected sessions a bulk move can take, in view order. Skips Jarvis, sessions already in Code and ids
+ * that are no longer in the store; duplicates are ignored. The first id is the one the New worktree dialog moves in.
+ */
+export function eligibleMoveToCodeIds(sessions: readonly Session[], selectedIds: readonly Id[]): readonly Id[] {
+  const byId = new Map(sessions.map((session): [Id, Session] => [session.id, session]))
+  const seen = new Set<Id>()
+  const eligible: Id[] = []
+  for (const id of selectedIds) {
+    if (seen.has(id)) continue
+    const session = byId.get(id)
+    if (session === undefined || !canMoveToCode(session)) continue
+    seen.add(id)
+    eligible.push(id)
+  }
+  return eligible
+}
+
+/** D89: the context-menu label: one session keeps the D88 wording, several get the count. */
+export function moveToCodeLabel(count: number): string {
+  return count > 1 ? `Move ${count} sessions to Code mode…` : 'Move to Code mode…'
+}
+
 export interface SessionCardOwnProps {
   readonly session: Session
   readonly status: StatusDef | null

@@ -30,9 +30,18 @@ export interface NewWorktreeDialogProps {
   readonly settings: AppSettings
   /** D88: an Ops session that moves into the new worktree (no first session is started; the agent fields are hidden). */
   readonly moveSession?: Session
+  /** D89: all eligible selected ids; the first moves in with the worktree, the rest follow after creation. */
+  readonly moveSessionIds?: readonly Id[]
   readonly onClose: () => void
   /** The worktree was created and its first session started: open that session's tab. */
-  readonly onCreated: (sessionId: Id) => void
+  readonly onCreated: (sessionId: Id, worktreeId?: Id) => void
+}
+
+/** D89: the note under the agent fields; several selected sessions get the count instead of one name. */
+export function moveToCodeNote(count: number, name: string): string {
+  return count > 1
+    ? `${count} sessions move in. Each restarts there with a new conversation.`
+    : `“${name}” moves into this worktree and restarts there with a new conversation.`
 }
 
 const NAME_ID_PREFIX = 'new-worktree'
@@ -50,7 +59,8 @@ function resolveRepoId(repos: readonly Repo[], choice: Id | null): Id | null {
 }
 
 export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
-  const { repos, worktrees, defaultRepoId, settings, moveSession, onClose, onCreated } = props
+  const { repos, worktrees, defaultRepoId, settings, moveSession, moveSessionIds, onClose, onCreated } = props
+  const moveCount = moveSessionIds?.length ?? (moveSession !== undefined ? 1 : 0)
   const [repoChoice, setRepoChoice] = useState<Id | null>(defaultRepoId ?? null)
   const [source, setSource] = useState<WorktreeSource>('new')
   const [existingChoice, setExistingChoice] = useState<string | null>(null)
@@ -110,7 +120,7 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
         ...(moveSession !== undefined ? { moveSessionId: moveSession.id } : {}),
         ...(modelCheck.model !== undefined && moveSession === undefined ? { model: modelCheck.model } : {})
       })
-      onCreated(result.session.id)
+      onCreated(result.session.id, result.worktree.id)
       onClose()
     } catch (error) {
       console.error('[code] create worktree failed:', error)
@@ -270,7 +280,7 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
           />}
           {moveSession !== undefined && (
             <p className="text-xs text-muted-foreground" data-testid="new-worktree-move-note">
-              “{moveSession.name}” moves into this worktree and restarts there with a new conversation.
+              {moveToCodeNote(moveCount, moveSession.name)}
             </p>
           )}
           {source !== 'main' && (

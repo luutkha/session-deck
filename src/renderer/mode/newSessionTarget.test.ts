@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session, Worktree } from '../../shared/types'
-import { codeNewDialog, opsNewDialog, worktreeSessionDialog } from './newSessionTarget'
+import { bulkMoveToCodeDialog, codeNewDialog, opsNewDialog, worktreeSessionDialog } from './newSessionTarget'
 
 const worktree: Worktree = {
   id: 'w1',
@@ -53,6 +53,20 @@ describe('codeNewDialog', () => {
 
   it('opens the new worktree dialog when the active worktree is no longer stored', () => {
     expect(codeNewDialog(session({ id: 's1', worktreeId: 'gone' }), [worktree])).toEqual({ kind: 'worktree' })
+  })
+})
+
+describe('bulkMoveToCodeDialog (D89)', () => {
+  it('moves the first eligible id in with the worktree and keeps the rest for the renderer', () => {
+    expect(bulkMoveToCodeDialog(['s2', 's1', 's3'])).toEqual({
+      kind: 'worktree',
+      moveSessionId: 's2',
+      moveSessionIds: ['s2', 's1', 's3']
+    })
+  })
+
+  it('falls back to a plain worktree dialog for an empty selection', () => {
+    expect(bulkMoveToCodeDialog([])).toEqual({ kind: 'worktree' })
   })
 })
 

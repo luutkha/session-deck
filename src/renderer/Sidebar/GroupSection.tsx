@@ -44,6 +44,9 @@ export interface SidebarSessionRowProps {
   readonly onForkSession?: (id: Id) => void
   /** D88: absent = the "Move to Code mode…" item is not shown at all. */
   readonly onMoveToCode?: (id: Id) => void
+  /** D89: eligible selected Ops ids in view order; with >1 the menu offers the bulk move. */
+  readonly moveToCodeIds?: readonly Id[]
+  readonly onMoveSessionsToCode?: (ids: readonly Id[]) => void
 }
 
 function sameSession(a: Session, b: Session): boolean {
@@ -103,12 +106,13 @@ export function sidebarSessionRowPropsEqual(prev: SidebarSessionRowProps, next: 
     prev.draggable === next.draggable &&
     sameList(prev.statuses, next.statuses) &&
     sameList(prev.groups, next.groups) &&
+    sameList(prev.moveToCodeIds ?? [], next.moveToCodeIds ?? []) &&
     // Fork is the one raw (unwrapped) callback: compare it so a replaced handler cannot leave a stale menu item.
     prev.onForkSession === next.onForkSession
   )
   // Callback identity is deliberately ignored: the sections pass stable ref-forwarding wrappers
   // (useStableSidebarRowCallbacks and useSessionCardHandlers), so a skipped row never calls a stale closure.
-  // The D88 menu callback reads the row's latest props through `latest`, so it is safe to ignore here too.
+  // The D88/D89 menu callbacks read the row's latest props through `latest`, so it is safe to ignore here too.
 }
 
 export function SidebarSessionRowView(props: SidebarSessionRowProps): ReactElement {
@@ -118,8 +122,13 @@ export function SidebarSessionRowView(props: SidebarSessionRowProps): ReactEleme
   latest.current = props
   const {
     session, status, runtime, relative, active, renaming,
-    groupBadge, showGroupBadge, attention, dragOver, selected, draggable, statuses, groups, handlers
+    groupBadge, showGroupBadge, attention, dragOver, selected, draggable, statuses, groups, handlers,
+    moveToCodeIds
   } = props
+
+  // A bulk move is only offered on a card that is itself part of a multi-selection of eligible Ops sessions.
+  const bulkMoveIds =
+    selected && moveToCodeIds !== undefined && moveToCodeIds.length > 1 ? moveToCodeIds : undefined
 
   return (
     <SessionContextMenu
@@ -152,6 +161,12 @@ export function SidebarSessionRowView(props: SidebarSessionRowProps): ReactEleme
       onMoveToCode={
         canMoveToCode(session) && latest.current.onMoveToCode !== undefined
           ? (id): void => latest.current.onMoveToCode?.(id)
+          : undefined
+      }
+      moveToCodeIds={canMoveToCode(session) ? bulkMoveIds : undefined}
+      onMoveSessionsToCode={
+        canMoveToCode(session) && bulkMoveIds !== undefined && latest.current.onMoveSessionsToCode !== undefined
+          ? (ids): void => latest.current.onMoveSessionsToCode?.(ids)
           : undefined
       }
       onRemoveSession={(): void => latest.current.onRequestRemoveSession(latest.current.session.id)}
@@ -259,6 +274,9 @@ export interface GroupSectionProps {
   readonly onForkSession?: (id: Id) => void
   /** D88: opens the New worktree dialog for this Ops session (absent = no menu item). */
   readonly onMoveToCode?: (id: Id) => void
+  /** D89: eligible selected Ops ids in view order, passed to every row for the bulk menu item. */
+  readonly moveToCodeIds?: readonly Id[]
+  readonly onMoveSessionsToCode?: (ids: readonly Id[]) => void
   readonly onSetSessionStatus: (id: Id, statusId: Id | null) => void
   readonly onMoveSession: (id: Id, groupId: Id | null) => void
   readonly onCreateGroupAndMove: (id: Id) => void
@@ -281,7 +299,8 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     showWorkspaces, workspaceCollapsed, onToggleWorkspace, onNewSessionInFolder,
     selectedIds,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
-    onStartRenameGroup, onRenameGroup, onCloseSession, onForkSession, onMoveToCode, onSetSessionStatus,
+    onStartRenameGroup, onRenameGroup, onCloseSession, onForkSession, onMoveToCode, moveToCodeIds,
+    onMoveSessionsToCode, onSetSessionStatus,
     onMoveSession, onCreateGroupAndMove, onRequestRemoveSession, onRemoveGroup,
     onNewSession, onDragStartSession, onDragStartGroup,
     onDragOverSession, onDragOverUngrouped,
@@ -468,6 +487,8 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         {...rowCallbacks}
         onForkSession={onForkSession}
         onMoveToCode={onMoveToCode}
+        moveToCodeIds={moveToCodeIds}
+        onMoveSessionsToCode={onMoveSessionsToCode}
       />
     )
   }

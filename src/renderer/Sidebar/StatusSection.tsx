@@ -36,6 +36,9 @@ export interface StatusSectionProps {
   /** D52: fork a Claude session (absent = no menu item). */
   readonly onForkSession?: (id: Id) => void
   readonly onMoveToCode?: (id: Id) => void
+  /** D89: eligible selected Ops ids in view order, shared with the group section's rows. */
+  readonly moveToCodeIds?: readonly Id[]
+  readonly onMoveSessionsToCode?: (ids: readonly Id[]) => void
   readonly onSetSessionStatus: (id: Id, statusId: Id | null) => void
   readonly onMoveSession: (id: Id, groupId: Id | null) => void
   readonly onCreateGroupAndMove: (id: Id) => void
@@ -52,7 +55,8 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
     activeId, renamingSessionId, drag, dropOver, collapsed, draggableSessions,
     selectedIds,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
-    onCloseSession, onForkSession, onMoveToCode, onSetSessionStatus, onMoveSession, onCreateGroupAndMove,
+    onCloseSession, onForkSession, onMoveToCode, moveToCodeIds, onMoveSessionsToCode,
+    onSetSessionStatus, onMoveSession, onCreateGroupAndMove,
     onRequestRemoveSession, onDragStartSession, onDragOverSession, onDropItem, onDragEnd
   } = props
 
@@ -137,6 +141,8 @@ export function StatusSection(props: StatusSectionProps): ReactElement {
                 {...rowCallbacks}
                 onForkSession={onForkSession}
                 onMoveToCode={onMoveToCode}
+                moveToCodeIds={moveToCodeIds}
+                onMoveSessionsToCode={onMoveSessionsToCode}
               />
             )
           })}

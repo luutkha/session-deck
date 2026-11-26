@@ -28,6 +28,7 @@ import { useBulkActions } from '../state/useBulkActions'
 import { DEFAULT_SESSION_SORT, sessionSortLabel, sortSessions, type SessionSort } from '../state/sessionSort'
 import { useSortFreeze } from '../state/useSessionSort'
 import { computeDrop, type DragItem, type DropOver } from '../state/dropTarget'
+import { eligibleMoveToCodeIds } from './SessionCard'
 import { BulkActionBar } from '../components/BulkActionBar'
 import { Button } from '../components/ui/button'
 import { ScrollArea } from '../components/ui/scroll-area'
@@ -72,6 +73,8 @@ export interface SidebarProps {
   readonly onForkSession?: (id: Id) => void
   /** D88: right-click "Move to Code mode…" on an Ops session. Absent = no menu item. */
   readonly onMoveToCode?: (id: Id) => void
+  /** D89: right-click "Move N sessions to Code mode…" on a selected Ops session. Absent = no bulk item. */
+  readonly onMoveSessionsToCode?: (ids: readonly Id[]) => void
   readonly actions: SessionActions
   readonly onNewSession: (groupId?: Id | null, folder?: string) => void
   readonly onEditStatuses: () => void
@@ -290,6 +293,11 @@ export function Sidebar(props: SidebarProps): ReactElement {
       .filter((session): session is Session => session !== undefined && !isClosed(session)),
     [multi.selectedIds, data.sessions]
   )
+  // D89: the same eligibility as the single-session item, in view order; the first id moves in with the worktree.
+  const moveToCodeIds = useMemo(
+    (): readonly Id[] => eligibleMoveToCodeIds(data.sessions, multi.selectedIds),
+    [data.sessions, multi.selectedIds]
+  )
   const bulk = useBulkActions(multi.selectedIds, data.sessions, runtime, {
     sleep: (id): Promise<void> => window.api.sleepSession(id),
     wake: onSelect,
@@ -483,6 +491,8 @@ export function Sidebar(props: SidebarProps): ReactElement {
           onCloseSession={closeSession}
           onForkSession={props.onForkSession}
           onMoveToCode={props.onMoveToCode}
+          moveToCodeIds={moveToCodeIds}
+          onMoveSessionsToCode={props.onMoveSessionsToCode}
           onSetSessionStatus={(id, statusId): void => ignoreRejection(actions.setSessionStatus(id, statusId))}
           onMoveSession={moveToGroupEnd}
           onCreateGroupAndMove={createGroupAndMove}

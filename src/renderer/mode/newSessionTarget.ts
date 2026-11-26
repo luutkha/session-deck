@@ -5,7 +5,13 @@ import type { Id, Session, Worktree } from '../../shared/types'
 export type NewDialog =
   | { readonly kind: 'ops'; readonly groupId: Id | null; readonly statusId: Id | null; readonly folder?: string }
   /** D88: moveSessionId = the Ops session that moves into the new worktree (the dialog starts no first session). */
-  | { readonly kind: 'worktree'; readonly repoId?: Id; readonly moveSessionId?: Id }
+  | {
+      readonly kind: 'worktree'
+      readonly repoId?: Id
+      readonly moveSessionId?: Id
+      /** D89: all eligible selected ids in view order; the first is moveSessionId, the rest follow after creation. */
+      readonly moveSessionIds?: readonly Id[]
+    }
   | { readonly kind: 'worktree-session'; readonly worktree: Worktree }
 
 export function opsNewDialog(groupId: Id | null = null, statusId: Id | null = null, folder?: string): NewDialog {
@@ -17,6 +23,15 @@ export function codeNewDialog(activeSession: Session | null, worktrees: readonly
   const worktreeId = activeSession?.worktreeId
   const worktree = worktreeId === undefined ? undefined : worktrees.find((item: Worktree): boolean => item.id === worktreeId)
   return worktree === undefined ? { kind: 'worktree' } : { kind: 'worktree-session', worktree }
+}
+
+/**
+ * D89: the New worktree dialog for a bulk move. The first eligible id moves in with the worktree itself; the rest
+ * are moved by the renderer once the worktree exists (no new IPC). Empty input = a plain new-worktree dialog.
+ */
+export function bulkMoveToCodeDialog(ids: readonly Id[]): NewDialog {
+  const [first] = ids
+  return first === undefined ? { kind: 'worktree' } : { kind: 'worktree', moveSessionId: first, moveSessionIds: ids }
 }
 
 /** A worktree's "New session" button. Null when the worktree is not in the store (it was removed). */

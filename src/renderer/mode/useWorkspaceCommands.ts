@@ -9,10 +9,12 @@ import { pickAttentionTarget } from '../attention/attentionNav'
 import { usePaletteShortcut } from '../palette/usePaletteShortcut'
 import type { SettingsSection } from '../settings/SettingsDialog'
 import type { SessionActions } from '../state/useSessionStore'
+import { bulkMoveToCode, bulkMoveToCodeSummary } from '../state/useBulkActions'
 import { useGlobalNewSessionShortcut } from '../Sidebar/useSidebarKeyboard'
+import { eligibleMoveToCodeIds } from '../Sidebar/SessionCard'
 import { createInputFromPreset } from '../presets/presetLogic'
 import { requestFileView } from '../viewer/previewBus'
-import { codeNewDialog, opsNewDialog, worktreeSessionDialog, type NewDialog } from './newSessionTarget'
+import { bulkMoveToCodeDialog, codeNewDialog, opsNewDialog, worktreeSessionDialog, type NewDialog } from './newSessionTarget'
 import type { WorkspaceNav } from './useWorkspaceNav'
 
 export interface WorkspaceCommandsInput {
@@ -40,8 +42,11 @@ export interface WorkspaceCommands {
   readonly openNew: (groupId?: Id | null, folder?: string) => void
   readonly openNewInStatus: (statusId: Id | null) => void
   readonly openNewWorktree: (repoId?: Id, moveSessionId?: Id) => void
+  /** D89: opens the New worktree dialog for several selected Ops sessions (the first moves in with the worktree). */
+  readonly openMoveSessionsToCode: (ids: readonly Id[]) => void
   readonly openNewInWorktree: (worktreeId: Id) => void
-  readonly handleCreated: (sessionId: Id) => void
+  /** D89: a new worktree passes its id too, so the remaining selected sessions can be moved into it. */
+  readonly handleCreated: (sessionId: Id, worktreeId?: Id) => void
   readonly settingsSection: SettingsSection | null
   readonly setSettingsSection: (section: SettingsSection | null) => void
   readonly paletteOpen: boolean
@@ -75,14 +80,24 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
     setNewDialog(mode === 'code' ? codeNewDialog(activeSession, worktrees) : opsNewDialog(null, statusId))
   }, [mode, activeSession, worktrees])
   const openNewWorktree = useCallback((repoId?: Id, moveSessionId?: Id): void => setNewDialog({ kind: 'worktree', repoId, moveSessionId }), [])
+  const openMoveSessionsToCode = useCallback((ids: readonly Id[]): void => setNewDialog(bulkMoveToCodeDialog(ids)), [])
   const openNewInWorktree = useCallback((worktreeId: Id): void => {
     setNewDialog(worktreeSessionDialog(worktreeId, worktrees))
   }, [worktrees])
   const closeNew = useCallback((): void => setNewDialog(null), [])
 
-  const handleCreated = useCallback((sessionId: Id): void => {
+  const handleCreated = useCallback((sessionId: Id, worktreeId?: Id): void => {
     // D88: a session moved into a new worktree leaves this Ops list: show Code mode instead of opening a tab here.
     if (newDialog?.kind === 'worktree' && newDialog.moveSessionId !== undefined) {
+      // D89: the worktree already holds the first session; move the other selected Ops sessions in here in the
+      // renderer (no new IPC). Re-check eligibility so a Jarvis / already-Code id can never slip through; each
+      // failure is reported by the store banner and collected in the one-line summary.
+      const rest = (newDialog.moveSessionIds ?? []).slice(1)
+      const followUps = eligibleMoveToCodeIds(data?.sessions ?? [], rest)
+      if (worktreeId !== undefined && followUps.length > 0) {
+        void bulkMoveToCode(followUps, worktreeId, (id, wt): Promise<unknown> => actions.moveSessionToCode(id, wt))
+          .then((outcome): void => console.info(`[code] ${bulkMoveToCodeSummary(outcome)}`))
+      }
       try {
         input.onSwitchMode('code')
       } catch {
@@ -93,7 +108,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
     nav.openCreated(sessionId)
     const wanted = newDialog?.kind === 'ops' ? newDialog.statusId : null
     if (wanted !== null) void actions.setSessionStatus(sessionId, wanted)
-  }, [nav.openCreated, newDialog, actions, input.onSwitchMode])
+  }, [nav.openCreated, newDialog, actions, input.onSwitchMode, data?.sessions])
 
   // The Ops sidebar registers Ctrl+Shift+N itself; Code mode needs its own.
   useGlobalNewSessionShortcut(useCallback((): void => openNew(), [openNew]), mode !== 'code' || newDialog !== null)
@@ -194,7 +209,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
   }, [data, forkSession, stepAttention, nav.openCreated, nav.selectSession, nav.reopenSession, nav.setView, openNew, openNewWorktree, input.onShowAwaySummary, input.onViewChanges, input.onSwitchMode, input.onPopOutCode, input.onDockCode, actions, previewFile])
 
   return {
-    newDialog, closeNew, openNew, openNewInStatus, openNewWorktree, openNewInWorktree, handleCreated,
+    newDialog, closeNew, openNew, openNewInStatus, openNewWorktree, openMoveSessionsToCode, openNewInWorktree, handleCreated,
     settingsSection, setSettingsSection, paletteOpen, setPaletteOpen, paletteItems, runPalette, costsOpen, setCostsOpen, searchOpen, setSearchOpen, forkSession, stepAttention
   }
 }
