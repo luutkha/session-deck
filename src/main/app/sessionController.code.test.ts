@@ -295,6 +295,18 @@ describe('moveToWorktree (D88)', () => {
     expect(h.store.get().sessions.find((s: Session) => s.id === session.id)?.worktreeId).toBe(wt.worktreeId)
   })
 
+  it('moveToOps sends a Code session back to a folder and restarts it there', async () => {
+    const h = harness()
+    const wt = await addWorktree(h.store, 'target')
+    const folder = await tempDir()
+    const session = h.controller.createSession({ cwd: wt.path, worktreeId: wt.worktreeId, agent: 'shell' })
+    const back = h.controller.moveToOps(session.id, folder, null)
+    expect(back.worktreeId).toBeUndefined()
+    expect(resolve(back.cwd)).toBe(resolve(folder))
+    expect(h.pty.starts.at(-1)?.cwd).toBe(resolve(folder))
+    expect(() => h.controller.moveToOps(session.id, folder, null)).toThrow('not a Code session')
+  })
+
   it('refuses an unknown session or worktree, a session already there, and changes nothing', async () => {
     const h = harness()
     const wt = await addWorktree(h.store, 'target')

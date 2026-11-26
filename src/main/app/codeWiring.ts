@@ -149,6 +149,13 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     const input = asCreateWorktreeInput(raw)
     const repo = repoOrThrow(input.repoId)
     const name = validateWorktreeName(input.name)
+    // D88: check the session BEFORE anything is created on disk.
+    if (input.moveSessionId !== undefined) {
+      const mover = store.get().sessions.find((x) => x.id === input.moveSessionId)
+      if (mover === undefined) throw new Error(`Unknown session: ${input.moveSessionId}`)
+      if (mover.worktreeId !== undefined) throw new Error(`"${mover.name}" is already a Code session.`)
+      if (mover.role === 'jarvis') throw new Error('The Jarvis session cannot move to Code mode.')
+    }
     let worktree: Worktree
     if (input.source === 'main') {
       // D57: the repo's own folder as a workspace. No branch is created; nothing on disk changes.
@@ -170,7 +177,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
       })
     }
     try {
-      const session = controller.createSession({
+      const session = input.moveSessionId !== undefined ? controller.moveToWorktree(input.moveSessionId, worktree.id) : controller.createSession({
         cwd: worktree.path, agent: input.agent, worktreeId: worktree.id, ...(input.model !== undefined ? { model: input.model } : {})
       })
       return { worktree, session }

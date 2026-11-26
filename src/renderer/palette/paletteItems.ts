@@ -25,6 +25,8 @@ export type PaletteCommand =
   | { readonly kind: 'fork-session'; readonly id: Id }
   /** D88: moves an Ops session into a Code-mode worktree (fresh conversation there). */
   | { readonly kind: 'move-to-code'; readonly id: Id; readonly worktreeId: Id }
+  /** D88: opens the New worktree dialog; creating it moves this Ops session in. */
+  | { readonly kind: 'move-to-new-worktree'; readonly id: Id }
   | { readonly kind: 'search-conversations' }
   | { readonly kind: 'open-jarvis' }
   | { readonly kind: 'reset-jarvis' }
@@ -247,7 +249,15 @@ function statusItems(
 export function moveToCodeItems(session: Session, repos: readonly Repo[], worktrees: readonly Worktree[], detail: string): readonly PaletteItem[] {
   if (session.worktreeId !== undefined || session.role === 'jarvis') return []
   const name = displayName(session)
-  return worktrees.slice(0, PALETTE_MOVE_LIMIT).map((worktree: Worktree): PaletteItem => {
+  const newOne: PaletteItem[] = repos.length === 0 ? [] : [{
+    id: `this:move-to-new-worktree:${session.id}`,
+    group: 'This session',
+    label: 'Move to Code mode: new worktree…',
+    detail: `Create a worktree, then ${name} moves into it with a new conversation`,
+    keywords: 'move code mode new worktree create branch convert',
+    run: { kind: 'move-to-new-worktree', id: session.id }
+  }]
+  const existing = worktrees.slice(0, PALETTE_MOVE_LIMIT).map((worktree: Worktree): PaletteItem => {
     const repoName = repos.find((repo: Repo): boolean => repo.id === worktree.repoId)?.name ?? ''
     const where = repoName === '' ? worktree.name : `${repoName} / ${worktree.name}`
     return {
@@ -259,6 +269,7 @@ export function moveToCodeItems(session: Session, repos: readonly Repo[], worktr
       run: { kind: 'move-to-code', id: session.id, worktreeId: worktree.id }
     }
   })
+  return [...newOne, ...existing]
 }
 
 /** Commands for the session on screen. Empty when there is no open session. */

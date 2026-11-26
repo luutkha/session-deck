@@ -39,7 +39,7 @@ export interface WorkspaceCommands {
   /** Ops: New session (optionally in a group/folder). Code: New session in the active worktree, else New worktree. */
   readonly openNew: (groupId?: Id | null, folder?: string) => void
   readonly openNewInStatus: (statusId: Id | null) => void
-  readonly openNewWorktree: (repoId?: Id) => void
+  readonly openNewWorktree: (repoId?: Id, moveSessionId?: Id) => void
   readonly openNewInWorktree: (worktreeId: Id) => void
   readonly handleCreated: (sessionId: Id) => void
   readonly settingsSection: SettingsSection | null
@@ -74,17 +74,26 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
   const openNewInStatus = useCallback((statusId: Id | null): void => {
     setNewDialog(mode === 'code' ? codeNewDialog(activeSession, worktrees) : opsNewDialog(null, statusId))
   }, [mode, activeSession, worktrees])
-  const openNewWorktree = useCallback((repoId?: Id): void => setNewDialog({ kind: 'worktree', repoId }), [])
+  const openNewWorktree = useCallback((repoId?: Id, moveSessionId?: Id): void => setNewDialog({ kind: 'worktree', repoId, moveSessionId }), [])
   const openNewInWorktree = useCallback((worktreeId: Id): void => {
     setNewDialog(worktreeSessionDialog(worktreeId, worktrees))
   }, [worktrees])
   const closeNew = useCallback((): void => setNewDialog(null), [])
 
   const handleCreated = useCallback((sessionId: Id): void => {
+    // D88: a session moved into a new worktree leaves this Ops list: show Code mode instead of opening a tab here.
+    if (newDialog?.kind === 'worktree' && newDialog.moveSessionId !== undefined) {
+      try {
+        input.onSwitchMode('code')
+      } catch {
+        // Code is in its own window: the session is already there.
+      }
+      return
+    }
     nav.openCreated(sessionId)
     const wanted = newDialog?.kind === 'ops' ? newDialog.statusId : null
     if (wanted !== null) void actions.setSessionStatus(sessionId, wanted)
-  }, [nav.openCreated, newDialog, actions])
+  }, [nav.openCreated, newDialog, actions, input.onSwitchMode])
 
   // The Ops sidebar registers Ctrl+Shift+N itself; Code mode needs its own.
   useGlobalNewSessionShortcut(useCallback((): void => openNew(), [openNew]), mode !== 'code' || newDialog !== null)
@@ -165,6 +174,7 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
       },
       forkSession,
       // D88: the moved session leaves this Ops list, so show Code mode (the Code window, when popped out, refuses: its own window shows it).
+      moveToNewWorktree: (id): void => openNewWorktree(undefined, id),
       moveToCode: async (id, worktreeId): Promise<void> => {
         await actions.moveSessionToCode(id, worktreeId)
         try {

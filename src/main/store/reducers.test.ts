@@ -7,6 +7,7 @@ import {
   createSession,
   emptyStore,
   moveSession,
+  moveSessionToOps,
   moveSessionToWorktree,
   removeGroup,
   removeSession,
@@ -681,6 +682,17 @@ describe('moveSessionToWorktree (D88)', () => {
     const s = next.sessions[0]
     expect(s).toMatchObject({ id: 's1', name: 'Docs', cwd: 'C:\wt\one', worktreeId: 'w1', groupId: null, notes: 'keep' })
     expect(s.opencodeSessionId).toBeUndefined()
+  })
+
+  it('moveSessionToOps puts it back in a plain folder and group, last in order, without conversation ids', () => {
+    const { data, sessionId } = withWorktree()
+    const inCode = moveSessionToWorktree(data, sessionId, 'w1')
+    const withGroup = { ...inCode, groups: [{ id: 'g1', name: 'Work', collapsed: false }] } as StoreData
+    const back = moveSessionToOps(withGroup, sessionId, 'C:\\notes', 'g1')
+    expect(back.sessions[0]).toMatchObject({ cwd: 'C:\\notes', groupId: 'g1', order: 0 })
+    expect(back.sessions[0].worktreeId).toBeUndefined()
+    expect(moveSessionToOps(withGroup, sessionId, 'C:\\notes', 'gone').sessions[0].groupId).toBeNull()
+    expect(() => moveSessionToOps(data, sessionId, 'C:\\notes', null)).toThrow('not a Code session')
   })
 
   it('refuses Jarvis, an unknown worktree and a session already there', () => {

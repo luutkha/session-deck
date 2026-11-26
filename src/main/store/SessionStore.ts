@@ -47,6 +47,7 @@ import {
   renameSession as renameSessionReducer,
   reorderGroups as reorderGroupsReducer,
   reorderStatuses as reorderStatusesReducer,
+  moveSessionToOps as moveSessionToOpsReducer,
   moveSessionToWorktree as moveSessionToWorktreeReducer,
   setClaudeSessionId as setClaudeSessionIdReducer,
   setCursorChatId as setCursorChatIdReducer,
@@ -216,6 +217,11 @@ export class SessionStore {
     this.data = next
     this.saver.schedule(next)
     this.emit(next)
+  }
+
+  /** D88: moves a Code session back to a plain folder (persisted; see the reducer). */
+  moveSessionToOps(id: Id, cwd: string, groupId: Id | null): void {
+    this.commitIfChanged(moveSessionToOpsReducer(this.data, id, cwd, groupId))
   }
 
   /** D88: moves a session into a worktree (persisted; see the reducer). */

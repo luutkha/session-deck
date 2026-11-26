@@ -4,7 +4,8 @@ import type { Id, Session, Worktree } from '../../shared/types'
 
 export type NewDialog =
   | { readonly kind: 'ops'; readonly groupId: Id | null; readonly statusId: Id | null; readonly folder?: string }
-  | { readonly kind: 'worktree'; readonly repoId?: Id }
+  /** D88: moveSessionId = the Ops session that moves into the new worktree (the dialog starts no first session). */
+  | { readonly kind: 'worktree'; readonly repoId?: Id; readonly moveSessionId?: Id }
   | { readonly kind: 'worktree-session'; readonly worktree: Worktree }
 
 export function opsNewDialog(groupId: Id | null = null, statusId: Id | null = null, folder?: string): NewDialog {

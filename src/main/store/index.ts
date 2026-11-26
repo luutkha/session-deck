@@ -12,6 +12,7 @@ export {
   renameSession,
   reorderGroups,
   reorderStatuses,
+  moveSessionToOps,
   moveSessionToWorktree,
   setClaudeSessionId,
   setOpencodeSessionId,

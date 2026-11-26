@@ -59,6 +59,10 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
       return created
     }),
     forkSession: vi.fn((id: string): Session | Promise<Session> => session('fork', `${id} (fork)`)),
+    moveToOps: vi.fn((id: string, cwd: string, groupId: string | null): Session => {
+      setSession(id, { worktreeId: undefined, cwd, groupId })
+      return data.sessions.find((x) => x.id === id) as Session
+    }),
     moveToWorktree: vi.fn((id: string, worktreeId: string): Session => {
       setSession(id, { worktreeId })
       return data.sessions.find((x) => x.id === id) as Session
@@ -1175,6 +1179,13 @@ describe('Jarvis move_session_to_code (D88)', () => {
     expect(await t.call('move_session_to_code', { session: 'docs', worktree: 'checkout' })).toContain('Moved "Docs" into worktree "checkout"')
     expect(t.deps.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Jarvis: move session to Code mode', confirmLabel: 'Move' }))
     expect(t.controller.moveToWorktree).toHaveBeenCalledWith('a', 'w1')
+  })
+
+  it('registers an undo that puts the session back in its old folder and group', async () => {
+    const t = setup([session('a', 'Docs', { cwd: 'C:/notes', groupId: 'g1' })], [], { confirm: true })
+    await t.call('move_session_to_code', { session: 'docs', worktree: 'checkout' })
+    expect(await t.call('undo_last_action', {})).toContain('move "Docs" back to Ops')
+    expect(t.controller.moveToOps).toHaveBeenCalledWith('a', 'C:/notes', 'g1')
   })
 
   it('does nothing when the user declines', async () => {

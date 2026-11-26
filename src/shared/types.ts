@@ -331,6 +331,8 @@ export interface CreateWorktreeInput {
   readonly source?: WorktreeSource
   /** D57, source 'existing': the local branch to check out (it must not be open in another worktree). */
   readonly branch?: string
+  /** D88: an Ops session to move into the new worktree INSTEAD of starting a first session there (agent/model are then ignored). */
+  readonly moveSessionId?: Id
   /** Agent of the first session started in the new worktree. */
   readonly agent: AgentKind
   /** OpenCode only: "provider/model". */

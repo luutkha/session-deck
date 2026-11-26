@@ -348,6 +348,24 @@ export function moveSessionToWorktree(data: StoreData, id: Id, worktreeId: Id): 
   return { ...data, sessions }
 }
 
+/**
+ * D88: the reverse of moveSessionToWorktree (used by Jarvis's undo): the session goes back to a plain folder (Ops).
+ * An unknown or missing group means ungrouped. Its conversation ids are dropped again (a conversation belongs to a folder).
+ */
+export function moveSessionToOps(data: StoreData, id: Id, cwd: string, groupId: Id | null): StoreData {
+  const index = findSessionIndex(data, id)
+  const session = data.sessions[index]
+  if (session.worktreeId === undefined) throw new Error(`"${session.name}" is not a Code session.`)
+  const folder = cwd.trim()
+  if (folder.length === 0) throw new Error('Invalid cwd')
+  const target = groupExists(data, groupId) ? groupId : null
+  const siblings = sessionsInGroup(data, target)
+  const order = siblings.length === 0 ? 0 : Math.max(...siblings.map((x) => x.order)) + 1
+  const { claudeSessionId: _c, opencodeSessionId: _o, cursorChatId: _u, worktreeId: _w, ...rest } = session
+  const moved: Session = { ...rest, cwd: folder, groupId: target, order }
+  return { ...data, sessions: data.sessions.map((x, i) => (i === index ? moved : x)) }
+}
+
 /** D79: sets or clears a session's OpenCode model (cleared = field removed). Same value again = same data back. */
 export function setSessionModel(data: StoreData, id: Id, model: string | undefined): StoreData {
   const index = findSessionIndex(data, id)

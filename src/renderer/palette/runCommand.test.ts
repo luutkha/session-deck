@@ -24,6 +24,7 @@ function fakeHandlers(): PaletteHandlers {
     showCosts: vi.fn(),
     forkSession: vi.fn(),
     moveToCode: vi.fn(),
+    moveToNewWorktree: vi.fn(),
     searchConversations: vi.fn(),
     previewFile: vi.fn(),
     stepAttention: vi.fn(),
@@ -87,6 +88,11 @@ describe('runPaletteCommand: session and view commands', () => {
   it('moves a session into a worktree for move-to-code', () => {
     runPaletteCommand({ kind: 'move-to-code', id: 's1', worktreeId: 'w1' }, handlers, api)
     expect(handlers.moveToCode).toHaveBeenCalledWith('s1', 'w1')
+  })
+
+  it('opens the new-worktree dialog for move-to-new-worktree', () => {
+    runPaletteCommand({ kind: 'move-to-new-worktree', id: 's1' }, handlers, api)
+    expect(handlers.moveToNewWorktree).toHaveBeenCalledWith('s1')
   })
 
   it('forks for fork-session and opens the search for search-conversations', () => {

@@ -1,7 +1,7 @@
 // New worktree dialog (Code mode, D31): a branch + folder from a repo, and its first agent session. Orca dialog look.
 // D57: start from a new branch, an existing branch (not open elsewhere), or the repo's own folder.
 import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react'
-import { WORKTREE_NAME_MAX, type AgentKind, type AppSettings, type Id, type Repo, type Worktree, type WorktreeSource } from '../../../shared/types'
+import { WORKTREE_NAME_MAX, type AgentKind, type AppSettings, type Id, type Repo, type Session, type Worktree, type WorktreeSource } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import {
   Dialog,
@@ -28,6 +28,8 @@ export interface NewWorktreeDialogProps {
   /** Preselected repo; undefined = the first repo. */
   readonly defaultRepoId?: Id
   readonly settings: AppSettings
+  /** D88: an Ops session that moves into the new worktree (no first session is started; the agent fields are hidden). */
+  readonly moveSession?: Session
   readonly onClose: () => void
   /** The worktree was created and its first session started: open that session's tab. */
   readonly onCreated: (sessionId: Id) => void
@@ -48,7 +50,7 @@ function resolveRepoId(repos: readonly Repo[], choice: Id | null): Id | null {
 }
 
 export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
-  const { repos, worktrees, defaultRepoId, settings, onClose, onCreated } = props
+  const { repos, worktrees, defaultRepoId, settings, moveSession, onClose, onCreated } = props
   const [repoChoice, setRepoChoice] = useState<Id | null>(defaultRepoId ?? null)
   const [source, setSource] = useState<WorktreeSource>('new')
   const [existingChoice, setExistingChoice] = useState<string | null>(null)
@@ -105,7 +107,8 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
         ...(source !== 'new' ? { source } : {}),
         ...(source === 'existing' && existingBranch !== null ? { branch: existingBranch } : {}),
         agent,
-        ...(modelCheck.model !== undefined ? { model: modelCheck.model } : {})
+        ...(moveSession !== undefined ? { moveSessionId: moveSession.id } : {}),
+        ...(modelCheck.model !== undefined && moveSession === undefined ? { model: modelCheck.model } : {})
       })
       onCreated(result.session.id)
       onClose()
@@ -256,7 +259,7 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
               onChange={branches.chooseBase}
             />
           )}
-          <SessionAgentFields
+          {moveSession === undefined && <SessionAgentFields
             idPrefix={NAME_ID_PREFIX}
             agent={agent}
             onAgentChange={changeAgent}
@@ -264,7 +267,12 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
             onModelChange={setModel}
             modelError={modelCheck.ok ? null : modelCheck.error}
             disabled={creating}
-          />
+          />}
+          {moveSession !== undefined && (
+            <p className="text-xs text-muted-foreground" data-testid="new-worktree-move-note">
+              “{moveSession.name}” moves into this worktree and restarts there with a new conversation.
+            </p>
+          )}
           {source !== 'main' && (
             <p className="break-all font-mono text-[11px] text-muted-foreground" data-testid="new-worktree-path">
               {worktreePathHint(settings.code.worktreesRoot, repo?.name ?? '<repo>', effectiveName)}
@@ -278,7 +286,7 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
               Cancel
             </Button>
             <Button type="submit" size="sm" className="text-xs" disabled={!canCreate}>
-              {creating ? 'Creating…' : source === 'main' ? 'Open repo folder' : 'Create worktree'}
+              {creating ? 'Creating…' : moveSession !== undefined ? 'Create and move' : source === 'main' ? 'Open repo folder' : 'Create worktree'}
             </Button>
           </DialogFooter>
         </form>

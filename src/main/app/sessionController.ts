@@ -147,6 +147,8 @@ export interface SessionController {
    * next start. Throws for Jarvis, an unknown session or worktree, or a session already in that worktree.
    */
   moveToWorktree(id: Id, worktreeId: Id): Session
+  /** D88: the reverse (Jarvis's undo): a Code session goes back to a plain folder and group, on a fresh conversation. */
+  moveToOps(id: Id, cwd: string, groupId: Id | null): Session
   /**
    * D79/D81: changes the OpenCode or Cursor model of one session. A running conversation is put to sleep and woken on
    * the new model (OpenCode resumes with `-s`, Cursor with `--resume <chatId>`, so nothing is lost); a sleeping, stopped
@@ -872,6 +874,16 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
     return true
   }
 
+  /** D88: after a session's folder changed: a new Claude conversation starts with --session-id (never --resume of a dropped id); a running one is restarted. */
+  function restartRetargeted(session: Session, wasRunning: boolean): Session {
+    if ((session.agent ?? 'claude') === 'claude') restoredWithoutClaudeSessionId.add(session.id)
+    if (wasRunning) {
+      sleepNow(session.id)
+      if (!wakeNow(session.id)) logMainError(userDataDir, `restart session ${session.id} after a move`, new Error('restart failed'))
+    }
+    return findSession(session.id) ?? session
+  }
+
   return {
     createSession(input: CreateSessionInput): Session {
       // A session in a worktree always runs in the worktree folder; input.cwd is ignored then.
@@ -904,13 +916,17 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
       const wasRunning = !isClosed(id) && pty.isRunning(id) && state?.run === 'running' && state.sleeping !== true
       // Throws (and changes nothing) for Jarvis or a session already in this worktree.
       store.moveSessionToWorktree(id, worktreeId)
-      // A new Claude conversation must start with --session-id, not --resume of an id that no longer exists.
-      if ((session.agent ?? 'claude') === 'claude') restoredWithoutClaudeSessionId.add(id)
-      if (wasRunning) {
-        sleepNow(id)
-        if (!wakeNow(id)) logMainError(userDataDir, `move session ${id} to code`, new Error('restart failed'))
-      }
-      return findSession(id) ?? session
+      return restartRetargeted(session, wasRunning)
+    },
+
+    moveToOps(id: Id, cwd: string, groupId: Id | null): Session {
+      const session = findSession(id)
+      if (!session) throw new Error(`Unknown session: ${id}`)
+      validateCwd(cwd)
+      const state = runtime.get(id)
+      const wasRunning = !isClosed(id) && pty.isRunning(id) && state?.run === 'running' && state.sleeping !== true
+      store.moveSessionToOps(id, cwd, groupId)
+      return restartRetargeted(session, wasRunning)
     },
 
     async forkSession(id: Id): Promise<Session> {

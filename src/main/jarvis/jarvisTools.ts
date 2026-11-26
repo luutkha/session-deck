@@ -84,6 +84,8 @@ export interface JarvisToolDeps {
     forkSession(id: Id): Session | Promise<Session>
     /** D88: moves an Ops session into a Code-mode worktree (see SessionController.moveToWorktree). */
     moveToWorktree(id: Id, worktreeId: Id): Session
+    /** D88: the reverse, for the undo. */
+    moveToOps(id: Id, cwd: string, groupId: Id | null): Session
     /** D79/D81: change an OpenCode or Cursor session's model (see SessionController.setOpencodeModel). */
     setOpencodeModel(id: Id, model: string | undefined): 'restarted' | 'next-start' | 'restart-failed'
     removeSession(id: Id): void
@@ -774,7 +776,9 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         if (session.worktreeId !== undefined) throw new Error(`"${session.name}" is already a Code session. Only an Ops session can move to Code mode.`)
         const yes = await deps.confirm({ title: 'Jarvis: move session to Code mode', message: `Jarvis wants to move “${session.name}” into worktree “${worktree.name}” (${worktree.path}). It restarts there with a new conversation; the old one does not come along.`, confirmLabel: 'Move' })
         if (!yes) return 'The user declined: the session was not moved.'
+        const before = { cwd: session.cwd, groupId: session.groupId }
         const moved = deps.controller.moveToWorktree(session.id, worktree.id)
+        pushUndo(`move "${session.name}" back to Ops (${before.cwd}; a new conversation again)`, () => { deps.controller.moveToOps(session.id, before.cwd, before.groupId) })
         deps.log('move_session_to_code', `${session.name} -> ${worktree.name}`)
         return `Moved "${moved.name}" into worktree "${worktree.name}". It runs in ${worktree.path} on a new conversation (it is listed in Code mode now).`
       }

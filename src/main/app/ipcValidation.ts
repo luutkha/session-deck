@@ -180,7 +180,8 @@ const ALLOWED_CREATE_WORKTREE_KEYS: ReadonlySet<string> = new Set<string>([
   'source',
   'branch',
   'agent',
-  'model'
+  'model',
+  'moveSessionId'
 ])
 const MAX_BASE_BRANCH_LENGTH = 255
 /** Refs git would not accept as a plain branch name here: whitespace, control characters, ~ ^ : ? * [ \, and ".." */
@@ -237,10 +238,12 @@ export function asCreateWorktreeInput(raw: unknown): CreateWorktreeInput {
         ? assertOpencodeModel(obj.model, 'createWorktree input')
         : undefined
 
+  const moveSessionId = obj.moveSessionId === undefined ? undefined : assertId(obj.moveSessionId, 'moveSessionId')
   return {
     repoId,
     name,
     baseBranch,
+    ...(moveSessionId !== undefined ? { moveSessionId } : {}),
     ...(source !== 'new' ? { source } : {}),
     ...(branch !== undefined ? { branch } : {}),
     agent,

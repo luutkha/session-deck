@@ -39,6 +39,7 @@ function NewDialogView(props: WorkspaceDialogsProps & { readonly data: StoreData
     case 'worktree':
       return (
         <NewWorktreeDialog
+          moveSession={newDialog.moveSessionId === undefined ? undefined : data.sessions.find((x) => x.id === newDialog.moveSessionId)}
           repos={data.repos ?? []}
           worktrees={data.worktrees ?? []}
           defaultRepoId={newDialog.repoId}

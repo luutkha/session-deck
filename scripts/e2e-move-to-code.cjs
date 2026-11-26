@@ -55,7 +55,7 @@ async function main() {
     await ev('document.activeElement && document.activeElement.blur(); true')
     await key('k', 'KeyK', 75, CTRL)
     await waitFor(() => ev('!!document.querySelector("[cmdk-input]") || null'), 3000, 100)
-    await app.send('Input.insertText', { text: 'Move to Code' })
+    await app.send('Input.insertText', { text: 'shop / target' })
     await sleep(400)
     const offered = await items()
     t.check('the palette offers "Move to Code mode: shop / target" for an Ops session', offered.some((i) => i.includes('Move to Code mode: shop / target')), offered.join(' | '))
@@ -126,6 +126,42 @@ async function main() {
     t.check('Move = the session joins the worktree', /^Moved "Jarvis moves me"/.test(done.text) && (await store()).sessions.find((x) => x.id === second.id)?.worktreeId === worktree.id, done.text)
     const again2 = await tool('move_session_to_code', { session: 'jarvis moves me', worktree: 'target' })
     t.check('a Code session is refused without asking', again2.error && /already a Code session/.test(again2.text), again2.text)
+
+    // ---- 7. Jarvis's undo puts the session back in its old folder (Ops, not grouped), on a fresh conversation
+    const undone = await tool('undo_last_action', {})
+    const afterUndo = (await store()).sessions.find((x) => x.id === second.id)
+    t.check('undo_last_action moves it back to its old folder in Ops', !undone.error && afterUndo?.worktreeId === undefined && path.resolve(afterUndo?.cwd ?? '').toLowerCase() === path.resolve(opsDir).toLowerCase(), undone.text + ' ' + js(afterUndo && { cwd: afterUndo.cwd, wt: afterUndo.worktreeId }))
+
+    // ---- 8. "Move to Code mode: new worktree…": the New worktree dialog, and the session moves in (no extra session)
+    await ev(`document.querySelector('[data-mode-switch] [data-mode="ops"]')?.click()`)
+    await waitFor(() => ev('document.querySelector("[data-ui-mode]")?.dataset.uiMode === "ops" || null'), 5000, 200)
+    await ev(`document.querySelector('[data-session-card=${js(second.id)}]')?.click()`)
+    await sleep(1200)
+    const sessionsBefore = (await store()).sessions.length
+    await ev('document.activeElement && document.activeElement.blur(); true')
+    await key('k', 'KeyK', 75, CTRL)
+    await waitFor(() => ev('!!document.querySelector("[cmdk-input]") || null'), 3000, 100)
+    await app.send('Input.insertText', { text: 'new worktree' })
+    await sleep(400)
+    const newItems = await items()
+    t.check('the palette offers "Move to Code mode: new worktree…"', newItems.some((i) => i.includes('Move to Code mode: new worktree')), newItems.join(' | '))
+    await key('Enter', 'Enter', 13)
+    const dialogOpen = await waitFor(() => ev('!!document.querySelector("[data-testid=new-worktree-dialog]") || null'), 5000, 200)
+    t.check('the New worktree dialog opens in Ops', !!dialogOpen)
+    await waitFor(() => ev('!document.querySelector("[data-testid=new-worktree-dialog] button[type=submit]")?.disabled || document.querySelector("input[name=worktree-name]") !== null || null'), 5000, 200)
+    t.check('it says the session moves in and has no agent picker', await ev('!!document.querySelector("[data-testid=new-worktree-move-note]") && !document.querySelector("[data-testid=new-worktree-dialog] [aria-label=Agent]")'))
+    await ev('document.querySelector("input[name=worktree-name]").focus()')
+    await app.send('Input.insertText', { text: 'second target' })
+    await waitFor(() => ev('!document.querySelector("[data-testid=new-worktree-dialog] button[type=submit]").disabled || null'), 15000, 200)
+    await ev('document.querySelector("[data-testid=new-worktree-dialog] button[type=submit]").click()')
+    const movedNew = await waitFor(async () => {
+      const d = await store()
+      const w = (d.worktrees ?? []).find((x) => x.name === 'second target')
+      const s = d.sessions.find((x) => x.id === second.id)
+      return w && s?.worktreeId === w.id ? { w, count: d.sessions.length } : null
+    }, 20000, 300)
+    t.check('the session moved into the NEW worktree', !!movedNew)
+    t.check('and no extra first session was started', !!movedNew && movedNew.count === sessionsBefore, `${sessionsBefore} -> ${movedNew?.count}`)
   } catch (error) {
     t.check('run completed without exception', false, String(error && error.stack || error))
   } finally {
