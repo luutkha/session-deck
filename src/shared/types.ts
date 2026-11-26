@@ -416,6 +416,13 @@ export interface PushResult {
   readonly branch: string
 }
 
+/** Fetch + fast-forward only: `updated` is false when the branch was already up to date. */
+export interface PullResult {
+  readonly remote: string
+  readonly branch: string
+  readonly updated: boolean
+}
+
 /** D60: title/body for a PR made with the GitHub CLI (ignored when the browser page is opened instead). */
 export interface PullRequestInput {
   readonly title?: string

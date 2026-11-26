@@ -1,5 +1,5 @@
-// D60: where a worktree's branch stands (remote, upstream, ahead/behind, uncommitted files) and pushing it.
-// No fetch happens here: "behind" is as of the last fetch. A push never forces.
+// D60: where a worktree's branch stands (remote, upstream, ahead/behind, uncommitted files), pushing, fetching and pulling.
+// Reading status never fetches: "behind" is as of the last fetch. A push never forces; a pull only fast-forwards.
 import type { BranchStatus, Id, PushResult } from '../../shared/types'
 import { readUncommittedPaths } from './commit'
 import { GIT_FATAL_EXIT_CODE, GitError, type GitRun, runGit } from './gitRunner'
@@ -92,6 +92,46 @@ export async function pushBranch(wt: BranchRef, run: GitRun = runGit): Promise<P
     throw new GitError(line ?? 'git push failed')
   }
   return { remote, branch }
+}
+
+/** `git fetch <remote>`: update the remote-tracking refs; the worktree and its files are untouched. */
+export async function fetchBranch(wt: BranchRef, run: GitRun = runGit): Promise<{ remote: string }> {
+  const branch = await currentBranch(run, wt.path)
+  const remote = await pushRemote(run, wt.path, branch)
+  if (remote === null) throw new GitError('This repository has no remote to fetch from. Add one first (git remote add origin <url>).')
+  // Fetch talks to the network like a push, so it gets the same generous timeout.
+  const result = await run(['fetch', remote], { cwd: wt.path, timeoutMs: PUSH_TIMEOUT_MS })
+  if (result.code !== 0) {
+    const line = result.stderr.split(/\r?\n/).map((l) => l.trim()).find((l) => /^(fatal|error|remote): /.test(l))
+    throw new GitError(line ?? 'git fetch failed')
+  }
+  return { remote }
+}
+
+/**
+ * Fetch, then `git merge --ff-only <upstream>`. Never rebases, never merges a non-fast-forward, and never stashes or
+ * discards uncommitted work: git itself refuses when local changes would be overwritten.
+ */
+export async function pullBranch(wt: BranchRef, run: GitRun = runGit): Promise<{ remote: string; branch: string; updated: boolean }> {
+  const branch = await currentBranch(run, wt.path)
+  if (branch === null) throw new GitError('The worktree is not on a branch (detached HEAD); nothing to pull.')
+  const { remote } = await fetchBranch(wt, run)
+  const before = (await run(['rev-parse', 'HEAD'], { cwd: wt.path })).stdout.trim()
+  const configured = await text(run, wt.path, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', `${branch}@{upstream}`])
+  let upstream: string
+  if (configured !== null) {
+    upstream = configured
+  } else {
+    const candidate = `${remote}/${branch}`
+    const ref = await run(['rev-parse', '--verify', '--quiet', `refs/remotes/${candidate}`], { cwd: wt.path, okCodes: [0, 1, GIT_FATAL_EXIT_CODE] })
+    if (ref.code !== 0) throw new GitError('nothing to pull: the branch was never pushed')
+    upstream = candidate
+  }
+  // Exit 1 (git refused) and 128 ("fatal: Not possible to fast-forward") both mean no fast-forward was made.
+  const merged = await run(['merge', '--ff-only', upstream], { cwd: wt.path, okCodes: [0, 1, GIT_FATAL_EXIT_CODE] })
+  if (merged.code !== 0) throw new GitError(`The branch has diverged from ${upstream}; pull or rebase in the session`)
+  const after = (await run(['rev-parse', 'HEAD'], { cwd: wt.path })).stdout.trim()
+  return { remote, branch, updated: after !== before }
 }
 
 /** Title and body for a new PR: the last commit's subject, and the subjects of the branch's commits as a list. */

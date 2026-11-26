@@ -823,3 +823,5 @@ The step-by-step checklists (new IPC call, setting, store field, main service, U
 ---
 
 *Last updated: 2026-11-08. Keep the matrices and the maps in sync with the code; when in doubt, read the module named in the `Code` column.*
+
+| COD-18 | Pull in the Changes panel (D88 follow-up) | Shipped | **Pull** button next to Push: fetch, then fast-forward only; "already up to date" or a plain refusal when the branch diverged. IPC `pullWorktree`, `main/git/branchStatus.ts` (`fetchBranch`, `pullBranch`), `codeGitOps.pull`; tests `branchOps.pull.test.ts`, `gitActionsLogic.test.ts`; e2e `e2e:code-git` (32 checks) |

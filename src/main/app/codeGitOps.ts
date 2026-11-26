@@ -1,12 +1,12 @@
 // D60: Code mode commit / push / pull request / merge / delete from disk. One implementation for the Changes panel
 // (IPC) and Jarvis's tools; codeWiring owns the changes cache and hands in refresh/forget. All git work is in main/git.
 import type {
-  BranchStatus, CommitInput, CommitResult, Id, MergeResult, PullRequestInput, PullRequestResult, PushResult, Repo, Worktree,
+  BranchStatus, CommitInput, CommitResult, Id, MergeResult, PullRequestInput, PullRequestResult, PullResult, PushResult, Repo, Worktree,
   WorktreeChanges, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult
 } from '../../shared/types'
 import type { SessionStore } from '../store'
 import {
-  commitPaths, createPullRequest, deleteWorktreeFromDisk, GitError, mergeIntoBase, pullRequestDefaults, pushBranch, readBranchStatus,
+  commitPaths, createPullRequest, deleteWorktreeFromDisk, GitError, mergeIntoBase, pullBranch, pullRequestDefaults, pushBranch, readBranchStatus,
   readRemovalFacts, type GitRun, type GhRun
 } from '../git'
 
@@ -31,6 +31,7 @@ export interface CodeGitOps {
   branchStatus(worktreeId: Id): Promise<BranchStatus>
   commit(input: CommitInput): Promise<CommitResult>
   push(worktreeId: Id): Promise<PushResult>
+  pull(worktreeId: Id): Promise<PullResult>
   createPr(worktreeId: Id, input: PullRequestInput): Promise<PullRequestResult>
   merge(worktreeId: Id): Promise<MergeResult>
   removalInfo(worktreeId: Id): Promise<WorktreeRemovalInfo>
@@ -83,6 +84,15 @@ export function createCodeGitOps(deps: CodeGitOpsDeps): CodeGitOps {
 
   async function push(worktreeId: Id): Promise<PushResult> {
     return pushBranch(worktreeOrThrow(worktreeId), deps.run)
+  }
+
+  async function pull(worktreeId: Id): Promise<PullResult> {
+    const worktree = worktreeOrThrow(worktreeId)
+    try {
+      return await pullBranch(worktree, deps.run)
+    } finally {
+      refreshQuietly(worktree)
+    }
   }
 
   async function createPr(worktreeId: Id, input: PullRequestInput): Promise<PullRequestResult> {
@@ -149,5 +159,5 @@ export function createCodeGitOps(deps: CodeGitOpsDeps): CodeGitOps {
     }
   }
 
-  return { branchStatus, commit, push, createPr, merge, removalInfo, remove }
+  return { branchStatus, commit, push, pull, createPr, merge, removalInfo, remove }
 }

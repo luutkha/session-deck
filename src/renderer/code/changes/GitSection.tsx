@@ -1,14 +1,14 @@
 // D60: the git part of the Changes panel: branch line (ahead/behind, Push, Create PR, Merge), the commit box, the
 // last result, and the confirm step (Create PR asks for a title and body when the GitHub CLI makes it).
 import { useEffect, useState, type KeyboardEvent, type ReactElement } from 'react'
-import { ArrowUpFromLine, ExternalLink, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, LoaderCircle, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, ExternalLink, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, LoaderCircle, X } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog'
 import { Input } from '../../components/ui/input'
 import { Textarea } from '../../components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip'
 import { cn } from '../../lib/utils'
-import { aheadBehindLabel, commitCandidates, commitState, mergeState, pullRequestState, pushState, type ActionState } from './gitActionsLogic'
+import { aheadBehindLabel, commitCandidates, commitState, mergeState, pullRequestState, pullState, pushState, type ActionState } from './gitActionsLogic'
 import type { GitAction, GitActions } from './useGitActions'
 import type { WorktreeChanges } from '../../../shared/types'
 
@@ -46,6 +46,7 @@ function BranchLine({ git }: { readonly git: GitActions }): ReactElement {
         <span className="min-w-0 truncate font-mono" data-git-branch title={status?.branch ?? undefined}>{status?.branch ?? "…"}</span>
         {counts.length > 0 ? <span className="shrink-0 font-mono tabular-nums text-foreground/80" data-git-counts>{counts}</span> : null}
       </span>
+      <ActionButton state={pullState(status, busy)} label="Pull" action="pull" icon={<ArrowDownToLine aria-hidden="true" />} onClick={(): void => { void git.pull() }} />
       <ActionButton state={pushState(status, busy)} label="Push" action="push" icon={<ArrowUpFromLine aria-hidden="true" />} onClick={(): void => git.ask('push')} />
       <ActionButton state={pullRequestState(status, busy)} label="Create PR" action="pr" icon={<GitPullRequest aria-hidden="true" />} onClick={(): void => git.ask('pr')} />
       {merge !== null ? (

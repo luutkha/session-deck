@@ -6,6 +6,7 @@ import type {
   CommitInput,
   CommitResult,
   PushResult,
+  PullResult,
   PullRequestInput,
   PullRequestResult,
   MergeResult,
@@ -492,6 +493,9 @@ const api: Api = {
 
   pushWorktree(worktreeId: Id): Promise<PushResult> {
     return ipcRenderer.invoke(IPC.worktreePush, worktreeId)
+  },
+  pullWorktree(worktreeId: Id): Promise<PullResult> {
+    return ipcRenderer.invoke(IPC.worktreePull, worktreeId)
   },
 
   createWorktreePr(worktreeId: Id, input: PullRequestInput): Promise<PullRequestResult> {

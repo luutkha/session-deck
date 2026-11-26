@@ -12,7 +12,7 @@ export { discardFile, discardHunk } from './discard'
 export { previewKindFor, readWorktreePreview } from './previewRead'
 // D60: commit, push, pull requests, merge, delete from disk.
 export { COMMIT_MESSAGE_MAX, commitPaths, parseStatusZ, readUncommittedPaths } from './commit'
-export { pullRequestDefaults, pushBranch, readBranchStatus } from './branchStatus'
+export { fetchBranch, pullBranch, pullRequestDefaults, pushBranch, readBranchStatus } from './branchStatus'
 export type { BranchRef } from './branchStatus'
 export { compareUrl, parseRemoteUrl } from './remoteHost'
 export { createGhCheck, createPullRequest, PR_BODY_MAX, PR_TITLE_MAX, runGh } from './pullRequest'

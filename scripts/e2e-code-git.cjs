@@ -114,6 +114,25 @@ async function main() {
     await waitFor(async () => !(await enabled('push')) || null, 8000, 200)
     t.check('after the push Push is off (up to date)', !(await enabled('push')))
 
+    // ---- pull: someone else pushes to the branch, Pull fetches and fast-forwards (no confirm, never a merge commit)
+    git(repo, 'config', `url.${origin}.insteadOf`, GITHUB_URL) // fetch must hit the bare repo, not the network
+    const other = path.join(root, 'other')
+    git(root, 'clone', '-q', '-b', 'fix-login', origin, other)
+    git(other, 'config', 'user.name', 'other')
+    git(other, 'config', 'user.email', 'other@example.com')
+    fs.writeFileSync(path.join(other, 'from-other.txt'), 'hello\n')
+    git(other, 'add', '.')
+    git(other, 'commit', '-q', '-m', 'other work')
+    git(other, 'push', '-q', 'origin', 'fix-login')
+    t.check('Pull is on', await enabled('pull'))
+    await clickSel('[data-git-action="pull"]')
+    const pulled = await waitNotice('Pulled fix-login from origin')
+    t.check('Pull fast-forwards the worktree to the new commit', !!pulled && git(wt.path, 'rev-parse', 'HEAD') === git(origin, 'rev-parse', 'refs/heads/fix-login') && fs.existsSync(path.join(wt.path, 'from-other.txt')), js(pulled))
+    await clickSel('[data-git-action="pull"]')
+    const upToDate = await waitNotice('already up to date')
+    t.check('a second Pull says it is already up to date', !!upToDate, js(upToDate))
+    git(repo, 'config', '--unset', `url.${origin}.insteadOf`) // it would hide the GitHub URL the PR page is built from
+
     // ---- commit the second file, then Create PR (pushes first, opens the page)
     t.check('the unticked file stays unticked after the other commit', (await ev(`document.querySelector('[data-commit-tick="new.txt"]')?.dataset.state`)) === 'unchecked')
     await clickSel('[data-commit-tick="new.txt"]')

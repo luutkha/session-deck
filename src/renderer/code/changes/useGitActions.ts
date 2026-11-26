@@ -27,6 +27,8 @@ export interface GitActions {
   readonly setAllTicked: (ticked: boolean) => void
   readonly chosen: readonly string[]
   readonly commit: () => Promise<void>
+  /** Fetch, then fast-forward only. No confirmation: it never creates a merge commit or touches uncommitted work. */
+  readonly pull: () => Promise<void>
   /** The action waiting for the user's Yes, or null. */
   readonly confirming: GitAction | null
   readonly ask: (action: GitAction) => void
@@ -97,6 +99,13 @@ export function useGitActions(worktreeId: Id, changes: WorktreeChanges | null, r
     })
   }, [chosen, message, run, worktreeId])
 
+  const pull = useCallback(async (): Promise<void> => {
+    await run(async (): Promise<GitNotice> => {
+      const result = await window.api.pullWorktree(worktreeId)
+      return { kind: 'ok', text: result.updated ? `Pulled ${result.branch} from ${result.remote}.` : `${result.branch} is already up to date with ${result.remote}.` }
+    })
+  }, [run, worktreeId])
+
   const confirm = useCallback(async (pr?: { readonly title: string; readonly body: string }): Promise<void> => {
     const action = confirming
     setConfirming(null)
@@ -142,6 +151,7 @@ export function useGitActions(worktreeId: Id, changes: WorktreeChanges | null, r
     chosen,
     commit,
     confirming,
+    pull,
     ask: useCallback((action: GitAction): void => setConfirming(action), []),
     cancel: useCallback((): void => setConfirming(null), []),
     confirm

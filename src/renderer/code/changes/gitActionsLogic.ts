@@ -45,6 +45,16 @@ export function pushState(status: BranchStatus | null, busy: boolean): ActionSta
   return { enabled: true, hint: `Push ${status.ahead} commit${status.ahead === 1 ? '' : 's'} to ${status.remote}` }
 }
 
+/** Pull fetches first, so it is offered whenever there is a branch and a remote (the "behind" count may be stale). */
+export function pullState(status: BranchStatus | null, busy: boolean): ActionState {
+  if (busy) return { enabled: false, hint: 'Working…' }
+  if (status === null) return { enabled: false, hint: 'Reading the branch…' }
+  if (status.error !== undefined) return { enabled: false, hint: status.error }
+  if (status.branch === null) return { enabled: false, hint: 'Not on a branch (detached HEAD).' }
+  if (status.remote === null) return { enabled: false, hint: 'This repository has no remote.' }
+  return { enabled: true, hint: `Fetch ${status.remote}, then fast-forward${status.behind > 0 ? ` (${status.behind} behind as of the last fetch)` : ''}` }
+}
+
 export function pullRequestState(status: BranchStatus | null, busy: boolean): ActionState {
   if (busy) return { enabled: false, hint: 'Working…' }
   if (status === null) return { enabled: false, hint: 'Reading the branch…' }

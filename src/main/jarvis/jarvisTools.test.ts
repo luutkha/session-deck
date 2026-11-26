@@ -144,6 +144,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
         branchStatus: vi.fn(async (worktreeId: string) => ({ worktreeId, branch: 'checkout', baseBranch: 'main', remote: 'origin', upstream: null, ahead: 2, behind: 0, uncommitted: 1, repoFolder: false, compareUrl: 'https://github.com/acme/shop/compare/main...checkout?expand=1', ghReady: false })),
         commit: vi.fn(async (input: { paths: readonly string[]; message: string }) => ({ sha: 'abcdef1234567890abcdef1234567890abcdef12', subject: input.message.split(/\r?\n/)[0], files: input.paths.length })),
         push: vi.fn(async () => ({ remote: 'origin', branch: 'checkout' })),
+        pull: vi.fn(async () => ({ remote: 'origin', branch: 'checkout', updated: true })),
         createPr: vi.fn(async () => ({ url: 'https://github.com/acme/shop/compare/main...checkout?expand=1', created: false })),
         merge: vi.fn(async () => ({ merged: true, message: 'Merged checkout into main.' })),
         removalInfo: vi.fn(async (worktreeId: string) => ({ worktreeId, repoFolder: false, branch: 'checkout', baseBranch: 'main', path: 'C:/wt/checkout', uncommitted: 0, branchMerged: false, folderExists: true })),

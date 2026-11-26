@@ -285,6 +285,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     ipcMain.handle(IPC.worktreeBranchStatus, (_event, rawId: unknown) => git.branchStatus(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeCommit, (_event, raw: unknown) => git.commit(asCommitInput(raw)))
     ipcMain.handle(IPC.worktreePush, (_event, rawId: unknown) => git.push(assertId(rawId, 'worktree id')))
+    ipcMain.handle(IPC.worktreePull, (_event, rawId: unknown) => git.pull(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeCreatePr, (_event, rawId: unknown, raw: unknown) => git.createPr(assertId(rawId, 'worktree id'), asPullRequestInput(raw)))
     ipcMain.handle(IPC.worktreeMerge, (_event, rawId: unknown) => git.merge(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeSetCollapsed, (_event, rawId: unknown, rawCollapsed: unknown): void => {

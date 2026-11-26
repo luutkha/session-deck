@@ -2,7 +2,7 @@
 import type {
   AppSettings, ChecklistItem, JarvisConfirmRequest, JarvisUiCommand, JarvisSchedule, JarvisVoiceResult, QueuedPrompt, SessionPreset, ConversationSearchResult, CreateSessionInput, Group, Id, RuntimeState, Session, StatusDef, StoreData, LoginItemState, OpenLinkResult, QuotaAlert, ResolvedLink, SettingsPatch, SoundEvent, UsageRefreshResult, UsageState, WorkerInfo, TimelineTurn, AwaySummary, QuotaAutopilotState,
   Repo, RepoBranches, CreateWorktreeInput, CreateWorktreeResult, WorktreeChanges, FileDiff, DiscardResult, DiagnosticsReport, FilePreview, FileViewResult, FileViewRangeResult, FileViewStat, OpencodeInfo, WindowState, WindowRole,
-  BranchStatus, CommitInput, CommitResult, PushResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult,
+  BranchStatus, CommitInput, CommitResult, PushResult, PullResult, PullRequestInput, PullRequestResult, MergeResult, WorktreeRemovalInfo, WorktreeRemoveOptions, WorktreeRemoveResult,
   GpuInfo, GpuPref
 } from './types'
 
@@ -97,6 +97,7 @@ export const IPC = {
   worktreeBranchStatus: 'worktree:branchStatus', // (worktreeId) -> BranchStatus: remote, upstream, ahead/behind, uncommitted, PR page (D60)
   worktreeCommit: 'worktree:commit', // (CommitInput) -> CommitResult: commits exactly the given uncommitted files (D60)
   worktreePush: 'worktree:push', // (worktreeId) -> PushResult: git push -u <remote> <branch>, never forced (D60)
+  worktreePull: 'worktree:pull', // (worktreeId) -> PullResult: git fetch, then merge --ff-only (never a merge commit, rebase or stash)
   worktreeCreatePr: 'worktree:createPr', // (worktreeId, PullRequestInput) -> PullRequestResult: pushes if needed, then gh pr create or opens the host's PR page (D60)
   worktreeMerge: 'worktree:merge', // (worktreeId) -> MergeResult: merges the branch into its base in the repository folder (D60)
   worktreeSetCollapsed: 'worktree:setCollapsed', // (worktreeId, collapsed)
@@ -261,6 +262,7 @@ export interface Api {
   getWorktreeBranchStatus(worktreeId: Id): Promise<BranchStatus>
   commitWorktree(input: CommitInput): Promise<CommitResult>
   pushWorktree(worktreeId: Id): Promise<PushResult>
+  pullWorktree(worktreeId: Id): Promise<PullResult>
   createWorktreePr(worktreeId: Id, input: PullRequestInput): Promise<PullRequestResult>
   mergeWorktree(worktreeId: Id): Promise<MergeResult>
   setWorktreeCollapsed(worktreeId: Id, collapsed: boolean): Promise<void>

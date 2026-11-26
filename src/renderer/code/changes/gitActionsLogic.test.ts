@@ -8,6 +8,7 @@ import {
   mergeState,
   pruneUnticked,
   pullRequestState,
+  pullState,
   pushState
 } from './gitActionsLogic'
 
@@ -76,5 +77,19 @@ describe('branch actions (D60)', () => {
     expect(aheadBehindLabel(status({ ahead: 2, behind: 1 }))).toBe('↑2 ↓1')
     expect(aheadBehindLabel(status({ ahead: 0 }))).toBe('')
     expect(aheadBehindLabel(null)).toBe('')
+  })
+})
+
+describe('pullState', () => {
+  it('is on with a branch and a remote, even when nothing is behind (it fetches first)', () => {
+    expect(pullState(status({ behind: 0 }), false).enabled).toBe(true)
+    expect(pullState(status({ behind: 3 }), false).hint).toContain('3 behind')
+  })
+  it('is off while busy, unread, failed, detached or without a remote', () => {
+    expect(pullState(status(), true).enabled).toBe(false)
+    expect(pullState(null, false).enabled).toBe(false)
+    expect(pullState(status({ error: 'boom' }), false).hint).toBe('boom')
+    expect(pullState(status({ branch: null }), false).enabled).toBe(false)
+    expect(pullState(status({ remote: null }), false).enabled).toBe(false)
   })
 })
