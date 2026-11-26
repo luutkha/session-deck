@@ -20,6 +20,8 @@ export interface SessionActions {
   createSession: (input: CreateSessionInput) => Promise<Session>
   /** D52: a new Claude session on a copy of this session's conversation. */
   forkSession: (id: Id) => Promise<Session>
+  /** D88: moves an Ops session into a Code-mode worktree (same card, new folder, fresh conversation). */
+  moveSessionToCode: (id: Id, worktreeId: Id) => Promise<Session>
   renameSession: (id: Id, name: string) => Promise<void>
   setSessionStatus: (id: Id, statusId: Id | null) => Promise<void>
   moveSession: (id: Id, groupId: Id | null, index: number) => Promise<void>
@@ -171,6 +173,7 @@ export function useSessionStore(): UseSessionStoreResult {
     return {
       createSession: (input) => call((api) => api.createSession(input)),
       forkSession: (id) => call((api) => api.forkSession(id)),
+      moveSessionToCode: (id, worktreeId) => call((api) => api.moveSessionToCode(id, worktreeId)),
       renameSession: (id, name) => call((api) => api.renameSession(id, name)),
       setSessionStatus: (id, statusId) => call((api) => api.setSessionStatus(id, statusId)),
       moveSession: (id, groupId, index) => call((api) => api.moveSession(id, groupId, index)),

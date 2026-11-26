@@ -153,6 +153,10 @@ const api: Api = {
     return ipcRenderer.invoke(IPC.sessionFork, id)
   },
 
+  moveSessionToCode(id: Id, worktreeId: Id): Promise<Session> {
+    return ipcRenderer.invoke(IPC.sessionMoveToCode, id, worktreeId)
+  },
+
   openJarvis(): Promise<Session> {
     return ipcRenderer.invoke(IPC.jarvisOpen)
   },

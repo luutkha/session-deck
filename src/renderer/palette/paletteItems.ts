@@ -1,6 +1,6 @@
 // Pure model of the command palette: which items exist, their labels, and what each one does.
 // No React, no DOM, no IPC. Commands are data only; App maps them to real calls (runCommand.ts).
-import type { Id, RuntimeState, Session, SessionPreset, StatusDef, UiMode, WindowRole } from '../../shared/types'
+import type { Id, Repo, RuntimeState, Session, SessionPreset, StatusDef, UiMode, Worktree, WindowRole } from '../../shared/types'
 import { presetDetail } from '../presets/presetLogic'
 import { needsYouItems } from '../attention/needsYou'
 import { allTags } from '../tags/tagLogic'
@@ -23,6 +23,8 @@ export type PaletteCommand =
   | { readonly kind: 'show-away-summary' }
   | { readonly kind: 'show-costs' }
   | { readonly kind: 'fork-session'; readonly id: Id }
+  /** D88: moves an Ops session into a Code-mode worktree (fresh conversation there). */
+  | { readonly kind: 'move-to-code'; readonly id: Id; readonly worktreeId: Id }
   | { readonly kind: 'search-conversations' }
   | { readonly kind: 'open-jarvis' }
   | { readonly kind: 'reset-jarvis' }
@@ -68,6 +70,9 @@ export interface PaletteInput {
   readonly codePoppedOut: boolean
   /** D49: saved New Session forms; each becomes a one-step "New session: <name>" item in Ops mode. Absent = none. */
   readonly presets?: readonly SessionPreset[]
+  /** D88: Code-mode repos and worktrees, so an Ops session can be moved into one. Absent = no move items. */
+  readonly repos?: readonly Repo[]
+  readonly worktrees?: readonly Worktree[]
 }
 
 const NO_STATUS = 'No status'
@@ -77,6 +82,8 @@ const CLOSED = 'Closed'
 const UNTITLED = 'Untitled session'
 const DETAIL_SEPARATOR = ' · '
 const DEFAULT_AGENT = 'claude'
+// A palette with hundreds of worktrees would drown the list: offer the first ones (a typed query still narrows them).
+const PALETTE_MOVE_LIMIT = 30
 // Keep the tag jump list short; allTags already orders by count then name.
 const PALETTE_TAG_LIMIT = 15
 
@@ -236,11 +243,31 @@ function statusItems(
     )
 }
 
+/** D88: "Move to Code: repo / worktree" for an Ops session (never Jarvis), one item per worktree. */
+export function moveToCodeItems(session: Session, repos: readonly Repo[], worktrees: readonly Worktree[], detail: string): readonly PaletteItem[] {
+  if (session.worktreeId !== undefined || session.role === 'jarvis') return []
+  const name = displayName(session)
+  return worktrees.slice(0, PALETTE_MOVE_LIMIT).map((worktree: Worktree): PaletteItem => {
+    const repoName = repos.find((repo: Repo): boolean => repo.id === worktree.repoId)?.name ?? ''
+    const where = repoName === '' ? worktree.name : `${repoName} / ${worktree.name}`
+    return {
+      id: `this:move-to-code:${session.id}:${worktree.id}`,
+      group: 'This session',
+      label: `Move to Code mode: ${where}`,
+      detail: `${name} restarts in ${worktree.path} with a new conversation (${detail})`,
+      keywords: `move code mode worktree repo branch convert ${worktree.branch}`,
+      run: { kind: 'move-to-code', id: session.id, worktreeId: worktree.id }
+    }
+  })
+}
+
 /** Commands for the session on screen. Empty when there is no open session. */
 function thisSessionItems(
   session: Session,
   state: RuntimeState | undefined,
-  statuses: readonly StatusDef[]
+  statuses: readonly StatusDef[],
+  repos: readonly Repo[],
+  worktrees: readonly Worktree[]
 ): readonly PaletteItem[] {
   const name = displayName(session)
   const detail = sessionDetail(session, state, statuses)
@@ -278,6 +305,7 @@ function thisSessionItems(
       run: { kind: 'fork-session', id: session.id }
     })
   }
+  items.push(...moveToCodeItems(session, repos, worktrees, detail))
   return [...items, ...statusItems(session, detail, statuses)]
 }
 
@@ -518,7 +546,7 @@ export function buildPaletteItems(input: PaletteInput): readonly PaletteItem[] {
   )
   const active = findOpenSession(sessions, activeId)
   const thisItems =
-    active === null ? [] : thisSessionItems(active, runtime.get(active.id), statuses)
+    active === null ? [] : thisSessionItems(active, runtime.get(active.id), statuses, input.repos ?? [], input.worktrees ?? [])
   return [...sessionItems, ...tagItems(sessions), ...thisItems, ...actionItems(input)]
 }
 

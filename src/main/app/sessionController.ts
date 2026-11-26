@@ -141,6 +141,13 @@ export interface SessionController {
    */
   forkSession(id: Id): Promise<Session>
   /**
+   * D88: moves a session into a Code-mode worktree: same card (name, notes, tags, status), folder = the worktree, out of
+   * its Ops group. A running one is stopped and started again in the worktree on a FRESH conversation (agents keep a
+   * conversation per folder, so the old one cannot follow); a sleeping, stopped or closed one only changes folder for its
+   * next start. Throws for Jarvis, an unknown session or worktree, or a session already in that worktree.
+   */
+  moveToWorktree(id: Id, worktreeId: Id): Session
+  /**
    * D79/D81: changes the OpenCode or Cursor model of one session. A running conversation is put to sleep and woken on
    * the new model (OpenCode resumes with `-s`, Cursor with `--resume <chatId>`, so nothing is lost); a sleeping, stopped
    * or closed one, or one with no conversation id yet, only stores it for its next start. `undefined` clears it (the
@@ -885,6 +892,25 @@ export function createSessionController(deps: SessionControllerDeps): SessionCon
         throw error
       }
       return session
+    },
+
+    moveToWorktree(id: Id, worktreeId: Id): Session {
+      const session = findSession(id)
+      if (!session) throw new Error(`Unknown session: ${id}`)
+      const worktree = store.getWorktree(worktreeId)
+      if (!worktree) throw new Error('Worktree not found')
+      validateCwd(worktree.path)
+      const state = runtime.get(id)
+      const wasRunning = !isClosed(id) && pty.isRunning(id) && state?.run === 'running' && state.sleeping !== true
+      // Throws (and changes nothing) for Jarvis or a session already in this worktree.
+      store.moveSessionToWorktree(id, worktreeId)
+      // A new Claude conversation must start with --session-id, not --resume of an id that no longer exists.
+      if ((session.agent ?? 'claude') === 'claude') restoredWithoutClaudeSessionId.add(id)
+      if (wasRunning) {
+        sleepNow(id)
+        if (!wakeNow(id)) logMainError(userDataDir, `move session ${id} to code`, new Error('restart failed'))
+      }
+      return findSession(id) ?? session
     },
 
     async forkSession(id: Id): Promise<Session> {

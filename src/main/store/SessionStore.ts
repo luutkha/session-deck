@@ -47,6 +47,7 @@ import {
   renameSession as renameSessionReducer,
   reorderGroups as reorderGroupsReducer,
   reorderStatuses as reorderStatusesReducer,
+  moveSessionToWorktree as moveSessionToWorktreeReducer,
   setClaudeSessionId as setClaudeSessionIdReducer,
   setCursorChatId as setCursorChatIdReducer,
   setOpencodeSessionId as setOpencodeSessionIdReducer,
@@ -215,6 +216,11 @@ export class SessionStore {
     this.data = next
     this.saver.schedule(next)
     this.emit(next)
+  }
+
+  /** D88: moves a session into a worktree (persisted; see the reducer). */
+  moveSessionToWorktree(id: Id, worktreeId: Id): void {
+    this.commitIfChanged(moveSessionToWorktreeReducer(this.data, id, worktreeId))
   }
 
   /** D79: sets or clears the OpenCode model of a session (persisted). No-op when identical. */

@@ -102,8 +102,10 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
     mode,
     windowRole: input.role,
     codePoppedOut: input.codePoppedOut,
-    presets: data?.presets
-  })), [paletteOpen, data?.sessions, data?.statuses, data?.presets, input.runtime, activeId, nav.view, mode, input.role, input.codePoppedOut])
+    presets: data?.presets,
+    repos: data?.repos,
+    worktrees: data?.worktrees
+  })), [paletteOpen, data?.sessions, data?.statuses, data?.presets, data?.repos, data?.worktrees, input.runtime, activeId, nav.view, mode, input.role, input.codePoppedOut])
 
   // D69: keyboard triage. Reads the latest sessions / runtime / active tab at call time, so the callback never changes.
   const triageRef = useRef({ sessions: data?.sessions ?? [], runtime: input.runtime, activeId })
@@ -162,6 +164,15 @@ export function useWorkspaceCommands(input: WorkspaceCommandsInput): WorkspaceCo
         await window.api.resetJarvis()
       },
       forkSession,
+      // D88: the moved session leaves this Ops list, so show Code mode (the Code window, when popped out, refuses: its own window shows it).
+      moveToCode: async (id, worktreeId): Promise<void> => {
+        await actions.moveSessionToCode(id, worktreeId)
+        try {
+          input.onSwitchMode('code')
+        } catch {
+          // Code is in its own window: the session is already there.
+        }
+      },
       setStatus: (id, statusId): void | Promise<void> => actions.setSessionStatus(id, statusId),
       switchMode: input.onSwitchMode,
       popOutCode: input.onPopOutCode,

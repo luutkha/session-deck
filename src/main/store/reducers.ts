@@ -330,6 +330,24 @@ export function setCursorChatId(data: StoreData, id: Id, cursorChatId: string): 
   return { ...data, sessions }
 }
 
+/**
+ * D88: moves an Ops session into a Code-mode worktree. The session keeps its id, name, notes, tags, status and
+ * checklist; its folder becomes the worktree path, it leaves its Ops group, and its saved conversation ids are
+ * dropped (Claude, OpenCode and Cursor all keep a conversation per folder, so the old one cannot be resumed there).
+ */
+export function moveSessionToWorktree(data: StoreData, id: Id, worktreeId: Id): StoreData {
+  const index = findSessionIndex(data, id)
+  const session = data.sessions[index]
+  if (session.role === 'jarvis') throw new Error('The Jarvis session cannot move to Code mode.')
+  const worktree = findWorktree(data, worktreeId)
+  if (!worktree) throw new Error('Worktree not found')
+  if (session.worktreeId === worktreeId) throw new Error(`"${session.name}" is already in this worktree.`)
+  const { claudeSessionId: _c, opencodeSessionId: _o, cursorChatId: _u, ...rest } = session
+  const moved: Session = { ...rest, cwd: worktree.path, worktreeId, groupId: null }
+  const sessions = data.sessions.map((s, i) => (i === index ? moved : s))
+  return { ...data, sessions }
+}
+
 /** D79: sets or clears a session's OpenCode model (cleared = field removed). Same value again = same data back. */
 export function setSessionModel(data: StoreData, id: Id, model: string | undefined): StoreData {
   const index = findSessionIndex(data, id)

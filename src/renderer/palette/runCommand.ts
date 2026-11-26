@@ -22,6 +22,8 @@ export interface PaletteHandlers {
   readonly showCosts: () => void
   /** D52: forks a Claude session and opens the fork. */
   readonly forkSession: (id: Id) => void | Promise<void>
+  /** D88: moves an Ops session into a Code-mode worktree. */
+  readonly moveToCode: (id: Id, worktreeId: Id) => void | Promise<void>
   /** D52: opens the conversation search. */
   readonly searchConversations: () => void
   /** D74: picks a file and shows it in the side panel viewer for the session on screen. */
@@ -93,6 +95,8 @@ function runSessionCommand(
       return attempt(command, () => handlers.showCosts())
     case 'fork-session':
       return attempt(command, () => handlers.forkSession(command.id))
+    case 'move-to-code':
+      return attempt(command, () => handlers.moveToCode(command.id, command.worktreeId))
     case 'search-conversations':
       return attempt(command, () => handlers.searchConversations())
     case 'preview-file':

@@ -23,6 +23,7 @@ function fakeHandlers(): PaletteHandlers {
     showAwaySummary: vi.fn(),
     showCosts: vi.fn(),
     forkSession: vi.fn(),
+    moveToCode: vi.fn(),
     searchConversations: vi.fn(),
     previewFile: vi.fn(),
     stepAttention: vi.fn(),
@@ -81,6 +82,11 @@ describe('runPaletteCommand: session and view commands', () => {
   it('starts a session from a preset for new-from-preset', () => {
     runPaletteCommand({ kind: 'new-from-preset', presetId: 'p1' }, handlers, api)
     expect(handlers.newFromPreset).toHaveBeenCalledWith('p1')
+  })
+
+  it('moves a session into a worktree for move-to-code', () => {
+    runPaletteCommand({ kind: 'move-to-code', id: 's1', worktreeId: 'w1' }, handlers, api)
+    expect(handlers.moveToCode).toHaveBeenCalledWith('s1', 'w1')
   })
 
   it('forks for fork-session and opens the search for search-conversations', () => {

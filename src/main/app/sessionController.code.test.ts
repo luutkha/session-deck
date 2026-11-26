@@ -254,3 +254,56 @@ describe('removeWorktree and removeRepo', () => {
     expect(h.store.get().sessions.map((s: Session) => s.id)).toContain(ops.id)
   })
 })
+
+describe('moveToWorktree (D88)', () => {
+  it('restarts a running shell session in the worktree, keeps its card, and leaves its Ops group', async () => {
+    const h = harness()
+    const wt = await addWorktree(h.store, 'target')
+    const group = h.store.createGroup('Work')
+    const session = h.controller.createSession({ cwd: await tempDir(), agent: 'shell', name: 'Keep me', groupId: group.id })
+    const moved = h.controller.moveToWorktree(session.id, wt.worktreeId)
+    expect(moved).toMatchObject({ id: session.id, name: 'Keep me', cwd: wt.path, worktreeId: wt.worktreeId, groupId: null })
+    expect(h.pty.killed).toContain(session.id)
+    expect(h.pty.starts.at(-1)?.cwd).toBe(wt.path)
+    expect(h.runtime.get(session.id)?.run).toBe('running')
+  })
+
+  it('a Claude session starts a NEW conversation in the worktree (new --session-id, never --resume of the old one)', async () => {
+    const h = harness()
+    const wt = await addWorktree(h.store, 'target')
+    const session = h.controller.createSession({ cwd: await tempDir(), agent: 'claude' })
+    const oldConversation = session.claudeSessionId
+    expect(oldConversation).toBeDefined()
+    h.controller.moveToWorktree(session.id, wt.worktreeId)
+    const started = h.pty.starts.at(-1)
+    expect(started?.cwd).toBe(wt.path)
+    expect(started?.internalArgs).not.toContain('--resume')
+    expect(started?.internalArgs).toContain('--session-id')
+    const after = h.store.get().sessions.find((s: Session) => s.id === session.id)
+    expect(after?.claudeSessionId).toBeDefined()
+    expect(after?.claudeSessionId).not.toBe(oldConversation)
+  })
+
+  it('a closed session only changes folder: nothing starts', async () => {
+    const h = harness()
+    const wt = await addWorktree(h.store, 'target')
+    const session = h.controller.createSession({ cwd: await tempDir(), agent: 'shell' })
+    h.controller.closeSession(session.id)
+    const startsBefore = h.pty.starts.length
+    h.controller.moveToWorktree(session.id, wt.worktreeId)
+    expect(h.pty.starts.length).toBe(startsBefore)
+    expect(h.store.get().sessions.find((s: Session) => s.id === session.id)?.worktreeId).toBe(wt.worktreeId)
+  })
+
+  it('refuses an unknown session or worktree, a session already there, and changes nothing', async () => {
+    const h = harness()
+    const wt = await addWorktree(h.store, 'target')
+    const session = h.controller.createSession({ cwd: await tempDir(), agent: 'shell' })
+    expect(() => h.controller.moveToWorktree('missing', wt.worktreeId)).toThrow('Unknown session')
+    expect(() => h.controller.moveToWorktree(session.id, 'missing')).toThrow('Worktree not found')
+    h.controller.moveToWorktree(session.id, wt.worktreeId)
+    const before = h.store.get()
+    expect(() => h.controller.moveToWorktree(session.id, wt.worktreeId)).toThrow('already in this worktree')
+    expect(h.store.get()).toEqual(before)
+  })
+})

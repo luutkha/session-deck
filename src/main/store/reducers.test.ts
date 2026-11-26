@@ -7,6 +7,7 @@ import {
   createSession,
   emptyStore,
   moveSession,
+  moveSessionToWorktree,
   removeGroup,
   removeSession,
   removeStatus,
@@ -660,5 +661,34 @@ describe('cursor sessions (D81)', () => {
     expect(next.sessions[0].cursorChatId).toBe('chat_ABCDEF12')
     expect(setCursorChatId(next, 's1', 'chat_ABCDEF12')).toBe(next)
     expect(() => setCursorChatId(data, 's1', 'bad id')).toThrow('Invalid cursorChatId')
+  })
+})
+
+describe('moveSessionToWorktree (D88)', () => {
+  const SHA = 'a'.repeat(40)
+  function withWorktree(): { data: StoreData; sessionId: string } {
+    let data = emptyStore()
+    const created = createSession(data, { cwd: 'C:\notes', name: 'Docs', agent: 'opencode' }, { id: 's1', now: 1 })
+    data = created.data
+    data = { ...data, sessions: data.sessions.map((s) => ({ ...s, opencodeSessionId: 'ses_abc123', notes: 'keep' })) }
+    data = { ...data, repos: [{ id: 'r1', name: 'app', path: 'C:\app', createdAt: 1, collapsed: false }], worktrees: [{ id: 'w1', repoId: 'r1', name: 'one', branch: 'sd/one', path: 'C:\wt\one', baseBranch: 'main', baseCommit: SHA, createdAt: 1, collapsed: false }] }
+    return { data, sessionId: 's1' }
+  }
+
+  it('retargets the folder, drops the old conversation id, keeps the rest', () => {
+    const { data, sessionId } = withWorktree()
+    const next = moveSessionToWorktree(data, sessionId, 'w1')
+    const s = next.sessions[0]
+    expect(s).toMatchObject({ id: 's1', name: 'Docs', cwd: 'C:\wt\one', worktreeId: 'w1', groupId: null, notes: 'keep' })
+    expect(s.opencodeSessionId).toBeUndefined()
+  })
+
+  it('refuses Jarvis, an unknown worktree and a session already there', () => {
+    const { data, sessionId } = withWorktree()
+    expect(() => moveSessionToWorktree(data, sessionId, 'nope')).toThrow('Worktree not found')
+    const moved = moveSessionToWorktree(data, sessionId, 'w1')
+    expect(() => moveSessionToWorktree(moved, sessionId, 'w1')).toThrow('already in this worktree')
+    const jarvis = { ...data, sessions: data.sessions.map((s) => ({ ...s, role: 'jarvis' as const })) }
+    expect(() => moveSessionToWorktree(jarvis, sessionId, 'w1')).toThrow('Jarvis')
   })
 })

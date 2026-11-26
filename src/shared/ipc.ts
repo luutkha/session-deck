@@ -12,6 +12,7 @@ export const IPC = {
   sessionCreate: 'session:create',
   conversationSearch: 'conversation:search', // (query 2..200 chars) -> ConversationSearchResult: text in past Claude conversations (D52)
   sessionFork: 'session:fork', // (id) -> Session: a new Claude session on a copy of this conversation (D52)
+  sessionMoveToCode: 'session:moveToCode', // (sessionId, worktreeId) -> Session: an Ops session moves into a Code worktree, restarted there with a fresh conversation (D88)
   jarvisOpen: 'jarvis:open', // () -> Session: the Jarvis session, created (and started) on first use; a closed one is reopened (D53)
   jarvisReset: 'jarvis:reset', // () -> Session: Jarvis starts over with a new conversation (D53)
   jarvisSchedulesGet: 'jarvis:schedulesGet', // () -> JarvisSchedule[] (D54)
@@ -168,6 +169,8 @@ export interface Api {
   setSessionQueue(id: Id, items: readonly QueuedPrompt[]): Promise<void>
   /** D52: a new Claude session that continues a copy of this session's conversation. */
   forkSession(id: Id): Promise<Session>
+  /** D88: moves an Ops session into a Code-mode worktree (same card, new folder, fresh conversation). */
+  moveSessionToCode(id: Id, worktreeId: Id): Promise<Session>
   /** D53: the Jarvis session (created and started on first use). */
   openJarvis(): Promise<Session>
   /** D53: removes the Jarvis session and starts a fresh one (new conversation). */
