@@ -1,6 +1,6 @@
 {
   "name": "session-deck",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Desktop app to run and manage many Claude Code sessions",
   "type": "module",
   "private": true,
