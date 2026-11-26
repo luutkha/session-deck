@@ -20,6 +20,7 @@ import { SIDE_PANEL_WIDTH_DEFAULT, visibleSidePanelWidth } from '../shell/sidePa
 import { cn } from '../lib/utils'
 import { PreviewTab } from '../viewer/PreviewTab'
 import type { PreviewRequest } from '../viewer/fileViewState'
+import type { PreviewNav } from '../viewer/PreviewTab'
 import { requestFileView } from '../viewer/previewBus'
 import { TagEditor } from '../tags/TagEditor'
 import { ChecklistSection } from './ChecklistSection'
@@ -43,6 +44,8 @@ export interface NotesPanelProps {
   readonly previewRequest?: PreviewRequest | null
   /** D73: the Preview tab's X clears the request and goes back to Notes. */
   readonly onClosePreview?: () => void
+  /** D89: back/forward through this session's earlier previews. */
+  readonly previewNav?: PreviewNav
   /** D73: the panel's width and its draggable left edge (the workspace owns the width hook). */
   readonly width?: number
   /** The widest the panel may be drawn right now (window minus sidebar minus the terminal's room); the workspace computes it. */
@@ -268,7 +271,7 @@ export function NotesPanel(props: NotesPanelProps): ReactElement {
           }}
         />
       ) : tab === 'preview' ? (
-        <PreviewTab request={previewRequest} onClose={closePreview} />
+        <PreviewTab request={previewRequest} onClose={closePreview} {...(props.previewNav !== undefined ? { nav: props.previewNav } : {})} />
       ) : tab === 'activity' ? (
         <ActivityList sessionId={session.id} />
       ) : tab === 'queue' ? (

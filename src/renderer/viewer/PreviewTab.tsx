@@ -1,10 +1,11 @@
 // D73/D74: the side panel's Preview tab. A thin header names the file and offers the file actions (Copy path,
 // Open in app, Show in Explorer), Reload, Detach (its own window) and Close; the body is a loading line, a
 // destructive error, or the existing FileViewPane, which does no IPC. The header also carries the live-reload notice.
-import { ExternalLink, RefreshCw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, RefreshCw, X } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { Button } from '../components/ui/button'
 import { FileViewPane } from '../preview/FileViewPane'
+import { previewHistoryShortcut, type PreviewHistoryStep } from '../preview/previewHistory'
 import { FileActions } from './FileActions'
 import { fileNameFromText, type PreviewRequest } from './fileViewState'
 import { useFileView } from './useFileView'
@@ -13,13 +14,21 @@ const EMPTY_MESSAGE = 'Click a file link in a terminal to preview it here.'
 const LOADING_MESSAGE = 'Loading file…'
 const NOTICE_CLASS = { missing: 'text-amber-500', updated: 'text-muted-foreground' } as const
 
+/** D89: this session's back/forward list (Alt+Left / Alt+Right while the preview has focus). */
+export interface PreviewNav {
+  readonly canBack: boolean
+  readonly canForward: boolean
+  readonly onStep: (direction: PreviewHistoryStep) => void
+}
+
 export interface PreviewTabProps {
+  readonly nav?: PreviewNav
   readonly request: PreviewRequest | null
   /** Clears the request and goes back to Notes. */
   readonly onClose: () => void
 }
 
-export function PreviewTab({ request, onClose }: PreviewTabProps): ReactElement {
+export function PreviewTab({ request, onClose, nav }: PreviewTabProps): ReactElement {
   const { state, notice, reload } = useFileView(request)
   const view = state !== null && state.status === 'ready' ? state.view : null
 
@@ -39,8 +48,27 @@ export function PreviewTab({ request, onClose }: PreviewTabProps): ReactElement 
   }
 
   return (
-    <div data-preview-tab="" className="flex min-h-0 flex-1 flex-col">
+    <div
+      data-preview-tab=""
+      className="flex min-h-0 flex-1 flex-col"
+      onKeyDown={(event): void => {
+        const step = nav === undefined ? null : previewHistoryShortcut(event)
+        if (step === null || nav === undefined) return
+        event.preventDefault()
+        nav.onStep(step)
+      }}
+    >
       <header className="flex h-8 shrink-0 items-center gap-1 border-b border-sidebar-border pl-2 pr-1">
+        {nav !== undefined ? (
+          <>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label="Previous preview" title="Back (Alt+Left)" data-preview-back="" disabled={!nav.canBack} className="shrink-0 text-muted-foreground" onClick={(): void => nav.onStep(-1)}>
+              <ArrowLeft className="size-3.5" aria-hidden="true" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label="Next preview" title="Forward (Alt+Right)" data-preview-forward="" disabled={!nav.canForward} className="shrink-0 text-muted-foreground" onClick={(): void => nav.onStep(1)}>
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Button>
+          </>
+        ) : null}
         <span data-preview-name="" className="min-w-0 flex-1 truncate text-[12px] font-medium" title={request.text}>
           {view?.name ?? fileNameFromText(request.text)}
         </span>

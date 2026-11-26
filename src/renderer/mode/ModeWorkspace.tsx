@@ -1,6 +1,6 @@
 // One mode's workspace (D31): sidebar, tab bar, terminals, Hub, worker view, side panel, status bar, dialogs and palette.
 // Ops and Code each get their own instance (App mounts one at a time, keyed by mode) with mode-scoped storage keys.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactElement } from 'react'
 import { Sidebar } from '../Sidebar'
 import { useLastRuntimeChange } from '../Sidebar/useLastRuntimeChange'
 import { CodeSidebar } from '../code/sidebar/CodeSidebar'
@@ -56,6 +56,10 @@ import { sidebarViewControl } from '../jarvis/sidebarView'
 import { requestChangesFile } from '../code/changes/changesRequest'
 import { readSidePanelTab, resolveSidePanelTab, storeSidePanelTab, type SidePanelTab } from '../timeline/sidePanelTab'
 import { onFileViewRequest } from '../viewer/previewBus'
+import {
+  canPreviewBack, canPreviewForward, currentPreviewPath, EMPTY_PREVIEW_HISTORY, previewHistoryReducer, stepPreviewPath,
+  type PreviewHistoryStep
+} from '../preview/previewHistory'
 import type { PreviewRequest } from '../viewer/fileViewState'
 
 const EMPTY_STORE: StoreData = { version: 1, sessions: [], groups: [], statuses: [], groupOrder: [] }
@@ -204,14 +208,18 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   const sidebarShown = sidebarOpen ? Math.min(sidebarWidth.width, viewportWidth - SIDEBAR_KEEP_FOR_MAIN) : 0
   const sidePanelMax = maxSidePanelWidth(viewportWidth, sidebarShown)
   const [sidePanelResizing, setSidePanelResizing] = useState(false)
-  const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null)
+  // D89: a preview belongs to the session it was opened for (each keeps its own file and a back/forward list).
+  const [previews, setPreviews] = useState<Readonly<Record<string, PreviewRequest>>>({})
+  const [previewHistory, dispatchPreviewHistory] = useReducer(previewHistoryReducer, EMPTY_PREVIEW_HISTORY)
+  const previewRequest: PreviewRequest | null = activeSession === null ? null : (previews[activeSession.id] ?? null)
   const previewNonce = useRef(0)
   const previewWidened = useRef(false)
   // "View changes" widens the panel once too (a diff is unreadable at the default width).
   const changesWidened = useRef(false)
   useEffect((): (() => void) => onFileViewRequest((request): void => {
     previewNonce.current += 1
-    setPreviewRequest({ sessionId: request.sessionId, text: request.text, nonce: previewNonce.current })
+    setPreviews((all) => ({ ...all, [request.sessionId]: { sessionId: request.sessionId, text: request.text, nonce: previewNonce.current } }))
+    dispatchPreviewHistory({ type: 'push', sessionId: request.sessionId, path: request.text })
     // Opens the panel when it is closed; an open panel is left as it is (it would toggle shut).
     if (!nav.notesOpen) nav.toggleNotes()
     storeSidePanelTab('preview', keys.sidePanel)
@@ -222,11 +230,29 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
       if (sidePanelWidth.width === SIDE_PANEL_WIDTH_DEFAULT) sidePanelWidth.commit(SIDE_PANEL_WIDTH_PREVIEW)
     }
   }), [keys.sidePanel, nav.notesOpen, nav.toggleNotes, sidePanelWidth.width, sidePanelWidth.commit])
+  const activePreviewId = activeSession?.id ?? null
   const closePreview = useCallback((): void => {
-    setPreviewRequest(null)
+    if (activePreviewId !== null) {
+      setPreviews((all) => {
+        const next = { ...all }
+        delete next[activePreviewId]
+        return next
+      })
+      dispatchPreviewHistory({ type: 'forgetSession', sessionId: activePreviewId })
+    }
     storeSidePanelTab('notes', keys.sidePanel)
     setSidePanelEpoch((n: number): number => n + 1)
-  }, [keys.sidePanel])
+  }, [keys.sidePanel, activePreviewId])
+  const stepPreview = useCallback((direction: PreviewHistoryStep): void => {
+    if (activePreviewId === null) return
+    const next = stepPreviewPath(previewHistory, activePreviewId, direction)
+    const path = currentPreviewPath(next, activePreviewId)
+    if (next === previewHistory || path === null) return
+    previewNonce.current += 1
+    const nonce = previewNonce.current
+    dispatchPreviewHistory({ type: direction === -1 ? 'back' : 'forward', sessionId: activePreviewId })
+    setPreviews((all) => ({ ...all, [activePreviewId]: { sessionId: activePreviewId, text: path, nonce } }))
+  }, [previewHistory, activePreviewId])
   // The tab menu's "View changes" (Code mode): show that session in the terminal view with the panel on Changes.
   const viewChanges = useCallback((id: Id): void => {
     // The panel exists only in the terminal view, and in the grid activating a tab only focuses a cell: leave first.
@@ -244,11 +270,18 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
   }, [view, tabs.open, nav.setView, nav.activateTab, nav.notesOpen, nav.toggleNotes, keys.sidePanel, sidePanelWidth.width, sidePanelWidth.commit])
   // A preview belongs to the session whose folder resolved it: once that session is removed the request can only fail
   // (Reload keeps erroring), so it is dropped. `sessions` is null until the store arrives: nothing to decide yet.
-  const previewSessionId = previewRequest?.sessionId ?? null
-  const previewSessionGone = previewSessionId !== null && sessions !== null && !sessions.some((s: Session): boolean => s.id === previewSessionId)
+  const goneIds = sessions === null ? [] : Object.keys(previews).filter((id) => !sessions.some((s: Session): boolean => s.id === id))
+  const goneKey = goneIds.join(',')
   useEffect((): void => {
-    if (previewSessionGone) closePreview()
-  }, [previewSessionGone, closePreview])
+    if (goneKey === '') return
+    const gone = goneKey.split(',')
+    setPreviews((all) => {
+      const next = { ...all }
+      for (const id of gone) delete next[id]
+      return next
+    })
+    for (const id of gone) dispatchPreviewHistory({ type: 'forgetSession', sessionId: id })
+  }, [goneKey])
   const jarvisUi = useRef<WorkspaceUiContext | null>(null)
   jarvisUi.current = {
     mode,
@@ -516,6 +549,9 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                 runtimeState={activeState}
                 previewRequest={previewRequest}
                 onClosePreview={closePreview}
+                {...(activeSession !== null && previewRequest !== null
+                  ? { previewNav: { canBack: canPreviewBack(previewHistory, activeSession.id), canForward: canPreviewForward(previewHistory, activeSession.id), onStep: stepPreview } }
+                  : {})}
                 width={sidePanelWidth.width}
                 maxWidth={sidePanelMax}
                 resizing={sidePanelResizing}
