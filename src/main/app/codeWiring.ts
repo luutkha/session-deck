@@ -8,6 +8,8 @@ import { asCreateWorktreeInput, assertBoolean, assertId, assertNonEmptyString } 
 import type { SessionController } from './sessionController'
 import { createCodeGitOps, type CodeGitOps } from './codeGitOps'
 import { asCommitInput, asPullRequestInput, asWorktreeRemoveOptions } from './codeGitValidation'
+import { openInEditor } from './editorOpen'
+import { createEditorDeps } from './editorOpenReal'
 import { errorMessage, isRecord } from '../../shared/guards'
 
 /** A turn that just ended has usually written its files; give the file system a moment before diffing. */
@@ -285,6 +287,12 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     ipcMain.handle(IPC.worktreeBranchStatus, (_event, rawId: unknown) => git.branchStatus(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeCommit, (_event, raw: unknown) => git.commit(asCommitInput(raw)))
     ipcMain.handle(IPC.worktreePush, (_event, rawId: unknown) => git.push(assertId(rawId, 'worktree id')))
+    ipcMain.handle(IPC.worktreeOpenInEditor, (_event, rawId: unknown, rawPath: unknown, rawLine: unknown) => {
+      const worktree = store.getWorktree(assertId(rawId, 'worktree id'))
+      if (worktree === undefined) throw new Error('Worktree not found')
+      const line = typeof rawLine === 'number' ? rawLine : 1
+      return openInEditor(createEditorDeps(), worktree.path, assertNonEmptyString(rawPath, 'file path'), line)
+    })
     ipcMain.handle(IPC.worktreePull, (_event, rawId: unknown) => git.pull(assertId(rawId, 'worktree id')))
     ipcMain.handle(IPC.worktreeCreatePr, (_event, rawId: unknown, raw: unknown) => git.createPr(assertId(rawId, 'worktree id'), asPullRequestInput(raw)))
     ipcMain.handle(IPC.worktreeMerge, (_event, rawId: unknown) => git.merge(assertId(rawId, 'worktree id')))

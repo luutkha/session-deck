@@ -19,7 +19,8 @@ import {
   PictureInPicture2,
   RefreshCw,
   SendHorizontal,
-  X
+  X,
+  SquareArrowOutUpRight
 } from 'lucide-react'
 import type { AgentKind, ChangedFile, Id } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
@@ -201,6 +202,8 @@ interface PanelHeaderProps {
   readonly onDetach?: (() => void) | undefined
   /** Prev/next file buttons (shown while a file is selected); absent = none. */
   readonly onStep?: ((delta: 1 | -1) => void) | undefined
+  /** D89: opens the selected file in the editor (line 1); absent = no button. */
+  readonly onOpenInEditor?: (() => void) | undefined
   /** Flat list <-> folder tree. */
   readonly treeView: boolean
   readonly onTreeView: (on: boolean) => void
@@ -286,6 +289,7 @@ function PanelHeader({
   onRefresh,
   onDetach,
   onStep,
+  onOpenInEditor,
   treeView,
   onTreeView,
   sideBySide
@@ -315,6 +319,9 @@ function PanelHeader({
       )}
       <div className="flex shrink-0 items-center gap-1">
         {selectedPath !== null && previewable ? <ViewModeToggle viewMode={viewMode} onViewMode={onViewMode} /> : null}
+        {selectedPath !== null && onOpenInEditor !== undefined ? (
+          <HeaderIconButton label="Open this file in your editor" dataAttr="data-open-in-editor" onClick={onOpenInEditor} icon={<SquareArrowOutUpRight aria-hidden="true" />} />
+        ) : null}
         {selectedPath !== null && onStep !== undefined ? (
           <>
             <HeaderIconButton label={PREV_FILE_LABEL} dataAttr="data-changes-prev" onClick={(): void => onStep(-1)} icon={<ChevronUp aria-hidden="true" />} />
@@ -752,6 +759,9 @@ export function ChangesPanel({
       loading={diff.loading}
       error={diff.error}
       layout={split && sideBySide ? 'split' : 'inline'}
+      {...(selectedFile !== undefined && selectedFile.kind !== 'deleted' && !(split && sideBySide)
+        ? { onOpenLine: (line: number): void => { void window.api.openInEditor(worktreeId, selectedFile.path, line).catch((error: unknown) => setDiscardError(error instanceof Error ? error.message : String(error))) } }
+        : {})}
       {...(selectedFile !== undefined && selectedFile.kind !== 'untracked' && !(split && sideBySide)
         ? {
             onDiscardHunk: (index: number, header: string): void => {
@@ -787,6 +797,9 @@ export function ChangesPanel({
           onBack={(): void => setSelection(null)}
           onRefresh={refresh}
           onStep={step}
+          {...(selectedFile !== undefined && selectedFile.kind !== 'deleted'
+            ? { onOpenInEditor: (): void => { void window.api.openInEditor(worktreeId, selectedFile.path, 1).catch((error: unknown) => setDiscardError(error instanceof Error ? error.message : String(error))) } }
+            : {})}
           treeView={treeView}
           onTreeView={(on: boolean): void => {
             setTreeView(on)

@@ -7,6 +7,7 @@ import type {
   CommitResult,
   PushResult,
   PullResult,
+  OpenInEditorResult,
   PullRequestInput,
   PullRequestResult,
   MergeResult,
@@ -493,6 +494,9 @@ const api: Api = {
 
   pushWorktree(worktreeId: Id): Promise<PushResult> {
     return ipcRenderer.invoke(IPC.worktreePush, worktreeId)
+  },
+  openInEditor(worktreeId: Id, path: string, line: number): Promise<OpenInEditorResult> {
+    return ipcRenderer.invoke(IPC.worktreeOpenInEditor, worktreeId, path, line)
   },
   pullWorktree(worktreeId: Id): Promise<PullResult> {
     return ipcRenderer.invoke(IPC.worktreePull, worktreeId)

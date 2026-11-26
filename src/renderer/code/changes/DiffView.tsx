@@ -28,6 +28,8 @@ export interface DiffViewProps {
   readonly layout?: 'inline' | 'split'
   /** D86: provided = every hunk header offers "Discard block" (index among the file's hunks + the @@ header text). */
   readonly onDiscardHunk?: (index: number, header: string) => void
+  /** D89: provided = the new-side line number of a context/added line opens the file at that line. */
+  readonly onOpenLine?: (line: number) => void
 }
 
 const BINARY_MESSAGE = 'Binary file, no text diff.'
@@ -105,7 +107,8 @@ function DiffRow({
   annotation,
   canAnnotate,
   onOpenEditor,
-  onDiscard
+  onDiscard,
+  onOpenLine
 }: {
   readonly line: DiffLine
   readonly annotation: DiffAnnotation | null
@@ -113,6 +116,7 @@ function DiffRow({
   readonly onOpenEditor: () => void
   /** D86: set on a hunk header row only. */
   readonly onDiscard?: () => void
+  readonly onOpenLine?: (line: number) => void
 }): ReactElement {
   const annotated = annotation !== null
   return (
@@ -120,9 +124,22 @@ function DiffRow({
       <span className="w-12 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/60">
         {line.oldNo ?? ''}
       </span>
-      <span className="w-12 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/60">
-        {line.newNo ?? ''}
-      </span>
+      {onOpenLine !== undefined && line.newNo !== null ? (
+        <button
+          type="button"
+          data-open-line={line.newNo}
+          title={`Open line ${String(line.newNo)} in your editor`}
+          aria-label={`Open line ${String(line.newNo)} in your editor`}
+          className="w-12 shrink-0 cursor-pointer pr-2 text-right tabular-nums text-muted-foreground/60 hover:text-foreground hover:underline"
+          onClick={(): void => onOpenLine(line.newNo as number)}
+        >
+          {line.newNo}
+        </button>
+      ) : (
+        <span className="w-12 shrink-0 select-none pr-2 text-right tabular-nums text-muted-foreground/60">
+          {line.newNo ?? ''}
+        </span>
+      )}
       <span className="w-4 shrink-0 select-none text-center">{diffLineMarker(line)}</span>
       {annotated ? (
         <span
@@ -206,12 +223,14 @@ function DiffText({
   annotations,
   onAddComment,
   onDiscardHunk,
+  onOpenLine,
   layout
 }: {
   readonly diff: FileDiff
   readonly annotations: readonly DiffAnnotation[]
   readonly onAddComment?: DiffViewProps['onAddComment']
   readonly onDiscardHunk?: DiffViewProps['onDiscardHunk']
+  readonly onOpenLine?: DiffViewProps['onOpenLine']
   readonly layout: 'inline' | 'split'
 }): ReactElement {
   const parsed = useMemo((): readonly DiffLine[] => parseUnifiedDiff(diff.diff).filter(isBodyLine), [diff.diff])
@@ -291,6 +310,7 @@ function DiffText({
           annotation={annotationForLine(annotations, diff.path, line)}
           canAnnotate={onAddComment !== undefined && annotationEnabled(line)}
           onOpenEditor={(): void => setEditor({ line, draft: '' })}
+          {...(onOpenLine !== undefined ? { onOpenLine } : {})}
           {...(onDiscardHunk !== undefined && line.kind === 'hunk' && hunkIndexes.has(line)
             ? { onDiscard: (): void => onDiscardHunk(hunkIndexes.get(line) ?? 0, line.text) }
             : {})}
@@ -373,6 +393,7 @@ export function DiffView({
   annotations = [],
   onAddComment,
   onDiscardHunk,
+  onOpenLine,
   layout = 'inline'
 }: DiffViewProps): ReactElement {
   if (error !== null) {
@@ -388,5 +409,5 @@ export function DiffView({
   if (diff.binary) {
     return <Notice text={BINARY_MESSAGE} />
   }
-  return <DiffText diff={diff} annotations={annotations} onAddComment={onAddComment} onDiscardHunk={onDiscardHunk} layout={layout} />
+  return <DiffText diff={diff} annotations={annotations} onAddComment={onAddComment} onDiscardHunk={onDiscardHunk} onOpenLine={onOpenLine} layout={layout} />
 }

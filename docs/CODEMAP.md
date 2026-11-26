@@ -84,3 +84,4 @@ Where things live. One line per folder, plus the files you usually need. Feature
 
 - `src/main/cursor/`: Cursor CLI support (D81): `command.ts` (find `cursor-agent`/`agent`), `hookScript.ts` (the hook bridge script text), `hooksFile.ts` (merge into `~/.cursor/hooks.json`, `SESSIONDECK_CURSOR_CONFIG_DIR` override); `store/cursorValues.ts` (chat id and model shapes); launch in `app/startOptions.ts` (`buildCursorStartOptions`), hook route `CursorAnswer` in `attention/HookServer.ts`, `AttentionService.prepareCursor()`.
 - `main/git/branchStatus.ts` also holds `fetchBranch` and `pullBranch` (Pull button, fast-forward only).
+- `main/app/editorOpen.ts` / `editorOpenReal.ts`: open a worktree file in VS Code at a line, else the OS default app (D89).

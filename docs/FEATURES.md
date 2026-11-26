@@ -825,3 +825,5 @@ The step-by-step checklists (new IPC call, setting, store field, main service, U
 *Last updated: 2026-11-08. Keep the matrices and the maps in sync with the code; when in doubt, read the module named in the `Code` column.*
 
 | COD-18 | Pull in the Changes panel (D88 follow-up) | Shipped | **Pull** button next to Push: fetch, then fast-forward only; "already up to date" or a plain refusal when the branch diverged. IPC `pullWorktree`, `main/git/branchStatus.ts` (`fetchBranch`, `pullBranch`), `codeGitOps.pull`; tests `branchOps.pull.test.ts`, `gitActionsLogic.test.ts`; e2e `e2e:code-git` (32 checks) |
+
+| COD-19 | Open a changed file in the editor at a line (D89) | Shipped | Click a new-side line number in the inline diff, or the header button (line 1): `code --goto file:line` when VS Code works, else the OS default app (no line). Path must be inside the worktree. Not in the side-by-side layout. IPC `openInEditor`; `main/app/editorOpen.ts` (+ `editorOpenReal.ts`, env `SESSIONDECK_EDITOR_COMMAND` replaces `code` and disables the default-app fallback, used by tests); tests `editorOpen.test.ts`; e2e `e2e:open-editor` (7 checks) |

@@ -416,6 +416,13 @@ export interface PushResult {
   readonly branch: string
 }
 
+/** D89: how a changed file was opened: VS Code at the line, or the OS default app (no line). */
+export interface OpenInEditorResult {
+  readonly via: 'vscode' | 'default'
+  readonly file: string
+  readonly line: number
+}
+
 /** Fetch + fast-forward only: `updated` is false when the branch was already up to date. */
 export interface PullResult {
   readonly remote: string
