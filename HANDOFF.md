@@ -84,7 +84,7 @@ Feature domains (IDs in `FEATURES.md`):
 | Quota | `USAGE_LIMIT_PATTERNS` may need new wording (the first real match per process is logged). The OpenCode Go usage path is tested with fakes only (no Go connection on the dev machine). |
 | Code mode | Commit, push, PR, merge and delete-from-disk exist (D60); Pull button (fetch + fast-forward only; "behind" is as of the last fetch otherwise), no PR without a GitHub/GitLab/Bitbucket remote, gh only for GitHub. Claude still asks "trust this folder" once per new worktree unless Settings > Code opts in (D43). |
 | OpenCode | Worker tabs are read-only; `opencode --pure` processes are invisible to them. |
-| Grid | No visual-regression screenshot state yet (`e2e:grid` covers behaviour). |
+| Grid | Screenshot checks exist (`e2e:grid-shots`, D89); the focused-pane shot equals the default one, so the focus ring is not covered. |
 | Jarvis | **Voice:** recognition languages are the ones Windows has installed (en-US, zh-CN on the dev PC). **Reading aloud and `get_last_answer`:** both engines since D79 (OpenCode reads `opencode session export`; falls back to the screen when the export has no text, e.g. the free model's quota error). **Schedules:** need the app running; a run more than 15 minutes late is skipped. **Undo:** in memory (last 20, this run), removals are final. **Switching engine:** starts a new Jarvis conversation (switching only the OpenCode model keeps it). |
 | Tests | Real-Claude suites can time out late in a long batch; rerun alone (LESSONS). The clipboard can be unavailable in this environment: paste suites print SKIP for that probe. |
 
