@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode } from 'react'
-import { Bell, BellOff, Coffee, GitCompare, GitFork, Moon, Sun } from 'lucide-react'
+import { ArrowRightLeft, Bell, BellOff, Coffee, GitCompare, GitFork, Moon, Sun } from 'lucide-react'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -39,6 +39,12 @@ export interface SessionContextMenuProps {
   readonly onFork?: () => void
   /** D82 (Code mode): shows the session's Changes tab in the side panel. */
   readonly onViewChanges?: () => void
+  /**
+   * D88: when both of these are present, show "Move to Code mode…". The caller decides eligibility
+   * (an Ops session only: no worktreeId, not Jarvis) and passes the session id to move.
+   */
+  readonly moveToCodeId?: Id
+  readonly onMoveToCode?: (id: Id) => void
 }
 
 export function SessionContextMenu(props: SessionContextMenuProps): ReactElement {
@@ -48,7 +54,8 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
     onCloseSession, onRemoveSession,
     sleeping = false, canSleep = false, onSleep, onWake,
     keepAwake = false, onToggleKeepAwake,
-    attention = null, onToggleRead, onFork, onViewChanges
+    attention = null, onToggleRead, onFork, onViewChanges,
+    moveToCodeId, onMoveToCode
   } = props
   return (
     <ContextMenu>
@@ -138,6 +145,15 @@ export function SessionContextMenu(props: SessionContextMenuProps): ReactElement
           <ContextMenuItem onSelect={onFork} data-fork-session="">
             <GitFork aria-hidden="true" />
             Fork session
+          </ContextMenuItem>
+        ) : null}
+        {moveToCodeId !== undefined && onMoveToCode !== undefined ? (
+          <ContextMenuItem
+            onSelect={(): void => onMoveToCode(moveToCodeId)}
+            data-move-to-code=""
+          >
+            <ArrowRightLeft aria-hidden="true" />
+            Move to Code mode…
           </ContextMenuItem>
         ) : null}
         <ContextMenuItem onSelect={onCloseSession}>Close session</ContextMenuItem>

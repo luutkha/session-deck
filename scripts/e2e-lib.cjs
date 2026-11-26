@@ -53,8 +53,16 @@ async function launchApp({ port, userData, exePath, extraArgs = [] } = {}) {
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(new Error('ws error')) })
   let counter = 0
   const pending = new Map()
-  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id) } }
-  const send = (method, params = {}) => new Promise((resolve) => { const i = ++counter; pending.set(i, resolve); ws.send(JSON.stringify({ id: i, method, params })) })
+  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id).resolve(d); pending.delete(d.id) } }
+  // A call whose socket closes (or that never answers) used to wait forever and hang the whole run (e.g. quitApp over the socket it kills).
+  ws.onclose = () => { for (const p of pending.values()) p.reject(new Error('CDP socket closed')); pending.clear() }
+  const CALL_DEADLINE_MS = 5 * 60 * 1000
+  const send = (method, params = {}) => new Promise((resolve, reject) => {
+    const i = ++counter
+    const timer = setTimeout(() => { pending.delete(i); reject(new Error('CDP call timed out: ' + method)) }, CALL_DEADLINE_MS)
+    pending.set(i, { resolve: (d) => { clearTimeout(timer); resolve(d) }, reject: (e) => { clearTimeout(timer); reject(e) } })
+    try { ws.send(JSON.stringify({ id: i, method, params })) } catch (e) { clearTimeout(timer); pending.delete(i); reject(e) }
+  })
   const evaluate = async (expression) => {
     const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
     if (r.result.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')

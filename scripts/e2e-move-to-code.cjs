@@ -162,6 +162,27 @@ async function main() {
     }, 20000, 300)
     t.check('the session moved into the NEW worktree', !!movedNew)
     t.check('and no extra first session was started', !!movedNew && movedNew.count === sessionsBefore, `${sessionsBefore} -> ${movedNew?.count}`)
+
+    // ---- 9. right-click "Move to Code mode…" on an Ops card opens the same dialog (D88 follow-up)
+    await ev(`document.querySelector('[data-mode-switch] [data-mode="ops"]')?.click()`)
+    await waitFor(() => ev('document.querySelector("[data-ui-mode]")?.dataset.uiMode === "ops" || null'), 5000, 200)
+    const third = await ev(`window.api.createSession({ cwd: ${js(opsDir)}, name: 'Right click me', agent: 'shell' })`)
+    const card = `[data-session-card=${js(third.id)}]`
+    await waitFor(() => ev(`!!document.querySelector(${js(card)}) || null`), 5000, 200)
+    const rightClick = (sel) => ev(`(() => { const el = document.querySelector(${js(sel)}); const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 10, button: 2 })); return true })()`)
+    await rightClick(card)
+    const menuItem = await waitFor(() => ev('!!document.querySelector("[data-move-to-code]") || null'), 3000, 100)
+    t.check('the Ops card menu has "Move to Code mode…"', !!menuItem)
+    await ev('document.querySelector("[data-move-to-code]")?.click()')
+    t.check('choosing it opens the New worktree dialog for that session', !!(await waitFor(() => ev('(!!document.querySelector("[data-testid=new-worktree-dialog]") && !!document.querySelector("[data-testid=new-worktree-move-note]")) || null'), 5000, 200)))
+    await key('Escape', 'Escape', 27)
+    await sleep(500)
+    // a Code session's card has no such item
+    await ev(`document.querySelector('[data-mode-switch] [data-mode="code"]')?.click()`)
+    await waitFor(() => ev('document.querySelector("[data-ui-mode]")?.dataset.uiMode === "code" || null'), 5000, 200)
+    await ev(`document.querySelector('[data-session-card=${js(second.id)}]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))`)
+    await sleep(500)
+    t.check('a Code session menu has no "Move to Code mode…"', !(await ev('!!document.querySelector("[data-move-to-code]")')))
   } catch (error) {
     t.check('run completed without exception', false, String(error && error.stack || error))
   } finally {

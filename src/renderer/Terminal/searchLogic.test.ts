@@ -1,4 +1,4 @@
-import { decideSearchKey, isSearchShortcut, matchLabel } from './searchLogic'
+import { decideSearchKey, isSearchShortcut, MATCH_COUNT_CAP, matchLabel } from './searchLogic'
 
 describe('isSearchShortcut', () => {
   it('is Ctrl+Shift+F, with either letter case', () => {
@@ -49,6 +49,22 @@ describe('matchLabel', () => {
   })
 
   it('shows only the total when the highlight cap reports no active index', () => {
-    expect(matchLabel('needle', -1, 1000)).toBe('1000 matches')
+    expect(matchLabel('needle', -1, 6)).toBe('6 matches')
+  })
+
+  it('mirrors the addon highlight cap', () => {
+    expect(MATCH_COUNT_CAP).toBe(200)
+  })
+
+  it('says 200+ instead of claiming the truncated count is the total', () => {
+    expect(matchLabel('needle', -1, MATCH_COUNT_CAP)).toBe('200+ matches')
+    expect(matchLabel('needle', 2, MATCH_COUNT_CAP)).toBe('3/200+')
+    expect(matchLabel('needle', -1, MATCH_COUNT_CAP - 1)).toBe('199 matches')
+  })
+
+  it('honours a different cap passed by the caller', () => {
+    expect(matchLabel('needle', -1, 50, 50)).toBe('50+ matches')
+    expect(matchLabel('needle', 0, 49, 50)).toBe('1/49')
+    expect(matchLabel('needle', 3, 50, 50)).toBe('4/50+')
   })
 })

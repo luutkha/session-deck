@@ -46,7 +46,7 @@ export interface TerminalSearchApi {
   /** The bar is on screen (and its input owns the keyboard). */
   readonly active: boolean
   readonly query: string
-  /** "3/12", "No matches" or empty (no query yet). */
+  /** "3/12", "No matches", "3/200+" (highlight cap hit) or empty (no query yet). */
   readonly label: string
   readonly inputRef: RefObject<HTMLInputElement | null>
   open(): void
@@ -239,6 +239,8 @@ export function useTerminalSearch(
   return {
     active,
     query,
+    // The addon's highlight limit lives in paneFactory.ts (200). matchLabel mirrors it: a count
+    // that reaches the cap is a lower bound, so the bar shows "200+" instead of a false total.
     label: matchLabel(query, result.index, result.count),
     inputRef,
     open,

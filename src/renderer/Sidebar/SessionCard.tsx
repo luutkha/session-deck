@@ -36,6 +36,14 @@ function activityDotLabel(activity: SessionActivity): string {
   }
 }
 
+/**
+ * D88: the sidebar's "Move to Code mode…" menu entry is only for an Ops session: one with no worktree,
+ * never Jarvis. Pure so the show/hide rule is unit-tested without rendering a card or a menu.
+ */
+export function canMoveToCode(session: Pick<Session, 'worktreeId' | 'role'>): boolean {
+  return session.worktreeId === undefined && session.role !== 'jarvis'
+}
+
 export interface SessionCardOwnProps {
   readonly session: Session
   readonly status: StatusDef | null

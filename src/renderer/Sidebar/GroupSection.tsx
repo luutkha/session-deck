@@ -6,7 +6,7 @@ import { relativeTime } from '../state/formatTime'
 import { attentionClass, resolveDropPosition } from './uiLogic'
 import { DropHereHint, SectionHeader } from './SectionHeader'
 import { GroupContextMenu } from './GroupContextMenu'
-import { SessionCard, useSessionCardHandlers, type SessionCardHandlers } from './SessionCard'
+import { SessionCard, canMoveToCode, useSessionCardHandlers, type SessionCardHandlers } from './SessionCard'
 import { SessionContextMenu } from './SessionContextMenu'
 import { toggleRead } from '../attention/needsYou'
 import { InlineEdit } from './InlineEdit'
@@ -42,6 +42,8 @@ export interface SidebarSessionRowProps {
   readonly onCreateGroupAndMove: (id: Id) => void
   readonly onRequestRemoveSession: (id: Id) => void
   readonly onForkSession?: (id: Id) => void
+  /** D88: absent = the "Move to Code mode…" item is not shown at all. */
+  readonly onMoveToCode?: (id: Id) => void
 }
 
 function sameSession(a: Session, b: Session): boolean {
@@ -106,6 +108,7 @@ export function sidebarSessionRowPropsEqual(prev: SidebarSessionRowProps, next: 
   )
   // Callback identity is deliberately ignored: the sections pass stable ref-forwarding wrappers
   // (useStableSidebarRowCallbacks and useSessionCardHandlers), so a skipped row never calls a stale closure.
+  // The D88 menu callback reads the row's latest props through `latest`, so it is safe to ignore here too.
 }
 
 export function SidebarSessionRowView(props: SidebarSessionRowProps): ReactElement {
@@ -143,6 +146,12 @@ export function SidebarSessionRowView(props: SidebarSessionRowProps): ReactEleme
       onFork={
         latest.current.onForkSession !== undefined && (session.agent ?? 'claude') !== 'shell'
           ? (): void => latest.current.onForkSession?.(latest.current.session.id)
+          : undefined
+      }
+      moveToCodeId={canMoveToCode(session) ? session.id : undefined}
+      onMoveToCode={
+        canMoveToCode(session) && latest.current.onMoveToCode !== undefined
+          ? (id): void => latest.current.onMoveToCode?.(id)
           : undefined
       }
       onRemoveSession={(): void => latest.current.onRequestRemoveSession(latest.current.session.id)}
@@ -248,6 +257,8 @@ export interface GroupSectionProps {
   readonly onCloseSession: (id: Id) => void
   /** D52: fork a Claude session (absent = no menu item). */
   readonly onForkSession?: (id: Id) => void
+  /** D88: opens the New worktree dialog for this Ops session (absent = no menu item). */
+  readonly onMoveToCode?: (id: Id) => void
   readonly onSetSessionStatus: (id: Id, statusId: Id | null) => void
   readonly onMoveSession: (id: Id, groupId: Id | null) => void
   readonly onCreateGroupAndMove: (id: Id) => void
@@ -270,7 +281,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
     showWorkspaces, workspaceCollapsed, onToggleWorkspace, onNewSessionInFolder,
     selectedIds,
     onToggleCollapsed, onSelect, onStartRenameSession, onRenameSession, onCancelRename,
-    onStartRenameGroup, onRenameGroup, onCloseSession, onForkSession, onSetSessionStatus,
+    onStartRenameGroup, onRenameGroup, onCloseSession, onForkSession, onMoveToCode, onSetSessionStatus,
     onMoveSession, onCreateGroupAndMove, onRequestRemoveSession, onRemoveGroup,
     onNewSession, onDragStartSession, onDragStartGroup,
     onDragOverSession, onDragOverUngrouped,
@@ -456,6 +467,7 @@ export function GroupSection(props: GroupSectionProps): ReactElement {
         handlers={handlers}
         {...rowCallbacks}
         onForkSession={onForkSession}
+        onMoveToCode={onMoveToCode}
       />
     )
   }

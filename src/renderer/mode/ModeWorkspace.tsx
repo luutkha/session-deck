@@ -372,6 +372,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                   onSelect={nav.selectSession}
                   onReopen={nav.reopenSession}
                   onForkSession={commands.forkSession}
+                  onMoveToCode={(id): void => commands.openNewWorktree(undefined, id)}
                   actions={actions}
                   onNewSession={commands.openNew}
                   sort={sort}
