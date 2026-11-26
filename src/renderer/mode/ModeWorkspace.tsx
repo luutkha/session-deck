@@ -473,7 +473,7 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
             }}
           />
           <div className="flex min-h-0 flex-1">
-            <div className="relative min-h-0 min-w-0 flex-1 bg-black">
+            <div className="relative min-h-0 min-w-0 flex-1 bg-[var(--terminal-surface)]">
               {loaded ? (
                 <TerminalWorkspace
                   sessionIds={ids}
@@ -515,12 +515,12 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
                 </div>
               ) : null}
               {loaded && view === 'terminal' && workers.selected !== null ? (
-                <div className="absolute inset-0 z-10 bg-black">
+                <div className="absolute inset-0 z-10 bg-[var(--terminal-surface)]">
                   <WorkerView key={workers.selected.id} worker={workers.selected} />
                 </div>
               ) : null}
               {loaded && ids.length === 0 && view !== 'hub' ? (
-                <div className="absolute inset-0 bg-black">
+                <div className="absolute inset-0 bg-[var(--terminal-surface)]">
                   {mode === 'code'
                     ? <EmptyState onNewSession={(): void => commands.openNewWorktree()} {...CODE_EMPTY} />
                     : <EmptyState onNewSession={(): void => commands.openNew()} />}

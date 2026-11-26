@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactElement } from 'react'
 import type { AppSettings, LoginItemState, SettingsPatch } from '../../shared/types'
 import type { SessionActions } from '../state/useSessionStore'
+import { applyTheme, getTheme, subscribeTheme, writeThemePref, type Theme } from '../theme/themePref'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -13,7 +14,14 @@ export interface GeneralSectionProps {
   readonly actions: Pick<SessionActions, 'updateSettings'>
 }
 
+const THEME_CHOICES: readonly { readonly value: Theme; readonly label: string }[] = [
+  { value: 'dark', label: 'Dark' },
+  { value: 'light', label: 'Light' }
+]
+
 export function GeneralSection({ settings, actions }: GeneralSectionProps): ReactElement {
+  // D89: a renderer-local preference (not a store setting), shared with the other windows.
+  const theme = useSyncExternalStore(subscribeTheme, getTheme, getTheme)
   const [loginItem, setLoginItem] = useState<LoginItemState | null>(null)
   const [loginPending, setLoginPending] = useState(false)
   const [confirmQuit, setConfirmQuit] = useState(false)
@@ -41,6 +49,15 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
     } catch (err: unknown) {
       setError(errorMessage(err))
     }
+  }
+
+  function chooseTheme(next: Theme): void {
+    if (next === theme) {
+      return
+    }
+    writeThemePref(next)
+    // Applies in this window at once too (the subscription updates the terminals and other windows).
+    applyTheme(document, next)
   }
 
   async function handleLoginToggle(open: boolean): Promise<void> {
@@ -73,6 +90,36 @@ export function GeneralSection({ settings, actions }: GeneralSectionProps): Reac
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[13px] font-medium text-foreground">Theme</span>
+        <div
+          id="general-theme"
+          data-testid="settings-theme"
+          className="flex items-center gap-2"
+          role="group"
+          aria-label="Theme"
+        >
+          {THEME_CHOICES.map((choice) => (
+            <Button
+              key={choice.value}
+              type="button"
+              size="xs"
+              variant={theme === choice.value ? 'default' : 'outline'}
+              aria-pressed={theme === choice.value}
+              data-theme-choice={choice.value}
+              onClick={(): void => chooseTheme(choice.value)}
+            >
+              {choice.label}
+            </Button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Dark is the default. Light changes this window and the other open windows immediately, including the terminals.
+        </p>
+      </div>
+
+      <Separator />
+
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="general-start-on-login" className="text-[13px] font-medium text-foreground">

@@ -4,6 +4,15 @@ import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import './styles.css'
+import { applyTheme, readThemePref, subscribeTheme } from './theme/themePref'
+
+// D89: every window loads this same bundle (main, viewer and detached Changes), so the saved theme is
+// applied before React paints and stays in sync when another window changes the shared preference.
+// index.html keeps class="dark" so the default never flashes; only a stored Light removes it here.
+applyTheme(document, readThemePref())
+subscribeTheme((theme): void => {
+  applyTheme(document, theme)
+})
 
 // D87: the two detached windows are separate chunks, so the main window does not parse their code at launch.
 const ChangesWindow = lazy(() => import('./code/changes/ChangesWindow').then((m) => ({ default: m.ChangesWindow })))

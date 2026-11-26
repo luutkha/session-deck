@@ -1,5 +1,11 @@
 import { DEFAULT_TERM_VIEW } from './termView'
-import { TERMINAL_OPTIONS, TERMINAL_THEME, terminalOptionsFor } from './terminalOptions'
+import {
+  LIGHT_TERMINAL_THEME,
+  TERMINAL_OPTIONS,
+  TERMINAL_THEME,
+  terminalOptionsFor,
+  terminalThemeFor
+} from './terminalOptions'
 
 const ANSI_COLOR_KEYS = [
   'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
@@ -61,6 +67,11 @@ describe('terminalOptionsFor', () => {
     expect(terminalOptionsFor(DEFAULT_TERM_VIEW, { reducedEffects: true, explicit: true }).scrollback).toBe(10_000)
     expect(terminalOptionsFor(DEFAULT_TERM_VIEW, { reducedEffects: false, explicit: false }).scrollback).toBe(10_000)
   })
+
+  it('keeps the dark palette by default and builds a light pane on request (D89)', () => {
+    expect(terminalOptionsFor(DEFAULT_TERM_VIEW).theme).toBe(TERMINAL_THEME)
+    expect(terminalOptionsFor(DEFAULT_TERM_VIEW, undefined, 'light').theme).toBe(LIGHT_TERMINAL_THEME)
+  })
 })
 
 describe('TERMINAL_THEME', () => {
@@ -83,5 +94,26 @@ describe('TERMINAL_THEME', () => {
     expect(TERMINAL_THEME.blue).toBe('#2472c8')
     expect(TERMINAL_THEME.brightBlue).toBe('#3b8eea')
     expect(TERMINAL_THEME.brightWhite).toBe('#e5e5e5')
+  })
+})
+
+describe('LIGHT_TERMINAL_THEME (D89)', () => {
+  it('is selected only for the light preference', () => {
+    expect(terminalThemeFor('dark')).toBe(TERMINAL_THEME)
+    expect(terminalThemeFor('light')).toBe(LIGHT_TERMINAL_THEME)
+  })
+
+  it('has a light background with dark text and all 16 ANSI colours', () => {
+    expect(LIGHT_TERMINAL_THEME.background).toBe('#ffffff')
+    expect(LIGHT_TERMINAL_THEME.foreground).toBe('#1e1e1e')
+    for (const name of ANSI_COLOR_KEYS) {
+      expect(LIGHT_TERMINAL_THEME[name], `theme.${name} must be a #rrggbb color`).toMatch(HEX_COLOR)
+    }
+  })
+
+  it('keeps the ANSI inks dark enough to read on white', () => {
+    expect(LIGHT_TERMINAL_THEME.green).toBe('#137800')
+    expect(LIGHT_TERMINAL_THEME.blue).toBe('#0451a5')
+    expect(LIGHT_TERMINAL_THEME.white).toBe('#595959')
   })
 })

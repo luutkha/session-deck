@@ -1,5 +1,6 @@
 import type { ITerminalOptions, ITheme } from '@xterm/xterm'
 import { effectiveScrollback, fontSizeFor, type TermView } from './termView'
+import { DEFAULT_THEME, type Theme } from '../theme/themePref'
 
 const FONT_FAMILY = "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace"
 const FONT_SIZE = 14
@@ -30,6 +31,36 @@ export const TERMINAL_THEME: ITheme = {
   brightMagenta: '#d670d6',
   brightCyan: '#29b8db',
   brightWhite: '#e5e5e5'
+}
+
+/** VS Code Light+-style terminal palette (D89): dark ANSI inks readable on a white background. */
+export const LIGHT_TERMINAL_THEME: ITheme = {
+  background: '#ffffff',
+  foreground: '#1e1e1e',
+  cursor: '#1e1e1e',
+  cursorAccent: '#ffffff',
+  selectionBackground: '#b4d5fe',
+  black: '#1e1e1e',
+  red: '#cd3131',
+  green: '#137800',
+  yellow: '#8a6d00',
+  blue: '#0451a5',
+  magenta: '#a315a3',
+  cyan: '#0e7490',
+  white: '#595959',
+  brightBlack: '#666666',
+  brightRed: '#c00000',
+  brightGreen: '#008000',
+  brightYellow: '#8a6d00',
+  brightBlue: '#0451a5',
+  brightMagenta: '#a315a3',
+  brightCyan: '#0e7490',
+  brightWhite: '#262626'
+}
+
+/** The palette a pane is built with; the dark object is unchanged (D89). */
+export function terminalThemeFor(theme: Theme): ITheme {
+  return theme === 'light' ? LIGHT_TERMINAL_THEME : TERMINAL_THEME
 }
 
 /**
@@ -63,10 +94,15 @@ export interface ScrollbackContext {
  * mounted panes (paneFactory.applyTerminalFontSize); scrollback is a construction option, so
  * reduced effects can only lower it here (W4-H). Without a context the profile is used as-is.
  */
-export function terminalOptionsFor(view: TermView, scrollback?: ScrollbackContext): ITerminalOptions {
+export function terminalOptionsFor(
+  view: TermView,
+  scrollback?: ScrollbackContext,
+  theme: Theme = DEFAULT_THEME
+): ITerminalOptions {
   return {
     ...TERMINAL_OPTIONS,
     fontSize: fontSizeFor(view.zoomPercent),
+    theme: terminalThemeFor(theme),
     scrollback: scrollback === undefined
       ? view.scrollbackLines
       : effectiveScrollback({ reducedEffects: scrollback.reducedEffects, view, explicit: scrollback.explicit })

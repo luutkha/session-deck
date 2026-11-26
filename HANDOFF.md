@@ -79,7 +79,7 @@ Feature domains (IDs in `FEATURES.md`):
 | Area | Gap |
 |---|---|
 | Release | Unsigned installer, version 0.0.6 (bumped by hand on request); no auto-update (D25 deferred). |
-| Look | Dark theme only. |
+| Look | Dark by default; optional light theme (D89) with a few surfaces still dark (worker log views, terminal search popup, start-up flash). |
 | Human checks | Sound and taskbar flash are verified through code paths and fakes, not by ear/eye; real-mouse drag-and-drop is covered by pure logic, not simulated drag events. |
 | Quota | `USAGE_LIMIT_PATTERNS` may need new wording (the first real match per process is logged). The OpenCode Go usage path is tested with fakes only (no Go connection on the dev machine). |
 | Code mode | Commit, push, PR, merge and delete-from-disk exist (D60); Pull button (fetch + fast-forward only; "behind" is as of the last fetch otherwise), no PR without a GitHub/GitLab/Bitbucket remote, gh only for GitHub. Claude still asks "trust this folder" once per new worktree unless Settings > Code opts in (D43). |

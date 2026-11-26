@@ -5,7 +5,8 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { SearchAddon } from '@xterm/addon-search'
 import type { Id } from '../../shared/types'
-import { terminalOptionsFor } from './terminalOptions'
+import { DEFAULT_THEME, type Theme } from '../theme/themePref'
+import { terminalOptionsFor, terminalThemeFor } from './terminalOptions'
 import { DEFAULT_TERM_VIEW, fontSizeFor, type TermView } from './termView'
 import type { RendererKind } from './terminalRenderer'
 import { registerLinkProvider } from './links/linkProvider'
@@ -172,6 +173,8 @@ export function buildTerminalView(
   id: Id,
   options: {
     readonly termView?: TermView
+    /** Theme at construction (D89); live changes go through applyTerminalTheme. */
+    readonly theme?: Theme
     /** Reduced effects (software GPU): lower the default scrollback at construction (W4-H). */
     readonly reducedEffects?: boolean
     /** True when the user saved `sessiondeck.termview.v1`; their scrollback must be kept. */
@@ -184,7 +187,7 @@ export function buildTerminalView(
   const term = new Terminal(terminalOptionsFor(options.termView ?? DEFAULT_TERM_VIEW, {
     reducedEffects: options.reducedEffects ?? false,
     explicit: options.explicitTermView ?? false
-  }))
+  }, options.theme ?? DEFAULT_THEME))
 
   const fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
@@ -295,6 +298,18 @@ export function applyReducedEffects(view: TerminalView, reduced: boolean): void 
     return
   }
   view.term.options.cursorBlink = !reduced
+}
+
+/**
+ * Live theme switch (D89): xterm accepts a new `theme` option without remounting, so an open pane
+ * repaints with the new palette at once (including the background and the 16 ANSI colours).
+ */
+export function applyTerminalTheme(view: TerminalView, theme: Theme): void {
+  const next = terminalThemeFor(theme)
+  if (view.term.options.theme === next) {
+    return
+  }
+  view.term.options.theme = next
 }
 
 /**

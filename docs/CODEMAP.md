@@ -86,3 +86,4 @@ Where things live. One line per folder, plus the files you usually need. Feature
 - `main/git/branchStatus.ts` also holds `fetchBranch` and `pullBranch` (Pull button, fast-forward only).
 - `main/app/editorOpen.ts` / `editorOpenReal.ts`: open a worktree file in VS Code at a line, else the OS default app (D89).
 - `preview/previewHistory.ts`: per-session preview history reducer (D89); wired in `mode/ModeWorkspace.tsx` and `viewer/PreviewTab.tsx`.
+- `theme/themePref.ts`: the Dark/Light preference (localStorage), `applyTheme`, subscribe (D89); `styles/orca-theme.css` holds both palettes.

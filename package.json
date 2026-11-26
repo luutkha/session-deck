@@ -73,6 +73,7 @@
     "e2e:preview": "node scripts/e2e-preview.cjs",
     "e2e:grid": "node scripts/e2e-grid.cjs",
     "e2e:grid-shots": "node scripts/e2e-grid-shots.cjs",
+    "e2e:theme": "node scripts/e2e-theme.cjs",
     "e2e:open-editor": "node scripts/e2e-open-editor.cjs",
     "e2e:preview-history": "node scripts/e2e-preview-history.cjs",
     "e2e:termview": "node scripts/e2e-termview.cjs",

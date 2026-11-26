@@ -7,15 +7,17 @@
 // everything is disposed when the workspace unmounts (a mode switch remounts it).
 // The renderer kind follows the measured GPU and the user's graphics preferences
 // (no-GPU support, D62).
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Id, RuntimeState, SessionRun } from '../../shared/types'
 import type { PtyReplay } from '../../shared/ipc'
 import { HiddenQueue } from './hiddenQueue'
 import { SeqGate } from './seqGate'
 import { hasStoredTermView, type TermView } from './termView'
 import type { ContextMenuPoint, ZoomAction } from './paneFactory'
+import { getTheme, subscribeTheme } from '../theme/themePref'
 import {
   applyReducedEffects,
+  applyTerminalTheme,
   attachRenderer,
   buildTerminalView,
   detachRenderer,
@@ -217,6 +219,8 @@ export function useTerminalPanes(
   // workspace and the settings dialog see the same values live.
   const prefs = useGraphicsPrefs()
   const gpu = useGpuInfo()
+  // D89: the xterm palette follows the same renderer-local preference as the UI, live in every pane.
+  const theme = useSyncExternalStore(subscribeTheme, getTheme, getTheme)
   const wanted: RendererKind = resolveRenderer(prefs.renderer, gpu.info?.mode ?? null)
   const reducedEffects = resolveReducedEffects(prefs.effects, gpu.info?.mode ?? null)
   // Read at pane construction and by the policy callback (both outlive the render that saw the value).
@@ -300,6 +304,7 @@ export function useTerminalPanes(
       panesRef.current.delete(id)
       const view = buildTerminalView(id, {
         termView: optionsRef.current.termView,
+        theme,
         // W4-H: scrollback is construction-only. Reduced effects get a smaller default buffer;
         // a saved profile is an explicit user choice and is never shrunk.
         reducedEffects: reducedRef.current,
@@ -379,6 +384,13 @@ export function useTerminalPanes(
       applyReducedEffects(pane.view, reducedEffects)
     }
   }, [reducedEffects, createdKey])
+
+  // Theme (D89): xterm's theme is a live option, so every already-open pane repaints on a switch.
+  useEffect((): void => {
+    for (const pane of panesRef.current.values()) {
+      applyTerminalTheme(pane.view, theme)
+    }
+  }, [theme, createdKey])
 
   // Dispose panes whose session is gone.
   useEffect((): void => {

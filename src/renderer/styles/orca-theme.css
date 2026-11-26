@@ -1,5 +1,6 @@
 /*
- * Orca design tokens (dark theme only).
+ * Orca design tokens. Dark stays the default (class="dark"); an optional Light palette (D89)
+ * is the same Orca token set in :root. Only the class on <html> switches between them.
  * Adapted from stablyai/orca src/assets/main.css (MIT, (c) 2026 Lovecast Inc.).
  * Trimmed to the tokens used by components/ui/* and the SessionDeck shell.
  */
@@ -72,9 +73,15 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ── Light palette (kept for parity with Orca; the app runs with class="dark") ── */
+/* ── Light palette (used when the `dark` class is absent, D89) ── */
 
 :root {
+  /* D89: the surface behind the terminals (matches the xterm theme background of each mode). */
+  --terminal-surface: #ffffff;
+  /* Session attention indicators (sidebar cards, tabs, status bar): stay legible on light surfaces. */
+  --attn-permission: #b07800;
+  --attn-done: #15803d;
+  --attn-idle: #2a78d6;
   --app-font-family: 'Geist', 'Segoe UI', system-ui, sans-serif;
   --font-sans: var(--app-font-family);
   --font-mono:
@@ -129,9 +136,10 @@
   --status-warning-border: color-mix(in srgb, var(--status-warning) 25%, transparent);
 }
 
-/* ── Dark palette (active) ── */
+/* ── Dark palette (default) ── */
 
 .dark {
+  --terminal-surface: #000000;
   --bg-titlebar: #121212;
   /* Session attention indicators (sidebar cards, tabs, status bar). */
   --attn-permission: #ffb300;
