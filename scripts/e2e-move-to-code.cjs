@@ -103,6 +103,29 @@ async function main() {
     const none = await items()
     t.check('a worktree session is not offered the move', !none.some((i) => i.includes('Move to Code mode')), none.join(' | '))
     await key('Escape', 'Escape', 27)
+
+    // ---- 6. Jarvis does it too (MCP tool move_session_to_code, the user confirms in the app)
+    const cfg = JSON.parse(fs.readFileSync(path.join(app.userData, 'jarvis', 'mcp.json'), 'utf8')).mcpServers.sessiondeck
+    let rpcId = 0
+    const tool = async (name, args = {}) => {
+      const response = await fetch(cfg.url, { method: 'POST', headers: { ...cfg.headers, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/call', params: { name, arguments: args } }) })
+      const body = await response.json()
+      return { text: body.result.content[0].text, error: body.result.isError === true }
+    }
+    const second = await ev(`window.api.createSession({ cwd: ${js(opsDir)}, name: 'Jarvis moves me', agent: 'shell' })`)
+    await sleep(800)
+    const declined = tool('move_session_to_code', { session: 'jarvis moves me', worktree: 'target' })
+    const dialog = await waitFor(() => ev(`document.querySelector('[role=alertdialog]')?.innerText ?? null`), 8000, 200)
+    t.check('Jarvis asks the user before moving', !!dialog && dialog.includes('Jarvis wants to move'), String(dialog))
+    await ev(`[...document.querySelectorAll('[role=alertdialog] button')].find((b) => b.innerText.trim() === 'Cancel')?.click()`)
+    t.check('Cancel = declined, session still in Ops', /declined/.test((await declined).text) && (await store()).sessions.find((x) => x.id === second.id)?.worktreeId === undefined)
+    const accepted = tool('move_session_to_code', { session: 'jarvis moves me', worktree: 'target' })
+    await waitFor(() => ev(`!!document.querySelector('[role=alertdialog]') || null`), 8000, 200)
+    await ev(`[...document.querySelectorAll('[role=alertdialog] button')].find((b) => b.innerText.trim() === 'Move')?.click()`)
+    const done = await accepted
+    t.check('Move = the session joins the worktree', /^Moved "Jarvis moves me"/.test(done.text) && (await store()).sessions.find((x) => x.id === second.id)?.worktreeId === worktree.id, done.text)
+    const again2 = await tool('move_session_to_code', { session: 'jarvis moves me', worktree: 'target' })
+    t.check('a Code session is refused without asking', again2.error && /already a Code session/.test(again2.text), again2.text)
   } catch (error) {
     t.check('run completed without exception', false, String(error && error.stack || error))
   } finally {

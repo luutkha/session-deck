@@ -59,6 +59,10 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
       return created
     }),
     forkSession: vi.fn((id: string): Session | Promise<Session> => session('fork', `${id} (fork)`)),
+    moveToWorktree: vi.fn((id: string, worktreeId: string): Session => {
+      setSession(id, { worktreeId })
+      return data.sessions.find((x) => x.id === id) as Session
+    }),
     removeSession: vi.fn(),
     removeWorktree: vi.fn(),
     closeSession: vi.fn(),
@@ -1162,5 +1166,26 @@ describe('G9: tags and Changes panel tools', () => {
     await expect(t.call('changes_set_layout', { session: 'nope', tree: true })).rejects.toThrow('No session matches "nope"')
     await expect(t.call('changes_set_layout', { session: 'api', tree: true })).rejects.toThrow('not in a worktree')
     expect(t.uiCalls).toHaveLength(0)
+  })
+})
+
+describe('Jarvis move_session_to_code (D88)', () => {
+  it('asks first, then moves the Ops session into the named worktree', async () => {
+    const t = setup([session('a', 'Docs')], [], { confirm: true })
+    expect(await t.call('move_session_to_code', { session: 'docs', worktree: 'checkout' })).toContain('Moved "Docs" into worktree "checkout"')
+    expect(t.deps.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Jarvis: move session to Code mode', confirmLabel: 'Move' }))
+    expect(t.controller.moveToWorktree).toHaveBeenCalledWith('a', 'w1')
+  })
+
+  it('does nothing when the user declines', async () => {
+    const t = setup([session('a', 'Docs')], [], { confirm: false })
+    expect(await t.call('move_session_to_code', { session: 'docs', worktree: 'checkout' })).toContain('declined')
+    expect(t.controller.moveToWorktree).not.toHaveBeenCalled()
+  })
+
+  it('refuses a session that is already in a worktree, without asking', async () => {
+    const t = setup([session('a', 'Docs', { worktreeId: 'w1' })], [], { confirm: true })
+    await expect(t.call('move_session_to_code', { session: 'docs', worktree: 'checkout' })).rejects.toThrow('already a Code session')
+    expect(t.deps.confirm).not.toHaveBeenCalled()
   })
 })

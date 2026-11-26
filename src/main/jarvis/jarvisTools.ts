@@ -82,6 +82,8 @@ export interface JarvisToolDeps {
   readonly controller: {
     createSession(input: CreateSessionInput): Session
     forkSession(id: Id): Session | Promise<Session>
+    /** D88: moves an Ops session into a Code-mode worktree (see SessionController.moveToWorktree). */
+    moveToWorktree(id: Id, worktreeId: Id): Session
     /** D79/D81: change an OpenCode or Cursor session's model (see SessionController.setOpencodeModel). */
     setOpencodeModel(id: Id, model: string | undefined): 'restarted' | 'next-start' | 'restart-failed'
     removeSession(id: Id): void
@@ -756,6 +758,25 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         return agentOf(fork) === 'opencode'
           ? `Copied "${session.name}" into "${fork.name}" (id ${fork.id}). OpenCode has no true fork: this is a copy of its conversation, so the two now move apart.`
           : `Forked "${session.name}" into "${fork.name}" (id ${fork.id}).`
+      }
+    },
+    {
+      name: 'move_session_to_code',
+      description: 'Moves an Ops session into a Code-mode worktree (D88): the same card (name, notes, tags, status) now lives under that worktree and its folder is the worktree folder. A running session restarts there on a FRESH conversation: the old conversation does not come along. Create the worktree first (create_worktree) if none exists. Not for Jarvis, not for a session already in a worktree. The user is asked to confirm in the app.',
+      inputSchema: schema({
+        session: SESSION_PROP,
+        worktree: { type: 'string', description: 'Worktree name, branch or id (see list_repos).' }
+      }, ['session', 'worktree']),
+      run: async (args) => {
+        const data = deps.getData()
+        const session = resolveSession(data, args.session)
+        const worktree = resolveWorktree(data, text(args, 'worktree'))
+        if (session.worktreeId !== undefined) throw new Error(`"${session.name}" is already a Code session. Only an Ops session can move to Code mode.`)
+        const yes = await deps.confirm({ title: 'Jarvis: move session to Code mode', message: `Jarvis wants to move “${session.name}” into worktree “${worktree.name}” (${worktree.path}). It restarts there with a new conversation; the old one does not come along.`, confirmLabel: 'Move' })
+        if (!yes) return 'The user declined: the session was not moved.'
+        const moved = deps.controller.moveToWorktree(session.id, worktree.id)
+        deps.log('move_session_to_code', `${session.name} -> ${worktree.name}`)
+        return `Moved "${moved.name}" into worktree "${worktree.name}". It runs in ${worktree.path} on a new conversation (it is listed in Code mode now).`
       }
     },
     {
