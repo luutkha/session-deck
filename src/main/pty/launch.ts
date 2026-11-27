@@ -9,8 +9,11 @@ const SAFE_ARG = /^[A-Za-z0-9_@=:,./\\-]+$/
 const WIN_LAUNCHER = 'cmd.exe'
 const WIN_LAUNCHER_ARGS: readonly string[] = ['/d', '/c']
 
+/** D92: an extra agent CLI's command, made only by asCliCommand (plain name, no shell metacharacters). */
+export type CliCommand = string & { readonly __cliCommand: true }
+
 /** Which program a session launches: an agent binary, or a plain shell (Code mode Shell sessions). */
-export type LaunchCommand = 'claude' | 'opencode' | 'cursor-agent' | 'agent' | ShellKind
+export type LaunchCommand = 'claude' | 'opencode' | 'cursor-agent' | 'agent' | ShellKind | CliCommand
 
 export interface LaunchSpec {
   readonly file: string

@@ -85,12 +85,15 @@ export function sessionNamePlaceholder(agent: AgentKind): string {
 export function worktreeSessionInput(
   worktree: Pick<Worktree, 'id' | 'path'>,
   agent: AgentKind,
-  model?: string
+  model?: string,
+  /** D92: an extra agent CLI (registry id); the session is a terminal running it. */
+  cliAgent?: string
 ): CreateSessionInput {
   return {
     cwd: worktree.path,
     worktreeId: worktree.id,
-    agent,
+    agent: cliAgent !== undefined ? 'shell' : agent,
+    ...(cliAgent !== undefined ? { cliAgent } : {}),
     ...(model !== undefined ? { model } : {})
   }
 }

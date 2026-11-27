@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import type { AgentKind } from '../../shared/types'
+import { CLI_AGENTS, cliAgentById } from '../../shared/cliAgents'
 import {
   Select,
   SelectContent,
@@ -33,7 +34,13 @@ export interface AgentPickerProps {
   readonly ariaLabel?: string
   /** The offered agents; defaults to every agent (AGENT_OPTIONS). */
   readonly options?: readonly AgentOption[]
+  /** D92: offer the extra agent CLIs below the three native ones. Picking one calls onCliChange; picking a native agent calls onChange. */
+  readonly onCliChange?: (cliAgent: string) => void
+  /** D92: the extra agent currently chosen (shown instead of `value`). */
+  readonly cliAgent?: string | undefined
 }
+
+const CLI_PREFIX = 'cli:'
 
 function isAgentKind(value: string, options: readonly AgentOption[]): value is AgentKind {
   return options.some((option) => option.value === value)
@@ -46,13 +53,21 @@ export function AgentPicker({
   id,
   disabled = false,
   ariaLabel = 'Agent',
-  options = AGENT_OPTIONS
+  options = AGENT_OPTIONS,
+  onCliChange,
+  cliAgent
 }: AgentPickerProps): ReactElement {
+  const shownCli = onCliChange !== undefined && cliAgentById(cliAgent) !== undefined ? cliAgent : undefined
   return (
     <Select
-      value={value}
+      value={shownCli !== undefined ? `${CLI_PREFIX}${shownCli}` : value}
       disabled={disabled}
       onValueChange={(next): void => {
+        if (next.startsWith(CLI_PREFIX) && onCliChange !== undefined) {
+          const id = next.slice(CLI_PREFIX.length)
+          if (cliAgentById(id) !== undefined) onCliChange(id)
+          return
+        }
         if (isAgentKind(next, options)) onChange(next)
       }}
     >
@@ -65,6 +80,13 @@ export function AgentPicker({
             {option.label}
           </SelectItem>
         ))}
+        {onCliChange !== undefined
+          ? CLI_AGENTS.map((agent) => (
+              <SelectItem key={agent.id} value={`${CLI_PREFIX}${agent.id}`} className="text-xs" data-cli-agent-option={agent.id}>
+                {agent.label}
+              </SelectItem>
+            ))
+          : null}
       </SelectContent>
     </Select>
   )

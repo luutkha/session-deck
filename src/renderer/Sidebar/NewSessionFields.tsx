@@ -12,6 +12,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { AgentPicker } from '../components/AgentPicker'
+import { cliAgentById } from '../../shared/cliAgents'
 import type { AgentKind, Group, StatusDef } from '../../shared/types'
 import { defaultNameFromFolder, MAX_CURSOR_MODEL_LENGTH, MAX_OPENCODE_MODEL_LENGTH } from './dialogLogic'
 
@@ -40,6 +41,9 @@ export interface NewSessionFieldsProps {
   readonly busy: boolean
   readonly folderInputRef: Ref<HTMLInputElement>
   readonly onAgentChange: (agent: AgentKind) => void
+  /** D92: an extra agent CLI chosen in the picker (registry id), and its change handler. */
+  readonly cliAgent?: string | undefined
+  readonly onCliAgentChange?: (cliAgent: string) => void
   readonly onFolderChange: (value: string) => void
   readonly onBrowse: () => void
   readonly onNameChange: (value: string) => void
@@ -73,6 +77,8 @@ export function NewSessionFields({
   busy,
   folderInputRef,
   onAgentChange,
+  cliAgent,
+  onCliAgentChange,
   onFolderChange,
   onBrowse,
   onNameChange,
@@ -91,6 +97,8 @@ export function NewSessionFields({
         <AgentPicker
           value={agent}
           onChange={onAgentChange}
+          cliAgent={cliAgent}
+          {...(onCliAgentChange !== undefined ? { onCliChange: onCliAgentChange } : {})}
           disabled={busy}
           ariaLabel="Agent"
         />
@@ -268,6 +276,10 @@ export function NewSessionFields({
             </div>
           ) : null}
         </div>
+      ) : cliAgent !== undefined ? (
+        <p className="text-[11px] text-muted-foreground" data-cli-agent-note="">
+          Runs the {cliAgentById(cliAgent)?.label ?? 'agent'} CLI in a terminal, with its own auto-approve option. It shows as running (no working or needs-input state) and does not resume after a restart.
+        </p>
       ) : (
         <div className="space-y-1">
           <Label htmlFor="new-session-args" className={LABEL_CLASS}>

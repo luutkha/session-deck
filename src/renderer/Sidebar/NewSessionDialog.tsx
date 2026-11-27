@@ -69,6 +69,7 @@ export function NewSessionDialog({
 }: NewSessionDialogProps): ReactElement {
   const initialAgent = defaultAgent ?? 'claude'
   const [agent, setAgent] = useState<AgentKind>(initialAgent)
+  const [cliAgent, setCliAgent] = useState<string | undefined>(undefined)
   const [folder, setFolder] = useState((): string => initialFolder(defaultFolder, data.sessions))
   const [name, setName] = useState('')
   const [groupChoice, setGroupChoice] = useState<string>(defaultGroupId ?? NO_VALUE_CHOICE)
@@ -94,6 +95,7 @@ export function NewSessionDialog({
   const modelError = (agent === 'opencode' || agent === 'cursor') && !modelResult.ok ? modelResult.error : null
 
   function changeAgent(next: AgentKind): void {
+    setCliAgent(undefined)
     setModelRaw((current) => modelAfterAgentChange(agent, next, current, defaultOpenCodeModel ?? ''))
     setAgent(next)
   }
@@ -113,6 +115,7 @@ export function NewSessionDialog({
   function applyPreset(preset: SessionPreset): void {
     const form = formFromPreset(preset)
     setAgent(form.agent)
+    setCliAgent(undefined)
     setFolder(form.folder)
     // A group or status deleted since the preset was saved is left empty.
     setGroupChoice(form.groupId !== null && data.groups.some((g) => g.id === form.groupId) ? form.groupId : NO_VALUE_CHOICE)
@@ -142,7 +145,7 @@ export function NewSessionDialog({
     }
     const groupId = creatingGroup || groupChoice === NO_VALUE_CHOICE ? null : groupChoice
     const statusId = statusChoice === NO_VALUE_CHOICE ? null : statusChoice
-    const built = buildCreateInput({ folder, name, groupId, statusId, argsRaw, agent, modelRaw, remoteControl, openCodeAskPermissions: askPermissions })
+    const built = buildCreateInput({ folder, name, groupId, statusId, argsRaw, agent, ...(cliAgent !== undefined ? { cliAgent } : {}), modelRaw, remoteControl, openCodeAskPermissions: askPermissions })
     if (!built.ok) {
       setError(built.error)
       return
@@ -163,7 +166,7 @@ export function NewSessionDialog({
 
     const groupId = creatingGroup || groupChoice === NO_VALUE_CHOICE ? null : groupChoice
     const statusId = statusChoice === NO_VALUE_CHOICE ? null : statusChoice
-    const built = buildCreateInput({ folder, name, groupId, statusId, argsRaw, agent, modelRaw, remoteControl, openCodeAskPermissions: askPermissions })
+    const built = buildCreateInput({ folder, name, groupId, statusId, argsRaw, agent, ...(cliAgent !== undefined ? { cliAgent } : {}), modelRaw, remoteControl, openCodeAskPermissions: askPermissions })
     if (!built.ok) {
       setError(built.error)
       return
@@ -265,6 +268,11 @@ export function NewSessionDialog({
             busy={busy}
             folderInputRef={folderInputRef}
             onAgentChange={changeAgent}
+            cliAgent={cliAgent}
+            onCliAgentChange={(id): void => {
+              setCliAgent(id)
+              setAgent('shell')
+            }}
             onFolderChange={setFolder}
             onBrowse={() => void handleBrowse()}
             onNameChange={setName}

@@ -1,3 +1,4 @@
+import { isCliAgentId } from '../../shared/cliAgents'
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
@@ -105,6 +106,8 @@ function parseSession(raw: unknown, index: number): Session {
     ...(agentFields.cursorChatId ? { cursorChatId: agentFields.cursorChatId } : {}),
     ...(agentFields.model ? { model: agentFields.model } : {}),
     ...(agentFields.opencodePermissions ? { opencodePermissions: agentFields.opencodePermissions } : {}),
+    // D92: a shell session may run an extra agent CLI; an id the registry no longer knows just becomes a plain shell.
+    ...(agentFields.agent === 'shell' && isCliAgentId(raw.cliAgent) ? { cliAgent: raw.cliAgent } : {}),
     ...(raw.closedAt !== undefined ? { closedAt: raw.closedAt as number } : {}),
     ...(raw.keepAwake === true ? { keepAwake: true } : {}),
     ...(notes !== undefined ? { notes } : {}),

@@ -217,7 +217,7 @@ export function HubCardView(props: HubCardProps): ReactElement {
         <span className="flex-1 truncate text-[13px] font-medium tracking-tight">
           {session.name}
         </span>
-        <AgentBadge agent={sessionAgent(session)} remote={runtime?.remoteControl === true} keepAwake={session.keepAwake === true} />
+        <AgentBadge agent={sessionAgent(session)} cliAgent={session.cliAgent} remote={runtime?.remoteControl === true} keepAwake={session.keepAwake === true} />
       </div>
       <div className="flex min-w-0 items-center gap-1.5 text-[11px]">
         {showFolder && (

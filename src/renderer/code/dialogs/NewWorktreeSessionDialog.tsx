@@ -39,7 +39,10 @@ export function NewWorktreeSessionDialog(props: NewWorktreeSessionDialogProps): 
   const modelCheck = checkModel(agent, model)
   const canCreate = modelCheck.ok && !creating
 
+  const [cliAgent, setCliAgent] = useState<string | undefined>(undefined)
+
   function changeAgent(next: AgentKind): void {
+    setCliAgent(undefined)
     setModel((current) => modelAfterAgentChange(agent, next, current, settings.agents.opencodeModel))
     setAgent(next)
   }
@@ -49,7 +52,7 @@ export function NewWorktreeSessionDialog(props: NewWorktreeSessionDialogProps): 
     setCreating(true)
     setSubmitError(null)
     try {
-      const session = await actions.createSession(worktreeSessionInput(worktree, agent, modelCheck.model))
+      const session = await actions.createSession(worktreeSessionInput(worktree, agent, modelCheck.model, cliAgent))
       onCreated(session.id)
       onClose()
     } catch (error) {
@@ -91,6 +94,8 @@ export function NewWorktreeSessionDialog(props: NewWorktreeSessionDialogProps): 
             idPrefix={ID_PREFIX}
             agent={agent}
             onAgentChange={changeAgent}
+            cliAgent={cliAgent}
+            onCliAgentChange={(id): void => setCliAgent(id)}
             model={model}
             onModelChange={setModel}
             modelError={modelCheck.ok ? null : modelCheck.error}

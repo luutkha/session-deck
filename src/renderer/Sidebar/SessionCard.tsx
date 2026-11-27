@@ -285,7 +285,7 @@ export function SessionCardView(props: SessionCardProps): ReactElement {
           </span>
         )}
         <TagChips tags={session.tags ?? []} />
-        <AgentBadge agent={sessionAgent(session)} remote={runtime?.remoteControl === true} keepAwake={session.keepAwake === true} />
+        <AgentBadge agent={sessionAgent(session)} cliAgent={session.cliAgent} remote={runtime?.remoteControl === true} keepAwake={session.keepAwake === true} />
         {runtime?.opencodePlugin === 'missing' ? (
           // D79: advisory only. The session still runs; its busy/idle status is simply not reported.
           <span

@@ -31,6 +31,7 @@ import { stripAnsi } from '../app/outputSignals'
 import type { McpTool } from './mcpProtocol'
 import { resolveGroup, resolveRepo, resolveSession, resolveStatus, resolveWorktree, targetSessions } from './targets'
 import { clip, optionalBool, optionalInt, optionalText, schema, SESSION_PROP, text } from './toolArgs'
+import { CLI_AGENTS, cliAgentById } from '../../shared/cliAgents'
 import { readConversation, READ_DEFAULT_CHARS, READ_DEFAULT_MESSAGES, READ_MAX_CHARS, READ_MAX_MESSAGES } from '../transcripts/conversationRead'
 import type { TranscriptMessage } from '../transcripts/conversationSearch'
 import { SCREEN_LINES_DEFAULT, SCREEN_LINES_MAX } from './screenText'
@@ -202,7 +203,7 @@ function minutesAgo(now: number, at: number): string {
 
 function sessionLine(data: StoreData, session: Session, deps: JarvisToolDeps): string {
   const state = deps.getRuntime(session.id)
-  const parts = [`"${session.name}" (id ${session.id})`, agentOf(session), stateText(session, state)]
+  const parts = [`"${session.name}" (id ${session.id})`, cliAgentById(session.cliAgent)?.label ?? agentOf(session), stateText(session, state)]
   if (state?.attention) parts.push(`needs you: ${state.attention}`)
   const group = data.groups.find((g) => g.id === session.groupId)
   if (group) parts.push(`group "${group.name}"`)
@@ -606,6 +607,7 @@ ${result.text}`
         name: { type: 'string', description: 'Session name (default: the folder name).' },
         agent: { type: 'string', enum: ['claude', 'opencode', 'cursor', 'shell'], description: 'Default claude (or the preset\'s).' },
         model: { type: 'string', description: 'OpenCode (provider/model) or Cursor (a plain name like gpt-5) only.' },
+        cli_agent: { type: 'string', description: `D92: run another coding-agent CLI in a terminal session instead (id: ${CLI_AGENTS.map((a) => a.id).join(', ')}). It has no status, queue or resume: use read_screen, send_prompt (typed in) and press_keys.` },
         group: { type: 'string', description: 'Existing group name.' },
         status: { type: 'string', description: 'Existing status name.' },
         preset: { type: 'string', description: 'Saved preset name: its folder, agent, model, args, group and status are used unless given here.' },
@@ -625,7 +627,11 @@ ${result.text}`
         const cwd = folderArg !== undefined ? resolveFolder(folderArg) : preset!.cwd
         const agentArg = optionalText(args, 'agent')
         if (agentArg !== undefined && !['claude', 'opencode', 'cursor', 'shell'].includes(agentArg)) throw new Error('"agent" must be claude, opencode, cursor or shell.')
-        const agent = (agentArg ?? preset?.agent ?? 'claude') as AgentKind
+        const cliAgentArg = optionalText(args, 'cli_agent')
+        const cliAgent = cliAgentArg === undefined ? undefined : cliAgentById(cliAgentArg.trim().toLowerCase())
+        if (cliAgentArg !== undefined && cliAgent === undefined) throw new Error(`Unknown cli_agent "${cliAgentArg}". Known: ${CLI_AGENTS.map((a) => a.id).join(', ')}.`)
+        if (cliAgent !== undefined && agentArg !== undefined && agentArg !== 'shell') throw new Error('cli_agent cannot be combined with another agent.')
+        const agent = (cliAgent !== undefined ? 'shell' : agentArg ?? preset?.agent ?? 'claude') as AgentKind
         const groupName = optionalText(args, 'group')
         const statusName = optionalText(args, 'status')
         const groupId = groupName !== undefined ? resolveGroup(data, groupName).id : preset?.groupId && data.groups.some((g) => g.id === preset.groupId) ? preset.groupId : null
@@ -649,12 +655,13 @@ ${result.text}`
           statusId,
           claudeArgs,
           agent,
+          ...(cliAgent !== undefined ? { cliAgent: cliAgent.id } : {}),
           ...(model !== undefined ? { model } : {})
         })
         deps.log('create_session', `"${session.name}" in ${cwd}`)
         pushUndo(`create "${session.name}" (close it; it stays in Closed)`, () => deps.controller.closeSession(session.id))
         if (optionalBool(args, 'open') === true) deps.openSession(session.id)
-        const created = `Created "${session.name}" (id ${session.id}, ${agent}) in ${cwd}.`
+        const created = `Created "${session.name}" (id ${session.id}, ${cliAgent?.label ?? agent}) in ${cwd}.`
         const prompt = optionalText(args, 'prompt')
         if (prompt === undefined) return created
         return `${created} ${await sendPrompt(session, prompt, 'auto')}`

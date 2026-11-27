@@ -1,3 +1,4 @@
+import { isCliAgentId } from '../../shared/cliAgents'
 import { WORKTREE_NAME_MAX } from '../../shared/types'
 import type { AgentKind, ChecklistItem, QueuedPrompt, SessionPreset, CreateSessionInput, CreateWorktreeInput, Group, Id, OpencodePermissions, StatusDef, GpuPref } from '../../shared/types'
 import { buildLaunch } from '../pty/launch'
@@ -126,6 +127,7 @@ const ALLOWED_CREATE_SESSION_KEYS = new Set<keyof CreateSessionInput>([
   'agent',
   'model',
   'opencodePermissions',
+  'cliAgent',
   'worktreeId'
 ])
 
@@ -158,6 +160,7 @@ export function asCreateSessionInput(raw: unknown): CreateSessionInput {
     agent === 'opencode' && obj.opencodePermissions !== undefined
       ? assertOpencodePermissions(obj.opencodePermissions, 'createSession input')
       : undefined
+  const cliAgent = agent === 'shell' ? assertCliAgent(obj.cliAgent, 'createSession input') : undefined
   const worktreeId = obj.worktreeId !== undefined ? assertId(obj.worktreeId, 'worktreeId') : undefined
 
   return {
@@ -169,6 +172,7 @@ export function asCreateSessionInput(raw: unknown): CreateSessionInput {
     ...(agent !== undefined ? { agent } : {}),
     ...(model !== undefined ? { model } : {}),
     ...(opencodePermissions !== undefined ? { opencodePermissions } : {}),
+    ...(cliAgent !== undefined ? { cliAgent } : {}),
     ...(worktreeId !== undefined ? { worktreeId } : {})
   }
 }
@@ -181,6 +185,7 @@ const ALLOWED_CREATE_WORKTREE_KEYS: ReadonlySet<string> = new Set<string>([
   'branch',
   'agent',
   'model',
+  'cliAgent',
   'moveSessionId'
 ])
 const MAX_BASE_BRANCH_LENGTH = 255
@@ -238,6 +243,7 @@ export function asCreateWorktreeInput(raw: unknown): CreateWorktreeInput {
         ? assertOpencodeModel(obj.model, 'createWorktree input')
         : undefined
 
+  const cliAgent = agent === 'shell' ? assertCliAgent(obj.cliAgent, 'createWorktree input') : undefined
   const moveSessionId = obj.moveSessionId === undefined ? undefined : assertId(obj.moveSessionId, 'moveSessionId')
   return {
     repoId,
@@ -247,8 +253,16 @@ export function asCreateWorktreeInput(raw: unknown): CreateWorktreeInput {
     ...(source !== 'new' ? { source } : {}),
     ...(branch !== undefined ? { branch } : {}),
     agent,
-    ...(model !== undefined && model.length > 0 ? { model } : {})
+    ...(model !== undefined && model.length > 0 ? { model } : {}),
+    ...(cliAgent !== undefined ? { cliAgent } : {})
   }
+}
+
+/** D92: an optional extra-agent id of the registry (only meaningful with agent 'shell'); anything else is refused. */
+function assertCliAgent(raw: unknown, context: string): string | undefined {
+  if (raw === undefined) return undefined
+  if (!isCliAgentId(raw)) throw new Error(`Invalid ${context}: unknown cliAgent`)
+  return raw
 }
 
 function assertAgentKind(raw: unknown, context: string): AgentKind {

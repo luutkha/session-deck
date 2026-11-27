@@ -1,3 +1,4 @@
+import { cliAgentById, isCliAgentId } from '../../shared/cliAgents'
 import type { CreateSessionInput, Group, Id, Session, StatusDef, StoreData } from '../../shared/types'
 import { DEFAULT_STATUSES } from '../../shared/types'
 import { isOpencodeSessionId } from '../opencode/values'
@@ -95,9 +96,9 @@ const SHELL_SESSION_NAME = 'Shell'
 function agentFieldsFor(
   input: CreateSessionInput,
   id: Id
-): Partial<Pick<Session, 'agent' | 'model' | 'claudeSessionId' | 'opencodePermissions'>> {
+): Partial<Pick<Session, 'agent' | 'model' | 'claudeSessionId' | 'opencodePermissions' | 'cliAgent'>> {
   if (input.agent === 'shell') {
-    return { agent: 'shell' }
+    return { agent: 'shell', ...(isCliAgentId(input.cliAgent) ? { cliAgent: input.cliAgent } : {}) }
   }
   if (input.agent === 'cursor') {
     const model = input.model?.trim() ?? ''
@@ -146,7 +147,7 @@ export function createSession(
 
   const name = input.name?.trim().length
     ? validateName(input.name)
-    : input.agent === 'shell' ? SHELL_SESSION_NAME : defaultNameFromCwd(cwd)
+    : input.agent === 'shell' ? (cliAgentById(input.cliAgent)?.label ?? SHELL_SESSION_NAME) : defaultNameFromCwd(cwd)
   const claudeArgs = input.claudeArgs ?? []
 
   const siblings = sessionsInGroup(data, groupId)

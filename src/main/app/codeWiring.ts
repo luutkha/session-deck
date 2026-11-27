@@ -180,7 +180,7 @@ export function createCodeWiring(deps: CodeWiringDeps): CodeWiring {
     }
     try {
       const session = input.moveSessionId !== undefined ? controller.moveToWorktree(input.moveSessionId, worktree.id) : controller.createSession({
-        cwd: worktree.path, agent: input.agent, worktreeId: worktree.id, ...(input.model !== undefined ? { model: input.model } : {})
+        cwd: worktree.path, agent: input.agent, worktreeId: worktree.id, ...(input.cliAgent !== undefined ? { cliAgent: input.cliAgent } : {}), ...(input.model !== undefined ? { model: input.model } : {})
       })
       return { worktree, session }
     } catch (error) {

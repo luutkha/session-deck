@@ -100,7 +100,10 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
     sourceReady &&
     !creating
 
+  const [cliAgent, setCliAgent] = useState<string | undefined>(undefined)
+
   function changeAgent(next: AgentKind): void {
+    setCliAgent(undefined)
     setModel((current) => modelAfterAgentChange(agent, next, current, settings.agents.opencodeModel))
     setAgent(next)
   }
@@ -116,7 +119,8 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
         baseBranch,
         ...(source !== 'new' ? { source } : {}),
         ...(source === 'existing' && existingBranch !== null ? { branch: existingBranch } : {}),
-        agent,
+        agent: cliAgent !== undefined ? 'shell' : agent,
+        ...(cliAgent !== undefined && moveSession === undefined ? { cliAgent } : {}),
         ...(moveSession !== undefined ? { moveSessionId: moveSession.id } : {}),
         ...(modelCheck.model !== undefined && moveSession === undefined ? { model: modelCheck.model } : {})
       })
@@ -273,6 +277,8 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): ReactElement {
             idPrefix={NAME_ID_PREFIX}
             agent={agent}
             onAgentChange={changeAgent}
+            cliAgent={cliAgent}
+            onCliAgentChange={(id): void => setCliAgent(id)}
             model={model}
             onModelChange={setModel}
             modelError={modelCheck.ok ? null : modelCheck.error}

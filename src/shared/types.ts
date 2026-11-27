@@ -60,6 +60,8 @@ export interface Session {
   readonly agent?: AgentKind
   /** OpenCode conversation id (ses_...), reported by the injected plugin after the first start; resume uses `opencode -s <id>`. */
   readonly opencodeSessionId?: string
+  /** D92: a shell session that runs one of the extra coding-agent CLIs (registry id in shared/cliAgents.ts) instead of a shell program. Only on agent 'shell' sessions: they behave like shells (no status, no queue, no resume). */
+  readonly cliAgent?: string
   /** Cursor only (D81): the chat id (`conversation_id` of Cursor's hook payloads), learned after the first turn; resume uses `agent --resume <id>`. */
   readonly cursorChatId?: string
   /** OpenCode only: "provider/model", injected via the config content `model` key (the TUI CLI has no --model flag). Absent or empty = OpenCode's own default. */
@@ -314,6 +316,8 @@ export interface CreateSessionInput {
   readonly model?: string
   /** OpenCode only (D79): 'yolo' (default when absent) or 'ask' (use the user's own OpenCode permission rules). */
   readonly opencodePermissions?: OpencodePermissions
+  /** D92: with agent 'shell', run this extra agent CLI (registry id) in the terminal instead of a shell program. */
+  readonly cliAgent?: string
   /** Code mode: start the session inside this worktree. Main then uses the worktree path as cwd (input.cwd is ignored). */
   readonly worktreeId?: Id
   /** D53: main only (the IPC validation rejects this key); set when SessionDeck creates the Jarvis session. */
@@ -337,6 +341,8 @@ export interface CreateWorktreeInput {
   readonly agent: AgentKind
   /** OpenCode only: "provider/model". */
   readonly model?: string
+  /** D92: with agent 'shell', the first session runs this extra agent CLI (registry id). */
+  readonly cliAgent?: string
 }
 
 export interface CreateWorktreeResult {

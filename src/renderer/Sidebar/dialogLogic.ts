@@ -130,6 +130,8 @@ export interface CreateSessionForm {
   readonly argsRaw: string
   /** Which agent to start; absent = 'claude'. */
   readonly agent?: AgentKind
+  /** D92: an extra agent CLI (registry id); the session is then a terminal ('shell' agent) running it. */
+  readonly cliAgent?: string
   /** OpenCode or Cursor model text; only read when agent is 'opencode' or 'cursor'. */
   readonly modelRaw?: string
   /** OpenCode only (D79): ask before running tools (use the user's own OpenCode permission rules); off = yolo. */
@@ -163,6 +165,10 @@ export function buildCreateInput(form: CreateSessionForm): BuildCreateInputResul
     ...(name !== undefined ? { name } : {}),
     groupId: form.groupId,
     statusId: form.statusId
+  }
+
+  if (form.cliAgent !== undefined && form.cliAgent.length > 0) {
+    return { ok: true, input: { ...shared, agent: 'shell', cliAgent: form.cliAgent } }
   }
 
   if (agent === 'opencode') {

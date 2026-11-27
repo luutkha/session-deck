@@ -4,6 +4,7 @@ import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
 import { MAX_CURSOR_MODEL_LENGTH, MAX_OPENCODE_MODEL_LENGTH } from '../../Sidebar/dialogLogic'
+import { CLI_AGENTS, cliAgentById } from '../../../shared/cliAgents'
 import { AGENT_CHOICES } from './worktreeDialogLogic'
 
 export const LABEL_CLASS = 'text-[11px] text-muted-foreground'
@@ -19,6 +20,9 @@ export interface SessionAgentFieldsProps {
   readonly idPrefix: string
   readonly agent: AgentKind
   readonly onAgentChange: (agent: AgentKind) => void
+  /** D92: an extra agent CLI chosen (registry id), and its change handler; absent handler = not offered. */
+  readonly cliAgent?: string | undefined
+  readonly onCliAgentChange?: (cliAgent: string) => void
   readonly model: string
   readonly onModelChange: (value: string) => void
   /** Why the OpenCode or Cursor model is not valid (shown under the field), or null. */
@@ -34,9 +38,14 @@ export function SessionAgentFields(props: SessionAgentFieldsProps): ReactElement
       <div className="space-y-1">
         <Label htmlFor={`${idPrefix}-agent`} className={LABEL_CLASS}>Agent</Label>
         <Select
-          value={agent}
+          value={props.onCliAgentChange !== undefined && cliAgentById(props.cliAgent) !== undefined ? `cli:${props.cliAgent}` : agent}
           disabled={disabled}
           onValueChange={(value): void => {
+            if (value.startsWith('cli:') && props.onCliAgentChange !== undefined) {
+              const id = value.slice(4)
+              if (cliAgentById(id) !== undefined) props.onCliAgentChange(id)
+              return
+            }
             if (isAgentKind(value)) props.onAgentChange(value)
           }}
         >
@@ -49,6 +58,13 @@ export function SessionAgentFields(props: SessionAgentFieldsProps): ReactElement
                 {choice.label}
               </SelectItem>
             ))}
+            {props.onCliAgentChange !== undefined
+              ? CLI_AGENTS.map((cli) => (
+                  <SelectItem key={cli.id} value={`cli:${cli.id}`} className="text-xs" data-cli-agent-option={cli.id}>
+                    {cli.label}
+                  </SelectItem>
+                ))
+              : null}
           </SelectContent>
         </Select>
       </div>

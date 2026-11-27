@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { Coffee } from 'lucide-react'
 import type { AgentKind, Session } from '../../shared/types'
+import { cliAgentById } from '../../shared/cliAgents'
 import { Badge } from './ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
@@ -12,6 +13,8 @@ export function sessionAgent(session: Pick<Session, 'agent'>): AgentKind {
 export interface AgentBadgeProps {
   /** The session's agent; absent = 'claude'. Claude sessions stay unmarked. */
   readonly agent?: AgentKind
+  /** D92: the extra agent CLI a shell session runs (registry id); its badge replaces the plain terminal look. */
+  readonly cliAgent?: string | undefined
   /** True while Remote Control is active for the running session (claude.ai/code or the phone app can drive it). */
   readonly remote?: boolean
   /** True when the user turned automatic sleep off for this session. */
@@ -30,14 +33,15 @@ export function agentBadgeCode(agent: AgentKind | undefined): 'OC' | 'CU' | null
  * A quiet pill naming the OpenCode or Cursor agent. Renders nothing for Claude sessions so
  * the default stays visually unchanged; only the other agents are called out.
  */
-export function AgentBadge({ agent, remote = false, keepAwake = false }: AgentBadgeProps): ReactElement | null {
-  const code = agentBadgeCode(agent)
+export function AgentBadge({ agent, cliAgent, remote = false, keepAwake = false }: AgentBadgeProps): ReactElement | null {
+  const cli = cliAgentById(cliAgent)
+  const code = cli?.badge ?? agentBadgeCode(agent)
   if (code === null && !remote && !keepAwake) {
     return null
   }
   return (
     <>
-      {code !== null ? <AgentPill code={code} label={code === 'OC' ? 'OpenCode' : 'Cursor'} /> : null}
+      {code !== null ? <AgentPill code={code} label={cli?.label ?? (code === 'OC' ? 'OpenCode' : 'Cursor')} /> : null}
       {remote ? <RemotePill /> : null}
       {keepAwake ? <KeepAwakePill /> : null}
     </>

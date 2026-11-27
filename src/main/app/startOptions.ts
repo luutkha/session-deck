@@ -5,6 +5,8 @@ import type { AttentionService } from '../attention'
 import { chooseClaudeLaunch } from './claudeLaunch'
 import { OPENCODE_PLUGIN_ENV_VAR, applyConfigPatch, opencodeSupportsStandalone } from '../opencode'
 import { CURSOR_INSTALL_HINT, detectCursorCommand } from '../cursor/command'
+import { asCliCommand, commandOnPath } from './cliCommand'
+import { cliAgentById, cliLaunchArgs, type CliAgentDef } from '../../shared/cliAgents'
 
 export const YOLO_FLAG = '--dangerously-skip-permissions'
 
@@ -57,7 +59,8 @@ export function buildStartOptions(
   extras: LaunchExtras = {}
 ): StartOptions {
   if (session.agent === 'shell') {
-    return buildShellStartOptions(session, attention, shell)
+    const cli = cliAgentById(session.cliAgent)
+    return cli !== undefined ? buildCliAgentStartOptions(session, cli, attention) : buildShellStartOptions(session, attention, shell)
   }
   if (session.agent === 'opencode') {
     return buildOpencodeStartOptions(session, attention, extras.opencodeConfig)
@@ -97,6 +100,25 @@ export function buildShellStartOptions(
     internalArgs: [...SHELL_ARGS[shell]],
     command: shell,
     env: { ...attention.workerEnv() },
+    cols: INITIAL_COLS,
+    rows: INITIAL_ROWS
+  }
+}
+
+/**
+ * D92: one of the extra agent CLIs of the registry (shared/cliAgents.ts), started like a shell session: the agent's
+ * command with its fixed arguments and its yolo arguments/env (copied from Orca). No hooks, no conversation id and no
+ * resume: the session is a terminal (state shows "running"), and Jarvis can type into it and read its screen.
+ */
+export function buildCliAgentStartOptions(session: Session, cli: CliAgentDef, attention: AttentionService): StartOptions {
+  if (!commandOnPath(cli.command)) throw new Error(`${cli.label} CLI not found ("${cli.command}"). ${cli.installHint}`)
+  return {
+    sessionId: session.id,
+    cwd: session.cwd,
+    claudeArgs: [],
+    internalArgs: [...cliLaunchArgs(cli)],
+    command: asCliCommand(cli.command),
+    env: { ...attention.workerEnv(), ...cli.yoloEnv },
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS
   }
