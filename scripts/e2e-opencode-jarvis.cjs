@@ -57,6 +57,10 @@ async function main() {
     // ---- get_last_answer reads the OpenCode conversation
     const answer = await tool('get_last_answer', { session: 'oc digest' })
     t.check('get_last_answer answers for an OpenCode session', !answer.error && /pong/i.test(answer.text) && !/^The last prompt has no reply/.test(answer.text), answer.text.slice(0, 160))
+    const convo = await tool('read_conversation', { session: 'oc digest', last: 5 })
+    t.check('read_conversation lists the OpenCode messages with roles (D91)', !convo.error && /USER/.test(convo.text) && /ASSISTANT/.test(convo.text) && /pong/i.test(convo.text), convo.text.slice(0, 200))
+    const listed = await tool('list_sessions', {})
+    t.check('list_sessions still answers', !listed.error)
     t.check('the answer is the saved conversation, not a screen scrape', !/screen/i.test(answer.text.split('\n')[0]), answer.text.split('\n')[0].slice(0, 120))
 
     // ---- search_conversations finds OpenCode text
@@ -70,7 +74,7 @@ async function main() {
     await app.evaluate(`window.api.createSession({ cwd: ${JSON.stringify(ROOT)}, name: 'plain shell', agent: 'shell' })`)
     await sleep(1500)
     const names = (await (await fetch(cfg.url, { method: 'POST', headers: { ...cfg.headers, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/list', params: {} }) })).json()).result.tools.map((x) => x.name)
-    t.check('tools/list offers fleet_digest (95 tools in all)', names.includes('fleet_digest') && names.length === 95, String(names.length))
+    t.check('tools/list offers fleet_digest (96 tools in all)', names.includes('fleet_digest') && names.length === 96, String(names.length))
     const digest = await tool('fleet_digest')
     t.check('fleet_digest lists both sessions', !digest.error && digest.text.includes('oc digest') && digest.text.includes('plain shell'), digest.text.slice(0, 300))
     t.check('fleet_digest shows the OpenCode reply tail', /reply:[^\r\n]*pong/i.test(digest.text), digest.text.slice(0, 400))

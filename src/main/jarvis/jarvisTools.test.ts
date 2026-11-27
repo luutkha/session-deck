@@ -31,6 +31,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
   const turns = new Map<string, TimelineTurn[]>()
   const startTimes = new Map<string, number>()
   const answers = new Map<string, string>()
+  const conversations = new Map<string, readonly { readonly role: 'user' | 'assistant'; readonly text: string; readonly at: number | null }[]>()
   let usageState: UsageState = { account: null, sessions: [] }
   let away: AwaySummary | null = null
   let settings: AppSettings = DEFAULT_APP_SETTINGS
@@ -111,6 +112,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     timeline: (id) => turns.get(id) ?? [],
     search: async () => ({ hits: [], truncated: false, searchedSessions: 0 }),
     lastAnswer: async (s) => answers.get(s.id) ?? null,
+    conversation: async (s) => conversations.get(s.id) ?? null,
     usage: () => usageState,
     allTurns: () => [...turns.values()].flat(),
     lastAway: () => away,
@@ -226,7 +228,7 @@ function setup(sessions: Session[], runtime: RuntimeState[] = [], options: { con
     return tool.run(args)
   }
   return {
-    call, controller, store, deps, code: deps.code as unknown as Record<string, ReturnType<typeof vi.fn>> & { git: Record<string, ReturnType<typeof vi.fn>> }, writes, raw, states, turns, startTimes, answers, data: () => data,
+    call, controller, store, deps, code: deps.code as unknown as Record<string, ReturnType<typeof vi.fn>> & { git: Record<string, ReturnType<typeof vi.fn>> }, writes, raw, states, turns, startTimes, answers, conversations, data: () => data,
     setUsage: (u: UsageState) => { usageState = u },
     setAway: (a: AwaySummary | null) => { away = a },
     app: deps.app as unknown as Record<string, ReturnType<typeof vi.fn>> & { autopilot: Record<string, ReturnType<typeof vi.fn>> },
@@ -418,6 +420,31 @@ describe('jarvis tools', () => {
     expect(await call('get_last_answer', { session: 'API' })).toBe('Last reply of "API":\nAll 42 tests passed.')
     answers.set('a', 'x'.repeat(50) + 'THE END')
     expect(await call('get_last_answer', { session: 'API', max_chars: 7 })).toBe('Last reply of "API":\n…(start cut)\nTHE END')
+  })
+
+  it('read_conversation pages through a saved conversation and says what it cannot read (D91)', async () => {
+    const { call, conversations } = setup([session('a', 'API'), session('s', 'Shell', { agent: 'shell' }), session('c', 'Cur', { agent: 'cursor' })], [running('a'), running('s'), running('c')])
+    expect(await call('read_conversation', { session: 'API' })).toContain('no saved conversation')
+    conversations.set('a', Array.from({ length: 6 }, (_, i) => ({ role: i % 2 === 0 ? 'user' as const : 'assistant' as const, text: `message ${i + 1}`, at: null })))
+    const newest = await call('read_conversation', { session: 'API', last: 2 })
+    expect(newest).toContain('showing 2 of 6 messages')
+    expect(newest).toContain('call again with skip 2')
+    expect(newest).toContain('[5/6] USER')
+    expect(newest).toContain('[6/6] ASSISTANT')
+    expect(newest).not.toContain('message 4')
+    const older = await call('read_conversation', { session: 'API', last: 10, skip: 2 })
+    expect(older).toContain('This is the start of the conversation')
+    expect(older).toContain('message 1')
+    expect(older).not.toContain('message 5')
+    expect(await call('read_conversation', { session: 'Shell' })).toContain('no conversation')
+    expect(await call('read_conversation', { session: 'Cur' })).toContain('Cursor session')
+  })
+
+  it('list_sessions shows a short preview of the notes (D91)', async () => {
+    const { call } = setup([session('a', 'API', { notes: ['first line', 'second ' + 'x'.repeat(400)].join(String.fromCharCode(10)) })])
+    const text = await call('list_sessions')
+    expect(text).toContain('notes: "first line second ')
+    expect(text).not.toContain('x'.repeat(350))
   })
 
   it('falls back to the screen without a saved conversation', async () => {

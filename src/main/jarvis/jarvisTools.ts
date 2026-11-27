@@ -31,6 +31,8 @@ import { stripAnsi } from '../app/outputSignals'
 import type { McpTool } from './mcpProtocol'
 import { resolveGroup, resolveRepo, resolveSession, resolveStatus, resolveWorktree, targetSessions } from './targets'
 import { clip, optionalBool, optionalInt, optionalText, schema, SESSION_PROP, text } from './toolArgs'
+import { readConversation, READ_DEFAULT_CHARS, READ_DEFAULT_MESSAGES, READ_MAX_CHARS, READ_MAX_MESSAGES } from '../transcripts/conversationRead'
+import type { TranscriptMessage } from '../transcripts/conversationSearch'
 import { SCREEN_LINES_DEFAULT, SCREEN_LINES_MAX } from './screenText'
 import { nextRun, scheduleWhen, timeText } from './schedules'
 import { DAY_NAMES } from '../../shared/jarvisSchedule'
@@ -68,6 +70,8 @@ const UNDO_MAX = 20
 const ACTIVITY_DEFAULT = 10
 const ACTIVITY_MAX = 50
 const NOTES_MAX = 20_000
+/** D91: how much of a session's notes list_sessions shows (cut with an ellipsis). */
+const NOTES_PREVIEW_CHARS = 300
 const SESSION_NAME_MAX = 100
 
 export interface ConfirmRequest {
@@ -119,6 +123,8 @@ export interface JarvisToolDeps {
   readonly search: (query: string) => Promise<ConversationSearchResult>
   /** D54/D79/D81: the reply to the last prompt from the saved conversation (a Claude transcript or an OpenCode export) or, for Cursor, its last reported reply; null when there is none. */
   readonly lastAnswer: (session: Session) => Promise<string | null>
+  /** D91: the saved user/assistant messages of a session (Claude transcript or OpenCode export); null when it has none (shell, Cursor, no id yet). */
+  readonly conversation: (session: Session) => Promise<readonly TranscriptMessage[] | null>
   readonly usage: () => UsageState
   /** Every recorded turn of every session (cost today). */
   readonly allTurns: () => readonly TimelineTurn[]
@@ -213,6 +219,7 @@ function sessionLine(data: StoreData, session: Session, deps: JarvisToolDeps): s
   if ((session.queue ?? []).length > 0) parts.push(`${session.queue!.length} queued prompt(s)`)
   const last = deps.timeline(session.id).at(-1)
   if (last !== undefined && last.prompt.length > 0) parts.push(`last prompt ${minutesAgo(deps.now(), last.startedAt)}: "${clip(last.prompt, 80)}"`)
+  if (session.notes !== undefined && session.notes.trim().length > 0) parts.push(`notes: "${clip(session.notes.replace(/\s+/g, ' ').trim(), NOTES_PREVIEW_CHARS)}"`)
   parts.push(`folder ${session.cwd}`)
   return `- ${parts.join(' · ')}`
 }
@@ -510,6 +517,33 @@ export function createJarvisTools(deps: JarvisToolDeps): JarvisToolkit {
         const body = answer.length <= max ? answer : `…(start cut)\n${answer.slice(answer.length - max)}`
         const busy = state?.activity === 'working' ? ' (it is still working: this may be an earlier or partial reply)' : ''
         return `Last reply of "${session.name}"${busy}:\n${body}`
+      }
+    },
+    {
+      name: 'read_conversation',
+      description: `Reads the saved conversation of a Claude or OpenCode session: its newest messages (default ${READ_DEFAULT_MESSAGES}, max ${READ_MAX_MESSAGES}), oldest first, each as USER or ASSISTANT with its time. Page back in time with skip. Text only: tool calls, results, thinking and images are not included. Use it ONLY when the user asks you to read, review or summarise a session's conversation or history; do not call it on your own to prepare other work (get_last_answer is for the latest reply).`,
+      inputSchema: schema({
+        session: SESSION_PROP,
+        last: { type: 'integer', description: `How many messages. Default ${READ_DEFAULT_MESSAGES}, max ${READ_MAX_MESSAGES}.` },
+        skip: { type: 'integer', description: 'Skip this many of the newest messages first, to read earlier ones. Default 0.' },
+        max_chars: { type: 'integer', description: `Default ${READ_DEFAULT_CHARS}, max ${READ_MAX_CHARS}. Over the limit the oldest messages are dropped first.` }
+      }, ['session']),
+      run: async (args) => {
+        const session = resolveSession(deps.getData(), args.session)
+        const agent = agentOf(session)
+        if (agent === 'shell') return `"${session.name}" is a shell session: it has no conversation. Use read_screen.`
+        if (agent === 'cursor') return `"${session.name}" is a Cursor session: SessionDeck keeps no conversation for it, only its last reply (get_last_answer) and its screen (read_screen).`
+        const messages = await deps.conversation(session)
+        if (messages === null || messages.length === 0) return `"${session.name}" has no saved conversation yet. Use read_screen to see what it shows.`
+        const last = optionalInt(args, 'last', READ_DEFAULT_MESSAGES, READ_MAX_MESSAGES)
+        const skip = optionalInt(args, 'skip', 0, messages.length)
+        const max = optionalInt(args, 'max_chars', READ_DEFAULT_CHARS, READ_MAX_CHARS)
+        const result = readConversation(messages, { last, skip, maxChars: max })
+        if (result.shown === 0) return `"${session.name}" has ${result.total} message(s); skip ${skip} is past the start.`
+        const older = result.olderLeft > 0 ? ` ${result.olderLeft} older message(s) remain (call again with skip ${skip + result.shown}).` : ' This is the start of the conversation.'
+        return `Conversation of "${session.name}": showing ${result.shown} of ${result.total} messages.${older}
+
+${result.text}`
       }
     },
     {

@@ -607,6 +607,7 @@ if (!gotTheLock) {
           const messages = await conversationSearch.messagesOfSession(session)
           return messages === null ? null : lastAnswer(messages)
         },
+        conversation: (session) => (session.agent === 'cursor' ? Promise.resolve(null) : conversationSearch.messagesOfSession(session)),
         usage: () => usage.getState(),
         allTurns: () => features.timeline.all(),
         lastAway: () => features.lastAway(),
