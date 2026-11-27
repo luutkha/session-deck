@@ -22,20 +22,20 @@ describe('buildCommandLaunch shells', () => {
 // D81: Cursor's binaries are .cmd files on Windows, so they go through cmd.exe /d /c like claude and opencode.
 describe('buildCommandLaunch cursor', () => {
   it('wraps cursor-agent and agent in cmd.exe /d /c on win32', () => {
-    expect(buildCommandLaunch('win32', 'cursor-agent', [], ['--force'])).toEqual({
+    expect(buildCommandLaunch('win32', 'cursor-agent', [], ['--yolo'])).toEqual({
       file: 'cmd.exe',
-      args: ['/d', '/c', 'cursor-agent', '--force']
+      args: ['/d', '/c', 'cursor-agent', '--yolo']
     })
-    expect(buildCommandLaunch('win32', 'agent', [], ['--force', '--model', 'gpt-5'])).toEqual({
+    expect(buildCommandLaunch('win32', 'agent', [], ['--yolo', '--model', 'gpt-5'])).toEqual({
       file: 'cmd.exe',
-      args: ['/d', '/c', 'agent', '--force', '--model', 'gpt-5']
+      args: ['/d', '/c', 'agent', '--yolo', '--model', 'gpt-5']
     })
   })
 
   it('starts them directly on non-win32 platforms', () => {
-    expect(buildCommandLaunch('linux', 'cursor-agent', [], ['--force', '--resume', 'abcdefgh-1234'])).toEqual({
+    expect(buildCommandLaunch('linux', 'cursor-agent', [], ['--yolo', '--resume', 'abcdefgh-1234'])).toEqual({
       file: 'cursor-agent',
-      args: ['--force', '--resume', 'abcdefgh-1234']
+      args: ['--yolo', '--resume', 'abcdefgh-1234']
     })
   })
 })

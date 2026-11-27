@@ -4,7 +4,7 @@
 // hook bridge, store, controller, prompt queue, auto status and Jarvis tools all run. A second fake `claude` exists only
 // so the set_session_model refusal for Claude sessions can be checked without starting the real Claude CLI.
 // Jarvis itself is not started: its tools are called over the app's own MCP endpoint, exactly like a real Jarvis would.
-// Checks cover: fresh argv (--force --trust), list/read/wait/answer, press_keys, the prompt queue (when=queue + empty),
+// Checks cover: fresh argv (--yolo --trust), list/read/wait/answer, press_keys, the prompt queue (when=queue + empty),
 // queue_change/list/clear on a sleeping session, sleep/wake and close/reopen round trips (same session id + cursorChatId,
 // --resume), restart_session, rename, set_status + auto status (Working -> Review), groups, notes, checklist, keep awake
 // (pin), set_read/needs_you, attach_files, open_session, terminal_search, a second Cursor session, broadcast_prompt,
@@ -143,7 +143,7 @@ function digestBlock(text, name) {
 }
 
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const trustPrefix = (argv) => Array.isArray(argv) && argv[0] === '--force' && argv[1] === '--trust'
+const trustPrefix = (argv) => Array.isArray(argv) && argv[0] === '--yolo' && argv[1] === '--trust'
 
 /** The app's Jarvis MCP endpoint (the way a real Jarvis calls the tools) after the app wrote <userData>/jarvis/mcp.json. */
 async function connect(app, userData) {
@@ -267,7 +267,7 @@ async function main() {
     if (id === '') throw new Error('the Cursor session was not created')
 
     const fresh = await waitFor(() => argvLines(argvFile)[0] ?? null, 20000, 200)
-    check('a fresh Cursor session starts with --force --trust in that order', trustPrefix(fresh), JSON.stringify(fresh))
+    check('a fresh Cursor session starts with --yolo --trust in that order', trustPrefix(fresh), JSON.stringify(fresh))
     check('...then --model gpt-5 and no --resume (a new chat)', !!fresh && fresh[2] === '--model' && fresh[3] === 'gpt-5' && !fresh.includes('--resume'), JSON.stringify(fresh))
 
     const listed = await tool('list_sessions')
@@ -473,7 +473,7 @@ async function main() {
     const secondRow = await waitFor(async () => (await storeData()).sessions.find((s) => s.name === 'cursor second') ?? null, 10000, 200)
     secondId = secondRow ? secondRow.id : ''
     const secondArgv = await waitFor(() => argvLines(argvFile)[beforeSecond] ?? null, 20000, 200)
-    check('a second fresh Cursor session has --force --trust and no --model/--resume', !created2.error && !!secondId && trustPrefix(secondArgv) && !secondArgv.includes('--model') && !secondArgv.includes('--resume'), JSON.stringify(secondArgv))
+    check('a second fresh Cursor session has --yolo --trust and no --model/--resume', !created2.error && !!secondId && trustPrefix(secondArgv) && !secondArgv.includes('--model') && !secondArgv.includes('--resume'), JSON.stringify(secondArgv))
 
     const broadcast = await tool('broadcast_prompt', { sessions: [NAME, 'cursor second'], text: 'broadcast hello' })
     check('broadcast_prompt reaches both Cursor sessions', !broadcast.error && /Sent to "cursor main"/.test(broadcast.text) && /Sent to "cursor second"/.test(broadcast.text), broadcast.text.slice(0, 260))

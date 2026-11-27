@@ -233,7 +233,7 @@ async function main() {
       const lines = argvLines(argvFile)
       return lines.length > 0 ? lines[0] : null
     }, 20000, 200)
-    t.check('3: the fake agent got --force --model gpt-5 and no --resume', !!firstArgv && firstArgv.includes('--force') && firstArgv.includes('--model') && firstArgv.includes('gpt-5') && !firstArgv.includes('--resume'), JSON.stringify(firstArgv))
+    t.check('3: the fake agent got --yolo --model gpt-5 and no --resume', !!firstArgv && firstArgv.includes('--yolo') && firstArgv.includes('--model') && firstArgv.includes('gpt-5') && !firstArgv.includes('--resume'), JSON.stringify(firstArgv))
 
     // ---- 4. hooks.json: version 1, one SessionDeck command per event, and the foreign content is intact
     const hooks1 = readJson(hooksFile)

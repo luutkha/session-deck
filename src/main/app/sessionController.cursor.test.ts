@@ -197,13 +197,13 @@ describe('cursor sessions: launch and lifecycle', () => {
     const created = controller.createSession({ cwd: tempDir(), agent: 'cursor' })
     expect(attention.prepareCursor).toHaveBeenCalled()
     expect(pty.getLastStartOpts(created.id)!.command).toBe('cursor-agent')
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--trust'])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--yolo', '--trust'])
 
     controller.handleHookEvent({ sessionId: created.id, event: 'UserPromptSubmit', chatId: CHAT_ID })
     controller.sleepSession(created.id)
     controller.setActiveSession(created.id)
 
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--trust', '--resume', CHAT_ID])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--yolo', '--trust', '--resume', CHAT_ID])
     expect(store.get().sessions.find((s) => s.id === created.id)!.claudeSessionId).toBeUndefined()
   })
 
@@ -237,7 +237,7 @@ describe('cursor sessions: setOpencodeModel (D81)', () => {
 
     expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBe(NEW_MODEL)
     expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual([
-      '--force',
+      '--yolo',
       '--trust',
       '--model',
       NEW_MODEL,
@@ -261,7 +261,7 @@ describe('cursor sessions: setOpencodeModel (D81)', () => {
 
     controller.sleepSession(created.id)
     controller.setActiveSession(created.id)
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--trust', '--model', NEW_MODEL])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--yolo', '--trust', '--model', NEW_MODEL])
   })
 
   it('clears the model with undefined, keeps the chat, and does not restart for the same value', () => {
@@ -275,7 +275,7 @@ describe('cursor sessions: setOpencodeModel (D81)', () => {
 
     expect(controller.setOpencodeModel(created.id, undefined)).toBe('restarted')
     expect(store.get().sessions.find((s) => s.id === created.id)!.model).toBeUndefined()
-    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--force', '--trust', '--resume', CHAT_ID])
+    expect(pty.getLastStartOpts(created.id)!.internalArgs).toEqual(['--yolo', '--trust', '--resume', CHAT_ID])
   })
 
   it('rejects a bad Cursor model name and accepts what only the Cursor rule allows', () => {
