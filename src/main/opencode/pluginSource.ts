@@ -34,8 +34,10 @@
  * - The OpenCode Go allowance (5-hour rolling / weekly / monthly windows) is read from
  *   https://opencode.ai/zen/go/v1/usage with the credential resolved through the v2 connection API, then
  *   POSTed as {source:'opencode-go', rate_limits:{five_hour, seven_day, monthly}} — at setup and after a
- *   turn ends, at most once per 5 minutes. The Go key never leaves this process and is never logged; any
- *   failure (no login, 401/429, offline, unusable body) posts nothing at all.
+ *   turn ends, at most once per 5 minutes. Connection id 'opencode-go' is tried first, then 'opencode':
+ *   a main OpenCode login keeps its token under 'opencode' and the Go endpoint accepts that token too.
+ *   The Go key never leaves this process and is never logged; any failure (no login, 401/429, offline,
+ *   unusable body) posts nothing at all.
  *
  * The handler must NEVER throw and NEVER block (fire-and-forget fetch with a 2 s timeout, every error swallowed
  * because the app may already be gone) and does nothing when SESSIONDECK_PORT is missing.
@@ -265,8 +267,11 @@ export function buildOpencodePluginSource(): string {
 
     /**
      * The signed-in OpenCode Go credential, read from the plugin context (v2.1.4: credential only exposes
-     * activate; the connection API is context.integration.connection.active + resolve). The key stays in
-     * this process and is never stored, posted or logged. Any failure reads as "not signed in".
+     * activate; the connection API is context.integration.connection.active + resolve). 'opencode-go' is
+     * tried first and 'opencode' is the fallback: accounts connected through the main OpenCode login keep
+     * their token under that id, and it is accepted by the Go usage endpoint. A throw, a null connection
+     * or a null token for one id falls through to the next. The key stays in this process and is never
+     * stored, posted or logged. Any failure reads as "not signed in".
      */
     async function goCredentialToken() {
       try {
@@ -274,9 +279,17 @@ export function buildOpencodePluginSource(): string {
         if (!integration || !integration.connection) return null
         if (typeof integration.connection.active !== 'function') return null
         if (typeof integration.connection.resolve !== 'function') return null
-        var connection = await integration.connection.active('opencode-go')
-        if (!connection || typeof connection !== 'object') return null
-        return credentialToken(await integration.connection.resolve(connection))
+        var ids = ['opencode-go', 'opencode']
+        for (var i = 0; i < ids.length; i++) {
+          try {
+            var connection = await integration.connection.active(ids[i])
+            if (!connection || typeof connection !== 'object') continue
+            var token = credentialToken(await integration.connection.resolve(connection))
+            if (token !== null) return token
+          } catch (error) {
+          }
+        }
+        return null
       } catch (error) {
         return null
       }

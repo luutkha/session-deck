@@ -707,6 +707,35 @@ describe('opencode plugin OpenCode Go allowance (display-only quota bars)', () =
     }
   }
 
+  /**
+   * A connection API driven per integration id. `activeById` may return a connection, null/undefined,
+   * or throw (synchronously or via a rejected promise); `resolveValue` turns a connection into a
+   * CredentialValue and may also throw. Records the ids asked and the resolve calls.
+   */
+  function connectionApi(
+    activeById: (id: string) => unknown,
+    resolveValue: (connection: unknown) => unknown
+  ): { integration: unknown; asked: string[]; resolveCalls: () => number } {
+    const asked: string[] = []
+    let resolved = 0
+    return {
+      asked,
+      resolveCalls: () => resolved,
+      integration: {
+        connection: {
+          active: async (id: string) => {
+            asked.push(id)
+            return activeById(id)
+          },
+          resolve: async (connection: unknown) => {
+            resolved += 1
+            return resolveValue(connection)
+          }
+        }
+      }
+    }
+  }
+
   /** A fetch that answers the Go endpoint with `body`/`status` and every app post with 204. */
   function installGoFetch(body: unknown, status = 200): FetchCall[] {
     const calls: FetchCall[] = []
@@ -765,6 +794,113 @@ describe('opencode plugin OpenCode Go allowance (display-only quota bars)', () =
     expect(posts[0].init.body).not.toContain('oauth-access-token')
   })
 
+  it("falls back to the main 'opencode' credential when no 'opencode-go' connection exists", async () => {
+    const calls = installGoFetch(GO_BODY)
+    const creds = connectionApi(
+      (id) => (id === 'opencode' ? { type: 'credential', id: 'cred-main', label: 'OpenCode', method: 'oauth' } : null),
+      () => ({ type: 'oauth', access: 'opencode-access-token', expires: 1 })
+    )
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+
+    expect(creds.asked).toEqual(['opencode-go', 'opencode'])
+    expect(creds.resolveCalls()).toBe(1)
+    const gets = goGets(calls)
+    expect(gets).toHaveLength(1)
+    expect(gets[0].init.headers.authorization).toBe('Bearer opencode-access-token')
+    const posts = statusPosts(calls)
+    expect(posts).toHaveLength(1)
+    expect(posts[0].url).toBe('http://127.0.0.1:4123/statusline/deck-sess')
+    expect(JSON.parse(posts[0].init.body).source).toBe('opencode-go')
+    expect(JSON.parse(posts[0].init.body).rate_limits).toEqual({
+      five_hour: { used_percentage: 7, resets_at: '2026-10-13T10:00:00Z' },
+      seven_day: { used_percentage: 3, resets_at: '2026-10-20T10:00:00Z' },
+      monthly: { used_percentage: 1, resets_at: '2026-11-01T00:00:00Z' }
+    })
+  })
+
+  it("asks 'opencode-go' first and never asks 'opencode' when it is connected", async () => {
+    const calls = installGoFetch(GO_BODY)
+    const creds = connectionApi(
+      (id) => {
+        if (id === 'opencode-go') return { type: 'credential', id: 'cred-go', label: 'Go', method: 'key' }
+        throw new Error("'opencode' must not be asked when 'opencode-go' is connected")
+      },
+      () => ({ type: 'key', key: 'go-key' })
+    )
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+
+    expect(creds.asked).toEqual(['opencode-go'])
+    expect(creds.resolveCalls()).toBe(1)
+    expect(goGets(calls)).toHaveLength(1)
+    expect(goGets(calls)[0].init.headers.authorization).toBe('Bearer go-key')
+    expect(statusPosts(calls)).toHaveLength(1)
+  })
+
+  it("falls through to 'opencode' when active('opencode-go') throws", async () => {
+    const calls = installGoFetch(GO_BODY)
+    const creds = connectionApi(
+      (id) => {
+        if (id === 'opencode-go') throw new Error('connection lookup failed')
+        return { type: 'credential', id: 'cred-main', label: 'OpenCode', method: 'oauth' }
+      },
+      () => ({ type: 'oauth', access: 'fallback-access-token' })
+    )
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+
+    expect(creds.asked).toEqual(['opencode-go', 'opencode'])
+    expect(goGets(calls)).toHaveLength(1)
+    expect(goGets(calls)[0].init.headers.authorization).toBe('Bearer fallback-access-token')
+    expect(statusPosts(calls)).toHaveLength(1)
+  })
+
+  it("falls through to 'opencode' when resolving the 'opencode-go' credential throws", async () => {
+    const calls = installGoFetch(GO_BODY)
+    const creds = connectionApi(
+      (id) => ({ type: 'credential', id: id === 'opencode-go' ? 'cred-go' : 'cred-main', label: id, method: 'oauth' }),
+      (connection) => {
+        if ((connection as { id?: string }).id === 'cred-go') throw new Error('resolve failed')
+        return { type: 'oauth', access: 'after-resolve-throw' }
+      }
+    )
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+
+    expect(creds.asked).toEqual(['opencode-go', 'opencode'])
+    expect(creds.resolveCalls()).toBe(2)
+    expect(goGets(calls)[0].init.headers.authorization).toBe('Bearer after-resolve-throw')
+    expect(statusPosts(calls)).toHaveLength(1)
+  })
+
+  it("fetches and posts nothing when neither integration is connected", async () => {
+    const calls = installGoFetch(GO_BODY)
+    const creds = connectionApi(() => null, () => ({ type: 'key', key: 'unused' }))
+    await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+
+    expect(creds.asked).toEqual(['opencode-go', 'opencode'])
+    expect(creds.resolveCalls()).toBe(0)
+    expect(goGets(calls)).toHaveLength(0)
+    expect(statusPosts(calls)).toHaveLength(0)
+  })
+
+  it('never puts the credential token in any posted body', async () => {
+    const token = 'super-secret-go-token'
+    const calls = installGoFetch(GO_BODY)
+    const creds = connectionApi(
+      (id) => (id === 'opencode' ? { type: 'credential', id: 'cred-main', label: 'OpenCode', method: 'oauth' } : null),
+      () => ({ type: 'oauth', access: token })
+    )
+    const plugin = await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
+    await send(plugin, ev('session.execution.started', { sessionID: 'ses_x' }))
+    await send(plugin, ev('permission.asked', { action: 'bash', metadata: { command: 'echo hi' } }))
+    await send(plugin, ev('session.execution.succeeded', { sessionID: 'ses_x' }))
+
+    const posts = calls.filter((c) => c.init.method === 'POST')
+    expect(posts.length).toBeGreaterThan(0)
+    for (const post of posts) {
+      expect(post.init.body).not.toContain(token)
+    }
+    expect(goGets(calls)[0].init.headers.authorization).toBe(`Bearer ${token}`)
+  })
+
   it('accepts a plain API key credential', async () => {
     const calls = installGoFetch(GO_BODY)
     const creds = credentials({ type: 'key', key: 'sk-go-secret' })
@@ -777,7 +913,7 @@ describe('opencode plugin OpenCode Go allowance (display-only quota bars)', () =
     const calls = installGoFetch(GO_BODY)
     const creds = credentials(null)
     await instance(BASE_ENV, undefined, { integration: creds.integration, keepFetch: true })
-    expect(creds.asked).toEqual(['opencode-go'])
+    expect(creds.asked).toEqual(['opencode-go', 'opencode'])
     expect(creds.resolveCalls()).toBe(0)
     expect(goGets(calls)).toHaveLength(0)
     expect(statusPosts(calls)).toHaveLength(0)
