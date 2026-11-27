@@ -1,11 +1,10 @@
-// Manual usage refresh orchestration: single flight, minimum interval, 429 cool-down. Never throws.
+// Manual usage refresh orchestration: single flight and 429 cool-down. Every refresh fetches again. Never throws.
 import type { UsageRefreshError, UsageRefreshResult } from '../../shared/types'
 import { logMainError } from '../app/errorLog'
 import type { TokenResult, UsageFetchResult } from './oauthUsage'
 import type { UsageService } from './UsageService'
 import { errorMessage } from '../../shared/guards'
 
-export const MIN_REFRESH_INTERVAL_MS = 5_000
 export const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000
 
 const UNEXPECTED_MESSAGE = 'Usage refresh failed unexpectedly. Details were written to the error log.'
@@ -21,7 +20,7 @@ export interface UsageRefresherDeps {
 }
 
 export interface UsageRefresher {
-  /** Asks the usage endpoint once (or returns the in-flight / last result, see the rules above). */
+  /** Asks the usage endpoint once (or returns the in-flight result while one is running). */
   refresh(): Promise<UsageRefreshResult>
 }
 
@@ -42,8 +41,6 @@ function redact(error: unknown, secret: string | null): Error {
 
 export function createUsageRefresher(deps: UsageRefresherDeps): UsageRefresher {
   let inFlight: Promise<UsageRefreshResult> | null = null
-  let lastResult: UsageRefreshResult | null = null
-  let lastAttemptAt: number | null = null
   let cooldown: { readonly until: number; readonly error: UsageRefreshError } | null = null
 
   function startCooldown(error: UsageRefreshError): void {
@@ -83,14 +80,7 @@ export function createUsageRefresher(deps: UsageRefresherDeps): UsageRefresher {
       return { ok: false, error: { ...cooldown.error, retryAfterMs: cooldown.until - t } }
     }
 
-    if (lastResult !== null && lastAttemptAt !== null && t - lastAttemptAt < MIN_REFRESH_INTERVAL_MS) {
-      return lastResult
-    }
-
-    lastAttemptAt = t
-    const result = await runAttempt()
-    lastResult = result
-    return result
+    return runAttempt()
   }
 
   return {

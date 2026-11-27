@@ -3,6 +3,7 @@ import { scheduleContinue } from './autopilotContinue'
 import {
   EMPTY_AUTOPILOT_STATE,
   RESET_DEDUP_MS,
+  fallbackResetAt,
   futureFiveHourReset,
   hasHeld,
   idleCandidateIds,
@@ -26,6 +27,8 @@ export interface AutopilotContext {
   state: QuotaAutopilotState
   /** Epoch ms when the reset timer last handled a reset; the guard's copy of that reset is then dropped. */
   handledResetAt: number | null
+  /** Invented reset (epoch sec) used while usage has none, so fresh usage can replace it. In memory only. */
+  fallbackResetAt: number | null
 }
 
 const FIVE_HOUR_RESET: QuotaAlert = { window: 'fiveHour', kind: 'reset', percent: 0, resetsAt: null }
@@ -63,10 +66,22 @@ function isOpenSession(ctx: AutopilotContext, id: Id): boolean {
   return ctx.deps.listSessions().some((s) => s.id === id && s.closedAt === undefined)
 }
 
-/** The reset time to wait for: fresh usage data, else the previous one while it is still ahead. */
+/** The reset time to wait for: fresh usage data, else the previous one while it is still ahead, else an invented one. */
 function resetFromUsage(ctx: AutopilotContext, previous: number | null): number | null {
   const now = ctx.deps.now()
-  return resolveResetsAt(previous, futureFiveHourReset(ctx.deps.getUsage(), now), now)
+  const fresh = futureFiveHourReset(ctx.deps.getUsage(), now)
+  const resolved = resolveResetsAt(previous, fresh, now)
+  if (resolved === null) {
+    // No usable reset would arm no timer at all, leaving the held sessions asleep forever.
+    ctx.fallbackResetAt = fallbackResetAt(now)
+    return ctx.fallbackResetAt
+  }
+  if (fresh !== null || resolved !== ctx.fallbackResetAt) {
+    // Real usage (or a real earlier reset) wins. An earlier fallback carried over from a previous hold stays marked
+    // as invented, so later fresh usage can still replace it even when it is earlier than the fallback.
+    ctx.fallbackResetAt = null
+  }
+  return resolved
 }
 
 export function idleCandidates(ctx: AutopilotContext): Id[] {
@@ -106,7 +121,12 @@ export function onUsageLimit(ctx: AutopilotContext, id: Id): void {
 export function onUsageChanged(ctx: AutopilotContext): void {
   if (!hasHeld(ctx.state)) return
   const fresh = futureFiveHourReset(ctx.deps.getUsage(), ctx.deps.now())
-  if (fresh === null || !isNewerReset(ctx.state.resetsAt, fresh)) return
+  if (fresh === null) return
+  // Fresh usage replaces our invented time even if it is earlier: only a real reset from usage should time the wake.
+  const replacingFallback = ctx.fallbackResetAt !== null && ctx.state.resetsAt === ctx.fallbackResetAt
+  if (!isNewerReset(ctx.state.resetsAt, fresh) && !replacingFallback) return
+  // Clear before commit so a state-change listener cannot see the old fallback and adopt it twice.
+  ctx.fallbackResetAt = null
   commit(ctx, { ...ctx.state, resetsAt: fresh })
 }
 
@@ -169,6 +189,8 @@ export function wake(ctx: AutopilotContext, options: WakeOptions): Id[] {
     const asleep = runtimes.get(id)?.sleeping === true
     if (wakeOne(ctx, id, asleep, options.sendContinue && stopped.has(id))) acted.push(id)
   }
+  // The hold is over: an invented reset must not outlive it and be adopted by a later hold.
+  ctx.fallbackResetAt = null
   publish(ctx, EMPTY_AUTOPILOT_STATE)
   ctx.timer.disarm()
   return acted
@@ -184,6 +206,8 @@ function wokeAlert(woken: readonly Id[]): QuotaAlert {
  */
 export function handleReset(ctx: AutopilotContext): QuotaAlert | null {
   ctx.timer.disarm()
+  // This reset is spent, whether we wake now or just offer: forget any invented time for it.
+  ctx.fallbackResetAt = null
   const settings = ctx.deps.getSettings()
   const sessions = ctx.deps.listSessions()
   const held = liveHeldIds(ctx.state, sessions)

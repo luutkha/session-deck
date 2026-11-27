@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { logMainError } from '../app/errorLog'
-import { createUsageRefresher, DEFAULT_RATE_LIMIT_COOLDOWN_MS, MIN_REFRESH_INTERVAL_MS, type UsageRefresher } from './usageRefresh'
+import { createUsageRefresher, DEFAULT_RATE_LIMIT_COOLDOWN_MS, type UsageRefresher } from './usageRefresh'
 import { createUsageService, type UsageService } from './UsageService'
 import type { TokenResult, UsageFetchResult } from './oauthUsage'
 import type { UsageRefreshResult, UsageState } from '../../shared/types'
@@ -97,15 +97,39 @@ describe('createUsageRefresher', () => {
     expect(h.fetchUsage).toHaveBeenCalledTimes(1)
   })
 
-  it('enforces a minimum interval and returns the last result in between', async () => {
+  it('fetches again on a second sequential refresh, even within the old 5s window', async () => {
     const h = harness()
-    await h.refresher.refresh()
-    h.setNow(1_000_000 + MIN_REFRESH_INTERVAL_MS - 1)
-    const again = await h.refresher.refresh()
-    expect(again).toEqual({ ok: true })
+    expect(await h.refresher.refresh()).toEqual({ ok: true })
+    h.setNow(1_000_000 + 1)
+    expect(await h.refresher.refresh()).toEqual({ ok: true })
+    expect(h.fetchUsage).toHaveBeenCalledTimes(2)
+    expect(h.emitted).toHaveLength(2)
+  })
+
+  it('two concurrent refreshes still share one fetch', async () => {
+    let release: (result: UsageFetchResult) => void = () => {}
+    const pending = new Promise<UsageFetchResult>((resolve) => {
+      release = resolve
+    })
+    const h = harness({ fetchUsage: () => pending })
+    const first = h.refresher.refresh()
+    const second = h.refresher.refresh()
+    expect(second).toBe(first)
+    release(okUsage)
+    expect(await second).toEqual(await first)
+    expect(h.fetchUsage).toHaveBeenCalledTimes(1)
+  })
+
+  it('a 429 cool-down still blocks refreshes', async () => {
+    const limited = { kind: 'rate-limited', message: 'Usage service is rate limited. Try again later.', retryAfterMs: 30_000 } as const
+    const h = harness({ fetchUsage: async () => ({ ok: false, error: limited }) })
+    expect(await h.refresher.refresh()).toEqual({ ok: false, error: limited })
+
+    h.setNow(1_000_000 + 29_999)
+    expect(await h.refresher.refresh()).toMatchObject({ ok: false, error: { kind: 'rate-limited', retryAfterMs: 1 } })
     expect(h.fetchUsage).toHaveBeenCalledTimes(1)
 
-    h.setNow(1_000_000 + MIN_REFRESH_INTERVAL_MS)
+    h.setNow(1_000_000 + 30_000)
     await h.refresher.refresh()
     expect(h.fetchUsage).toHaveBeenCalledTimes(2)
   })

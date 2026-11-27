@@ -2,6 +2,8 @@ import type { Id, QuotaAutopilotState, RuntimeState, Session, UsageState } from 
 
 /** Wait after the 5-hour reset before waking, so the usage endpoint has rolled over. */
 export const RESET_GRACE_MS = 5_000
+/** How long to hold a session when usage gives no usable reset, so it is woken eventually rather than never. */
+export const FALLBACK_RESET_SEC = 5 * 60 * 60
 /** A reset the timer already handled is not announced again by the guard within this window. */
 export const RESET_DEDUP_MS = 30 * 60_000
 /** Output must stay quiet this long before "continue" is typed (Claude is ready for input again). */
@@ -68,6 +70,14 @@ export function resetFireAt(resetsAtSec: number): number {
 /** Delay for one setTimeout call: the remaining time, capped at the maximum the timer supports. */
 export function nextTimerDelay(nowMs: number, fireAtMs: number): number {
   return Math.min(Math.max(0, fireAtMs - nowMs), MAX_TIMEOUT_MS)
+}
+
+/**
+ * An invented reset, in epoch seconds, for when usage data is stale or missing. The timer needs a time to wait for:
+ * without one it schedules nothing and a held session would stay held forever. Round up so the wait is never short.
+ */
+export function fallbackResetAt(nowMs: number): number {
+  return Math.ceil(nowMs / MS_PER_SEC) + FALLBACK_RESET_SEC
 }
 
 /**

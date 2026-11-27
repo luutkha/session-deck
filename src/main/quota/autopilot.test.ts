@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Id, QuotaAlert, QuotaAutopilotState, QuotaSettings, RuntimeState, Session, UsageState } from '../../shared/types'
 import { createQuotaAutopilot, type QuotaAutopilot } from './autopilot'
-import { CONTINUE_ENTER_DELAY_MS, CONTINUE_MAX_WAIT_MS, CONTINUE_QUIET_MS, RESET_GRACE_MS } from './autopilotPolicy'
+import { CONTINUE_ENTER_DELAY_MS, CONTINUE_MAX_WAIT_MS, CONTINUE_QUIET_MS, FALLBACK_RESET_SEC, RESET_GRACE_MS } from './autopilotPolicy'
 import { saveAutopilotState } from './autopilotStore'
 
 const NOW_MS = 1_700_000_000_000
@@ -390,12 +390,69 @@ describe('usage limit and usage changes', () => {
     expect(w.autopilot.getState().stoppedAtLimit).toEqual([])
   })
 
-  it('does not take a reset time that has already passed (stale usage data)', () => {
+  it('falls back to a 5-hour wait instead of leaving stale usage data unarmed', () => {
+    // The old behaviour returned null here, which armed no timer and left the session held forever.
     const w = makeWorld({ resetsAt: NOW_SEC - 10 })
     w.autopilot.onUsageLimit('a')
-    expect(w.autopilot.getState().resetsAt).toBeNull()
-    vi.advanceTimersByTime(86_400_000)
+    expect(w.autopilot.getState().resetsAt).toBe(NOW_SEC + FALLBACK_RESET_SEC)
+    vi.advanceTimersByTime(FALLBACK_RESET_SEC * 1000 + RESET_GRACE_MS)
+    expect(w.log.delivered).toEqual([{ ...RESET, sessionIds: ['a'] }])
+  })
+
+  it('arms a 5-hour fallback reset without usage data and wakes the held session at it', () => {
+    const w = makeWorld({ resetsAt: null, settings: { resetAction: 'wake' } })
+    w.autopilot.onUsageLimit('a')
+    w.runtimes.set('a', running('a', { sleeping: true, run: 'exited' }))
+    expect(w.autopilot.getState().resetsAt).toBe(NOW_SEC + FALLBACK_RESET_SEC)
+    vi.advanceTimersByTime(FALLBACK_RESET_SEC * 1000 + RESET_GRACE_MS - 1)
     expect(w.log.delivered).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(w.log.delivered).toEqual([{ ...RESET, autoAction: 'woke', sessionIds: ['a'] }])
+    expect(w.log.wakes).toEqual(['a'])
+  })
+
+  it('offers the wake at the fallback reset when the action is ask', () => {
+    const w = makeWorld({ resetsAt: null })
+    w.autopilot.onUsageLimit('a')
+    vi.advanceTimersByTime(FALLBACK_RESET_SEC * 1000 + RESET_GRACE_MS)
+    expect(w.log.delivered).toEqual([{ ...RESET, sessionIds: ['a'] }])
+    expect(w.log.wakes).toEqual([])
+    expect(w.autopilot.getState().stoppedAtLimit).toEqual(['a'])
+  })
+
+  it('replaces the fallback with earlier fresh usage and fires at the real reset', () => {
+    const w = makeWorld({ resetsAt: null })
+    w.autopilot.onUsageLimit('a')
+    expect(w.autopilot.getState().resetsAt).toBe(NOW_SEC + FALLBACK_RESET_SEC)
+    w.setUsageResetsAt(RESET_SEC)
+    w.autopilot.onUsageChanged()
+    expect(w.autopilot.getState().resetsAt).toBe(RESET_SEC)
+    vi.advanceTimersByTime((RESET_SEC * 1000 - NOW_MS) + RESET_GRACE_MS - 1)
+    expect(w.log.delivered).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(w.log.delivered).toEqual([{ ...RESET, sessionIds: ['a'] }])
+    // Nothing should fire at the invented time that was replaced.
+    vi.advanceTimersByTime((FALLBACK_RESET_SEC - 3600) * 1000)
+    expect(w.log.delivered).toHaveLength(1)
+  })
+
+  it('keeps the fallback through another hold so later fresh usage can still replace it', () => {
+    const w = makeWorld({ resetsAt: null })
+    w.autopilot.onUsageLimit('a')
+    w.autopilot.onUsageLimit('b')
+    expect(w.autopilot.getState().resetsAt).toBe(NOW_SEC + FALLBACK_RESET_SEC)
+    w.setUsageResetsAt(RESET_SEC)
+    w.autopilot.onUsageChanged()
+    expect(w.autopilot.getState().resetsAt).toBe(RESET_SEC)
+  })
+
+  it('does not use the fallback when usage has a real future reset', () => {
+    const w = makeWorld()
+    w.autopilot.onUsageLimit('a')
+    expect(w.autopilot.getState().resetsAt).toBe(RESET_SEC)
+    expect(w.autopilot.getState().resetsAt).not.toBe(NOW_SEC + FALLBACK_RESET_SEC)
+    vi.advanceTimersByTime((RESET_SEC * 1000 - NOW_MS) + RESET_GRACE_MS)
+    expect(w.log.delivered).toEqual([{ ...RESET, sessionIds: ['a'] }])
   })
 
   it('adopts a newer reset time while sessions are held', () => {

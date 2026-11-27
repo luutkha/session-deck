@@ -42,7 +42,8 @@ export function createQuotaAutopilot(deps: QuotaAutopilotDeps): QuotaAutopilot {
     clearTimer,
     continues: new Map(),
     state: EMPTY_AUTOPILOT_STATE,
-    handledResetAt: null
+    handledResetAt: null,
+    fallbackResetAt: null
   }
 
   return {

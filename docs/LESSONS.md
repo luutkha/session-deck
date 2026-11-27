@@ -59,6 +59,7 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - A background job cannot send real OS mouse input; use CDP `Input.dispatchMouseEvent`. CDP screenshots do show the terminal canvas.
 
 ## Attention, timeline, quota
+- **2026-11-27 · A hold with no reset time armed no timer and never ended.** `resetFromUsage` returned null when cached usage was stale or missing at the moment a session hit the limit, and `ResetTimer.arm(null)` schedules nothing, so the chip stayed forever and "refresh limit" could not help (it also returned a cached result for 5 s). Every hold now gets a reset: the real one, else an invented one 5 h ahead (`fallbackResetAt`) that real usage replaces. Never let a state that waits for a time have a null time. The separate report "cannot open Jarvis or the session while limited" was NOT reproduced; no quota code gates those.
 - **Attention is recorded for the session on screen; focus only decides pinging** (`AttentionService`, `wireAttentionNotices`). In CDP e2e the window counts as focused.
 - **A reminder is a second ordinary raise, so the Notifier debounce applies.** Inject the same clock into the reminder bookkeeping and `Notifier`.
 - **A hook can arrive after its turn is over** (Stop and the statusLine cost are separate requests). Keep superseded turns in `awaitingStop` and move the cost cursor only when the previous turn settles; arrival order is not prompt order.

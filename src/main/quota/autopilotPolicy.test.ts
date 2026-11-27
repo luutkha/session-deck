@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import type { QuotaAutopilotState, RuntimeState, Session, UsageState } from '../../shared/types'
 import {
   EMPTY_AUTOPILOT_STATE,
+  FALLBACK_RESET_SEC,
   MAX_TIMEOUT_MS,
+  fallbackResetAt,
   RESET_GRACE_MS,
   futureFiveHourReset,
   hasHeld,
@@ -138,6 +140,13 @@ describe('reset time from usage', () => {
   it('returns null without usage windows or a reset time', () => {
     expect(futureFiveHourReset(usage(undefined), NOW_MS)).toBeNull()
     expect(futureFiveHourReset(usage(null), NOW_MS)).toBeNull()
+  })
+
+  it('invents a reset five hours ahead in epoch seconds, rounding the current time up', () => {
+    expect(FALLBACK_RESET_SEC).toBe(5 * 60 * 60)
+    expect(fallbackResetAt(NOW_MS)).toBe(NOW_SEC + FALLBACK_RESET_SEC)
+    expect(fallbackResetAt(NOW_MS + 500)).toBe(NOW_SEC + 1 + FALLBACK_RESET_SEC)
+    expect(fallbackResetAt(NOW_MS + 1000)).toBe(NOW_SEC + 1 + FALLBACK_RESET_SEC)
   })
 
   it('prefers fresh usage, keeps a previous future reset, and drops a previous past one', () => {
