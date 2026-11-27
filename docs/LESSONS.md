@@ -147,3 +147,5 @@ Things that cost time once. Read the section for the area before touching it. Ad
 - **A CDP call with no deadline hangs the whole e2e run.** `e2e-lib.cjs` `send` used to wait forever when the socket closed (e.g. `quitApp` over the socket it kills) and `waitFor` only checks its deadline after the probe returns. `send` now rejects on close and after 5 minutes. One `e2e-move-to-code` run also failed once in step 8 (card click right after the undo restart) and passed on rerun: if it recurs, wait for the card before clicking.
 - **A test hook must not fall back to a real app.** The first `e2e-open-editor` run opened the user's real text editor through the default-app fallback because the fake editor command failed. With `SESSIONDECK_EDITOR_COMMAND` set there is no fallback. Also: a `
 ` inside a template literal that writes a script becomes a real newline in that script.
+
+- xterm's OSC 8 links (`ESC ] 8 ;; url ESC \ text`) show a window.confirm "WARNING: This link could potentially be dangerous" unless `term.options.linkHandler` is set (D93). A typed command line loses ESC bytes in PowerShell: print test sequences from a script file.

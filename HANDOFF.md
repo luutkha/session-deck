@@ -41,6 +41,7 @@ Where the details live:
 - **D57** (D56: Code mode stays git-only; D57: worktrees like Orca — auto-suffix, existing branch, repo folder; `e2e-worktree-sources` 10/10, 3,343 unit tests).
 - **D55** (exit grid, tab bar for running and awake sessions only, Jarvis controls the whole app: 65 tools). Pushed.
 - **D55 verification (dev build):** 3,329 unit tests (203 files), both typechecks clean, `e2e-jarvis-control` 33/33 (new), `e2e-jarvis` 60/60, `e2e-grid` 15/15, `e2e-foldertabs` 6/6, `e2e-annotate` 13/13, `e2e-codemode` 34/34. The installer was not rebuilt (still `84bf042`).
+- **Links (D93):** agent-printed hyperlinks open directly, no browser-style warning (`e2e:osc-link`).
 - **Extra agent CLIs (D92, phase 1):** 39 agents from Orca as launch-only terminal sessions (`cliAgent` on shell sessions, registry `src/shared/cliAgents.ts`, `e2e:cli-agents`); no hooks/resume yet (phase 2, needs real CLIs).
 - **Jarvis reads (D91):** `read_conversation` + notes in `list_sessions`, only when the user asks; text only (no tool calls).
 - **Move to Code (D88):** right-click entry on Ops cards too, also for several selected sessions (`e2e:move-to-code` 28/28); palette "Move to Code mode: repo / worktree" moves an Ops session into a worktree (same card, fresh conversation; `e2e:move-to-code` 22/22; also "new worktree…" in the palette; Jarvis tool `move_session_to_code` with undo, 95 tools). Not in an installer yet (0.0.9 predates it).

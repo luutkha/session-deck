@@ -1,7 +1,7 @@
 // The app's link service on Electron (terminal clicks and Jarvis's open_link, D58): one place for the real file
 // system and shell, so both open links the same safe way.
 import { shell } from 'electron'
-import { stat } from 'node:fs/promises'
+import { appendFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { createLinkService, type LinkService } from './LinkService'
 
@@ -17,7 +17,9 @@ export function createAppLinkService(getSessionCwd: (sessionId: string) => strin
       }
     },
     openPath: (target) => shell.openPath(target),
-    openExternal: (url) => shell.openExternal(url),
+    // E2E seam (same variable the Code-mode PR link uses): record the URL instead of opening a browser.
+    openExternal: (url) => (process.env.SESSIONDECK_E2E_OPENED_URLS_FILE ? appendFile(process.env.SESSIONDECK_E2E_OPENED_URLS_FILE, `${url}
+`, 'utf-8') : shell.openExternal(url)),
     showItemInFolder: (target) => shell.showItemInFolder(target),
     homedir
   })

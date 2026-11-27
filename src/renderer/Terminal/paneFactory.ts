@@ -201,6 +201,18 @@ export function buildTerminalView(
 
   sessionIds.set(term, id)
   registerLinkProvider(term, id)
+  // xterm's built-in handler for OSC 8 hyperlinks (the clickable links an agent prints) asks "Do you want to navigate to
+  // ...? WARNING: This link could potentially be dangerous" through window.confirm. The user wants them to open
+  // directly, like the other links of the app, so they go through the same main-side link service.
+  term.options.linkHandler = {
+    activate: (_event: MouseEvent, uri: string): void => {
+      void window.api.openLink(id, uri, false).then((result) => {
+        if (!result.ok) console.error('SessionDeck: opening the link failed', result.error)
+      }).catch((error: unknown) => {
+        console.error('SessionDeck: opening the link failed', error)
+      })
+    }
+  }
 
   // Typing also clears the session's attention: main does that inside its pty write (attention.noteInput).
   term.onData((data: string): void => {
