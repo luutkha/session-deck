@@ -1,5 +1,7 @@
 import type { AccountUsage, SessionUsage, UsageProvider, UsageState, UsageWindow } from '../../shared/types'
+import { USAGE_PROVIDERS } from '../../shared/types'
 import { parseStatusLine, type ParsedAccountWindows } from './statusLineParser'
+import type { PolledProvider, ProviderWindows } from './providers/providerUsageTypes'
 
 export interface UsageServiceDeps {
   readonly now?: () => number
@@ -18,6 +20,16 @@ export interface UsageService {
    * enabling waits for the next payload. The Claude account is never affected.
    */
   setOpencodeGoEnabled(enabled: boolean): void
+  /**
+   * Sets (or clears, with null) one polled provider's display bar. Ignored while agent usage is disabled.
+   * Unlike ingestAccount this deduplicates: unchanged windows leave the entry (and its identity) alone.
+   */
+  ingestProviderAccount(provider: PolledProvider, windows: ProviderWindows | null): void
+  /**
+   * One switch for all four polled providers (default on). Disabling drops their entries at once and ignores
+   * later ingests; enabling waits for the next ingest. Claude and OpenCode Go are never affected.
+   */
+  setAgentUsageEnabled(enabled: boolean): void
   /** Drops a session's entry (e.g. when the session is removed). */
   forget(sessionId: string): void
   getState(): UsageState
@@ -50,10 +62,11 @@ function hasAnyWindow(windows: ParsedAccountWindows): boolean {
 }
 
 function toAccount(provider: UsageProvider, windows: ParsedAccountWindows, updatedAt: number): AccountUsage {
-  if (provider === 'opencode-go') {
-    return { provider, fiveHour: windows.fiveHour, sevenDay: windows.sevenDay, monthly: windows.monthly ?? null, updatedAt }
+  if (provider === 'claude') {
+    return { provider, fiveHour: windows.fiveHour, sevenDay: windows.sevenDay, updatedAt }
   }
-  return { provider, fiveHour: windows.fiveHour, sevenDay: windows.sevenDay, updatedAt }
+  // Go and every polled agent have a monthly allowance; Claude deliberately does not (autopilot reads only Claude).
+  return { provider, fiveHour: windows.fiveHour, sevenDay: windows.sevenDay, monthly: windows.monthly ?? null, updatedAt }
 }
 
 function sameSessionData(a: SessionUsage, b: SessionUsage): boolean {
@@ -89,14 +102,22 @@ export function createUsageService(deps: UsageServiceDeps = {}): UsageService {
   let state: UsageState = EMPTY_STATE
   let claude: AccountUsage | null = null
   let opencodeGo: AccountUsage | null = null
+  const providerAccounts = new Map<PolledProvider, AccountUsage>()
   let goEnabled = true
+  let agentUsageEnabled = true
   const subscribers = new Set<(state: UsageState, sessionId?: string) => void>()
 
-  /** Claude first, then Go; undefined when neither has data (keeps the legacy state shape). */
+  /**
+   * Display order comes from USAGE_PROVIDERS, not insertion order: the poller fetches providers whenever a session
+   * opens, so arrival order is arbitrary. Providers without data are skipped; undefined keeps the legacy state shape.
+   */
   function displayAccounts(): readonly AccountUsage[] | undefined {
     const list: AccountUsage[] = []
-    if (claude !== null) list.push(claude)
-    if (opencodeGo !== null) list.push(opencodeGo)
+    for (const provider of USAGE_PROVIDERS) {
+      const account =
+        provider === 'claude' ? claude : provider === 'opencode-go' ? opencodeGo : providerAccounts.get(provider) ?? null
+      if (account !== null) list.push(account)
+    }
     return list.length === 0 ? undefined : list
   }
 
@@ -150,11 +171,34 @@ export function createUsageService(deps: UsageServiceDeps = {}): UsageService {
       commit(state.sessions)
     },
 
+    ingestProviderAccount(provider: PolledProvider, windows: ProviderWindows | null): void {
+      if (!agentUsageEnabled) return
+      if (windows === null) {
+        // Null means the login is gone. Removing nothing must not notify; removing a bar does.
+        if (providerAccounts.delete(provider)) commit(state.sessions)
+        return
+      }
+      const previous = providerAccounts.get(provider)
+      if (previous !== undefined && sameAccountWindows(previous, windows)) return
+      providerAccounts.set(provider, toAccount(provider, windows, now()))
+      commit(state.sessions)
+    },
+
     setOpencodeGoEnabled(enabled: boolean): void {
       if (enabled === goEnabled) return
       goEnabled = enabled
       if (!enabled && opencodeGo !== null) {
         opencodeGo = null
+        commit(state.sessions)
+      }
+    },
+
+    setAgentUsageEnabled(enabled: boolean): void {
+      if (enabled === agentUsageEnabled) return
+      agentUsageEnabled = enabled
+      if (!enabled && providerAccounts.size > 0) {
+        // One commit for all four bars; Claude and Go keep their entries and the Go switch stays independent.
+        providerAccounts.clear()
         commit(state.sessions)
       }
     },

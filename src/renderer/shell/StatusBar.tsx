@@ -32,6 +32,8 @@ export interface StatusBarProps {
     readonly pace?: { readonly fiveHour: string; readonly sevenDay: string }
     /** Show the OpenCode Go account group (Settings > Quota). Absent = shown. */
     readonly showOpencodeGo?: boolean
+    /** Show the Codex / Cursor / Kimi / Grok account groups (Settings > Quota). Absent = shown. */
+    readonly showAgentUsage?: boolean
   }
   /** Session whose model/context/cost is shown. */
   readonly activeSessionId?: Id | null
@@ -84,6 +86,7 @@ export function StatusBar(props: StatusBarProps): ReactElement {
             grantConsent={usage.grantConsent}
             pace={usage.pace}
             showOpencodeGo={usage.showOpencodeGo}
+            showAgentUsage={usage.showAgentUsage}
           />
         ) : null}
         {needsYou.length > 0 ? (

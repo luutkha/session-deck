@@ -270,6 +270,25 @@ export function QuotaSection({ settings, actions }: QuotaSectionProps): ReactEle
         inside OpenCode and never reaches SessionDeck; without a Go login no bars appear.
       </p>
 
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="quota-show-agent-usage" className="text-[13px] font-medium text-foreground">
+          Show Codex, Cursor, Kimi and Grok usage
+        </Label>
+        <Switch
+          id="quota-show-agent-usage"
+          checked={quota.showAgentUsage ?? true}
+          onCheckedChange={(checked: boolean): void =>
+            void applyPatch({ quota: { showAgentUsage: checked } })
+          }
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        While a session of one of these agents is open, SessionDeck reads that agent's own sign-in from this
+        computer and asks its provider for your plan allowance (read-only). The token is never stored or logged;
+        without a sign-in no bar appears.
+      </p>
+
       {error !== null ? (
         <p role="alert" className="text-xs text-destructive">
           {error}

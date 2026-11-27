@@ -1,3 +1,4 @@
+import { USAGE_PROVIDERS } from '../../shared/types'
 import type {
   AccountUsage,
   Id,
@@ -103,9 +104,22 @@ export function providerOf(account: AccountUsage): UsageProvider {
   return account.provider ?? 'claude'
 }
 
-/** Status-bar label: "Claude" or "Go". */
+/** Status-bar label for every provider, e.g. "Claude", "Go", "Codex". */
 export function providerLabel(provider: UsageProvider): string {
-  return provider === 'opencode-go' ? 'Go' : 'Claude'
+  switch (provider) {
+    case 'opencode-go':
+      return 'Go'
+    case 'codex':
+      return 'Codex'
+    case 'cursor':
+      return 'Cursor'
+    case 'kimi':
+      return 'Kimi'
+    case 'grok':
+      return 'Grok'
+    case 'claude':
+      return 'Claude'
+  }
 }
 
 /** An account row is shown only when it has at least one window. */
@@ -113,9 +127,7 @@ export function accountHasData(account: AccountUsage): boolean {
   return account.fiveHour !== null || account.sevenDay !== null || (account.monthly ?? null) !== null
 }
 
-const PROVIDER_ORDER: readonly UsageProvider[] = ['claude', 'opencode-go']
-
-/** Every displayable account, Claude first then Go. Legacy state (no list) reads as one Claude row. */
+/** Every displayable account, in USAGE_PROVIDERS display order (Claude first). Legacy state (no list) reads as one Claude row. */
 export function accountsForDisplay(state: UsageState): readonly AccountUsage[] {
   const list = state.accounts !== undefined ? state.accounts : state.account !== null ? [state.account] : []
   const byProvider = new Map<UsageProvider, AccountUsage>()
@@ -123,7 +135,7 @@ export function accountsForDisplay(state: UsageState): readonly AccountUsage[] {
     const provider = providerOf(account)
     if (accountHasData(account) && !byProvider.has(provider)) byProvider.set(provider, account)
   }
-  return PROVIDER_ORDER.map((provider) => byProvider.get(provider)).filter(
+  return USAGE_PROVIDERS.map((provider) => byProvider.get(provider)).filter(
     (account): account is AccountUsage => account !== undefined
   )
 }
@@ -162,9 +174,9 @@ export function describeWindow(
  * from the next turn), so an update that carries no Claude row must not erase the last known Claude numbers; the
  * per-session list always comes from the update.
  *
- * A missing Go row is NOT retained: main drops it on purpose when the settings toggle is off. The status bar also
- * filters Go by the same setting, so a disabled provider can never reappear from the cache. A provider present in
- * the update always replaces its cached row.
+ * A missing Go / agent-provider row is NOT retained: main drops it on purpose (Go via the settings toggle; the agent
+ * providers only exist while their sessions run). The status bar filters them too, so a hidden provider can never
+ * reappear from the cache. A provider present in the update always replaces its cached row.
  */
 export function mergeUsageState(previous: UsageState, next: UsageState): UsageState {
   const accounts = mergeAccounts(previous, next)
@@ -183,7 +195,7 @@ function mergeAccounts(
   if (next.accounts === undefined) return previous.accounts
   const fresh = accountsForDisplay({ account: null, accounts: next.accounts, sessions: [] })
   // Claude is always supported, so an update that omits it only means main has not seen a Claude turn yet.
-  // Go is optional and its absence is how main enforces the settings toggle, so it is never retained.
+  // Go / agent providers are optional: their absence means they are hidden or their session ended, so never retain them.
   const retainsClaude = !fresh.some((account) => providerOf(account) === 'claude')
   const kept = retainsClaude
     ? (previous.accounts ?? []).filter((account) => providerOf(account) === 'claude' && accountHasData(account))

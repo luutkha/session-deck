@@ -78,7 +78,8 @@ const FIELD_CHECKS: { readonly [S in SettingsSection]: Readonly<Record<string, F
     criticalAction: isCriticalAction,
     resetAction: isResetAction,
     continueOnWake: isBoolean,
-    showOpencodeGo: isBoolean
+    showOpencodeGo: isBoolean,
+    showAgentUsage: isBoolean
   },
   sleep: {
     enabled: isBoolean,

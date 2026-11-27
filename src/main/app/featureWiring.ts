@@ -4,6 +4,7 @@ import { IPC } from '../../shared/ipc'
 import type { SessionStore } from '../store'
 import type { PtyManager } from '../pty/PtyManager'
 import type { UsageService } from '../usage'
+import { wireProviderUsage } from '../usage/providers/providerUsageWiring'
 import { createTimelineService, type TimelineService } from '../timeline/timelineService'
 import { timelineFilePath } from '../timeline/timelineFile'
 import { buildAwaySummary } from '../timeline/awaySummary'
@@ -148,6 +149,8 @@ export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
       onError('usage provider setting', error)
     }
   })
+  // Codex, Cursor, Kimi and Grok quota bars: polled from each agent's own login while a session of it is open (D96).
+  const providerUsage = wireProviderUsage(store, usage, onError)
   // Turn costs settle from statusLine updates; a newer 5-hour reset time can arrive the same way. Only the session
   // whose entry changed can have a new cost, so the timeline is touched for that one (not for all sessions).
   usage.onChange((_state, sessionId) => {
@@ -190,6 +193,7 @@ export function createFeatureWiring(deps: FeatureWiringDeps): FeatureWiring {
     },
     shutdown: async () => {
       unwatchGoSetting()
+      providerUsage.stop()
       autopilot.stop()
       await timeline.flush()
     }

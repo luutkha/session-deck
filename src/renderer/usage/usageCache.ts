@@ -1,4 +1,5 @@
-import type { AccountUsage, UsageWindow } from '../../shared/types'
+import { USAGE_PROVIDERS } from '../../shared/types'
+import type { AccountUsage, UsageProvider, UsageWindow } from '../../shared/types'
 
 function clampPercent(percent: number): number {
   return Math.min(100, Math.max(0, percent))
@@ -23,9 +24,15 @@ function parseWindow(value: unknown): UsageWindow | null | undefined {
   return { usedPercentage: clampPercent(used), resetsAt }
 }
 
+/** True only for a provider named in USAGE_PROVIDERS (the cache's corrupt-shape guard). */
+function isUsageProvider(value: unknown): value is UsageProvider {
+  return USAGE_PROVIDERS.some((provider) => provider === value)
+}
+
 /**
  * Defensively parses one account object. Returns null for a corrupt shape; the provider is
- * optional (absent = Claude, the shape written before OpenCode Go existed).
+ * optional (absent = Claude, the shape written before OpenCode Go existed). A monthly window
+ * belongs to non-Claude providers only.
  */
 function parseAccount(record: unknown): AccountUsage | null {
   if (typeof record !== 'object' || record === null || Array.isArray(record)) return null
@@ -33,13 +40,18 @@ function parseAccount(record: unknown): AccountUsage | null {
   const updatedAt = value.updatedAt
   if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt)) return null
   const provider = value.provider
-  if (provider !== undefined && provider !== 'claude' && provider !== 'opencode-go') return null
+  if (provider !== undefined && !isUsageProvider(provider)) return null
   const fiveHour = parseWindow(value.fiveHour)
   const sevenDay = parseWindow(value.sevenDay)
   const monthly = parseWindow(value.monthly)
   if (fiveHour === undefined || sevenDay === undefined || monthly === undefined) return null
   const account: AccountUsage = { fiveHour, sevenDay, updatedAt }
-  return provider === undefined ? account : { ...account, provider, ...(monthly === null ? {} : { monthly }) }
+  if (provider === undefined) return account
+  return {
+    ...account,
+    provider,
+    ...(provider === 'claude' || monthly === null ? {} : { monthly })
+  }
 }
 
 /**

@@ -1,5 +1,17 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import type { AccountUsage, SessionUsage, UsageRefreshError, UsageRefreshErrorKind, UsageState } from '../../shared/types'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { USAGE_PROVIDERS } from '../../shared/types'
+import type {
+  AccountUsage,
+  SessionUsage,
+  UsageProvider,
+  UsageRefreshError,
+  UsageRefreshErrorKind,
+  UsageState
+} from '../../shared/types'
+import { UsageChips, type UsageChipsProps } from './UsageChips'
 import {
   accountHasData,
   accountsForDisplay,
@@ -212,7 +224,7 @@ describe('describeWindow', () => {
   })
 })
 
-describe('provider helpers (Claude + OpenCode Go)', () => {
+describe('provider helpers (all six providers)', () => {
   const claude: AccountUsage = {
     provider: 'claude',
     fiveHour: { usedPercentage: 38, resetsAt: 1000 },
@@ -236,6 +248,10 @@ describe('provider helpers (Claude + OpenCode Go)', () => {
   it('labels the groups for the status bar', () => {
     expect(providerLabel('claude')).toBe('Claude')
     expect(providerLabel('opencode-go')).toBe('Go')
+    expect(providerLabel('codex')).toBe('Codex')
+    expect(providerLabel('cursor')).toBe('Cursor')
+    expect(providerLabel('kimi')).toBe('Kimi')
+    expect(providerLabel('grok')).toBe('Grok')
   })
 
   it('requires at least one window (including monthly) for a row to be displayable', () => {
@@ -253,6 +269,20 @@ describe('provider helpers (Claude + OpenCode Go)', () => {
   it('drops empty rows and duplicate providers', () => {
     const state: UsageState = { account: null, accounts: [legacy, go, { ...go, updatedAt: 9 }], sessions: [] }
     expect(accountsForDisplay(state)).toEqual([go])
+  })
+
+  it('orders all six providers by USAGE_PROVIDERS, whatever order main sends', () => {
+    const rows: readonly AccountUsage[] = USAGE_PROVIDERS.map(
+      (provider: UsageProvider, index): AccountUsage => ({
+        provider,
+        fiveHour: { usedPercentage: index, resetsAt: 1000 + index },
+        sevenDay: null,
+        ...(provider === 'claude' ? {} : { monthly: { usedPercentage: index, resetsAt: 2000 + index } }),
+        updatedAt: index + 1
+      })
+    )
+    const state: UsageState = { account: null, accounts: [...rows].reverse(), sessions: [] }
+    expect(accountsForDisplay(state)).toEqual(rows)
   })
 })
 
@@ -315,6 +345,28 @@ describe('mergeUsageState', () => {
     )
     expect(merged.accounts).toEqual([account])
     expect(merged.account).toBe(account)
+  })
+
+  it('drops a cached agent row when main stops reporting it, but replaces it when present', () => {
+    const codex: AccountUsage = {
+      provider: 'codex',
+      fiveHour: { usedPercentage: 5, resetsAt: 1000 },
+      sevenDay: null,
+      monthly: null,
+      updatedAt: 7
+    }
+    const dropped = mergeUsageState(
+      { account: null, accounts: [account, codex], sessions: [] },
+      { account, accounts: [account], sessions: [] }
+    )
+    expect(dropped.accounts).toEqual([account])
+
+    const newer = { ...codex, updatedAt: 9 }
+    const replaced = mergeUsageState(
+      { account: null, accounts: [account, codex], sessions: [] },
+      { account: null, accounts: [newer], sessions: [] }
+    )
+    expect(replaced.accounts).toEqual([account, newer])
   })
 
   it('counts an accounts-only update as fresh', () => {
@@ -432,5 +484,87 @@ describe('consent flag', () => {
   })
   it('accepts a literal true', () => {
     expect(parseConsent('true')).toBe(true)
+  })
+})
+
+// Component markup is checked with react-dom/server: this repo's Vitest environment has no DOM.
+describe('UsageChips provider groups', () => {
+  const now = 1_700_000_000_000
+
+  function chipAccount(provider: UsageProvider, index: number): AccountUsage {
+    return {
+      provider,
+      fiveHour: { usedPercentage: 30 + index, resetsAt: 1_700_000_000 },
+      sevenDay: { usedPercentage: 20 + index, resetsAt: null },
+      ...(provider === 'claude' ? {} : { monthly: { usedPercentage: 5 + index, resetsAt: 1_700_300_000 } }),
+      updatedAt: now
+    }
+  }
+
+  function renderChips(
+    accounts: readonly AccountUsage[],
+    props: Partial<UsageChipsProps> = {}
+  ): string {
+    return renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(UsageChips, {
+          state: { account: null, accounts, sessions: [] },
+          activeSessionId: null,
+          stale: false,
+          now,
+          ...props
+        })
+      )
+    )
+  }
+
+  function groupOf(markup: string, provider: UsageProvider): string {
+    const marker = `data-account="${provider}"`
+    const index = markup.indexOf(marker)
+    expect(index, marker).toBeGreaterThanOrEqual(0)
+    return markup.slice(markup.lastIndexOf('<div', index), markup.indexOf('</div>', index) + 6)
+  }
+
+  const rows = USAGE_PROVIDERS.map(chipAccount)
+
+  it('renders every provider group in accounts order', () => {
+    const markup = renderChips(rows)
+    const positions = USAGE_PROVIDERS.map((provider) => markup.indexOf(`data-account="${provider}"`))
+    expect(positions.every((position) => position >= 0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((a, b) => a - b))
+  })
+
+  it('shows the Month chip for a non-Go provider with a monthly window', () => {
+    expect(groupOf(renderChips(rows), 'kimi')).toContain('>Month<')
+  })
+
+  it('hides only the four new providers when showAgentUsage is false', () => {
+    const markup = renderChips(rows, { showAgentUsage: false })
+    expect(markup).toContain('data-account="claude"')
+    expect(markup).toContain('data-account="opencode-go"')
+    for (const provider of ['codex', 'cursor', 'kimi', 'grok'] as const) {
+      expect(markup).not.toContain(`data-account="${provider}"`)
+    }
+  })
+
+  it('keeps showOpencodeGo independent of showAgentUsage', () => {
+    const withoutGo = renderChips(rows, { showOpencodeGo: false })
+    expect(withoutGo).not.toContain('data-account="opencode-go"')
+    for (const provider of ['claude', 'codex', 'cursor', 'kimi', 'grok'] as const) {
+      expect(withoutGo).toContain(`data-account="${provider}"`)
+    }
+    const neither = renderChips(rows, { showOpencodeGo: false, showAgentUsage: false })
+    expect(neither).toContain('data-account="claude"')
+    expect(neither).not.toContain('data-account="opencode-go"')
+    expect(neither).not.toContain('data-account="kimi"')
+  })
+
+  it('shows provider labels only with two or more groups', () => {
+    expect(renderChips([rows[0]])).not.toContain('aria-hidden="true">Claude</span>')
+    const markup = renderChips([rows[0], rows[2]])
+    expect(markup).toContain('aria-hidden="true">Claude</span>')
+    expect(markup).toContain('aria-hidden="true">Codex</span>')
   })
 })

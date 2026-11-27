@@ -46,7 +46,8 @@ describe('parseStoredSettings / parseStoreData settings', () => {
         criticalAction: 'sleep' as const,
         resetAction: 'wake' as const,
         continueOnWake: true,
-        showOpencodeGo: false
+        showOpencodeGo: false,
+        showAgentUsage: false
       },
       sleep: { enabled: true, afterMinutes: 15, allEnabled: false, allAfterMinutes: 60 },
       agents: { defaultAgent: 'claude' as const, opencodeModel: '' },
@@ -130,7 +131,8 @@ describe('parseStoredSettings / parseStoreData settings', () => {
         criticalAction: 'sleep',
         resetAction: 'wake',
         continueOnWake: true,
-        showOpencodeGo: true
+        showOpencodeGo: true,
+        showAgentUsage: true
       })
     })
 
@@ -159,7 +161,8 @@ describe('parseStoredSettings / parseStoreData settings', () => {
 
     it('a block saved by the current build keeps a deliberate ask/ask/no-continue at the legacy thresholds', () => {
       const settings = parseStoredSettings({ quota: { ...OLD_QUOTA, showOpencodeGo: true } }, STATUSES)
-      expect(settings?.quota).toEqual({ ...OLD_QUOTA, showOpencodeGo: true })
+      // showAgentUsage is absent from the stored block, so the default (on) flows in.
+      expect(settings?.quota).toEqual({ ...OLD_QUOTA, showOpencodeGo: true, showAgentUsage: true })
     })
 
     it('a deliberate ask/ask/no-continue choice survives a save and reload', () => {
@@ -213,6 +216,7 @@ describe('parseStoredSettings / parseStoreData settings', () => {
     expect(parseStoredSettings({ quota: { resetAction: 'auto' } }, STATUSES)).toBeUndefined()
     expect(parseStoredSettings({ quota: { continueOnWake: 'yes' } }, STATUSES)).toBeUndefined()
     expect(parseStoredSettings({ quota: { showOpencodeGo: 'yes' } }, STATUSES)).toBeUndefined()
+    expect(parseStoredSettings({ quota: { showAgentUsage: 'yes' } }, STATUSES)).toBeUndefined()
   })
 
   it('settings saved before the hub section existed get scrollToBusiest on', () => {

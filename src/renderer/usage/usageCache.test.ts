@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { AccountUsage } from '../../shared/types'
+import { USAGE_PROVIDERS } from '../../shared/types'
+import type { AccountUsage, UsageProvider } from '../../shared/types'
 import { parseCachedAccounts, serializeAccounts } from './usageCache'
 
 const valid: AccountUsage = {
@@ -77,8 +78,24 @@ describe('parseCachedAccounts', () => {
     ).toBeNull()
   })
 
+  it('round-trips every provider in USAGE_PROVIDERS, with monthly on each non-Claude one', () => {
+    const accounts: readonly AccountUsage[] = USAGE_PROVIDERS.map(
+      (provider: UsageProvider, index): AccountUsage => ({
+        provider,
+        fiveHour: { usedPercentage: index, resetsAt: 1_700_000_000 + index },
+        sevenDay: { usedPercentage: index + 1, resetsAt: null },
+        ...(provider === 'claude' ? {} : { monthly: { usedPercentage: index + 2, resetsAt: 1_700_300_000 } }),
+        updatedAt: 1_700_000_000_000 + index
+      })
+    )
+    expect(parseCachedAccounts(serializeAccounts(accounts))).toEqual(accounts)
+  })
+
   it('returns null for an unknown provider', () => {
     expect(parseCachedAccounts(JSON.stringify({ ...valid, provider: 'deepseek' }))).toBeNull()
+    expect(parseCachedAccounts(JSON.stringify({ ...go, provider: 'agent-zero' }))).toBeNull()
+    const withUnknown = JSON.stringify([valid, go]).replace('"opencode-go"', '"unknown"')
+    expect(parseCachedAccounts(withUnknown)).toEqual([valid])
   })
 
   it('returns null for malformed windows', () => {

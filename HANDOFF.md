@@ -42,7 +42,8 @@ Where the details live:
 - **D55** (exit grid, tab bar for running and awake sessions only, Jarvis controls the whole app: 65 tools). Pushed.
 - **D55 verification (dev build):** 3,329 unit tests (203 files), both typechecks clean, `e2e-jarvis-control` 33/33 (new), `e2e-jarvis` 60/60, `e2e-grid` 15/15, `e2e-foldertabs` 6/6, `e2e-annotate` 13/13, `e2e-codemode` 34/34. The installer was not rebuilt (still `84bf042`).
 - **Limit hold fix (D94):** a held session always has a reset time (5 h fallback, replaced by real usage); manual "refresh limit" is never served from cache. Open: "cannot open Jarvis / session while limited" not reproduced.
-- **OpenCode Go quota (D95):** the plugin now also uses the `opencode` login, so the Go bar shows on machines whose OpenCode sign-in is the main one (`scripts/e2e-opencode-go-real.cjs`). Still open: quota bars for Codex, Cursor, Kimi, Grok (user asked; Orca reads each from disk + one GET).
+- **OpenCode Go quota (D95):** the plugin now also uses the `opencode` login, so the Go bar shows on machines whose OpenCode sign-in is the main one (`scripts/e2e-opencode-go-real.cjs`).
+- **Agent quota bars (D96):** Codex, Cursor, Kimi, Grok bars while a session of that agent is open (`scripts/e2e-agent-usage.cjs`). Known gap: the four fetchers have never run against the real services (not installed here); Cursor needs the DPAPI path on Windows. Check each on a machine that has the agent signed in.
 - **Links (D93):** agent-printed hyperlinks open directly, no browser-style warning (`e2e:osc-link`).
 - **Extra agent CLIs (D92, phase 1):** 39 agents from Orca as launch-only terminal sessions (`cliAgent` on shell sessions, registry `src/shared/cliAgents.ts`, `e2e:cli-agents`); no hooks/resume yet (phase 2, needs real CLIs).
 - **Jarvis reads (D91):** `read_conversation` + notes in `list_sessions`, only when the user asks; text only (no tool calls).

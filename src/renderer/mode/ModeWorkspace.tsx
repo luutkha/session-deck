@@ -580,7 +580,8 @@ export function ModeWorkspace(props: ModeWorkspaceProps): ReactElement {
               consented: usage.consented,
               grantConsent: usage.grantConsent,
               pace: usage.pace,
-              showOpencodeGo: settings.quota.showOpencodeGo
+              showOpencodeGo: settings.quota.showOpencodeGo,
+              showAgentUsage: settings.quota.showAgentUsage ?? true
             }}
             activeSessionId={view === 'hub' ? null : activeId}
           />

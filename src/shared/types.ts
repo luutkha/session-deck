@@ -569,7 +569,10 @@ export interface UsageWindow {
 }
 
 /** Which provider an account row belongs to. Absent on legacy data = 'claude'. */
-export type UsageProvider = 'claude' | 'opencode-go'
+export type UsageProvider = 'claude' | 'opencode-go' | 'codex' | 'cursor' | 'kimi' | 'grok'
+
+/** Display order of the providers (Claude first); also the only values accepted from caches and payloads. */
+export const USAGE_PROVIDERS: readonly UsageProvider[] = ['claude', 'opencode-go', 'codex', 'cursor', 'kimi', 'grok']
 
 /** Account-level plan usage; identical for every session of the same account. */
 export interface AccountUsage {
@@ -577,7 +580,7 @@ export interface AccountUsage {
   readonly provider?: UsageProvider
   readonly fiveHour: UsageWindow | null
   readonly sevenDay: UsageWindow | null
-  /** OpenCode Go only (a rolling 30-day allowance). Absent/null for Claude. */
+  /** A 30-day / monthly allowance (OpenCode Go, Codex, Cursor, Kimi, Grok). Absent/null for Claude. */
   readonly monthly?: UsageWindow | null
   readonly updatedAt: number // epoch ms of the last statusLine update that carried it
 }
@@ -716,6 +719,11 @@ export interface QuotaSettings {
   readonly continueOnWake: boolean
   /** Show the OpenCode Go usage bars (the plugin asks zen/go/v1/usage; the key never reaches the app). */
   readonly showOpencodeGo: boolean
+  /**
+   * Show the quota bars of Codex, Cursor, Kimi and Grok (D96). They are read from each agent's own login while a
+   * session of that agent is open. Optional so older saved settings and test literals stay valid; absent = on.
+   */
+  readonly showAgentUsage?: boolean
 }
 
 /** ask = the critical toast offers "Sleep idle sessions"; sleep = do it automatically; nothing = only warn. */
@@ -788,7 +796,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoStatus: { enabled: true, working: 'working', needsInput: 'waiting', finished: 'review' },
   tray: { closeToTray: true, desktopNotifications: true, notifyOnlyWhenUnfocused: true },
   // Hands-off defaults (D33): sleep idle sessions at the critical level, wake + continue after the reset, no asking.
-  quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true, showOpencodeGo: true },
+  quota: { enabled: true, warnAtPercent: 80, criticalAtPercent: 95, notifyOnReset: true, criticalAction: 'sleep', resetAction: 'wake', continueOnWake: true, showOpencodeGo: true, showAgentUsage: true },
   sleep: { enabled: false, afterMinutes: 30, allEnabled: false, allAfterMinutes: 60 },
   agents: { defaultAgent: 'claude', opencodeModel: '' },
   hub: { scrollToBusiest: true },

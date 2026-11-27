@@ -1,5 +1,5 @@
 import { Fragment, type ReactElement } from 'react'
-import type { Id, SessionUsage, UsageState, UsageWindow } from '../../shared/types'
+import type { Id, SessionUsage, UsageProvider, UsageState, UsageWindow } from '../../shared/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import {
@@ -38,7 +38,12 @@ export interface UsageChipsProps {
   readonly pace?: { readonly fiveHour: string; readonly sevenDay: string }
   /** Show the OpenCode Go group (settings toggle). Absent = shown. */
   readonly showOpencodeGo?: boolean
+  /** Show the Codex / Cursor / Kimi / Grok groups. Absent = shown. */
+  readonly showAgentUsage?: boolean
 }
+
+/** Agent-provider groups hidden by showAgentUsage; Claude and Go have their own rules. */
+const AGENT_USAGE_PROVIDERS: readonly UsageProvider[] = ['codex', 'cursor', 'kimi', 'grok']
 
 const WAITING_LABEL = 'Usage: waiting for a turn'
 const WAITING_TOOLTIP = 'Claude Code and OpenCode Go report usage after a turn.'
@@ -195,11 +200,15 @@ export function UsageChips(props: UsageChipsProps): ReactElement {
     consented,
     grantConsent,
     pace,
-    showOpencodeGo
+    showOpencodeGo,
+    showAgentUsage
   } = props
-  const accounts = accountsForDisplay(state).filter(
-    (account) => (showOpencodeGo ?? true) || providerOf(account) !== 'opencode-go'
-  )
+  const accounts = accountsForDisplay(state).filter((account) => {
+    const provider = providerOf(account)
+    if (!(showOpencodeGo ?? true) && provider === 'opencode-go') return false
+    if (!(showAgentUsage ?? true) && AGENT_USAGE_PROVIDERS.includes(provider)) return false
+    return true
+  })
   const showProviderLabels = accounts.length > 1
   const session = sessionUsageFor(state, activeSessionId)
   const autopilot = useQuotaAutopilot()
@@ -213,7 +222,10 @@ export function UsageChips(props: UsageChipsProps): ReactElement {
           const provider = providerOf(account)
           const label = providerLabel(provider)
           const go = provider === 'opencode-go'
-          const accountStale = go ? isStale(account.updatedAt, now) : stale
+          // Claude's stale flag and pace hint describe Claude's own window; every other provider uses its own data age
+          // and shows no pace (the pace text is computed from Claude's numbers).
+          const own = provider !== 'claude'
+          const accountStale = own ? isStale(account.updatedAt, now) : stale
           return (
             <div
               key={provider}
@@ -235,8 +247,8 @@ export function UsageChips(props: UsageChipsProps): ReactElement {
                   now={now}
                   updatedAt={account.updatedAt}
                   stale={accountStale}
-                  pace={go ? '' : (pace?.fiveHour ?? '')}
-                  showInlinePace={!go}
+                  pace={own ? '' : (pace?.fiveHour ?? '')}
+                  showInlinePace={!own}
                 />
               ) : null}
               {account.sevenDay !== null ? (
@@ -247,7 +259,7 @@ export function UsageChips(props: UsageChipsProps): ReactElement {
                   now={now}
                   updatedAt={account.updatedAt}
                   stale={accountStale}
-                  pace={go ? '' : (pace?.sevenDay ?? '')}
+                  pace={own ? '' : (pace?.sevenDay ?? '')}
                   showInlinePace={false}
                 />
               ) : null}
